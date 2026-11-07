@@ -155,7 +155,8 @@ Another project's class path holding `x-test-fixtures.jar` or `x/build/classes/j
   A source set without sources is skipped by the task (`@SkipWhenEmpty`), so it gets no tree.
 - `LatheFactsTask` takes a tree → sources map instead of `mainSources`/`testSources`, for the trees list and the staleness check; outputs, resource roots and access flags (`javaFacts`) come from every source set.
 - Libraries become the union of every source set's compile class path, so `jmh`'s and `integrationTest`'s own libraries are listed and get `-sources` jars.
-- `latheSync` depends on every capture, so a sync compiles every source set.
+- A sync compiles every source set: the facts depend on the extra captures when the build asked for `latheSync`.
+  Not otherwise: the facts finalize the test compile, so a plain test build would compile every source set (and Gradle cannot schedule a finalizer that depends on tasks nothing requested); a source set's capture still runs whenever its compile does.
   Hibernate ORM's sync already did, through the test tasks its `test` depends on; on Caffeine it adds `jmh` and the suites.
 - Each capture runs after its own compile and before its source set's `classes` task, as the shared generated-sources fix (WS-32) set up for `main` and `test`.
   That fix also runs the test compile after the main capture, for a build pointing both compiles at one generated-sources folder; a third source set doing the same is not covered (§9).

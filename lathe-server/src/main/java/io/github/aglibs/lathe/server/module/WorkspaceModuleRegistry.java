@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
@@ -146,18 +147,30 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
       return allSourceRoots();
     }
 
-    return moduleSources.stream()
-        .sorted(Comparator.comparingInt(config -> lookupRank(asking.get(), config)))
-        .flatMap(config -> config.searchRoots().stream())
-        .toList();
+    // Remapped once per request, not per tree: this runs for every hover and completion.
+    final Set<Path> seen =
+        Stream.concat(
+                asking.get().remappedClasspath().stream(),
+                asking.get().remappedModulepath().stream())
+            .collect(Collectors.toUnmodifiableSet());
+    final Map<Integer, List<Path>> byRank =
+        moduleSources.stream()
+            .collect(
+                Collectors.groupingBy(
+                    config -> lookupRank(asking.get(), seen, config),
+                    TreeMap::new,
+                    Collectors.flatMapping(
+                        config -> config.searchRoots().stream(), Collectors.toList())));
+    return byRank.values().stream().flatMap(List::stream).toList();
   }
 
-  private static int lookupRank(final ModuleSourceConfig asking, final ModuleSourceConfig config) {
+  private static int lookupRank(
+      final ModuleSourceConfig asking, final Set<Path> seen, final ModuleSourceConfig config) {
     if (config.equals(asking)) {
       return 0;
     }
 
-    return asking.sees(config) ? 1 : 2;
+    return seen.contains(config.latheClassesDir()) ? 1 : 2;
   }
 
   public CompilationWorker workerFor(final ModuleSourceConfig config) {

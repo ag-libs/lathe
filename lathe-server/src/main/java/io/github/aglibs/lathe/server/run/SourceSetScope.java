@@ -8,10 +8,10 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-// A class compiled into a Gradle source set's own tree (classes-<name>), and not into the module's
-// main or test tree, has no captured launch yet: running it is refused, with the reason, rather
-// than sent to the module's test or main launch, where the class is missing or the classpath is
-// another source set's.
+// A class compiled into a tree of its own (classes-<name>: a Gradle source set, or a Maven compile
+// writing to such a directory), and not into the module's main or test tree, has no captured launch
+// yet: running it is refused, with the reason, rather than sent to the module's test or main
+// launch, where the class is missing or the classpath is another tree's.
 public final class SourceSetScope {
 
   private SourceSetScope() {}
@@ -32,7 +32,7 @@ public final class SourceSetScope {
         .findFirst()
         .map(
             tree ->
-                "%s is in the %s source set, whose launch Lathe does not capture yet: run it with Gradle"
+                "%s is only in the %s classes, whose launch Lathe does not capture yet: run it with the build"
                     .formatted(
                         className, tree.substring(LatheLayout.SOURCE_SET_TREE_PREFIX.length())));
   }

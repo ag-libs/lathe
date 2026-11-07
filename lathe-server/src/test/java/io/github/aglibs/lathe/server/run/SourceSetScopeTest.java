@@ -22,7 +22,7 @@ final class SourceSetScopeTest {
     Files.writeString(moduleDir.resolve(LatheLayout.paramsFileName(tree)), "{}");
   }
 
-  // Only in integrationTest's tree: refused, naming the source set. Also in the test tree, or in
+  // Only in integrationTest's tree: refused, naming it. Also in the test tree, or in
   // no tree at all: the module's own launches decide, as before.
   @Test
   void uncapturedReason_classOnlyInASourceSetTree_namesTheSourceSet(@TempDir final Path ws)

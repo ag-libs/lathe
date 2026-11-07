@@ -326,7 +326,9 @@ public class LatheProjectPlugin implements Plugin<Project> {
             moduleDir);
     final NamedDomainObjectSet<SourceSet> others =
         sourceSets.matching(sourceSet -> sourceSet != main && sourceSet != test);
-    others.configureEach(sourceSet -> registerSourceSet(project, facts, sourceSet, moduleDir));
+    final boolean syncing = syncRequested(project);
+    others.configureEach(
+        sourceSet -> registerSourceSet(project, facts, sourceSet, moduleDir, syncing));
     facts.configure(
         task -> {
           task.dependsOn(mainCapture, testCapture);
@@ -362,12 +364,16 @@ public class LatheProjectPlugin implements Plugin<Project> {
   }
 
   // A source set beyond main and test, as the build script adds it (after the java plugin applies):
-  // a tree of its own, captured as main's and test's are, with its own classpath.
+  // a tree of its own, captured as main's and test's are, with its own classpath, whenever its
+  // compile runs. Only a sync compiles it for that: the facts finalize the test compile, so making
+  // them depend on it would compile every source set (jmh, integration tests) on a plain test
+  // build.
   private static void registerSourceSet(
       final Project project,
       final TaskProvider<LatheFactsTask> facts,
       final SourceSet sourceSet,
-      final Path moduleDir) {
+      final Path moduleDir,
+      final boolean syncing) {
     final String tree = LatheLayout.sourceSetTree(sourceSet.getName());
     final TaskProvider<LatheCaptureTask> capture =
         registerCapture(
@@ -383,10 +389,22 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final ArtifactCollection libraries = external(compileClasspath(project, sourceSet));
     facts.configure(
         task -> {
-          task.dependsOn(capture);
+          if (syncing) {
+            task.dependsOn(capture);
+          }
+
           task.getSourceSets().add(sources);
           addLibraries(task, libraries);
         });
+  }
+
+  // The build asked for latheSync, by name or path, as the editor's sync script does.
+  private static boolean syncRequested(final Project project) {
+    return project.getGradle().getStartParameter().getTaskNames().stream()
+        .anyMatch(
+            name ->
+                name.equals(LatheLayout.Gradle.SYNC_TASK)
+                    || name.endsWith(":%s".formatted(LatheLayout.Gradle.SYNC_TASK)));
   }
 
   // Gradle's own rule, the one its Eclipse model gives the IDEs: a JVM test suite's source set, or
@@ -460,19 +478,19 @@ public class LatheProjectPlugin implements Plugin<Project> {
     // configured, when the script may yet change it.
     final DependencyFactory dependencies = project.getDependencyFactory();
     sources.withDependencies(
-        added ->
-            Stream.concat(Stream.of(test), others.stream())
-                .map(sourceSet -> compileClasspath(project, sourceSet))
-                .forEach(
-                    classpath ->
-                        added.addAll(
-                            sourcesOf(
-                                dependencies,
-                                classpath
-                                    .getIncoming()
-                                    .getResolutionResult()
-                                    .getRootComponent()
-                                    .get()))));
+        added -> {
+          for (final SourceSet sourceSet :
+              Stream.concat(Stream.of(test), others.stream()).toList()) {
+            added.addAll(
+                sourcesOf(
+                    dependencies,
+                    compileClasspath(project, sourceSet)
+                        .getIncoming()
+                        .getResolutionResult()
+                        .getRootComponent()
+                        .get()));
+          }
+        });
     final ArtifactCollection librarySources =
         sources.getIncoming().artifactView(view -> view.lenient(true)).getArtifacts();
     facts.configure(

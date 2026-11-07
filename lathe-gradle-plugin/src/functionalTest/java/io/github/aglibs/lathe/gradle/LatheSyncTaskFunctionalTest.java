@@ -116,7 +116,8 @@ class LatheSyncTaskFunctionalTest {
   // convention (a name containing "test", test fixtures, a JVM test suite); bench is not. A source
   // set without
   // sources gets no tree. The fixtures' jar maps to their tree, and a source set the build drops
-  // is pruned at the next sync.
+  // is pruned at the next sync. Only the sync compiles the other source sets: a test build does
+  // not.
   @Test
   void sync_sourceSetsBeyondMainAndTest_eachCapturedAsATreeOfItsOwn() throws Exception {
     final String sourceSets =
@@ -165,6 +166,11 @@ class LatheSyncTaskFunctionalTest {
             .file(
                 "app/src/smoke/java/com/example/app/AppSmoke.java",
                 "package com.example.app; class AppSmoke {}\n");
+
+    final var testBuild = fixture.runner(":app:compileTestJava").build();
+
+    assertThat(testBuild.task(":app:compileIntegrationTestJava")).isNull();
+    assertThat(testBuild.task(":app:compileBenchJava")).isNull();
 
     fixture.runner("latheSync").build();
 

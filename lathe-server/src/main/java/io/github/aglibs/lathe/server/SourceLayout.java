@@ -65,8 +65,11 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
         .toList();
   }
 
+  // A source set's own tree has no place in the create-type scopes yet, so a file there has no
+  // context: one created from it would land in another source set.
   ContextInfo resolveContext(final Path path) {
     return configs.stream()
+        .filter(config -> !config.sourceTree().startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX))
         .flatMap(config -> contextIn(config, path).stream())
         .findFirst()
         .orElse(null);
@@ -144,15 +147,30 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return matching;
   }
 
+  // The tree whose tests a module's captured test launch runs.
   private List<ModuleSourceConfig> testConfigs() {
-    return configs.stream().filter(config -> config.isTestTree()).toList();
+    return configs.stream()
+        .filter(config -> LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()))
+        .toList();
   }
 
-  // Every test package of the module, in one launch.
+  // The package of a file in any tree, from the source root that holds it; empty outside them.
+  String filePackage(final Path file) {
+    return configs.stream()
+        .flatMap(config -> config.sourceRoots().stream())
+        .filter(file::startsWith)
+        .findFirst()
+        .map(root -> packageOf(root, file.getParent()))
+        .orElse("");
+  }
+
+  // Every package of the module's test tree, in one launch: its captured test launch runs no other
+  // tree's tests.
   DirRun moduleRun(final String moduleRel) {
     final List<DirRun.Selector> selectors =
-        packages(moduleRel).stream()
-            .filter(entry -> entry.scope().equals(SourceScope.TEST.wire))
+        testConfigs().stream()
+            .filter(config -> moduleRel(config).equals(moduleRel))
+            .flatMap(SourceLayout::packageEntries)
             .map(PackageEntry::pkg)
             .filter(pkg -> !pkg.isEmpty())
             .distinct()
