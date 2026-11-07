@@ -2,7 +2,8 @@
 
 ## Status
 
-**Proposed (2026-11-07).** Not started; the direction (§4) awaits approval.
+**Step 1 implemented (2026-11-07):** every Java source set a tree of its own, with editor features; runs there refused.
+Step 2 (runs, [TE-12](../gaps/gaps.md)) not started.
 Gradle only: Maven needs nothing (§2.3).
 
 ## 1. Problem
@@ -86,8 +87,8 @@ Maven, OpenJDK: unchanged apart from writing the test flag (§4.2).
 
 **A′ — fold, as jdtls does.**
 Two trees as today, split by Gradle's test convention:
-`classes` = `main` plus the source sets that are not test code (`jmh`, `cremaRuntime`),
-`test-classes` = `test` plus the test-like ones (`integrationTest`, `testFixtures`, `jakartaData`).
+`classes` = `main` plus the source sets that are not test code by that convention (`jmh`, `cremaRuntime`, and Hibernate ORM's `jakartaData`, which has no "test" in its name),
+`test-classes` = `test` plus the test-like ones (`integrationTest`, `testFixtures`).
 Each tree merges its source sets' roots, class paths, processor paths and outputs.
 Gradle plugin only; no server change.
 It carries every limit of §2.2, and two of its own: folding `jmh` into `classes` puts it on other modules' view of the project (their class paths map to `classes`),
@@ -132,7 +133,7 @@ The flag decides UX only.
 What a tree can see is what its class path holds, as in the build:
 
 - `integrationTest` with main's output on its class path sees `main` and not `test`;
-- Hibernate ORM's `jakartaData`, with main's and test's output, sees both;
+- Hibernate ORM's `jakartaData`, with main's and test's output, sees both, though by Gradle's convention it is not test code (no "test" in its name): the flag and visibility are independent;
 - a project consuming `testFixtures(project(":x"))` sees `x`'s fixtures tree and nothing else of `x`'s test code.
 
 One place decides visibility from the name today and changes:
@@ -169,7 +170,7 @@ Its fallback for a project not built since it joined the build keeps only `class
 ### 4.8 File ownership
 
 A file belongs to the tree whose source roots hold it.
-Two source sets can share folders (a JVM test suite pointed at `src/test/java`): the first tree in name order owns the file, and the sync logs the overlap once.
+Two source sets can share folders (a JVM test suite pointed at `src/test/java`): the server loads a module's trees in a fixed order, main, test, then the rest by name, and the first owns the file, so `test` keeps a folder a suite shares with it.
 Generated files belong to the tree whose generated-sources mirror holds them, now one per tree (`WorkspaceModuleRegistry.moduleSourceFor` stops matching main's mirror for every tree).
 
 ### 4.9 Runs — step 1 refuses, step 2 captures
@@ -248,5 +249,5 @@ Run with `dev/explore.py` against a server stamped `0.3.99-spike`.
 - ~~Does `jakartaData`, whose class path holds main's and test's output, remap both and compile cleanly?~~ Yes (§8).
 - `codeGen`-style source sets whose program generates another source set's sources: captured as a tree like any other, or skipped? (spike)
 - Is the extra sync compile acceptable on Caffeine and Micronaut, or should a project be able to leave a source set out (`lathe { skipSourceSets = [...] }`)? Measure first.
-- Overlapping source folders: is "first in name order" right, or should `test` always win over a suite sharing its folders?
+- ~~Overlapping source folders: should `test` win over a suite sharing its folders?~~ Yes: main, test, then the rest by name (§4.8).
 - A third source set compiling into another's generated-sources folder (as Apache Fineract points `test` at main's): order it like the test compile, or leave it until a build does it?

@@ -1596,13 +1596,17 @@ Found while documenting the Gradle plugin (2026-10-30), from its design notes.
 
 The plugin loads `lathe-junit` into each project's `test` task only.
 Tests in other test tasks (an `integrationTest` task, say) are never captured, so they can't be run or debugged
-from the editor or an agent, and source sets other than `main` and `test` (`integrationTest`, `testFixtures`,
-`jmh`) get no module configuration, so their files have no code intelligence either.
+from the editor or an agent: a run of a test or main method in a source set's own tree is refused with the reason,
+and a capture-only sync skips those test tasks.
+Their files have code intelligence since [WS-33](gaps-archive.md#ws-33--gradle-source-sets-beyond-main-and-test-get-no-editor-features--done), each source set a tree of its own.
 Maven has no counterpart: Failsafe tests are their own limit there.
 
 ### Fix direction
 
-Capture every `Test` task, and model each extra source set as a source tree of its project.
+Step 2 of [Gradle Source Sets](../planned/lathe-gradle-source-sets.md#49-runs--step-1-refuses-step-2-captures):
+a launch file per test task (`test` keeping `test-launch.json`), every test task given the capture agent, and in a
+capture-only sync the one-class filter and dry run instead of the skip, and run routing by the file's tree to the
+task that runs it.
 
 ### Regression targets
 

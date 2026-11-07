@@ -29,10 +29,13 @@ Every relative path saved in `.lathe/` is `/`-separated on every OS: `<moduleRel
 So a `.lathe/` written on Windows reads the same elsewhere, and a committed `lathe-run.json` works across OSes.
 Readers resolve them with `Path.resolve`, which accepts `/` on Windows; absolute paths stay native.
 
-A module has one or two **source trees**, named `classes` (main) and `test-classes` (test).
+A module has one or more **source trees**: `classes` (main) and `test-classes` (test), and on Gradle a tree per other source set, `classes-<name>` (`classes-integrationTest`, `classes-testFixtures`).
 The names are Lathe's, not Maven's: every front-end uses them, whatever its build calls the outputs.
-The front-end assigns the tree by scope (main or test), never from the build's directory names.
-Run gating and main-class scope recognize only these two names, and the generated-sources mirror name is derived from them.
+The front-end assigns the tree by scope (main, test, or the Gradle source set), never from the build's directory names.
+The prefix keeps a source set's tree from colliding with a child module's folder, as module folders nest by module path.
+Whether a tree is test code is its params' `testCode`, not its name; what a tree can see is what its class and module path hold.
+The generated-sources mirror name is derived from the tree name.
+A test or main method in a `classes-<name>` tree has no captured launch yet, so running it is refused with the reason.
 
 **A full sync prunes what the build no longer has.**
 Since the server discovers modules by walking `.lathe/`, a capture the build stopped producing would otherwise stay a module, compiled with stale settings.
@@ -55,7 +58,7 @@ On Maven a tree is current when its compile source roots hold Java, or its outpu
 | `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
 | `<moduleRel>/lsp-stamps-<tree>.json` | `CompiledStampsData` | recommended |
-| `<moduleRel>/classes/`, `<moduleRel>/test-classes/` | bytecode mirror | recommended, unless `externalOutput` |
+| `<moduleRel>/<tree>/` (`classes/`, `test-classes/`, `classes-<name>/`) | bytecode mirror | recommended, unless `externalOutput` |
 | `lathe-sync.sh` (`.cmd` on Windows) | script | recommended |
 | `java-home` | plain text | recommended |
 | `<moduleRel>/generated-sources/`, `<moduleRel>/generated-test-sources/` | sources mirror | optional |
@@ -76,19 +79,21 @@ The compiler configuration of one source tree: `ModuleConfigData`.
 
 | Field | Meaning |
 |---|---|
-| `sourceTree` | `classes` or `test-classes` |
+| `sourceTree` | `classes`, `test-classes`, or a Gradle source set's `classes-<name>` |
 | `outputDir` | the build's real output directory, absolute |
 | `generatedSourcesDir` | the build's annotation-processor output, or null |
 | `sourceRoots`, `classpath`, `modulepath`, `processorPath` | absolute paths |
 | `release`, `encoding`, `parameters`, `enablePreview`, `proc`, `compilerArgs` | javac options as the build passes them |
 | `analysisMode` | `CLASSPATH` or `MODULE_SYSTEM` |
 | `externalOutput` | true when the server reads `outputDir` in place instead of a `.lathe/` mirror |
+| `testCode` | whether the tree is test code: Maven's test compile, a Gradle source set by Gradle's own convention (a JVM test suite's source set, or a name containing `test`); absent, the `test-classes` tree is. Drives go-to-test, suggestions and the create-type scope, never visibility |
 
 Without it, files under the module are "not in a Lathe module" and get no compiler, and runs are blocked as not compiled.
 Classpath entries that point at a sibling module's build output are rewritten by the server to that module's mirror,
 looked up in `workspace.json`'s `outputs`; any other path is used as written.
 
 - **Maven** writes it after every compile (`CompileCapture` in `lathe-install`, called from the compiler shim's `LatheCompiler`), including scoped `-pl` builds.
+- **Gradle** writes it for every Java source set, each finalizing its compile (`LatheCaptureTask`), and `testCode` by Gradle's convention.
 - **OpenJDK** writes the `classes` tree only, with `externalOutput=true`: `MODULE_SYSTEM` for JDK modules, `CLASSPATH` for build tools.
 - The server never writes it.
 
@@ -159,7 +164,7 @@ Without it every source counts as stale, which self-heals but prompts a sync and
 Both front-ends write it next to the params; the server updates `stamps` after save compiles and orphan cleanup, and leaves `built` as the build wrote it.
 The Maven front-end records `built` on every compile; the OpenJDK one leaves it empty.
 
-### `<moduleRel>/classes/`, `<moduleRel>/test-classes/`
+### `<moduleRel>/classes/`, `<moduleRel>/test-classes/`, `<moduleRel>/classes-<name>/`
 
 An exact copy of the tree's build output, resources included.
 It feeds the server's cross-module classpath, the reactor type index, and test and main launches.
@@ -205,7 +210,7 @@ Without it the launchers fall back to `java` on `PATH`.
 
 ### `<moduleRel>/generated-sources/`, `<moduleRel>/generated-test-sources/`
 
-A copy of the build's annotation-processor output for the tree (`generated-sources` for `classes`, `generated-test-sources` for `test-classes`).
+A copy of the build's annotation-processor output for the tree (`generated-sources` for `classes`, `generated-test-sources` for `test-classes`, `generated-<name>-sources` for a Gradle source set's `classes-<name>`).
 Navigation and the module router use it; the server regenerates into it when processors run on save.
 Maven copies it when the build produced one, and removes it when a compile produced none, so a removed processor's types leave the editor too.
 

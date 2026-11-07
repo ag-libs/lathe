@@ -9605,6 +9605,49 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-33 — Gradle source sets beyond `main` and `test` get no editor features — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor and MCP on Gradle builds with test fixtures, JVM test suites, an `integrationTest`, `jmh` or any other source set.**
+
+Found while checking the capture-only cost on Hibernate ORM (2026-11-07): its `test` task depends on test tasks of other source sets (`jakartaData`, `integrationTest`), whose files Lathe did not know.
+
+### Observed behaviour
+
+The Gradle plugin captured `main` and `test` only.
+No module compiled a file of any other source set: no diagnostics, completion, navigation or rename there,
+and references from other code missed its uses (in Caffeine, about 315 of the 603 references to `Caffeine.newBuilder`, in its benchmarks and suites).
+Such source sets are common: test fixtures consumed across projects, JVM test suites, `jmh`, and custom ones such as Hibernate ORM's `jakartaData`.
+
+### Fix direction
+
+[Gradle Source Sets](../planned/lathe-gradle-source-sets.md): a tree per source set, compiled against its own classpath,
+rather than folding them into main and test as jdtls does through Buildship's Eclipse model, which lets the editor accept code the build rejects.
+
+### Resolution
+
+Every Java source set is captured as a tree of its own, `classes-<name>`, with its own generated-sources mirror, registered as the build script adds it.
+`lsp-params` says whether a tree is test code (`testCode`), by Gradle's own convention: a JVM test suite's source set, or a name containing `test`.
+The facts list each tree with its outputs, its jar when it has one (test fixtures), and its libraries.
+The server reads test code from the flag, decides what rename's trees see from their class paths, searches the asking file's tree first when it maps a class to its source
+(two source sets can declare the same class), and refuses to run a test or main method that only a source set's tree holds, until [TE-12](gaps.md#te-12--on-gradle-only-each-projects-test-task-is-captured) captures their launches.
+
+Checked on Hibernate ORM and Caffeine: files of `jakartaData`, `integrationTest` and a fuzz suite compile, navigate and find references;
+an `integrationTest` file using a `test` class gets the error Gradle's compile reports.
+
+### Regression targets
+
+`LatheSyncTaskFunctionalTest.sync_sourceSetsBeyondMainAndTest_eachCapturedAsATreeOfItsOwn`,
+`WorkspaceModuleRegistryTest.scan_sourceSetTrees_lookupPrefersTheAskingTreeAndOwnershipIsStable`,
+`SourceSetScopeTest.uncapturedReason_classOnlyInASourceSetTree_namesTheSourceSet`,
+`ModuleConfigDataTest.constructor_testCodeGivenOrAbsent_givenWinsAbsentFollowsTestClasses`,
+`CapturePrunerTest.prune_removedModuleAndTree_deletesOnlyThoseCaptures`.
+
+---
+
 ## WS-32 — A Gradle task writing into a directory Lathe's capture reads fails the build — done
 
 **Status: done.**
