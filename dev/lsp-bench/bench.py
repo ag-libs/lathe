@@ -20,6 +20,7 @@ import queue
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -73,6 +74,12 @@ class BenchClient(LspClient):
     """The dev client's transport, answering what an editor answers to the server's own requests."""
 
     def __init__(self, proc, settings):
+        # Every write goes through one writer thread, so the reader never waits on a write: a server
+        # that stops reading its input while it imports would otherwise fill the pipe, block a write
+        # that holds the send lock, stop the reader answering the server's own requests, and the
+        # server would block writing its output.
+        self.outbox = queue.Queue()
+        threading.Thread(target=self._write_loop, args=(proc,), daemon=True).start()
         super().__init__(proc, [])
         self.settings = settings
         self.status = StampedQueue()
@@ -82,9 +89,16 @@ class BenchClient(LspClient):
     def _send(self, msg):
         # Content-Length counts bytes: an opened file with non-ASCII text must not break the framing.
         body = json.dumps(msg).encode("utf-8")
-        with self._send_lock:
-            self._proc.stdin.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
-            self._proc.stdin.flush()
+        self.outbox.put(b"Content-Length: %d\r\n\r\n" % len(body) + body)
+
+    def _write_loop(self, proc):
+        while True:
+            data = self.outbox.get()
+            try:
+                proc.stdin.write(data)
+                proc.stdin.flush()
+            except (BrokenPipeError, ValueError, OSError):
+                return
 
     def _handle_server_request(self, msg):
         self.server_request_counts[msg["method"]] += 1

@@ -93,6 +93,9 @@ def lathe_prepare(name, project, mode, log):
     fresh_checkout(repo)
     if project["build"] == "maven":
         enable_lathe_maven(repo)
+    for path, line in project.get("lathe_appends", {}).items():
+        with open(repo / path, "a", encoding="utf-8") as f:
+            f.write(line)
     start = time.monotonic()
     with open(log, "ab") as out:
         subprocess.run(lathe_build_command(project, repo), cwd=repo, env=build_env(project),
@@ -117,12 +120,23 @@ def lathe_spec(name, project, state, heap):
 
 # -- jdtls ------------------------------------------------------------------------------------------
 
-def jdtls_settings(project):
+def jdtls_repository(name):
+    """The Maven repository of jdtls's runs on a project it needs installed, and its settings file."""
+    repository = WORK / ("m2-%s" % name)
+    settings = WORK / ("m2-%s-settings.xml" % name)
+    settings.write_text("<settings><localRepository>%s</localRepository></settings>\n" % repository,
+                        encoding="utf-8")
+    return repository, settings
+
+
+def jdtls_settings(name, project):
     # vscode-java's defaults where jdtls's own differ (signature help is off in jdtls itself). A
     # project with both a pom.xml and a Gradle build is imported through the build Lathe uses.
     java = {"signatureHelp": {"enabled": True}}
     if project["build"] == "maven":
         java["import"] = {"gradle": {"enabled": False}}
+    if project.get("jdtls_install"):
+        java["configuration"] = {"maven": {"userSettings": str(jdtls_repository(name)[1])}}
     return {"java": java}
 
 
@@ -132,16 +146,30 @@ def jdtls_config_dir():
     return "config_%s%s" % (system, "_arm" if arm else "")
 
 
-def jdtls_prepare(name, project, mode, state):
-    if mode == "cold":
-        fresh_checkout(repo_of(name))
-        shutil.rmtree(state, ignore_errors=True)
+def jdtls_prepare(name, project, mode, state, log):
+    """Cold: a fresh checkout and no jdtls workspace; the project installed first where jdtls needs
+    it, timed in ms. Warm: what the last run left."""
+    if mode == "warm":
+        state.mkdir(parents=True, exist_ok=True)
+        return None
+    repo = repo_of(name)
+    fresh_checkout(repo)
+    shutil.rmtree(state, ignore_errors=True)
     state.mkdir(parents=True, exist_ok=True)
-    return None
+    if not project.get("jdtls_install"):
+        return None
+    repository, _settings = jdtls_repository(name)
+    maven = "./mvnw" if (repo / "mvnw").exists() else MAVEN
+    start = time.monotonic()
+    with open(log, "ab") as out:
+        subprocess.run([maven, "-B", "-q", "install", "-DskipTests", "-Dmaven.repo.local=%s" % repository],
+                       cwd=repo, env=build_env(project), stdout=out, stderr=subprocess.STDOUT, check=True)
+    # jdtls then opens the tree the install left, as its user would after `mvn install`.
+    return (time.monotonic() - start) * 1000
 
 
 def jdtls_spec(name, project, state, heap):
-    settings = jdtls_settings(project)
+    settings = jdtls_settings(name, project)
     launcher = glob.glob(str(JDTLS / "plugins" / "org.eclipse.equinox.launcher_*.jar"))[0]
     # vscode-java's default VM arguments (java.jdt.ls.vmargs) and its launch of the product.
     cmd = [
@@ -172,7 +200,7 @@ def jdtls_spec(name, project, state, heap):
 SERVERS_BY_NAME = {
     "lathe": {"prepare": lambda name, project, mode, state, log: lathe_prepare(name, project, mode, log),
               "spec": lathe_spec},
-    "jdtls": {"prepare": lambda name, project, mode, state, log: jdtls_prepare(name, project, mode, state),
+    "jdtls": {"prepare": jdtls_prepare,
               "spec": jdtls_spec},
 }
 
