@@ -44,8 +44,11 @@ public final class LaunchSession {
   // The one running test, or null for none or several; volatile so the stderr drain sees it too.
   private volatile String currentTest;
 
+  // notes: the launch's own notes, sent before any process output and kept in the outcome, where an
+  // MCP answer reads them.
   LaunchSession(
       final Process process,
+      final List<TranscriptLine> notes,
       final Path resultsSink,
       final Consumer<TranscriptLine> onLine,
       final Consumer<TestResult> onResult) {
@@ -53,6 +56,8 @@ public final class LaunchSession {
     this.resultsSink = resultsSink;
     this.onLine = onLine;
     this.onResult = onResult;
+    notes.forEach(onLine);
+    output.addAll(notes);
     startDrain(process.getInputStream(), TranscriptLine.Stream.STDOUT, stdoutDrained);
     startDrain(process.getErrorStream(), TranscriptLine.Stream.STDERR, stderrDrained);
     startTailer();
