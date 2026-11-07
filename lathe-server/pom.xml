@@ -30,6 +30,13 @@
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>
+    <!-- TestPaths, shared with lathe-core's tests. -->
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-core</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.eclipse.lsp4j</groupId>
       <artifactId>org.eclipse.lsp4j</artifactId>

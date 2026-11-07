@@ -1,5 +1,8 @@
-package io.github.aglibs.lathe.core.typeindex;
+package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;

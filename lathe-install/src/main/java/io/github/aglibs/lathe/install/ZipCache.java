@@ -1,5 +1,6 @@
-package io.github.aglibs.lathe.core;
+package io.github.aglibs.lathe.install;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -1,6 +1,8 @@
-package io.github.aglibs.lathe.core;
+package io.github.aglibs.lathe.server.format;
 
 import com.google.gson.JsonParseException;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import java.io.IOException;
 import java.nio.file.Files;

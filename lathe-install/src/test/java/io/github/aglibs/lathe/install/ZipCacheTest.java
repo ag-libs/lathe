@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.core;
+package io.github.aglibs.lathe.install;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

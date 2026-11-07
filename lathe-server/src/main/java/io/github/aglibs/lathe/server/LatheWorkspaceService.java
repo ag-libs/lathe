@@ -8,7 +8,7 @@ import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
-import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.server.run.RunKind;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

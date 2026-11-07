@@ -3,11 +3,9 @@ package io.github.aglibs.lathe.server.run;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
-import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;

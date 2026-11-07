@@ -1,8 +1,10 @@
-package io.github.aglibs.lathe.core;
+package io.github.aglibs.lathe.server.format;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.IndentSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;

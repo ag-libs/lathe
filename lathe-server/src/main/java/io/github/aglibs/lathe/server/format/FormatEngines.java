@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.WorkspaceStyle;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import java.io.IOException;

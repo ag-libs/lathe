@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.core.schema;
+package io.github.aglibs.lathe.server.run;
 
 /**
  * The kind of a run configuration entry, serialized by name ({@code "MAIN"}/{@code "TEST"}); new

@@ -47,7 +47,7 @@ Which file answers which question:
 
 | Module               | Role                                                                                                                                                             |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `lathe-core`         | Shared utilities (property file helpers, future shared code); no external deps; has `module-info.java`                                                           |
+| `lathe-core`         | What several modules share (layout, flags, schema records, file helpers); depends only on Gson and ValidCheck; has `module-info.java`; shaded into `lathe-junit` |
 | `lathe-junit`        | Test-capture JUnit Platform listener that records the Surefire fork launch inside the fork                                                                       |
 | `lathe-test-runner`  | Standalone runner that replays captured tests and main methods outside the build                                                                                 |
 | `lathe-compiler`     | Plexus compiler SPI (`hint=lathe`)                                                                                                                               |
@@ -166,8 +166,9 @@ against the `multi-module` invoker workspace — both use the checkout build dir
       requested.
     * **NEVER** nest `if/else` statements more than 2 levels deep. You **MUST** use early returns (
       guard clauses).
-    * **NEVER** hardcode directory names, file names, or shared configuration keys. They **MUST** be
-      defined as constants exclusively inside `LatheLayout.java` or `LatheFlags.java`.
+    * **NEVER** hardcode directory names, file names, or shared configuration keys. A name more
+      than one module reads **MUST** be a constant in `LatheLayout.java` or `LatheFlags.java`; one
+      that a single module owns is a constant in that module.
     * **NEVER** put business logic directly inside Maven Mojo `execute()` methods.
     * **No ad hoc Java parsing:** LSP feature implementations **MUST NOT** parse Java code using
       regex, manual brace matching, string slicing, or custom token scanners. Java syntax and
@@ -195,7 +196,8 @@ against the `multi-module` invoker workspace — both use the checkout build dir
       `Stopwatch`.
     * **NEVER** write raw `try-catch` blocks for simple IO closures if `IOUtil` can handle it.
     * **NEVER** write custom file-walking or path-manipulation logic in local classes. You **MUST**
-      use or extend `FileUtil`.
+      use `FileUtil`, or a file helper of the module that needs it: `lathe-core` holds only what
+      several modules share, as it is shaded into the user's test fork.
 - **Strings**:
     * **NEVER** use chained `+` concatenation for more than two parts. You **MUST** use
       `"%s.%s".formatted(...)`.

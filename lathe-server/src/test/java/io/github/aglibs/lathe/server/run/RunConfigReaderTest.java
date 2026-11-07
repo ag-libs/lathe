@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.entry;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
-import io.github.aglibs.lathe.core.schema.RunKind;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

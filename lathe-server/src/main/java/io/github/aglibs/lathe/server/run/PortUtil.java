@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.core;
+package io.github.aglibs.lathe.server.run;
 
 import java.io.IOException;
 import java.net.ServerSocket;

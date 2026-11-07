@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.core.launch;
+package io.github.aglibs.lathe.server.run;
 
 import io.github.aglibs.validcheck.ValidCheck;
 

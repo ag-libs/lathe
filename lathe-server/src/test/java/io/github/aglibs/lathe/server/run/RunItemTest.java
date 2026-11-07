@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.entry;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
-import io.github.aglibs.lathe.core.schema.RunKind;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

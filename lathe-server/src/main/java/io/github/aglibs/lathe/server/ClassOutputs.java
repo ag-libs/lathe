@@ -4,7 +4,6 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
-import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.io.UncheckedIOException;

@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
-import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;

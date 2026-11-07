@@ -285,6 +285,9 @@ and `navigation/` subpackages, and stop exporting `completion` once `CompletionO
 
 ### D1. `LatheMcpTools` (1,408 lines)
 
+**Done**: `tool(...)`, `McpText`, `McpTextTest`. Notes stay a separate request: folding them in would change all 15
+engine methods' return types for one loop hop.
+
 - One `tool(name, schema, annotations, description, handler)` helper replaces fifteen copies of the same
   definition shape (and the name literal written twice per tool).
 - Text rendering (`*Result`, `*Line`, `noteLines`, `toWire`) → package-private `McpText`.
@@ -293,6 +296,8 @@ and `navigation/` subpackages, and stop exporting `completion` once `CompletionO
 
 ### D2. `LatheEngine` API types
 
+**Done**, except extracting the disk-write transaction.
+
 `diagnostics()` returns lsp4j `Diagnostic`; `LatheDiagnostic` and `LatheLocation` wrap lsp4j types;
 `LatheVerifyChange.deferral` is a `String` that MCP switches on by literal;
 the wire-name parsing of `TestScope`, `CallDirection`, `SymbolScope` lives in the engine.
@@ -300,6 +305,8 @@ Make the engine's results plain values, type the deferral as its enum, move wire
 Extract the disk-write transaction (`writeAndCommit` / `applyFileEdits`) shared by rename, format and fix imports.
 
 ### D3. `LatheWorkspaceService` commands
+
+**Done.**
 
 One `command(parse, work)` helper: widens the result (24 identity `thenApply(x -> x)` today)
 and maps bad arguments to `InvalidParams` for every command (four of 26 do today).
@@ -310,6 +317,8 @@ and maps bad arguments to `InvalidParams` for every command (four of 26 do today
 
 ### E1. OpenJDK sync bypasses the shared writers and the lock contract
 
+**Done.**
+
 `OpenJdkSync` writes `workspace.json`, `java-home` and the params files itself (`Json.write`),
 so it skips write-if-changed and the unchanged-touch signal, ends `java-home` with a line separator the other
 front-ends do not write, and holds a bare `LatheLock` with no heartbeat (a sync longer than two minutes looks
@@ -319,6 +328,9 @@ whole sync.
 
 ### E2. Maven and Gradle repeat the sync pipeline, in different orders
 
+**Done**: `WorkspaceSync`. The capture-under-lock sequences stay apart (Maven locks around javac, Gradle around the copy);
+the OpenJDK `ModuleConfigData` factory is not done.
+
 `SyncCoordinator` and `LatheWorkspaceTask` call the same eight steps (dependency sources, JDK sources,
 JDK type index, server install, manifest, JVM args, sync script, capture prune).
 One `WorkspaceSync.run(WorkspaceInputs)` in `lathe-install`; each front-end keeps only the gathering.
@@ -327,6 +339,12 @@ The capture-under-lock sequence (`LatheCompiler`, `LatheCaptureTask`, OpenJDK) b
 `ModuleConfigData` (15 components) gets a short factory for OpenJDK's two literal-heavy constructions.
 
 ### E3. `lathe-core` carries server-only code (policy decision)
+
+**Done** (decided: relax the rules): `LaunchPlan`, `LaunchOverlay`, `JdwpOptions`, `RunKind` and `PortUtil` moved to
+`server.run`, `WorkspaceStyle` to `server.format`, `SourceTypeScanner` to the server, `ZipCache` to `lathe-install`, each
+with its tests. `ClassSourceFile` stays: it shares a package-private class-file reader with `lathe-install`'s scanner.
+`AGENTS.md` now says a constant or file helper one module owns lives in that module. The server-only `FileUtil`
+methods and single-module `LatheLayout` constants move when next touched, under that rule.
 
 `LaunchPlan`, `LaunchOverlay`, `JdwpOptions`, `RunKind`, `PortUtil`, `WorkspaceStyle`, `SourceTypeScanner`,
 `ClassSourceFile` and about thirteen `FileUtil` methods are used only by the server, yet `lathe-core` is shaded
