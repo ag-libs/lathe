@@ -46,3 +46,19 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   restart the server after it changes. Add anything else (or tune heap/GC) with
   `LATHE_JVM_OPTS`; see
   [installation.md](installation.md#tuning-the-server-jvm-lathe_jvm_opts).
+- **A test passes with the build but fails when run from the editor, unable to find a source or generated
+  file** — Lathe runs a test from its own copy of the compiled classes under `.lathe/`, not from `target/` or
+  `build/`. A test that finds files by walking up from its own class file (`getResource(...).getFile()`,
+  `getProtectionDomain().getCodeSource().getLocation()`) to the build's folders (`src/<sourceSet>/java`,
+  `target/generated-sources/annotations`) lands under `.lathe/` instead: annotation-processor and code-generator
+  tests do this, such as Hibernate ORM's processor tests and Helidon's data-repository tests.
+  To run such a test, run it with the build (`./gradlew :module:test --tests 'com.example.SomeTest'`,
+  `mvn -pl module test -Dtest=SomeTest`); everything else keeps running from the editor.
+  To fix it in the project, find the files without the class file's location, which works for the build and the
+  editor alike:
+  - relative to the working directory, which is the module's own folder for Gradle, Surefire and Lathe:
+    `Path.of("src", "test", "java")`;
+  - or from a system property the build sets, the most robust, since the build knows its layout. On Gradle,
+    `test { systemProperty 'test.sourceDir', file('src/test/java').absolutePath }`; on Maven, in Surefire's
+    `<argLine>-Dtest.sourceDir=${project.basedir}/src/test/java</argLine>`, not `<systemPropertyVariables>`,
+    which Lathe can't see. The test reads `System.getProperty("test.sourceDir")`.

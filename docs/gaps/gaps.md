@@ -1618,40 +1618,6 @@ would touch every replayed launch; reconsider if a project asks for it.
 ---
 
 
-## TE-17 — A test that locates its sources from its own class file fails when replayed
-
-**Status: documented**
-
-**Value: low — Size: M**
-
-**Affects: run and debug of such tests from the editor and MCP, on Maven and Gradle.**
-
-Found while checking the replay of Gradle source sets' tests on Hibernate ORM (2026-11-08).
-
-### Observed behaviour
-
-Hibernate ORM's annotation-processor tests (`TestUtil.getSourceBaseDir`, through `@CompilationTest`) find the sources they compile by walking up from the test's own class file: the folder they climb to must be named after the source set, as in the build's `build/classes/java/<sourceSet>`.
-A replay loads the classes from Lathe's mirror, `.lathe/<module>/<tree>/`, so the test derives `src/test-classes/java` (or `src/classes-jakartaData/java`), finds no source there, and fails before its first assertion; it also creates that empty folder under the workspace.
-This holds for the `test` tree and a source set's tree alike, so it predates source-set launches.
-
-### Fix direction
-
-Replay from the build's own output where it is current, or keep the build's folder names under the mirror; either changes what the mirror stands for, so it needs a design of its own.
-Until then, such tests run with the build.
-
-A first attempt (2026-11-08, pulled from the PR that added source-set launches) loaded the run's own tree from the build's output while that tree's compile stamps matched what the build compiled.
-Its review showed what a correct version must also cover:
-- every tree on the launch's classpath, not only the run's own: a save in `main` or an upstream module recompiles its copy, so test classes from the build's output next to it were compiled against the old API (`NoSuchMethodError`, a stale constant);
-- resources: on Maven they share the test output directory, and the stamps record Java sources only, so a resource saved since the build was not seen;
-- the module lock: the build's output can be mid-write during a sync, and the completeness gate no longer waits on it once the entry maps to no mirror;
-- an output directory several trees share.
-
-### Regression targets
-
-None yet.
-
----
-
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
