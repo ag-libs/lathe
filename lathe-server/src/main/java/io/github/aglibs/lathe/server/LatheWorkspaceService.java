@@ -230,7 +230,7 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<?> createType(final ExecuteCommandParams params) {
     final CreateTypeArgs args = createTypeArgs(params);
-    return host.onLoop(session -> session.queries().createType(args));
+    return host.onLoopFuture(session -> session.queries().createType(args));
   }
 
   private static CreateTypeArgs createTypeArgs(final ExecuteCommandParams params) {

@@ -59,69 +59,21 @@ local function execute(client, bufnr, command, argument, cb)
   util.exec(client, bufnr, command, { argument }, cb, { level = vim.log.levels.WARN })
 end
 
--- ── file IO ──────────────────────────────────────────────────────────────────
+-- ── opening ──────────────────────────────────────────────────────────────────
 
--- The server content always ends with "\n"; drop the trailing empty split element so writefile
--- reproduces it exactly rather than appending a second newline.
-function M._lines(content)
-  local lines = vim.split(content, "\n")
-  if lines[#lines] == "" then
-    table.remove(lines)
-  end
-  return lines
-end
-
--- Write the server-rendered file, open it, and drop the caret where the server asked (LSP 0-based
--- line -> Neovim 1-based row). Never overwrites: if the target already exists, just open it.
+-- Open the file the server created (and already compiled, so it never reads as unbuilt), the caret
+-- where the server asked (LSP 0-based line -> Neovim 1-based row). A file that already existed was
+-- left as it was: just open it.
 function M._open(result)
-  if vim.fn.filereadable(result.path) == 1 then
-    notify(
-      vim.fn.fnamemodify(result.path, ":t") .. " already exists — opening it",
-      vim.log.levels.INFO
-    )
-    vim.cmd.edit(vim.fn.fnameescape(result.path))
+  local path = vim.uri_to_fname(result.uri)
+  if result.existed then
+    notify(vim.fn.fnamemodify(path, ":t") .. " already exists — opening it", vim.log.levels.INFO)
+    vim.cmd.edit(vim.fn.fnameescape(path))
     return
   end
 
-  vim.fn.mkdir(vim.fn.fnamemodify(result.path, ":h"), "p")
-  vim.fn.writefile(M._lines(result.content), result.path)
-  vim.cmd.edit(vim.fn.fnameescape(result.path))
+  vim.cmd.edit(vim.fn.fnameescape(path))
   pcall(vim.api.nvim_win_set_cursor, 0, { result.caret.line + 1, result.caret.character })
-  M._compile_on_attach(vim.api.nvim_get_current_buf())
-end
-
--- Opening a file only analyzes it; the .class is produced by a FULL compile on save. So save the
--- freshly-created buffer once the Lathe server attaches -- otherwise the new type has no bytecode in
--- .lathe/ and reads as an unbuilt "stale" source, triggering a spurious sync prompt.
-function M._compile_on_attach(bufnr)
-  local function save()
-    if not vim.api.nvim_buf_is_valid(bufnr) then
-      return
-    end
-
-    pcall(function()
-      vim.api.nvim_buf_call(bufnr, function()
-        vim.cmd("silent keepalt write")
-      end)
-    end)
-  end
-
-  -- Defer onto the main loop: the save fires format_on_save (a blocking format request) and didSave,
-  -- neither of which is safe to run nested inside the LspAttach callback we may be in.
-  if lathe_client(bufnr) then
-    return vim.schedule(save)
-  end
-
-  vim.api.nvim_create_autocmd("LspAttach", {
-    buffer = bufnr,
-    callback = function(args)
-      local client = vim.lsp.get_client_by_id(args.data.client_id)
-      if client and client.name == "lathe" then
-        vim.schedule(save)
-        return true
-      end
-    end,
-  })
 end
 
 -- ── naming helpers ───────────────────────────────────────────────────────────

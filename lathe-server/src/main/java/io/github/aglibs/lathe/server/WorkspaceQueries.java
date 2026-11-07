@@ -1,9 +1,14 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
@@ -15,9 +20,11 @@ final class WorkspaceQueries {
   private static final Logger LOG = Logger.getLogger(WorkspaceQueries.class.getName());
 
   private final WorkspaceState state;
+  private final WritePass writePass;
 
-  WorkspaceQueries(final WorkspaceState state) {
+  WorkspaceQueries(final WorkspaceState state, final WritePass writePass) {
     this.state = state;
+    this.writePass = writePass;
   }
 
   // The stack frames among a run's output lines, resolved to their sources. The roots are read on
@@ -27,7 +34,30 @@ final class WorkspaceQueries {
     return CompletableFuture.supplyAsync(() -> StackFrames.resolve(lines, sourceRoots));
   }
 
-  CreateTypeResult createType(final CreateTypeArgs args) {
+  // Writes the new type's file and has the write pass compile it, as an editor save does, so the
+  // type has its classes in .lathe/ before the editor opens it and never reads as unbuilt. An
+  // existing file is never overwritten: the answer says so and the editor just opens it.
+  CompletableFuture<CreatedType> createType(final CreateTypeArgs args) {
+    final NewTypeSource source = renderType(args);
+    final Path path = Path.of(source.path());
+    final String uri = LatheUri.fromPath(path);
+    if (Files.exists(path)) {
+      return CompletableFuture.completedFuture(new CreatedType(uri, null, true));
+    }
+
+    IOUtil.unchecked(() -> write(path, source.content()));
+    return writePass
+        .writeReported(Set.of(path))
+        .thenApply(written -> new CreatedType(uri, source.caret(), false));
+  }
+
+  // CREATE_NEW: a file that appeared since the check is not overwritten either.
+  private static void write(final Path path, final String content) throws IOException {
+    Files.createDirectories(path.getParent());
+    Files.writeString(path, content, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
+  }
+
+  private NewTypeSource renderType(final CreateTypeArgs args) {
     // module-info.java always belongs to the main source root, whatever scope the client sent.
     final var scope = args.type() == TypeKind.MODULE_INFO ? SourceScope.MAIN : args.kind();
     final var sourceRoot = state.layout().sourceRootFor(args.moduleRel(), scope);

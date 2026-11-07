@@ -114,7 +114,7 @@ class NewTypeTemplatesTest {
     assertThat(result.caret().getCharacter()).isZero();
   }
 
-  private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
+  private NewTypeSource render(final TypeKind type, final String name, final String pkg) {
     return NewTypeTemplates.render(sourceRoot, pkg, type, name);
   }
 

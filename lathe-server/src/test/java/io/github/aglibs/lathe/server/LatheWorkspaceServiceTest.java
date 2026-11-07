@@ -209,8 +209,9 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(command(LatheCommands.WORKSPACE_PACKAGES, json("moduleRel", "module")))
         .asInstanceOf(InstanceOfAssertFactories.list(PackageEntry.class))
         .containsExactly(new PackageEntry("com.example", "main"));
+    final Path cartFile = shop.shop().resolveSibling("Cart.java");
     final var cart =
-        (CreateTypeResult)
+        (CreatedType)
             command(
                 LatheCommands.TYPES_CREATE,
                 json(
@@ -224,10 +225,13 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                     "class",
                     "name",
                     "Cart"));
-    assertThat(Path.of(cart.path())).isEqualTo(shop.shop().resolveSibling("Cart.java"));
-    assertThat(cart.content()).contains("class Cart");
-    final var moduleInfo =
-        (CreateTypeResult)
+    assertThat(cart.uri()).isEqualTo(LatheUri.fromPath(cartFile));
+    assertThat(cart.existed()).isFalse();
+    assertThat(Files.readString(cartFile)).contains("class Cart");
+    assertThat(tmp.resolve(".lathe/module/classes/com/example/Cart.class"))
+        .as("compiled before the answer, so it never reads as unbuilt")
+        .exists();
+    assertThat(
             command(
                 LatheCommands.TYPES_CREATE,
                 json(
@@ -236,14 +240,13 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                     "kind",
                     "main",
                     "pkg",
-                    "",
+                    "com.example",
                     "type",
-                    "module-info",
+                    "class",
                     "name",
-                    ""));
-    assertThat(moduleInfo.content())
-        .as("a module-info sent without a name is named after the base package")
-        .contains("module com.example");
+                    "Cart")))
+        .as("an existing file is opened, never overwritten")
+        .isEqualTo(new CreatedType(cart.uri(), null, true));
     assertThat(
             command(
                 LatheCommands.TYPES_DESTINATIONS,
@@ -289,6 +292,26 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
             command(LatheCommands.RESOURCES_REFRESH, json("uri", shop.shop().toUri().toString())))
         .as("a source is not a tracked resource")
         .isNull();
+
+    // Last: a module-info makes the module modular for whatever follows.
+    final var moduleInfo =
+        (CreatedType)
+            command(
+                LatheCommands.TYPES_CREATE,
+                json(
+                    "moduleRel",
+                    "module",
+                    "kind",
+                    "main",
+                    "pkg",
+                    "",
+                    "type",
+                    "module-info",
+                    "name",
+                    ""));
+    assertThat(Files.readString(LatheUri.toPath(moduleInfo.uri())))
+        .as("a module-info sent without a name is named after the base package")
+        .contains("module com.example");
   }
 
   @Test

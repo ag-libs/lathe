@@ -73,10 +73,12 @@ local function item_by(items, predicate)
   end
 end
 
--- A minimal lathe.types.create stub result. Content/caret are irrelevant to these tests -- they assert
--- the request arguments and IO -- so this only has to be something _open can write and open.
+-- A lathe.types.create stub result: the server wrote (and compiled) the file at `path`. The specs
+-- write a placeholder there so opening it reads a real file.
 local function result(path)
-  return { path = path, content = "x\n", caret = { line = 0, character = 0 } }
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({ "x" }, path)
+  return { uri = vim.uri_from_fname(path), caret = { line = 0, character = 0 }, existed = false }
 end
 
 -- Stub every pick from a plan: kind (New:), the destination (Where: -- an existing row by `package`
@@ -111,9 +113,6 @@ end
 -- ── pure helpers ─────────────────────────────────────────────────────────────
 
 do
-  spec.check("lines drop the trailing empty", table.concat(new._lines("a\nb\n"), "|"), "a|b")
-  spec.check("lines keep interior blanks", table.concat(new._lines("a\n\nb\n"), "|"), "a||b")
-
   spec.check(
     "float_module leads with the context module",
     table.concat(new._float_module({ "a", "b", "c" }, "c"), ","),
@@ -203,7 +202,7 @@ do -- anchored: :LatheNew <kind> in a buffer fills the destination from context;
   spec.check("anchored: pkg", args.pkg, "com.example.core")
   spec.check("anchored: name from the prompt", args.name, "Foo")
   spec.check("anchored: no destination picker", where_opened, false)
-  spec.check("anchored: file created", vim.fn.filereadable(path), 1)
+  spec.check("anchored: the created file is opened", vim.api.nvim_buf_get_name(0), path)
 end
 
 do -- typed: a fuzzy-completed package goes to the server's best destination for it; no picker
@@ -493,7 +492,7 @@ do -- server not attached -> warns, no picker
   spec.check("no server never opens the kind picker", picked, false)
 end
 
-do -- _open opens an existing file rather than overwriting it
+do -- _open opens a file the server found already there, saying so
   local path = vim.fn.tempname() .. "/Dup.java"
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
   vim.fn.writefile({ "existing" }, path)
@@ -502,35 +501,10 @@ do -- _open opens an existing file rather than overwriting it
     notified = true
   end
 
-  new._open({ path = path, content = "new\n", caret = { line = 0, character = 0 } })
+  new._open({ uri = vim.uri_from_fname(path), existed = true })
 
   spec.check("existing file notifies", notified, true)
-  spec.check("existing file not overwritten", table.concat(vim.fn.readfile(path), "\n"), "existing")
   spec.check("existing file opened", vim.api.nvim_buf_get_name(0):match("Dup%.java$") ~= nil, true)
-end
-
-do -- compile-on-attach saves the new buffer (→ FULL compile → .class) when the Lathe client is attached
-  vim.lsp.get_clients = function(_)
-    return { { name = "lathe" } }
-  end
-  local wrote = false
-  local real_cmd = vim.cmd
-  vim.cmd = setmetatable({}, {
-    __call = function(_, command)
-      if type(command) == "string" and command:match("write") then
-        wrote = true
-      end
-    end,
-  })
-  local buf = vim.api.nvim_create_buf(false, true)
-
-  new._compile_on_attach(buf)
-  vim.wait(200, function()
-    return wrote
-  end)
-
-  vim.cmd = real_cmd
-  spec.check("compile-on-attach saves when the Lathe client is attached", wrote, true)
 end
 
 do -- a Ctrl-C at a picker cancels cleanly instead of surfacing the LSP-callback interrupt
