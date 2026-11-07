@@ -65,11 +65,13 @@ final class FormatService {
 
   // The formatter the client's settings or the workspace style file name, before the first format.
   void use(final FormatEngine engine) {
+    eventLoop.checkOnLoop();
     this.engine = engine;
   }
 
   // The formatter the workspace style file pins, for a client that sends no settings (the agent).
   void useWorkspaceFormatter(final Path root) {
+    eventLoop.checkOnLoop();
     final FormatterSpec spec = FormatEngines.workspaceSpec(root);
     pinned = spec != null;
     engine = spec == null ? null : FormatEngines.forSpec(spec, root);
@@ -105,6 +107,7 @@ final class FormatService {
 
   // No edits without a formatter.
   CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
+    eventLoop.checkOnLoop();
     final FormatEngine engine = this.engine;
     if (engine == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -116,6 +119,7 @@ final class FormatService {
   // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
   // stray request gets no edits.
   CompletableFuture<List<TextEdit>> formatRangesFuture(final String uri, final List<Range> ranges) {
+    eventLoop.checkOnLoop();
     final FormatEngine engine = this.engine;
     if (engine == null || !engine.formatsRanges()) {
       return CompletableFuture.completedFuture(List.of());
@@ -129,6 +133,7 @@ final class FormatService {
   // carries the formatter's reason, or why there is no formatter. Only a pinned formatter whose
   // jars are missing is one a sync can supply.
   CompletableFuture<List<TextEdit>> formatOrRefuseFuture(final String uri) {
+    eventLoop.checkOnLoop();
     final FormatEngine engine = this.engine;
     if (engine == null) {
       final String reason =
