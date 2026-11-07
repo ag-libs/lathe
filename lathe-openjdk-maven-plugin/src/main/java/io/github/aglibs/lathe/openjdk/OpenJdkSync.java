@@ -1,18 +1,20 @@
 package io.github.aglibs.lathe.openjdk;
 
+import io.github.aglibs.lathe.core.BuildLock;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.install.CompileCapture;
 import io.github.aglibs.lathe.install.SyncScript;
+import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,43 +53,50 @@ public final class OpenJdkSync {
       throw new IOException("no built modules at %s — build the JDK first".formatted(modulesDir));
     }
 
-    // Held for the whole write, so an editor's server never reconciles a half-written .lathe/.
-    final Path lock = LatheLayout.reactorLockFile(latheDir(workspaceRoot));
-    LatheLock.acquire(lock);
-    try {
-      final var moduleCmdlines = new ArrayList<Path>();
-      final var moduleRoots = new ArrayList<Path>();
-      try (Stream<Path> dirs = Files.list(modulesDir)) {
-        for (final Path moduleOut : dirs.filter(Files::isDirectory).sorted().toList()) {
-          final var module = moduleOut.getFileName().toString();
-          final Path cmdline = moduleOut.resolve("_the.%s%s".formatted(module, BATCH_SUFFIX));
-          if (!Files.isRegularFile(cmdline)) {
-            log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
-            continue;
-          }
-          moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot));
-          moduleCmdlines.add(cmdline);
+    final var moduleCmdlines = new ArrayList<Path>();
+    final var moduleRoots = new ArrayList<Path>();
+    try (Stream<Path> dirs = Files.list(modulesDir)) {
+      for (final Path moduleOut : dirs.filter(Files::isDirectory).sorted().toList()) {
+        final var module = moduleOut.getFileName().toString();
+        final Path cmdline = moduleOut.resolve("_the.%s%s".formatted(module, BATCH_SUFFIX));
+        if (!Files.isRegularFile(cmdline)) {
+          log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
+          continue;
         }
+        moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot));
+        moduleCmdlines.add(cmdline);
       }
+    }
 
-      final List<Path> toolCmdlines =
-          syncBuildTools(buildDir, workspaceRoot, List.copyOf(moduleRoots));
+    final List<Path> toolCmdlines =
+        syncBuildTools(buildDir, workspaceRoot, List.copyOf(moduleRoots));
 
-      // make touches each batch's marker after it compiles, so the server's build-file watch
-      // notices a rebuilt module or tool and prompts a re-sync.
-      final List<String> buildFiles =
-          Stream.concat(moduleCmdlines.stream(), toolCmdlines.stream())
-              .map(cmdline -> FileUtil.slashed(workspaceRoot.relativize(batchFile(cmdline, ""))))
-              .toList();
-      final SyncScript syncScript = syncScript(buildDir, serverVersion, systemProperties);
-      writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
-      writeJavaHome(workspaceRoot, explodedJdk);
-      syncScript.write(workspaceRoot);
-      log.accept(
-          "[sync] %d module(s) + %d tool(s) -> %s"
-              .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));
+    // make touches each batch's marker after it compiles, so the server's build-file watch
+    // notices a rebuilt module or tool and prompts a re-sync.
+    final List<String> buildFiles =
+        Stream.concat(moduleCmdlines.stream(), toolCmdlines.stream())
+            .map(cmdline -> FileUtil.slashed(workspaceRoot.relativize(batchFile(cmdline, ""))))
+            .toList();
+    final SyncScript syncScript = syncScript(buildDir, serverVersion, systemProperties);
+    writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
+    WorkspaceManifestWriter.writeJavaHome(latheDir(workspaceRoot), explodedJdk);
+    syncScript.write(workspaceRoot);
+    log.accept(
+        "[sync] %d module(s) + %d tool(s) -> %s"
+            .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));
+  }
+
+  // Runs the whole sync, the server install included, under .lathe/'s build lock, heartbeated so
+  // a long sync never looks crashed: an editor's server never reconciles a half-written .lathe/.
+  // The first sync creates .lathe/ to hold it.
+  public static void underBuildLock(final Path workspaceRoot, final IOUtil.IORunnable sync)
+      throws IOException {
+    final Path latheDir = Files.createDirectories(latheDir(workspaceRoot));
+    final Optional<BuildLock> lock = BuildLock.hold(latheDir);
+    try {
+      sync.run();
     } finally {
-      LatheLock.release(lock);
+      lock.ifPresent(BuildLock::close);
     }
   }
 
@@ -227,7 +236,7 @@ public final class OpenJdkSync {
       final List<Path> roots)
       throws IOException {
     Files.createDirectories(latheModuleDir);
-    Json.write(config, latheModuleDir.resolve(LatheLayout.paramsFileName(SOURCE_TREE)));
+    CompileCapture.writeParams(latheModuleDir, config);
     // No compiled content: fingerprinting every JDK source on each sync costs more than
     // verify_change's revert check, or the stale scan's touch check, is worth there.
     CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots), Map.of());
@@ -289,14 +298,7 @@ public final class OpenJdkSync {
             List.of(),
             List.of(),
             buildTool.toString());
-    Json.write(manifest, latheDir(workspaceRoot).resolve(LatheLayout.WORKSPACE_JSON));
-  }
-
-  private static void writeJavaHome(final Path workspaceRoot, final Path explodedJdk)
-      throws IOException {
-    Files.writeString(
-        latheDir(workspaceRoot).resolve(LatheLayout.JAVA_HOME_FILE),
-        explodedJdk + System.lineSeparator());
+    WorkspaceManifestWriter.writeManifest(latheDir(workspaceRoot), manifest);
   }
 
   // Re-runs this goal pinned to the version and build that wrote it, on the Maven and JDK that ran
