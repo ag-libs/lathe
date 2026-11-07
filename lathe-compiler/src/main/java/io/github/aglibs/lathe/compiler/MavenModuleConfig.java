@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.compiler;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.util.List;
@@ -14,8 +15,9 @@ final class MavenModuleConfig {
 
   static ModuleConfigData of(final CompilerConfiguration config) {
     final var genSources = config.getGeneratedSourcesDirectory();
+    final String sourceTree = LatheCompiler.sourceTree(config);
     return new ModuleConfigData(
-        LatheCompiler.sourceTree(config),
+        sourceTree,
         config.getOutputLocation(),
         genSources != null ? genSources.toString() : null,
         nullToEmpty(config.getSourceLocations()),
@@ -29,7 +31,8 @@ final class MavenModuleConfig {
         config.getProc(),
         compilerArgs(config),
         AnalysisMode.CLASSPATH,
-        false);
+        false,
+        LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
   }
 
   private static List<String> compilerArgs(final CompilerConfiguration config) {

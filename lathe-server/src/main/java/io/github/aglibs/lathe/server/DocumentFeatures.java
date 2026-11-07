@@ -77,10 +77,9 @@ final class DocumentFeatures {
   // The tests of the file's type, or from a test the type it tests.
   TestCounterparts testCounterparts(final String uri) {
     final Path file = LatheUri.toPath(uri);
-    final ContextInfo context = state.layout().resolveContext(file);
     return TestCounterparts.find(
         file,
-        context == null ? "" : context.pkg(),
+        state.layout().filePackage(file),
         state.registry()::moduleSourceFor,
         reactorIndex.current(),
         state.registry().allSourceRoots());

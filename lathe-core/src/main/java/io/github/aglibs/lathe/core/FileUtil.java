@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -75,6 +76,18 @@ public final class FileUtil {
 
     try (final var walk = Files.walk(root)) {
       return walk.filter(Files::isDirectory).filter(path -> !path.equals(root)).sorted().toList();
+    }
+  }
+
+  // The regular files directly in dir matching keep, sorted, not below it; empty when dir is not a
+  // directory.
+  public static List<Path> filesIn(final Path dir, final Predicate<Path> keep) throws IOException {
+    if (!Files.isDirectory(dir)) {
+      return List.of();
+    }
+
+    try (final Stream<Path> list = Files.list(dir)) {
+      return list.filter(Files::isRegularFile).filter(keep).sorted().toList();
     }
   }
 

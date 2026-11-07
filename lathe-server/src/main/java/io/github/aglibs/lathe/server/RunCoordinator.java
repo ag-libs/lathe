@@ -34,6 +34,7 @@ import io.github.aglibs.lathe.server.run.RunItem;
 import io.github.aglibs.lathe.server.run.RunKind;
 import io.github.aglibs.lathe.server.run.RunOverlay;
 import io.github.aglibs.lathe.server.run.RunOverlaySet;
+import io.github.aglibs.lathe.server.run.SourceSetScope;
 import io.github.aglibs.lathe.server.run.TestDiscovery;
 import io.github.aglibs.lathe.server.run.TestDiscoveryStore;
 import io.github.aglibs.lathe.server.run.TestEventParams;
@@ -483,6 +484,11 @@ final class RunCoordinator {
       throws IOException {
     final Path root = inputs.root();
     final ReactorRewrite reactorRewrite = inputs.reactorRewrite();
+    final Optional<String> uncaptured = SourceSetScope.uncapturedReason(root, moduleRel, mainClass);
+    if (uncaptured.isPresent()) {
+      return Replay.blocked(List.of(uncaptured.get()));
+    }
+
     if (MainClassScope.isTestScope(root, moduleRel, mainClass)) {
       final CheckedTestLaunch captured =
           checkedTestLaunch(root, reactorRewrite, moduleRel, List.of());
@@ -626,6 +632,22 @@ final class RunCoordinator {
       final String moduleRel,
       final List<TestSelection> selections)
       throws IOException {
+    final List<String> uncaptured =
+        selections.stream()
+            .filter(
+                selection ->
+                    selection.kind() == TestSelectionKind.CLASS
+                        || selection.kind() == TestSelectionKind.METHOD)
+            .map(selection -> selection.value().split("#", 2)[0])
+            .flatMap(
+                className ->
+                    SourceSetScope.uncapturedReason(workspaceRoot, moduleRel, className).stream())
+            .distinct()
+            .toList();
+    if (!uncaptured.isEmpty()) {
+      return new CheckedTestLaunch(null, CompletenessResult.blocked(uncaptured));
+    }
+
     final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
     if (template.isEmpty()) {
       return new CheckedTestLaunch(

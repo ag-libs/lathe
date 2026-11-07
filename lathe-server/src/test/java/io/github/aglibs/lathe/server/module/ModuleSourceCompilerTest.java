@@ -638,6 +638,7 @@ class ModuleSourceCompilerTest {
         config.compilerArgs(),
         config.analysisMode(),
         config.externalOutput(),
+        null,
         config.reactorRewrite());
   }
 

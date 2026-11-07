@@ -27,11 +27,29 @@ class ModuleConfigDataTest {
             null,
             List.of("--enable-preview"),
             AnalysisMode.MODULE_SYSTEM,
-            true);
+            true,
+            null);
     assertThat(data.sourceTree()).isEqualTo("classes");
     assertThat(data.compilerArgs()).containsExactly("--enable-preview");
     assertThat(data.analysisMode()).isEqualTo(AnalysisMode.MODULE_SYSTEM);
     assertThat(data.externalOutput()).isTrue();
+  }
+
+  // The front-end says whether a tree is test code; a params file from before the flag existed
+  // says nothing, and only its test-classes tree is.
+  @Test
+  void constructor_testCodeGivenOrAbsent_givenWinsAbsentFollowsTestClasses() {
+    assertThat(config("classes-integrationTest", true).testCode()).isTrue();
+    assertThat(config("classes-jmh", false).testCode()).isFalse();
+    assertThat(config("test-classes", null).testCode()).isTrue();
+    assertThat(config("classes", null).testCode()).isFalse();
+    assertThat(config("classes-integrationTest", null).testCode()).isFalse();
+  }
+
+  private static ModuleConfigData config(final String tree, final Boolean testCode) {
+    return new ModuleConfigData(
+        tree, "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false, false,
+        null, null, null, false, testCode);
   }
 
   @Test
@@ -39,7 +57,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, null, null, false);
+            false, null, null, null, false, null);
     assertThat(data.analysisMode()).isEqualTo(AnalysisMode.CLASSPATH);
   }
 
@@ -49,7 +67,7 @@ class ModuleConfigDataTest {
             () ->
                 new ModuleConfigData(
                     null, "/out", null, List.of(), List.of(), List.of(), List.of(), null, null,
-                    false, false, null, null, null, false))
+                    false, false, null, null, null, false, null))
         .hasMessageContaining("sourceTree");
   }
 
@@ -58,7 +76,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, null, null, false);
+            false, null, null, null, false, null);
     assertThat(data.compilerArgs()).isEmpty();
     assertThat(data.encoding()).isEqualTo("UTF-8");
   }
@@ -70,7 +88,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, mutable, null, false);
+            false, null, mutable, null, false, null);
     mutable.add("-Abar");
     assertThat(data.compilerArgs()).containsExactly("-Afoo");
   }
