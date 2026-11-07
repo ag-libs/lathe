@@ -1,8 +1,12 @@
 package io.github.aglibs.lathe.maven.extension;
 
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -65,6 +69,41 @@ final class LatheModelInjector {
 
   void injectCaptureDependency(final MavenProject project) {
     putLatheDependency(project.getDependencies(), LatheLayout.Maven.JUNIT_ARTIFACT_ID, "test");
+  }
+
+  // A capture-only run needs one test JVM to start, not every test class: the launch is the same
+  // whichever classes run, and one class starts the JVM, a class without tests too, while every
+  // class costs a discovery of each (minutes on a large module). Surefire reads its test selection
+  // from the module's properties when the build names none. Nothing is compiled yet, so the class
+  // comes from the test sources, the first in name order; a module whose tests are generated or not
+  // Java keeps running them all.
+  void injectCaptureClass(final MavenProject project) {
+    final Properties properties = project.getProperties();
+    if (properties.containsKey(LatheLayout.Maven.SUREFIRE_TEST_PROPERTY)) {
+      return;
+    }
+
+    project.getTestCompileSourceRoots().stream()
+        .flatMap(
+            root ->
+                IOUtil.unchecked(
+                    () -> FileUtil.walkFiles(Path.of(root), LatheModelInjector::isTypeSource))
+                    .stream())
+        .map(FileUtil::javaTypeName)
+        .sorted()
+        .findFirst()
+        .ifPresent(
+            name -> {
+              properties.setProperty(LatheLayout.Maven.SUREFIRE_TEST_PROPERTY, name);
+              properties.setProperty(
+                  LatheLayout.Maven.SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY, "false");
+            });
+  }
+
+  private static boolean isTypeSource(final Path path) {
+    return FileUtil.isJavaFile(path)
+        && !path.endsWith(LatheLayout.MODULE_INFO_JAVA)
+        && !path.endsWith(LatheLayout.PACKAGE_INFO_JAVA);
   }
 
   /**
