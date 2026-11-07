@@ -4,6 +4,7 @@ import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.analysis.StaticImportCandidates;

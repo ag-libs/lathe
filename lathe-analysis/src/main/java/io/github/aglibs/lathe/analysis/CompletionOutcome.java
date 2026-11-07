@@ -1,6 +1,5 @@
-package io.github.aglibs.lathe.analysis.completion;
+package io.github.aglibs.lathe.analysis;
 
-import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 
@@ -20,7 +19,7 @@ public record CompletionOutcome(
     return new CompletionOutcome(items, null, false);
   }
 
-  static CompletionOutcome incomplete(final List<CompletionItem> items) {
+  public static CompletionOutcome incomplete(final List<CompletionItem> items) {
     return new CompletionOutcome(items, null, true);
   }
 }

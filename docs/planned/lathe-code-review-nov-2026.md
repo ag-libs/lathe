@@ -268,6 +268,12 @@ catches with tests before replacing it.
 
 ### C5. Packages and exports
 
+**Done in part**: `DeclarationLocator`, `HoverFormatter` and `RenameConflicts` are package-private, and `completion` is no
+longer exported (`CompletionOutcome`, the one type the server used, moved to the API package). The `refactor/` and
+`navigation/` subpackages are not done: those classes use package-private helpers of the root package, so moving them
+would make those helpers public in the exported package and widen, not narrow, the API. Worth doing only with an
+unexported `internal` package for the shared helpers.
+
 The root package holds 91 files, all exported. Five public types are used by no other package or module
 (`DeclarationLocator`, `HoverFormatter`, `JavadocLocator`, `RenameConflicts`, `TypeHierarchyItemData`):
 make them package-private now. Later: `refactor/` (with `CodeActionSupport` and `ExtractionSupport` split by concern)

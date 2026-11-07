@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.analysis.HierarchyFeatures;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
@@ -14,7 +15,6 @@ import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;

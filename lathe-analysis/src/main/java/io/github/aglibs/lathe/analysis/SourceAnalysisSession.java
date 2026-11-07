@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.analysis.completion.CompletionEngine;
-import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.completion.CompletionRequest;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;

@@ -10,10 +10,10 @@ import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
-import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.Json;

@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;

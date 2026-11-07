@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.core.LatheUri;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
