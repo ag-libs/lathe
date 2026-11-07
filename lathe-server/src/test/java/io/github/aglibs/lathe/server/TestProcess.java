@@ -44,6 +44,7 @@ public final class TestProcess {
   // pid, then sleeps, or exits (killing its children on exit first, as the servers do).
   // marked: prints output around the test runner's markers (one test, a gap, two at once).
   // await gate file: waits until the gate file exists, then uppercases the file like upper.
+  // prop name: prints the system property's value.
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
       case "upper" -> upper(args);
@@ -57,6 +58,7 @@ public final class TestProcess {
       case "spawn" -> spawn(args.length > 1 ? args[1] : "");
       case "marked" -> marked();
       case "await" -> await(Path.of(args[1]), args[2]);
+      case "prop" -> System.out.println(System.getProperty(args[1]));
       default -> throw new IllegalArgumentException(args[0]);
     }
   }

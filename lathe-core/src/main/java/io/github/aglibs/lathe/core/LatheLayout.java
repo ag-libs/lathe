@@ -63,6 +63,10 @@ public final class LatheLayout {
   // A run/test launch too long for one command line passes its arguments in a temp argfile.
   public static final String LAUNCH_ARGFILE_PREFIX = "lathe-launch-";
   public static final String ARGFILE_SUFFIX = ".args";
+  // The environment variables a JVM or the java launcher adds options from. A captured launch
+  // already holds what they gave the build's test JVM, so a launch from it does not inherit them.
+  public static final List<String> JVM_OPTIONS_VARIABLES =
+      List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS");
   // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
   public static final String REACTOR_LOCK_FILE = "lathe.lock";

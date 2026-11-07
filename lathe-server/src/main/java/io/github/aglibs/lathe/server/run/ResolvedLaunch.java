@@ -7,12 +7,15 @@ import java.util.Map;
 /**
  * A fully resolved launch: the command line plus the process-level overlay (environment merge and
  * working directory). {@code cwd} is null when the run should inherit the server's working
- * directory.
+ * directory. {@code unsetEnv} names the server's variables the process does not inherit; {@code
+ * env} still sets any of them.
  */
-public record ResolvedLaunch(List<String> argv, Map<String, String> env, Path cwd) {
+public record ResolvedLaunch(
+    List<String> argv, Map<String, String> env, List<String> unsetEnv, Path cwd) {
 
   public ResolvedLaunch {
     argv = List.copyOf(argv);
     env = Map.copyOf(env);
+    unsetEnv = List.copyOf(unsetEnv);
   }
 }

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.run;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.LaunchOverlay;
 import io.github.aglibs.lathe.core.launch.LaunchPlan;
@@ -41,9 +42,11 @@ public final class RunOverlay {
     final List<String> argv =
         LaunchPlan.forMain(
             template, reactorRewrite, mainClass, launchOverlay(item, workspaceRoot), jdwp);
+    // Built from the build's paths, not a captured JVM: the JVM-option variables still apply.
     return new ResolvedLaunch(
         argv,
         resolveEnv(item, workspaceRoot),
+        List.of(),
         resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
@@ -60,6 +63,7 @@ public final class RunOverlay {
     return new ResolvedLaunch(
         argv,
         resolveEnv(item, workspaceRoot),
+        LatheLayout.JVM_OPTIONS_VARIABLES,
         resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
@@ -84,6 +88,7 @@ public final class RunOverlay {
     return new ResolvedLaunch(
         argv,
         resolveEnv(item, workspaceRoot),
+        LatheLayout.JVM_OPTIONS_VARIABLES,
         resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
