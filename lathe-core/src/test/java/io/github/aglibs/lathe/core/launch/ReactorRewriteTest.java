@@ -64,9 +64,11 @@ final class ReactorRewriteTest {
         .isEqualTo(os("/workspace/app/target/test-classes"));
     assertThat(keeping.toLathe(os("/workspace/app/target/classes")))
         .isEqualTo(os("/workspace/.lathe/app/classes"));
+    assertThat(keeping.kept()).containsExactly(Path.of(os("/workspace/app/target/test-classes")));
     assertThat(REWRITE.toLathe(os("/workspace/app/target/test-classes")))
         .as("the rewrite it came from is unchanged")
         .isEqualTo(os("/workspace/.lathe/app/test-classes"));
+    assertThat(REWRITE.kept()).isEmpty();
   }
 
   @Test

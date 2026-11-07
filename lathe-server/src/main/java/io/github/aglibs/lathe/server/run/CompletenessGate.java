@@ -87,7 +87,8 @@ public final class CompletenessGate {
 
   // A directory in a reactor module's build directory that no mirror stands for, such as a copy of
   // the classes the build tests instead of its compile output: the launch runs it as the last build
-  // left it, so it may not hold the latest edits.
+  // left it, so it may not hold the latest edits. An output the run keeps on purpose, as current,
+  // is not one.
   private static List<String> lastBuildNotes(
       final List<String> paths, final Path workspaceRoot, final ReactorRewrite reactorRewrite) {
     final Set<Path> buildDirs =
@@ -99,6 +100,7 @@ public final class CompletenessGate {
     return paths.stream()
         .map(path -> Path.of(path).normalize())
         .filter(path -> !reactorRewrite.mirrors().containsKey(path))
+        .filter(path -> !reactorRewrite.kept().contains(path))
         .filter(path -> buildDirs.stream().anyMatch(path::startsWith))
         .filter(Files::isDirectory)
         .distinct()

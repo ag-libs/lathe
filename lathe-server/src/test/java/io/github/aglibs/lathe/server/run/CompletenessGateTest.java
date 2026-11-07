@@ -121,7 +121,8 @@ final class CompletenessGateTest {
 
   // A build that tests a copy of its classes (a multi-release overlay in classes-jdk21): no mirror
   // stands for the copy, so the run says it takes it from the last build instead of running it
-  // silently; mirrored outputs and directories outside any build directory say nothing.
+  // silently; mirrored outputs, directories outside any build directory, and an output the run
+  // keeps on purpose say nothing.
   @Test
   void verify_copyOfClassesInABuildDir_openWithNote_mirroredAndOutsideDirsNot() throws IOException {
     seedModule("dep", LatheLayout.CLASSES_DIR);
@@ -144,6 +145,17 @@ final class CompletenessGateTest {
         .asString()
         .startsWith("dep/target/classes-jdk21 runs as the last build left it");
     assertThat(CompletenessGate.verify(testLaunch(), workspaceRoot, rewrite()).notes()).isEmpty();
+    // The run's own test classes kept from the build's output, as current, are no stale copy.
+    mavenBuilt("app/target/test-classes");
+    assertThat(
+            CompletenessGate.verify(
+                    data,
+                    workspaceRoot,
+                    rewrite().keeping(workspaceRoot.resolve("app/target/test-classes")))
+                .notes())
+        .singleElement()
+        .asString()
+        .startsWith("dep/target/classes-jdk21 runs as the last build left it");
   }
 
   // A jar the build deleted after the capture (Develocity's test launcher copies its jars to a
