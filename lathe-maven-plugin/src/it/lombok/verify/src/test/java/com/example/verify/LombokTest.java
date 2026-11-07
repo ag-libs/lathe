@@ -4,10 +4,10 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.example.itsupport.Await;
-import com.example.itsupport.LspSession;
-import com.example.itsupport.McpSession;
-import com.example.itsupport.Os;
+import io.github.aglibs.lathe.itsupport.Await;
+import io.github.aglibs.lathe.itsupport.LspSession;
+import io.github.aglibs.lathe.itsupport.McpSession;
+import io.github.aglibs.lathe.itsupport.Os;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,7 +18,6 @@ import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
-import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.RenameParams;
@@ -48,7 +47,7 @@ class LombokTest {
 
   @BeforeAll
   static void startServers() throws Exception {
-    session = LspSession.start(new ClientCapabilities());
+    session = LspSession.start(LspSession.ROOT, new ClientCapabilities());
     mcp = McpSession.start();
   }
 
@@ -114,12 +113,12 @@ class LombokTest {
     try {
       session.client.diagnostics.clear();
       session.openDoc(uri, original);
-      assertThat(nextDiagnostics(uri)).as("on open").noneMatch(LombokTest::isMissingGetName);
+      assertThat(session.nextDiagnostics(uri)).as("on open").noneMatch(LombokTest::isMissingGetName);
 
       session.client.diagnostics.clear();
       session.saveDoc(uri, withEmail);
       awaitInPersonClass("getEmail");
-      assertThat(nextDiagnostics(uri)).as("after the save").noneMatch(LombokTest::isMissingGetName);
+      assertThat(session.nextDiagnostics(uri)).as("after the save").noneMatch(LombokTest::isMissingGetName);
     } finally {
       session.saveDoc(uri, original);
     }
@@ -188,15 +187,6 @@ class LombokTest {
     return text.contains("cannot find symbol") && text.contains("getName()");
   }
 
-  private static List<Diagnostic> nextDiagnostics(final String uri) throws InterruptedException {
-    while (true) {
-      final PublishDiagnosticsParams published = session.client.diagnostics.poll(60, SECONDS);
-      assertThat(published).as("diagnostics for %s within 60 s", uri).isNotNull();
-      if (published.getUri().endsWith(uri.substring(uri.lastIndexOf('/')))) {
-        return published.getDiagnostics();
-      }
-    }
-  }
 
   // The class file's constant pool names each method, so a generated getter shows as its name.
   private static void awaitInPersonClass(final String member) throws Exception {

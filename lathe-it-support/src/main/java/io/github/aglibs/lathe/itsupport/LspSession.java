@@ -1,4 +1,4 @@
-package com.example.itsupport;
+package io.github.aglibs.lathe.itsupport;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.eclipse.lsp4j.ClientCapabilities;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
@@ -37,12 +38,12 @@ import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
 
-// The real server, started from the fixture's launcher as an editor starts it, and the client end
-// of its LSP connection.
+// The real server, started from the launcher the build under test installed (in the lathe.cache
+// directory, at lathe.version), as an editor starts it, and the client end of its LSP connection.
 public final class LspSession {
 
+  // A Maven invoker fixture's workspace: its checks run in a module of it.
   public static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
-  private static final Path LAUNCHER = Os.launcher("lathe-launcher");
 
   public final LanguageServer server;
   public final CapturingClient client;
@@ -60,11 +61,12 @@ public final class LspSession {
     this.initResult = initResult;
   }
 
-  public static LspSession start(final ClientCapabilities capabilities) throws Exception {
+  public static LspSession start(final Path root, final ClientCapabilities capabilities)
+      throws Exception {
     final var client = new CapturingClient();
-    final var pb = new ProcessBuilder(LAUNCHER.toString());
+    final var pb = new ProcessBuilder(Os.launcher("lathe-launcher").toString());
     // Editors start the launcher from the workspace root, where it finds .lathe/jvm.args.
-    pb.directory(ROOT.toFile());
+    pb.directory(root.toFile());
     pb.environment().put("LATHE_DEBUG", "1");
     // Scans fast so the tests that wait for an outside change (manifest, pom.xml) need not wait
     // 2 s.
@@ -79,7 +81,7 @@ public final class LspSession {
     final LanguageServer server = launcher.getRemoteProxy();
 
     final var params = new InitializeParams();
-    params.setRootUri(ROOT.toUri().toString());
+    params.setRootUri(root.toUri().toString());
     params.setCapabilities(capabilities);
     final InitializeResult initResult = server.initialize(params).get(10, SECONDS);
     server.initialized(new InitializedParams());
@@ -116,6 +118,19 @@ public final class LspSession {
     params.setTextDocument(new TextDocumentIdentifier(uri));
     params.setText(content);
     server.getTextDocumentService().didSave(params);
+  }
+
+  // The next diagnostics published for the file, matched by its name: the server canonicalizes a
+  // URI (macOS resolves /var to /private/var), so the URI the test sent may not be the one it gets.
+  public List<Diagnostic> nextDiagnostics(final String uri) throws InterruptedException {
+    final String fileName = uri.substring(uri.lastIndexOf('/'));
+    while (true) {
+      final PublishDiagnosticsParams published = client.diagnostics.poll(60, SECONDS);
+      assertThat(published).as("diagnostics for %s within 60 s", uri).isNotNull();
+      if (published.getUri().endsWith(fileName)) {
+        return published.getDiagnostics();
+      }
+    }
   }
 
   // The position of token on the first line containing linePattern, at or after the pattern.

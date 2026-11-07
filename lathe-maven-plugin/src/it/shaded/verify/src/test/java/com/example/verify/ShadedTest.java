@@ -2,9 +2,9 @@ package com.example.verify;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.example.itsupport.LspSession;
-import com.example.itsupport.McpSession;
-import com.example.itsupport.Os;
+import io.github.aglibs.lathe.itsupport.LspSession;
+import io.github.aglibs.lathe.itsupport.McpSession;
+import io.github.aglibs.lathe.itsupport.Os;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.AfterAll;

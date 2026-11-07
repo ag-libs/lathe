@@ -59,6 +59,12 @@
       <artifactId>lathe-mcp-server</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- The functional tests' server session helpers, shared with the Maven invoker fixtures. -->
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-it-support</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>

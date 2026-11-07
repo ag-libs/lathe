@@ -74,6 +74,19 @@
     </dependency>
     <dependency>
       <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-it-support</artifactId>
+      <version>${project.version}</version>
+      <scope>provided</scope>
+      <!-- Build order only, like the jars above; its lsp4j and AssertJ stay off this classpath. -->
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
       <artifactId>lathe-mcp-server</artifactId>
       <version>${project.version}</version>
       <scope>provided</scope>
@@ -217,6 +230,8 @@
             <extraArtifact>io.github.ag-libs:lathe-compiler:${project.version}:jar</extraArtifact>
             <extraArtifact>io.github.ag-libs:lathe-server:${project.version}:jar</extraArtifact>
             <extraArtifact>io.github.ag-libs:lathe-mcp-server:${project.version}:jar</extraArtifact>
+            <!-- The fixtures' checks start the servers through these shared helpers. -->
+            <extraArtifact>io.github.ag-libs:lathe-it-support:${project.version}:jar</extraArtifact>
           </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
           <!-- The projects build in parallel and share the local repository: lock it across processes. -->

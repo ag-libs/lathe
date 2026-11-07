@@ -1,4 +1,4 @@
-package com.example.itsupport;
+package io.github.aglibs.lathe.itsupport;
 
 import java.time.Duration;
 import java.time.Instant;

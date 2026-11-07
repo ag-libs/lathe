@@ -3,8 +3,8 @@ package com.example.verify;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.example.itsupport.Await;
-import com.example.itsupport.LspSession;
+import io.github.aglibs.lathe.itsupport.Await;
+import io.github.aglibs.lathe.itsupport.LspSession;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,7 +97,7 @@ class LspSmokeTest {
   static void startServer() throws Exception {
     originalPomMtime = Files.getLastModifiedTime(ROOT.resolve("pom.xml"));
     originalManifest = Files.readString(MANIFEST);
-    session = LspSession.start(renameCapableClient());
+    session = LspSession.start(LspSession.ROOT, renameCapableClient());
     server = session.server;
     client = session.client;
     initResult = session.initResult;

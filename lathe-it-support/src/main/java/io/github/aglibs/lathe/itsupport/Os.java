@@ -1,4 +1,4 @@
-package com.example.itsupport;
+package io.github.aglibs.lathe.itsupport;
 
 import java.nio.file.Path;
 
@@ -14,7 +14,8 @@ public final class Os {
     return base + (WINDOWS ? ".cmd" : ".sh");
   }
 
-  // A launcher the server under test installed (lathe-launcher, lathe-mcp-launcher), in the fixture's
+  // A launcher the server under test installed (lathe-launcher, lathe-mcp-launcher), in the
+  // fixture's
   // Lathe cache.
   public static Path launcher(final String base) {
     return Path.of(System.getProperty("lathe.cache"))

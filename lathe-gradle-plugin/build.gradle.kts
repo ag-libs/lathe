@@ -44,6 +44,8 @@ dependencies {
   testImplementation("org.assertj:assertj-core:${property("assertj.version")}")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
   functionalTest.implementationConfigurationName(gradleTestKit())
+  // The real server's session helpers, shared with the Maven invoker fixtures.
+  functionalTest.implementationConfigurationName("io.github.ag-libs:lathe-it-support:$version")
 }
 
 gradlePlugin {
@@ -132,9 +134,10 @@ val functionalTestTask =
       // checkout, since each sync installs that checkout's own SNAPSHOT server into it.
       systemProperty(
           "lathe.gradle.testKitDir", gradle.gradleUserHomeDir.resolve("lathe-testkit").path)
-      systemProperty(
-          "lathe.gradle.fixturesCache",
-          layout.projectDirectory.dir(".gradle/lathe-cache").asFile.path)
+      val fixturesCache = layout.projectDirectory.dir(".gradle/lathe-cache").asFile.path
+      systemProperty("lathe.gradle.fixturesCache", fixturesCache)
+      // Where lathe-it-support finds the server a fixture's sync installed.
+      systemProperty("lathe.cache", fixturesCache)
       enabled = !flag("skipTests")
       systemProperty(
           "lathe.gradle.fixturesHome",
