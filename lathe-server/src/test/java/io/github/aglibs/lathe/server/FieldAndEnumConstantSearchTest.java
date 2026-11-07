@@ -51,7 +51,7 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
     final var pos = offsetToPosition(OWNER, OWNER.indexOf("name"));
     final LatheReferences references =
-        engine.references(owner, pos.getLine(), pos.getCharacter(), 50);
+        engine.references(owner, pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(references.references())
         .extracting(LatheLocation::uri)
@@ -84,7 +84,7 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
     final var pos = offsetToPosition(KIND, KIND.indexOf("ALPHA"));
     final LatheReferences references =
-        engine.references(kind, pos.getLine(), pos.getCharacter(), 50);
+        engine.references(kind, pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(references.references())
         .extracting(LatheLocation::uri)

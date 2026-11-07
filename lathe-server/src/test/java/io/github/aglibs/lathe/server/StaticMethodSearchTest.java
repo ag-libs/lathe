@@ -144,7 +144,7 @@ class StaticMethodSearchTest extends LatheEngineTestBase {
 
     final var pos = offsetToPosition(check, check.indexOf("blank"));
     final LatheReferences references =
-        engine.references(files.get("Check"), pos.getLine(), pos.getCharacter(), 50);
+        engine.references(files.get("Check"), pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(references.references())
         .extracting(LatheLocation::uri)
@@ -164,17 +164,19 @@ class StaticMethodSearchTest extends LatheEngineTestBase {
 
   private LatheReferences referencesToIsEmpty(final Map<String, Path> files) {
     final var pos = offsetToPosition(UTIL, UTIL.indexOf("isEmpty"));
-    return engine.references(files.get("Util"), pos.getLine(), pos.getCharacter(), 50);
+    return engine.references(files.get("Util"), pos.getLine(), pos.getCharacter(), 50).value();
   }
 
   private LatheCallHierarchy callersOfIsEmpty(final Map<String, Path> files) {
     final var pos = offsetToPosition(UTIL, UTIL.indexOf("isEmpty"));
-    return engine.callHierarchy(
-        files.get("Util"),
-        pos.getLine(),
-        pos.getCharacter(),
-        LatheEngine.CallDirection.INCOMING,
-        LatheEngine.SymbolScope.ALL,
-        50);
+    return engine
+        .callHierarchy(
+            files.get("Util"),
+            pos.getLine(),
+            pos.getCharacter(),
+            LatheEngine.CallDirection.INCOMING,
+            LatheEngine.SymbolScope.ALL,
+            50)
+        .value();
   }
 }

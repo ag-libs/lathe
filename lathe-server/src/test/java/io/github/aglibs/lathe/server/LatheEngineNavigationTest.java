@@ -38,7 +38,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             tmp, "com/example/Sample.java", "package com.example; class Sample { int n = 1; }");
     engine = new LatheEngine(tmp);
 
-    final List<LatheDiagnostic> diagnostics = engine.diagnostics(source);
+    final List<LatheDiagnostic> diagnostics = engine.diagnostics(source).value();
 
     assertThat(diagnostics).isEmpty();
   }
@@ -52,7 +52,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             "package com.example; class Sample { int n = \"nope\"; }");
     engine = new LatheEngine(tmp);
 
-    final List<LatheDiagnostic> diagnostics = engine.diagnostics(source);
+    final List<LatheDiagnostic> diagnostics = engine.diagnostics(source).value();
 
     assertThat(diagnostics).isNotEmpty();
     assertThat(diagnostics).anyMatch(d -> d.message().toLowerCase().contains("incompatible types"));
@@ -65,7 +65,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.callerSource(), "greet()");
     final List<LatheLocation> targets =
-        engine.definition(fx.caller(), pos.getLine(), pos.getCharacter());
+        engine.definition(fx.caller(), pos.getLine(), pos.getCharacter()).value();
 
     assertThat(targets).hasSize(1);
     final LatheLocation target = targets.get(0);
@@ -82,7 +82,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.calleeSource(), "greet");
     final LatheReferences references =
-        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50);
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(references.references())
         .anyMatch(r -> r.uri().endsWith("Caller.java") && r.snippet().contains("greet"));
@@ -95,13 +95,15 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var calleePos = positionOf(fx.calleeSource(), "greet");
     final LatheCallHierarchy incoming =
-        engine.callHierarchy(
-            fx.callee(),
-            calleePos.getLine(),
-            calleePos.getCharacter(),
-            CallDirection.INCOMING,
-            SymbolScope.ALL,
-            50);
+        engine
+            .callHierarchy(
+                fx.callee(),
+                calleePos.getLine(),
+                calleePos.getCharacter(),
+                CallDirection.INCOMING,
+                SymbolScope.ALL,
+                50)
+            .value();
     assertThat(incoming.incoming()).isTrue();
     assertThat(incoming.calls())
         .anySatisfy(
@@ -112,13 +114,15 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var callerPos = positionOf(fx.callerSource(), "run");
     final LatheCallHierarchy outgoing =
-        engine.callHierarchy(
-            fx.caller(),
-            callerPos.getLine(),
-            callerPos.getCharacter(),
-            CallDirection.OUTGOING,
-            SymbolScope.REACTOR,
-            50);
+        engine
+            .callHierarchy(
+                fx.caller(),
+                callerPos.getLine(),
+                callerPos.getCharacter(),
+                CallDirection.OUTGOING,
+                SymbolScope.REACTOR,
+                50)
+            .value();
     assertThat(outgoing.incoming()).isFalse();
     assertThat(outgoing.calls())
         .as("the call site in the caller, not the callee's declaration")
@@ -141,7 +145,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(ifaceSource, "Greeter");
     final LatheImplementations impls =
-        engine.findImplementations(iface, pos.getLine(), pos.getCharacter(), 50);
+        engine.findImplementations(iface, pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(impls.implementations())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
@@ -183,6 +187,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
           final var pos = positionOf(sources.get(type), token);
           return engine
               .findImplementations(files.get(type), pos.getLine(), pos.getCharacter(), 50)
+              .value()
               .implementations()
               .stream()
               .map(
@@ -213,8 +218,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     for (final String name : List.of("RED", "GREEN")) {
       final var pos = offsetToPosition(source, source.indexOf(name) + 1);
 
-      assertThat(engine.describe(file, pos.getLine(), pos.getCharacter())).as(name).contains(name);
-      assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()))
+      assertThat(engine.describe(file, pos.getLine(), pos.getCharacter()).value())
+          .as(name)
+          .contains(name);
+      assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()).value())
           .as(name)
           .singleElement()
           .satisfies(location -> assertThat(location.line()).isEqualTo(pos.getLine()));
@@ -227,7 +234,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
 
     final var pos = positionOf(fx.calleeSource(), "greet");
-    final String markup = engine.describe(fx.callee(), pos.getLine(), pos.getCharacter());
+    final String markup = engine.describe(fx.callee(), pos.getLine(), pos.getCharacter()).value();
 
     assertThat(markup).contains("greet");
   }
@@ -320,10 +327,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(source, "twice");
 
-    assertThat(engine.describe(lib, pos.getLine(), pos.getCharacter()))
+    assertThat(engine.describe(lib, pos.getLine(), pos.getCharacter()).value())
         .contains("twice(int amount)")
         .contains("Doubles the given amount.");
-    assertThat(engine.diagnostics(lib))
+    assertThat(engine.diagnostics(lib).value())
         .as("a dependency's diagnostics are not the agent's")
         .isEmpty();
   }
@@ -338,7 +345,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     compileIntoMirror(iface, impl);
     stampModule(iface, impl);
     engine = new LatheEngine(tmp);
-    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50)).isEmpty();
+    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50).value()).isEmpty();
 
     // An agent writes a new implementation with its own file tool, then queries at once.
     TestCompiler.writeModuleSource(
@@ -346,12 +353,13 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         "com/example/FrGreeter.java",
         "package com.example; class FrGreeter implements Greeter { public void greet() {} }");
 
-    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50))
+    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50).value())
         .anySatisfy(symbol -> assertThat(symbol.name()).isEqualTo("FrGreeter"));
     final var pos = positionOf(ifaceSource, "Greeter");
     assertThat(
             engine
                 .findImplementations(iface, pos.getLine(), pos.getCharacter(), 50)
+                .value()
                 .implementations())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("FrGreeter.java"));
   }
@@ -361,14 +369,14 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     greetFixture();
     engine = new LatheEngine(tmp);
 
-    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", SymbolScope.ALL, 50);
+    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", SymbolScope.ALL, 50).value();
 
     assertThat(symbols).anySatisfy(symbol -> assertThat(symbol.name()).contains("Callee"));
-    assertThat(engine.searchSymbols("*Callee*", SymbolScope.REACTOR, 50))
+    assertThat(engine.searchSymbols("*Callee*", SymbolScope.REACTOR, 50).value())
         .as("a glob, as agents write by habit")
         .extracting(LatheSymbol::name)
         .contains("Callee");
-    assertThat(engine.searchSymbols("*", SymbolScope.ALL, 50)).isEmpty();
+    assertThat(engine.searchSymbols("*", SymbolScope.ALL, 50).value()).isEmpty();
   }
 
   // No project code can use a type in a JDK package its module does not export to everyone.
@@ -389,21 +397,22 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final GreetFixture fx = crossPackageGreetFixture();
     engine = new LatheEngine(tmp);
     final var pos = positionOf(fx.calleeSource(), "greet");
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
     final int before =
-        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).total();
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).value().total();
 
     Files.writeString(
         fx.caller(), fx.callerSource().replace("c.greet();", "c.greet(); c.greet();"));
 
-    assertThat(engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).total())
+    assertThat(
+            engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).value().total())
         .isEqualTo(before + 1);
   }
 
   // Whether a position tool answers at a position, rather than refusing it as not on a name.
   private boolean onName(final Path file, final int line, final int column) {
     try {
-      engine.describe(file, line, column);
+      engine.describe(file, line, column).value();
       return true;
     } catch (final LatheEngine.NotOnName e) {
       return false;
@@ -420,7 +429,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.outerSource(), "Inner");
     final LatheReferences references =
-        engine.references(fx.outer(), pos.getLine(), pos.getCharacter(), 50);
+        engine.references(fx.outer(), pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(references.references())
         .extracting(LatheLocation::uri)
@@ -435,7 +444,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.outerSource(), "Listener");
     final LatheImplementations implementations =
-        engine.findImplementations(fx.outer(), pos.getLine(), pos.getCharacter(), 50);
+        engine.findImplementations(fx.outer(), pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(implementations.implementations())
         .extracting(LatheLocation::uri)
@@ -465,7 +474,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             """);
     engine = new LatheEngine(tmp);
 
-    final List<LatheOutlineItem> outline = engine.outline(source);
+    final List<LatheOutlineItem> outline = engine.outline(source).value();
 
     assertThat(outline)
         .extracting(

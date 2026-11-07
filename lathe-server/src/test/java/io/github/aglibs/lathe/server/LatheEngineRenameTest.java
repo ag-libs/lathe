@@ -54,7 +54,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
     final GreetFixture fx = crossPackageGreetFixture();
     engine = new LatheEngine(tmp);
     // A query leaves no open document behind to answer the rename back from its old text.
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
 
     renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
     assertThat(Files.readString(fx.caller())).contains("c.welcome()");

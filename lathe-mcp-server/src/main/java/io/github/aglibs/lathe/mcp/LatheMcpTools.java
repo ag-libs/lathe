@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheRename;
+import io.github.aglibs.lathe.server.engine.Noted;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -22,6 +23,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -343,8 +345,13 @@ final class LatheMcpTools {
 
   private static CallToolResult handleWorkspaceSummary(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
-    return guarded(
-        tool, "workspace", () -> McpText.modulesResult(engine.modules(), engine.notes(List.of())));
+    return guarded(tool, "workspace", () -> render(engine.modules(), McpText::modulesResult));
+  }
+
+  // A read tool's answer, rendered with the notes its request read.
+  private static <T> CallToolResult render(
+      final Noted<T> answer, final BiFunction<T, LatheNotes, CallToolResult> renderer) {
+    return renderer.apply(answer.value(), answer.notes());
   }
 
   // A tool's handler, given the engine, the call, and the tool's name for its answers and logs.
@@ -430,7 +437,9 @@ final class LatheMcpTools {
         tool,
         request,
         file ->
-            McpText.diagnosticsResult(file, engine.diagnostics(file), engine.notes(List.of(file))));
+            render(
+                engine.diagnostics(file),
+                (diagnostics, notes) -> McpText.diagnosticsResult(file, diagnostics, notes)));
   }
 
   private static CallToolResult handleDefinition(
@@ -440,8 +449,7 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            McpText.definitionResult(
-                engine.definition(file, line, column), engine.notes(List.of(file))));
+            render(engine.definition(file, line, column), McpText::definitionResult));
   }
 
   private static CallToolResult handleReferences(
@@ -451,9 +459,9 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            McpText.referencesResult(
+            render(
                 engine.references(file, line, column, maxResults(request)),
-                engine.notes(List.of(file))));
+                McpText::referencesResult));
   }
 
   private static CallToolResult handleFindImplementations(
@@ -463,9 +471,9 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            McpText.implementationsResult(
+            render(
                 engine.findImplementations(file, line, column, maxResults(request)),
-                engine.notes(List.of(file))));
+                McpText::implementationsResult));
   }
 
   private static CallToolResult handleRename(
@@ -495,11 +503,7 @@ final class LatheMcpTools {
     }
 
     return atFile(
-        tool,
-        request,
-        file ->
-            McpText.testRunResult(
-                engine.runTest(file, scope, method), engine.notes(List.of(file))));
+        tool, request, file -> render(engine.runTest(file, scope, method), McpText::testRunResult));
   }
 
   private static CallToolResult handleAnalyzeChange(
@@ -509,8 +513,7 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            McpText.analyzeResult(
-                engine.analyzeChange(file, line, column), engine.notes(List.of(file))));
+            render(engine.analyzeChange(file, line, column), McpText::analyzeResult));
   }
 
   private static CallToolResult handleVerifyChange(
@@ -555,7 +558,9 @@ final class LatheMcpTools {
     return atFile(
         tool,
         request,
-        file -> McpText.outlineResult(file, engine.outline(file), engine.notes(List.of(file))));
+        file ->
+            render(
+                engine.outline(file), (items, notes) -> McpText.outlineResult(file, items, notes)));
   }
 
   // An enum argument by its constant's name, case-insensitive.
@@ -598,10 +603,9 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            McpText.callHierarchyResult(
+            render(
                 engine.callHierarchy(file, line, column, direction, scope, maxResults(request)),
-                scope,
-                engine.notes(List.of(file))));
+                (hierarchy, notes) -> McpText.callHierarchyResult(hierarchy, scope, notes)));
   }
 
   private static CallToolResult handleDescribe(
@@ -611,8 +615,7 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            McpText.describeResult(
-                engine.describe(file, line, column), engine.notes(List.of(file))));
+            render(engine.describe(file, line, column), McpText::describeResult));
   }
 
   private static CallToolResult handleSearchSymbols(
@@ -631,10 +634,9 @@ final class LatheMcpTools {
         tool,
         query,
         () ->
-            McpText.searchResult(
-                query,
+            render(
                 engine.searchSymbols(query, scope, maxResults(request)),
-                engine.notes(List.of())));
+                (symbols, notes) -> McpText.searchResult(query, symbols, notes)));
   }
 
   // Shared body for the file tools: an existing .java file, then the handler, an engine failure

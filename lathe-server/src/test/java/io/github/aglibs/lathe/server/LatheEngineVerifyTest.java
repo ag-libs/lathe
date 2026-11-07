@@ -34,7 +34,8 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
 
     final var pos = positionOf(ifaceSource, "greet");
-    final LatheChangeImpact impact = engine.analyzeChange(iface, pos.getLine(), pos.getCharacter());
+    final LatheChangeImpact impact =
+        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
 
     assertThat(impact.signature()).contains("greet");
     assertThat(impact.overrideFamily())
@@ -70,12 +71,13 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());
     engine = new LatheEngine(tmp);
-    engine.diagnostics(fx.caller()); // the session is warm and idle before the agent's edit
+    engine.diagnostics(fx.caller()).value(); // the session is warm and idle before the agent's edit
 
     // An agent renames greet() with its own file tool, then queries the caller at once.
     writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
 
-    assertThat(engine.diagnostics(fx.caller())).anyMatch(d -> d.message().contains("greet"));
+    assertThat(engine.diagnostics(fx.caller()).value())
+        .anyMatch(d -> d.message().contains("greet"));
   }
 
   // A caller's warnings predate the change, and its hints say nothing about whether it compiles:
@@ -102,7 +104,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
                 + " private void unused() {} }");
     compileIntoMirror(old, callee, caller);
     engine = new LatheEngine(tmp);
-    assertThat(engine.diagnostics(caller))
+    assertThat(engine.diagnostics(caller).value())
         .as("the caller has a removal warning and an unused-method hint")
         .extracting(LatheDiagnostic::severity)
         .contains(LatheDiagnostic.Severity.WARNING, LatheDiagnostic.Severity.HINT);
@@ -178,7 +180,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
 
     // Another such edit, but compiled by an unrelated query before verify_change is asked.
     TestCompiler.writeAt(api, API_SOURCE.replace("a()", "c()"), 20_000L);
-    engine.diagnostics(api);
+    engine.diagnostics(api).value();
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .anySatisfy(
@@ -188,7 +190,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
-    engine.searchSymbols("Api", SymbolScope.ALL, 10);
+    engine.searchSymbols("Api", SymbolScope.ALL, 10).value();
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()
@@ -286,7 +288,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         "{}");
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.modules())
+    assertThat(engine.modules().value())
         .extracting(
             LatheModuleSummary::module,
             LatheModuleSummary::dependsOn,

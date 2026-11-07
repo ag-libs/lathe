@@ -285,8 +285,9 @@ and `navigation/` subpackages, and stop exporting `completion` once `CompletionO
 
 ### D1. `LatheMcpTools` (1,408 lines)
 
-**Done**: `tool(...)`, `McpText`, `McpTextTest`. Notes stay a separate request: folding them in would change all 15
-engine methods' return types for one loop hop.
+**Done**: `tool(...)`, `McpText`, `McpTextTest`, and notes in the same request:
+each read tool returns a `Noted<T>`, its answer with the notes read once the answer is computed.
+The write tools (rename, format, fix imports, verify) still read notes after their write pass, from the state it left.
 
 - One `tool(name, schema, annotations, description, handler)` helper replaces fifteen copies of the same
   definition shape (and the name literal written twice per tool).
