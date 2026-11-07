@@ -44,7 +44,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("unused")));
   }
 
   // The hint marks the field's name, not the same word in its annotation before it.
@@ -61,7 +61,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("int flag") + 4));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("int flag") + 4));
   }
 
   @Test
@@ -175,7 +175,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("unused")));
   }
 
   // --- Visibility: only private is flagged ---
@@ -286,7 +286,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("count")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("count")));
     assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("local variable 'count' is assigned but never read");
   }
@@ -344,7 +344,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("cached")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("cached")));
     assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("private field 'cached' is assigned but never read");
   }

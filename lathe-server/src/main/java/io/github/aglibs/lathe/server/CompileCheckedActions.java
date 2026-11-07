@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.analysis.ExtractionSupport;
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
@@ -82,7 +82,7 @@ final class CompileCheckedActions {
 
     final var t = Stopwatch.start();
     return compile
-        .apply(pending.uri(), SourceLocator.applyEdits(document.content(), pending.edits()))
+        .apply(pending.uri(), Positions.applyEdits(document.content(), pending.edits()))
         .thenApply(CompileCheckedActions::errors)
         .thenCompose(
             rewritten ->

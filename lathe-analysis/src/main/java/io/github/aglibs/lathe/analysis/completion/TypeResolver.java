@@ -24,8 +24,8 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.FunctionalInterfaces;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -341,7 +341,7 @@ final class TypeResolver {
       return null;
     }
 
-    final var path = SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), cursorOffset);
+    final var path = CursorElements.pathAt(snapshot.trees(), snapshot.tree(), cursorOffset);
     if (path == null) {
       return null;
     }
@@ -707,7 +707,7 @@ final class TypeResolver {
   private static Optional<ExpectedValue> resolveCursorExpressionValue(
       final CompletionSite site, final AttributedFileAnalysis snapshot) {
     final var cursorPath =
-        SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), site.cursorOffset());
+        CursorElements.pathAt(snapshot.trees(), snapshot.tree(), site.cursorOffset());
     return cursorPath != null
         ? resolveCursorExpressionValue(cursorPath, cursorPath.getParentPath(), snapshot)
         : Optional.empty();
@@ -1191,7 +1191,7 @@ final class TypeResolver {
   private static ExpectedValue resolveSwitchSelectorValue(
       final CompletionSite site, final AttributedFileAnalysis snapshot) {
     final TreePath path =
-        SourceLocator.pathAt(snapshot.trees(), snapshot.tree(), site.cursorOffset());
+        CursorElements.pathAt(snapshot.trees(), snapshot.tree(), site.cursorOffset());
     if (path == null) {
       return new ExpectedValue.Unknown();
     }

@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import io.github.aglibs.lathe.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
@@ -30,7 +30,7 @@ public record CompletionRequest(
   }
 
   int cursorOffset() {
-    return SourceLocator.toOffset(content, pos.getLine(), pos.getCharacter());
+    return Positions.toOffset(content, pos.getLine(), pos.getCharacter());
   }
 
   boolean noDiff() {

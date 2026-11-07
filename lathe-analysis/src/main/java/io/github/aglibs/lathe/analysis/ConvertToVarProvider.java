@@ -48,8 +48,8 @@ final class ConvertToVarProvider {
 
     final var trees = analysis.trees();
     final long offset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final TreePath varPath = TreePaths.enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
+        Positions.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
+    final TreePath varPath = TreePaths.enclosingVariable(CursorElements.pathAt(trees, cu, offset));
     if (varPath == null) {
       return List.of();
     }
@@ -183,8 +183,7 @@ final class ConvertToVarProvider {
   private static TextEdit replaceEdit(
       final CompilationUnitTree cu, final long start, final long end, final String text) {
     return new TextEdit(
-        new Range(
-            SourceLocator.offsetToPosition(cu, start), SourceLocator.offsetToPosition(cu, end)),
+        new Range(Positions.offsetToPosition(cu, start), Positions.offsetToPosition(cu, end)),
         text);
   }
 }

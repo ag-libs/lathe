@@ -2,8 +2,8 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.BatchWrite;
 import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.RenameProvider;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -429,7 +429,7 @@ final class WorkspaceSession {
   // A rename member's formatted text is what its commit compiles.
   private void onFormatted(final String uri, final String content, final List<TextEdit> edits) {
     if (renameTransaction.isMember(uri)) {
-      renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, edits));
+      renameTransaction.onFormat(uri, Positions.applyEdits(content, edits));
     }
   }
 
@@ -456,8 +456,7 @@ final class WorkspaceSession {
                   : FileUtil.readIfPresent(LatheUri.toPath(uri));
           original.ifPresent(
               text ->
-                  tx.add(
-                      moves.getOrDefault(uri, uri), text, SourceLocator.applyEdits(text, edits)));
+                  tx.add(moves.getOrDefault(uri, uri), text, Positions.applyEdits(text, edits)));
         });
     moves.forEach(tx::addMovedAway);
     LOG.fine(() -> "[rename-tx] begin members=%d".formatted(tx.size()));

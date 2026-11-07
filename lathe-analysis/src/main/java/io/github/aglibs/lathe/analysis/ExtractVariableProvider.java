@@ -288,7 +288,7 @@ final class ExtractVariableProvider {
       final String source,
       final long stmtStart,
       final String declaration) {
-    final var pos = SourceLocator.offsetToPosition(cu, stmtStart);
+    final var pos = Positions.offsetToPosition(cu, stmtStart);
     final String indent = CodeActionSupport.lineIndent(source, (int) stmtStart);
     return new TextEdit(new Range(pos, pos), "%s\n%s".formatted(declaration, indent));
   }

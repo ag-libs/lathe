@@ -136,8 +136,7 @@ class CallHierarchyIncomingLocatorTest {
         class Runner { void run(Feature f) { f.setup(); } }
         """;
     // caret on the override 'setup' declaration in FeatureImpl
-    final var caret =
-        SourceLocator.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
+    final var caret = Positions.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
     final var request = request(content, caret);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
@@ -172,8 +171,7 @@ class CallHierarchyIncomingLocatorTest {
         class Runner { void run(Unrelated u) { u.setup(); } }
         """;
     // caret on the override 'setup' declaration in FeatureImpl
-    final var caret =
-        SourceLocator.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
+    final var caret = Positions.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
     final var request = request(content, caret);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {

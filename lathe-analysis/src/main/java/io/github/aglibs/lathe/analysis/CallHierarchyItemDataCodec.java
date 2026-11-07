@@ -35,14 +35,14 @@ public final class CallHierarchyItemDataCodec {
     final CompilationUnitTree cu = declaration.getCompilationUnit();
     final var positions = trees.getSourcePositions();
     final var rangeStart =
-        SourceLocator.offsetToPosition(cu, positions.getStartPosition(cu, declaration.getLeaf()));
+        Positions.offsetToPosition(cu, positions.getStartPosition(cu, declaration.getLeaf()));
     final var rangeEnd =
-        SourceLocator.offsetToPosition(cu, positions.getEndPosition(cu, declaration.getLeaf()));
-    final var displayName = SourceLocator.declarationName(element).toString();
+        Positions.offsetToPosition(cu, positions.getEndPosition(cu, declaration.getLeaf()));
+    final var displayName = DeclarationNames.declarationName(element).toString();
     Position nameStart;
     try {
       nameStart =
-          SourceLocator.declarationNamePosition(trees, cu, declaration, displayName)
+          DeclarationNames.declarationNamePosition(trees, cu, declaration, displayName)
               .orElse(rangeStart);
     } catch (final IOException e) {
       nameStart = rangeStart;
@@ -52,7 +52,7 @@ public final class CallHierarchyItemDataCodec {
         element,
         uri,
         new Range(rangeStart, rangeEnd),
-        SourceLocator.nameRange(nameStart, displayName),
+        Positions.nameRange(nameStart, displayName),
         types,
         elements);
   }
@@ -85,7 +85,7 @@ public final class CallHierarchyItemDataCodec {
     final var kind = element.getKind();
     final var ee = (ExecutableElement) element;
     final var owner = (TypeElement) ee.getEnclosingElement();
-    final var displayName = SourceLocator.declarationName(element).toString();
+    final var displayName = DeclarationNames.declarationName(element).toString();
     final var ownerBinaryName = elements.getBinaryName(owner).toString();
     final var symbolKind =
         kind == ElementKind.CONSTRUCTOR ? SymbolKind.Constructor : SymbolKind.Function;

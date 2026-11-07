@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -10,7 +10,7 @@ import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
@@ -825,7 +825,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
               .typeDefinition(
                   new TypeDefinitionParams(
                       new TextDocumentIdentifier(useFile.toUri().toString()),
-                      SourceLocator.offsetToPosition(use, use.indexOf(token))))
+                      Positions.offsetToPosition(use, use.indexOf(token))))
               .get(10, TimeUnit.SECONDS)
               .getLeft();
       actual.put(

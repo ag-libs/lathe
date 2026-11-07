@@ -59,7 +59,7 @@ class ReferenceLocatorTest {
   private ReferenceTarget targetAt(
       final AttributedFileAnalysis analysis, final String context, final String token) {
     final var path = SampleFixture.pathAt(analysis.trees(), analysis.tree(), context, token);
-    final var element = Objects.requireNonNull(SourceLocator.elementAt(analysis.trees(), path));
+    final var element = Objects.requireNonNull(CursorElements.elementAt(analysis.trees(), path));
     return ReferenceTarget.from(element, analysis.trees(), analysis.types(), analysis.elements());
   }
 
@@ -1223,7 +1223,7 @@ class ReferenceLocatorTest {
     final var bareTypePath =
         SampleFixture.pathAt(analysis.trees(), analysis.tree(), "Widget c", "Widget");
     // a non-`new` type usage stays a type target: no constructor is preferred here
-    assertThat(SourceLocator.constructorAtNewClassType(analysis.trees(), bareTypePath)).isNull();
+    assertThat(CursorElements.constructorAtNewClassType(analysis.trees(), bareTypePath)).isNull();
 
     final var target = targetAt(analysis, "Widget field", "Widget");
     final List<ReferenceMatch> result = refs(analysis, target, false);
@@ -1240,7 +1240,7 @@ class ReferenceLocatorTest {
     final var path = SampleFixture.pathAt(analysis.trees(), analysis.tree(), context, token);
     final var constructor =
         Objects.requireNonNull(
-            SourceLocator.constructorAtNewClassType(analysis.trees(), path),
+            CursorElements.constructorAtNewClassType(analysis.trees(), path),
             "expected a constructor at the new-class site");
     return ReferenceTarget.from(constructor, analysis.types(), analysis.elements());
   }

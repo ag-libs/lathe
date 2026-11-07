@@ -44,13 +44,13 @@ final class TryWithResourcesProvider {
 
     final var trees = analysis.trees();
     final long startOffset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
+        Positions.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
     if (startOffset < 0) {
       return List.of();
     }
 
     final TreePath stmtPath =
-        TreePaths.nearestEnclosingStatement(SourceLocator.pathAt(trees, cu, startOffset));
+        TreePaths.nearestEnclosingStatement(CursorElements.pathAt(trees, cu, startOffset));
     if (stmtPath == null
         || !(stmtPath.getLeaf() instanceof final VariableTree decl)
         || decl.getInitializer() == null
@@ -100,8 +100,8 @@ final class TryWithResourcesProvider {
     final String wrapped =
         wrap(resourceDecl, bodySource(source, positions, cu, body), indent, step);
 
-    final var start = SourceLocator.offsetToPosition(cu, declStart);
-    final var end = SourceLocator.offsetToPosition(cu, spanEnd);
+    final var start = Positions.offsetToPosition(cu, declStart);
+    final var end = Positions.offsetToPosition(cu, spanEnd);
     final var edit = new WorkspaceEdit();
     edit.setChanges(Map.of(uri, List.of(new TextEdit(new Range(start, end), wrapped))));
 

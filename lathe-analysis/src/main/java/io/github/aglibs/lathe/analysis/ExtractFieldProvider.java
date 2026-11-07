@@ -209,7 +209,7 @@ final class ExtractFieldProvider {
       return CodeActionSupport.insertBeforeFirstMember(cls, cu, positions, source, brace, decl);
     }
 
-    final var pos = SourceLocator.offsetToPosition(cu, positions.getEndPosition(cu, lastField));
+    final var pos = Positions.offsetToPosition(cu, positions.getEndPosition(cu, lastField));
     final String indent =
         CodeActionSupport.lineIndent(source, (int) positions.getStartPosition(cu, lastField));
     return new TextEdit(new Range(pos, pos), "\n%s%s".formatted(indent, decl));

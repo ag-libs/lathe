@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
@@ -78,5 +79,17 @@ public final class TreePaths {
   // An anonymous class creation: `new T() { ... }`.
   public static boolean isAnonymousClass(final TreePath path) {
     return path.getLeaf() instanceof final NewClassTree newClass && newClass.getClassBody() != null;
+  }
+
+  static ModifiersTree modifiersOf(final Tree declaration) {
+    if (declaration instanceof final VariableTree variable) {
+      return variable.getModifiers();
+    }
+
+    if (declaration instanceof final MethodTree method) {
+      return method.getModifiers();
+    }
+
+    return declaration instanceof final ClassTree type ? type.getModifiers() : null;
   }
 }

@@ -65,7 +65,7 @@ final class MissingMethodImplProvider {
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 
-    final var insertPos = SourceLocator.offsetToPosition(cu, endOffset - 1);
+    final var insertPos = Positions.offsetToPosition(cu, endOffset - 1);
     final TextEdit stubEdit =
         new TextEdit(
             new Range(insertPos, insertPos),

@@ -32,7 +32,7 @@ class HoverTest extends SampleFixture {
               TempSourceCompiler.TEST_URI,
               source,
               0,
-              SourceLocator.offsetToPosition(source, offset),
+              Positions.offsetToPosition(source, offset),
               List.of(),
               LibrarySources.none());
       final Hover hover = session.navigation().hover(request);
@@ -259,7 +259,7 @@ class HoverTest extends SampleFixture {
           }
           """;
       fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final var pos = SourceLocator.offsetToPosition(source, source.indexOf("\"hello\""));
+      final var pos = Positions.offsetToPosition(source, source.indexOf("\"hello\""));
       final var request =
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
@@ -289,7 +289,7 @@ class HoverTest extends SampleFixture {
           }
           """;
       fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final var pos = SourceLocator.offsetToPosition(source, source.indexOf("greet"));
+      final var pos = Positions.offsetToPosition(source, source.indexOf("greet"));
       final var request =
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
@@ -307,7 +307,7 @@ class HoverTest extends SampleFixture {
 
   private Optional<String> hoverAt(final int line, final int character) {
     final var path = pathAt(line, character);
-    final var element = SourceLocator.elementAt(compiled.trees(), path);
+    final var element = CursorElements.elementAt(compiled.trees(), path);
     final var type = path != null ? compiled.trees().getTypeMirror(path) : null;
     final var javadoc =
         new JavadocLocator(compiled.parser())

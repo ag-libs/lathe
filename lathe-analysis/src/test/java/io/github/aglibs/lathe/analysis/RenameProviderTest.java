@@ -406,7 +406,7 @@ class RenameProviderTest {
         source,
         session -> {
           final String renamed =
-              SourceLocator.applyEdits(
+              Positions.applyEdits(
                   source, renameEdits(session, source, "String text();", "text", "label"));
 
           assertThat(renamed)

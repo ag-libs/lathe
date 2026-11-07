@@ -34,12 +34,12 @@ final class DeclareVariableProvider {
     final CompilationUnitTree cu = analysis.tree();
     final var positions = analysis.trees().getSourcePositions();
     final long offset =
-        SourceLocator.toOffset(
+        Positions.toOffset(
             cu,
             request.diag().getRange().getStart().getLine(),
             request.diag().getRange().getStart().getCharacter());
 
-    final TreePath path = SourceLocator.pathAt(analysis.trees(), cu, offset);
+    final TreePath path = CursorElements.pathAt(analysis.trees(), cu, offset);
     if (path == null) {
       return List.of();
     }
@@ -75,8 +75,8 @@ final class DeclareVariableProvider {
       return List.of();
     }
 
-    final var startPos = SourceLocator.offsetToPosition(cu, lhsStart);
-    final var endPos = SourceLocator.offsetToPosition(cu, lhsEnd);
+    final var startPos = Positions.offsetToPosition(cu, lhsStart);
+    final var endPos = Positions.offsetToPosition(cu, lhsEnd);
     final var edits = new ArrayList<TextEdit>();
     edits.add(
         new TextEdit(new Range(startPos, endPos), "%s %s".formatted(written.text(), varName)));

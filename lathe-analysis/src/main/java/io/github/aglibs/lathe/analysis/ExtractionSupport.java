@@ -98,7 +98,7 @@ public final class ExtractionSupport {
         start < end ? outermostTreesWithin(trees, cu, start, end) : List.of();
     final TreePath spanned = within.size() == 1 ? within.get(0) : null;
     if (spanned == null) {
-      return coveringExpression(trees, cu, SourceLocator.pathAt(trees, cu, start), start, end);
+      return coveringExpression(trees, cu, CursorElements.pathAt(trees, cu, start), start, end);
     }
 
     final TreePath value = valueOf(spanned);
@@ -160,11 +160,10 @@ public final class ExtractionSupport {
 
     static Span of(final CompilationUnitTree cu, final Range selection) {
       final long start =
-          SourceLocator.toOffset(
+          Positions.toOffset(
               cu, selection.getStart().getLine(), selection.getStart().getCharacter());
       final long end =
-          SourceLocator.toOffset(
-              cu, selection.getEnd().getLine(), selection.getEnd().getCharacter());
+          Positions.toOffset(cu, selection.getEnd().getLine(), selection.getEnd().getCharacter());
       return start >= 0 && end >= 0 ? new Span(start, end) : null;
     }
   }
@@ -639,8 +638,7 @@ public final class ExtractionSupport {
   static TextEdit replaceEdit(
       final CompilationUnitTree cu, final long start, final long end, final String name) {
     return new TextEdit(
-        new Range(
-            SourceLocator.offsetToPosition(cu, start), SourceLocator.offsetToPosition(cu, end)),
+        new Range(Positions.offsetToPosition(cu, start), Positions.offsetToPosition(cu, end)),
         name);
   }
 

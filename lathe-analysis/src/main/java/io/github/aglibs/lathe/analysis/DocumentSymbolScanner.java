@@ -115,7 +115,7 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
     final long start = positions.getStartPosition(compilationUnit, node);
     final long end = positions.getEndPosition(compilationUnit, node);
     final long nameStart =
-        SourceLocator.declarationNameOffset(source, positions, compilationUnit, node, name);
+        DeclarationNames.declarationNameOffset(source, positions, compilationUnit, node, name);
     final long safeStart = nameStart >= 0L ? nameStart : start;
     return new DocumentSymbol(
         name, kind, range(start, end), range(safeStart, safeStart + name.length()));
@@ -123,8 +123,8 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
 
   private Range range(final long start, final long end) {
     return new Range(
-        SourceLocator.offsetToPosition(compilationUnit, start),
-        SourceLocator.offsetToPosition(compilationUnit, end));
+        Positions.offsetToPosition(compilationUnit, start),
+        Positions.offsetToPosition(compilationUnit, end));
   }
 
   private static SymbolKind kind(final ClassTree node) {

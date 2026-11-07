@@ -6,11 +6,11 @@ import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.FamilyExposure;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.LibrarySources;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import java.nio.file.Files;
@@ -253,7 +253,7 @@ class LombokAnalysisTest {
               uri(),
               typing,
               2,
-              SourceLocator.offsetToPosition(typing, typing.indexOf("p.get") + "p.get".length()),
+              Positions.offsetToPosition(typing, typing.indexOf("p.get") + "p.get".length()),
               null,
               WorkspaceTypeIndex.build(List.of(), List.of()),
               List.of(),
@@ -327,6 +327,6 @@ class LombokAnalysisTest {
   }
 
   private static Position position(final String source, final String context, final String token) {
-    return SourceLocator.offsetToPosition(source, source.indexOf(token, source.indexOf(context)));
+    return Positions.offsetToPosition(source, source.indexOf(token, source.indexOf(context)));
   }
 }

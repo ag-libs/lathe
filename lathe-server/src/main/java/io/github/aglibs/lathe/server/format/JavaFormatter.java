@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.format;
 
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -57,7 +57,7 @@ public final class JavaFormatter {
   }
 
   private static int offsetOf(final String content, final Position position) {
-    return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
+    return Positions.toOffset(content, position.getLine(), position.getCharacter());
   }
 
   // Replaces only the region that actually changed (between the common leading and trailing text),
@@ -79,8 +79,8 @@ public final class JavaFormatter {
       suffix++;
     }
 
-    final var start = SourceLocator.offsetToPosition(content, prefix);
-    final var end = SourceLocator.offsetToPosition(content, contentLength - suffix);
+    final var start = Positions.offsetToPosition(content, prefix);
+    final var end = Positions.offsetToPosition(content, contentLength - suffix);
     return new TextEdit(
         new Range(start, end), formatted.substring(prefix, formattedLength - suffix));
   }

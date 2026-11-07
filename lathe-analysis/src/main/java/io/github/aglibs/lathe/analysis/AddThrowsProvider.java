@@ -100,7 +100,7 @@ final class AddThrowsProvider {
         return null;
       }
 
-      final var pos = SourceLocator.offsetToPosition(cu, lastEnd);
+      final var pos = Positions.offsetToPosition(cu, lastEnd);
       return new TextEdit(new Range(pos, pos), ", %s".formatted(simpleName));
     }
 
@@ -118,7 +118,7 @@ final class AddThrowsProvider {
       insertOffset--;
     }
 
-    final Position pos = SourceLocator.offsetToPosition(cu, insertOffset);
+    final Position pos = Positions.offsetToPosition(cu, insertOffset);
     return new TextEdit(new Range(pos, pos), " throws %s".formatted(simpleName));
   }
 }

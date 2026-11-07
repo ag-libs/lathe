@@ -146,8 +146,7 @@ class SourceAnalysisSessionTest {
     final String cachedContent = "class Test { String value; }";
     final String currentContent = "class Test { Integer value; }";
     final var libraries = LibrarySources.none();
-    final var pos =
-        SourceLocator.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
+    final var pos = Positions.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
 
     try (var ctx = new SourceAnalysisSession(new TempSourceCompiler())) {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);

@@ -359,7 +359,7 @@ class MethodImplementationTest {
             targetSession
                 .references()
                 .resolveTarget(
-                    samRequest(SUBTYPE_SOURCE, SourceLocator.offsetToPosition(SUBTYPE_SOURCE, at)));
+                    samRequest(SUBTYPE_SOURCE, Positions.offsetToPosition(SUBTYPE_SOURCE, at)));
       }
 
       assertThat(
@@ -384,7 +384,7 @@ class MethodImplementationTest {
       return targetSession
           .references()
           .resolveTarget(
-              samRequest(ANONYMOUS_SOURCE, SourceLocator.offsetToPosition(ANONYMOUS_SOURCE, name)));
+              samRequest(ANONYMOUS_SOURCE, Positions.offsetToPosition(ANONYMOUS_SOURCE, name)));
     }
   }
 

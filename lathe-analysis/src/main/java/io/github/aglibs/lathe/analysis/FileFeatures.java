@@ -87,12 +87,12 @@ public final class FileFeatures {
 
     final AttributedFileAnalysis analysis = cached.get();
     final CompilationUnitTree cu = analysis.tree();
-    final long offset = SourceLocator.toOffset(cu, oneBasedLine - 1, 0);
+    final long offset = Positions.toOffset(cu, oneBasedLine - 1, 0);
     if (offset == javax.tools.Diagnostic.NOPOS) {
       return Optional.empty();
     }
 
-    for (TreePath p = SourceLocator.pathAt(analysis.trees(), cu, offset);
+    for (TreePath p = CursorElements.pathAt(analysis.trees(), cu, offset);
         p != null;
         p = p.getParentPath()) {
       if (p.getLeaf() instanceof ClassTree) {

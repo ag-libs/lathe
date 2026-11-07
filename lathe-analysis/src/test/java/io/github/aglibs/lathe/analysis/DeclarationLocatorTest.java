@@ -23,7 +23,7 @@ class DeclarationLocatorTest {
         """;
     final var parsed = compile(tempDir, "MyClass.java", source);
     final var path = SampleFixture.pathAt(parsed.trees(), parsed.cu(), "greet", "greet");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
 
     final var contract =
         DeclarationLocator.findContract(
@@ -49,7 +49,7 @@ class DeclarationLocatorTest {
     final var parsed = compile(tempDir, "MyGreeter.java", source);
     final var path =
         SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void greet", "greet");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
 
     final var contract =
         DeclarationLocator.findContract(
@@ -77,7 +77,7 @@ class DeclarationLocatorTest {
     final var parsed = compile(tempDir, "AbstractGreeter.java", source);
     final var path =
         SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void greet", "greet");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
 
     final var contract =
         DeclarationLocator.findContract(
@@ -108,7 +108,7 @@ class DeclarationLocatorTest {
         """;
     final var parsed = compile(tempDir, "MyRunnable.java", source);
     final var path = SampleFixture.pathAt(parsed.trees(), parsed.cu(), "class MyRunnable", "run");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
 
     final var contract =
         DeclarationLocator.findContract(
@@ -141,7 +141,7 @@ class DeclarationLocatorTest {
     final var parsed = compile(tempDir, "MongoDbClient.java", source);
     final var path =
         SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public String dbType", "dbType");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
 
     final var contract =
         DeclarationLocator.findContract(
@@ -173,7 +173,7 @@ class DeclarationLocatorTest {
     final var parsed = compile(tempDir, "Impl.java", source);
     final var path =
         SampleFixture.pathAt(parsed.trees(), parsed.cu(), "public void execute", "execute");
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
 
     final var contract =
         DeclarationLocator.findContract(

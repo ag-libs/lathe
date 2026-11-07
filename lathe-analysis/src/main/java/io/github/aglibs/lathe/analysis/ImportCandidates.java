@@ -44,8 +44,8 @@ final class ImportCandidates {
   }
 
   private static Scope scopeAt(final Position at, final AttributedFileAnalysis analysis) {
-    final long offset = SourceLocator.toOffset(analysis.tree(), at.getLine(), at.getCharacter());
-    final TreePath path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    final long offset = Positions.toOffset(analysis.tree(), at.getLine(), at.getCharacter());
+    final TreePath path = CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);
     return path != null ? analysis.trees().getScope(path) : null;
   }
 }

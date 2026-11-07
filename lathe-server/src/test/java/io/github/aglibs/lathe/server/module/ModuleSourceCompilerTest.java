@@ -8,8 +8,8 @@ import io.github.aglibs.lathe.analysis.BatchWrite;
 import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.CompilerResult;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
@@ -730,7 +730,7 @@ class ModuleSourceCompilerTest {
               sourceFile.toUri().toString(),
               content,
               1,
-              SourceLocator.offsetToPosition(content, cursor),
+              Positions.offsetToPosition(content, cursor),
               null,
               typeIndex,
               List.of(),

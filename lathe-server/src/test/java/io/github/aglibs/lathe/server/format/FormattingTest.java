@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server.format;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.core.LatheFlags;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,9 +39,9 @@ class FormattingTest {
   private static String apply(final String source, final TextEdit edit) {
     final Range range = edit.getRange();
     final int start =
-        SourceLocator.toOffset(source, range.getStart().getLine(), range.getStart().getCharacter());
+        Positions.toOffset(source, range.getStart().getLine(), range.getStart().getCharacter());
     final int end =
-        SourceLocator.toOffset(source, range.getEnd().getLine(), range.getEnd().getCharacter());
+        Positions.toOffset(source, range.getEnd().getLine(), range.getEnd().getCharacter());
     return source.substring(0, start) + edit.getNewText() + source.substring(end);
   }
 

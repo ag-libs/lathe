@@ -199,14 +199,14 @@ public final class RenameConflicts {
   // What Lombok generates follows its field, so renaming one alone breaks them apart: a generated
   // member's name comes back, and a field's renamed accessors leave their calls behind.
   private static Optional<String> lombokRefusal(final Element element) {
-    if (SourceLocator.isGenerated(element)) {
+    if (GeneratedCode.isGenerated(element)) {
       return Optional.of(
           "`%s` cannot be renamed: Lombok generates it from `%s`"
               .formatted(
-                  element.getSimpleName(), SourceLocator.generatedSource(element).getSimpleName()));
+                  element.getSimpleName(), GeneratedCode.generatedSource(element).getSimpleName()));
     }
 
-    final List<Element> accessors = SourceLocator.generatedAccessors(element);
+    final List<Element> accessors = GeneratedCode.generatedAccessors(element);
     return accessors.isEmpty()
         ? Optional.empty()
         : Optional.of(

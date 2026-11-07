@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CompiledStamps;

@@ -1,11 +1,12 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -364,8 +365,8 @@ public final class LatheEngine {
         .map(
             text ->
                 text.substring(
-                    SourceLocator.identifierStart(text, column),
-                    SourceLocator.identifierEnd(text, column)))
+                    DeclarationNames.identifierStart(text, column),
+                    DeclarationNames.identifierEnd(text, column)))
         .filter(word -> Character.isJavaIdentifierStart(word.charAt(0)))
         .filter(word -> !SourceVersion.isKeyword(word));
   }
@@ -606,7 +607,7 @@ public final class LatheEngine {
 
   private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
     final var path = LatheUri.toPath(uri);
-    final String updated = SourceLocator.applyEdits(read(path), edits);
+    final String updated = Positions.applyEdits(read(path), edits);
     IOUtil.unchecked(() -> Files.writeString(path, updated));
   }
 

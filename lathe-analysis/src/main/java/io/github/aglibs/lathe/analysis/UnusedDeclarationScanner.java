@@ -111,7 +111,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   // by its generated getter is used.
   @Override
   public Void scan(final Tree tree, final Void v) {
-    return declarationPhase && SourceLocator.isGenerated(tree) ? null : super.scan(tree, v);
+    return declarationPhase && GeneratedCode.isGenerated(tree) ? null : super.scan(tree, v);
   }
 
   @Override
@@ -228,7 +228,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
       return super.visitMemberSelect(node, v);
     }
     scan(node.getExpression(), null);
-    markReference(SourceLocator.elementAt(trees, getCurrentPath()));
+    markReference(CursorElements.elementAt(trees, getCurrentPath()));
     return null;
   }
 
@@ -318,7 +318,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     if (candidate.nameOffset() < 0) {
       return Optional.empty();
     }
-    final var start = SourceLocator.offsetToPosition(cu, candidate.nameOffset());
+    final var start = Positions.offsetToPosition(cu, candidate.nameOffset());
     final var end = new Position(start.getLine(), start.getCharacter() + candidate.name().length());
     final String message =
         assignedButNeverRead
@@ -333,6 +333,6 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   private Candidate candidateFor(final Tree node, final String name, final Kind kind) {
     return new Candidate(
-        name, SourceLocator.declarationNameOffset(content, positions, cu, node, name), kind);
+        name, DeclarationNames.declarationNameOffset(content, positions, cu, node, name), kind);
   }
 }

@@ -54,10 +54,10 @@ public final class JavacDiagnosticMapper {
     final Position start;
     final Position end;
     if (startOffset != javax.tools.Diagnostic.NOPOS) {
-      start = SourceLocator.offsetToPosition(content, startOffset);
+      start = Positions.offsetToPosition(content, startOffset);
       end =
           (endOffset != javax.tools.Diagnostic.NOPOS && endOffset > startOffset)
-              ? SourceLocator.offsetToPosition(content, endOffset)
+              ? Positions.offsetToPosition(content, endOffset)
               : new Position(start.getLine(), start.getCharacter() + 1);
     } else {
       final long rawLine = d.getLineNumber();
@@ -162,11 +162,11 @@ public final class JavacDiagnosticMapper {
     }
 
     final long offset =
-        SourceLocator.toOffset(
+        Positions.toOffset(
             analysis.tree(),
             diag.getRange().getStart().getLine(),
             diag.getRange().getStart().getCharacter());
-    return SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    return CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);
   }
 
   private static DiagnosticPayload.Kind resolveKind(

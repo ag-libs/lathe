@@ -89,13 +89,14 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
-    final var element = SourceLocator.elementAt(trees, getCurrentPath());
+    final var element = CursorElements.elementAt(trees, getCurrentPath());
     if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
         final String idName = node.getIdentifier().toString();
         final long startOff =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), idName);
+            DeclarationNames.findIdentifierFrom(
+                content, positions.getStartPosition(cu, node), idName);
         if (startOff >= 0) {
           addCallSite(rangeFor(startOff, idName));
         }
@@ -115,7 +116,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
         final long startOff =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
+            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
         if (startOff >= 0) {
           addCallSite(rangeFor(startOff, name));
         }
@@ -129,9 +130,9 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
     if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
-      final String name = SourceLocator.referenceName(node);
+      final String name = DeclarationNames.referenceName(node);
       final long startOff =
-          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+          DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (startOff >= 0) {
         addCallSite(rangeFor(startOff, name));
       }
@@ -157,7 +158,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   }
 
   private Range rangeFor(final long startOff, final String name) {
-    return SourceLocator.nameRange(SourceLocator.offsetToPosition(cu, startOff), name);
+    return Positions.nameRange(Positions.offsetToPosition(cu, startOff), name);
   }
 
   private List<CallHierarchyIncomingCall> buildResults(final String fileUri) {

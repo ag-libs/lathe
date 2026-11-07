@@ -46,7 +46,7 @@ public final class ReferenceFeatures {
     }
 
     final var analysis = cur.analysis();
-    return SourceLocator.generatedAccessors(element).stream()
+    return GeneratedCode.generatedAccessors(element).stream()
         .map(
             accessor ->
                 ReferenceTarget.from(
@@ -62,7 +62,7 @@ public final class ReferenceFeatures {
 
     final Cursor cur = at.get();
     final var trees = cur.analysis().trees();
-    final var constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
+    final var constructor = CursorElements.constructorAtNewClassType(trees, cur.path());
     final var element = constructor != null ? constructor : cur.elementOrJavadocReference();
     if (element == null) {
       return null;
@@ -125,7 +125,7 @@ public final class ReferenceFeatures {
 
   private static Element renameElement(final SourceFeatureRequest request, final Cursor cur) {
     final Element constructor =
-        SourceLocator.constructorAtNewClassType(cur.analysis().trees(), cur.path());
+        CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
     final Element named = constructor != null ? constructor : cur.elementOrJavadocReference();
     if (named == null) {
       return null;
@@ -168,7 +168,7 @@ public final class ReferenceFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     final var type = instantiableTypeOf(element);
     if (type == null) {
       return List.of();
@@ -200,7 +200,7 @@ public final class ReferenceFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return null;
     }
@@ -279,8 +279,8 @@ public final class ReferenceFeatures {
   // enclosing class.
   private static boolean cursorNames(
       final String content, final long offset, final Element target) {
-    final int start = SourceLocator.identifierStart(content, (int) offset);
-    final int end = SourceLocator.identifierEnd(content, (int) offset);
+    final int start = DeclarationNames.identifierStart(content, (int) offset);
+    final int end = DeclarationNames.identifierEnd(content, (int) offset);
     return target.getSimpleName().contentEquals(content.substring(start, end));
   }
 }

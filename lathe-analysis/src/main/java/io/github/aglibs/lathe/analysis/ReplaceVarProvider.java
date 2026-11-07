@@ -33,8 +33,8 @@ final class ReplaceVarProvider {
 
     final var trees = analysis.trees();
     final long offset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final TreePath varPath = TreePaths.enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
+        Positions.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
+    final TreePath varPath = TreePaths.enclosingVariable(CursorElements.pathAt(trees, cu, offset));
     if (varPath == null) {
       return List.of();
     }
@@ -59,8 +59,8 @@ final class ReplaceVarProvider {
     final var replaceEdit =
         new TextEdit(
             new Range(
-                SourceLocator.offsetToPosition(cu, varStart),
-                SourceLocator.offsetToPosition(cu, varStart + VAR.length())),
+                Positions.offsetToPosition(cu, varStart),
+                Positions.offsetToPosition(cu, varStart + VAR.length())),
             written.text());
     final List<TextEdit> edits =
         Stream.concat(Stream.of(replaceEdit), written.imports().stream()).toList();

@@ -73,8 +73,8 @@ final class CodeActionSupport {
   static TreePath pathAt(
       final AttributedFileAnalysis analysis, final int line, final int character) {
     final CompilationUnitTree cu = analysis.tree();
-    final long offset = SourceLocator.toOffset(cu, line, character);
-    return SourceLocator.pathAt(analysis.trees(), cu, offset);
+    final long offset = Positions.toOffset(cu, line, character);
+    return CursorElements.pathAt(analysis.trees(), cu, offset);
   }
 
   // A type as code written at `path` names it, and the imports that name needs.
@@ -243,7 +243,7 @@ final class CodeActionSupport {
       return -1;
     }
 
-    final long varStart = SourceLocator.findIdentifierFrom(content, declStart, "var");
+    final long varStart = DeclarationNames.findIdentifierFrom(content, declStart, "var");
     if (varStart < 0 || (bound >= 0 && varStart >= bound)) {
       return -1;
     }
@@ -350,12 +350,12 @@ final class CodeActionSupport {
             .min()
             .orElse(-1);
     if (anchor >= 0) {
-      final var pos = SourceLocator.offsetToPosition(cu, anchor);
+      final var pos = Positions.offsetToPosition(cu, anchor);
       return new TextEdit(
           new Range(pos, pos), "%s\n%s".formatted(declaration, lineIndent(source, (int) anchor)));
     }
 
-    final var pos = SourceLocator.offsetToPosition(cu, brace + 1);
+    final var pos = Positions.offsetToPosition(cu, brace + 1);
     final String classIndent = lineIndent(source, (int) positions.getStartPosition(cu, cls));
     return new TextEdit(new Range(pos, pos), "\n%s  %s".formatted(classIndent, declaration));
   }

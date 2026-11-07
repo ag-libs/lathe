@@ -3,12 +3,12 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.LibrarySources;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -70,7 +70,7 @@ class ReferenceSearchTest {
                       "file:///A.java",
                       a,
                       1,
-                      SourceLocator.offsetToPosition(a, a.indexOf("valueOf")),
+                      Positions.offsetToPosition(a, a.indexOf("valueOf")),
                       List.of(),
                       LibrarySources.none()));
       final SearchHits<ReferenceMatch> found =

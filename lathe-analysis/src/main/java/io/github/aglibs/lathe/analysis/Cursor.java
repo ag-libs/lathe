@@ -27,6 +27,6 @@ public record Cursor(AttributedFileAnalysis analysis, TreePath path, long offset
       }
     }
 
-    return SourceLocator.elementAt(analysis.trees(), path);
+    return CursorElements.elementAt(analysis.trees(), path);
   }
 }

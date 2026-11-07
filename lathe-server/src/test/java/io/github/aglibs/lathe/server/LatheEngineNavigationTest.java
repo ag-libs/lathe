@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 

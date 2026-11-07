@@ -252,8 +252,8 @@ class DefinitionLocatorTest extends SampleFixture {
       final var constantPath = pathAt(parsed.trees(), parsed.cu(), expression, "ACTIVE");
       final var typeLocation = definitionAt(parsed, typePath);
       final var constantLocation = definitionAt(parsed, constantPath);
-      final var typeParameter = SourceLocator.parameterElementAt(parsed.trees(), typePath);
-      final var constantParameter = SourceLocator.parameterElementAt(parsed.trees(), constantPath);
+      final var typeParameter = CursorElements.parameterElementAt(parsed.trees(), typePath);
+      final var constantParameter = CursorElements.parameterElementAt(parsed.trees(), constantPath);
 
       assertThat(typeLocation).isPresent();
       assertThat(typeLocation.get().getUri()).endsWith("EnumArgument.java");
@@ -518,7 +518,7 @@ class DefinitionLocatorTest extends SampleFixture {
   }
 
   private Optional<Location> definitionAt(final TreePath path) {
-    final var element = SourceLocator.elementAt(compiled.trees(), path);
+    final var element = CursorElements.elementAt(compiled.trees(), path);
     return new DefinitionLocator(compiled.parser())
         .locate(
             element, compiled.trees(), List.of(), compiled.cu().getSourceFile().toUri().toString());
@@ -526,7 +526,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
   private static Optional<Location> definitionAt(
       final TestJavac.ParsedSource parsed, final TreePath path) {
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
     return new DefinitionLocator(parsed.parser())
         .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());
   }

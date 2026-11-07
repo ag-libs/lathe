@@ -57,7 +57,7 @@ public final class NavigationFeatures {
 
     final Cursor cur = at.get();
     final long offset =
-        SourceLocator.toOffset(
+        Positions.toOffset(
             cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
     return SignatureHelpResolver.resolve(
         cur.analysis(), cur.path(), offset, parser, request.allSourceRoots(), javadocLocator);
@@ -71,7 +71,7 @@ public final class NavigationFeatures {
         .map(
             cur ->
                 IOUtil.unchecked(
-                    () -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset())))
+                    () -> DeclarationNames.onName(cur.analysis(), cur.path(), cur.offset())))
         .orElse(true);
   }
 
@@ -84,7 +84,7 @@ public final class NavigationFeatures {
 
     final Cursor cur = at.get();
     final VariableElement param =
-        SourceLocator.parameterElementAt(cur.analysis().trees(), cur.path());
+        CursorElements.parameterElementAt(cur.analysis().trees(), cur.path());
     if (param != null) {
       final var callee = (ExecutableElement) param.getEnclosingElement();
       final int index = callee.getParameters().indexOf(param);
@@ -134,7 +134,7 @@ public final class NavigationFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return Optional.empty();
     }
@@ -249,7 +249,7 @@ public final class NavigationFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     if (element != null) {
       final var contractOpt =
           DeclarationLocator.findContract(
@@ -291,7 +291,7 @@ public final class NavigationFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     if (!(element instanceof final TypeElement typeElement)) {
       return List.of();
     }

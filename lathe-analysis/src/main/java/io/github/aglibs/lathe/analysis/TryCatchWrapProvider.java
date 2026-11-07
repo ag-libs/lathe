@@ -65,8 +65,8 @@ final class TryCatchWrapProvider {
                 request.payload().name(),
                 indent);
 
-    final var start = SourceLocator.offsetToPosition(cu, statementStart);
-    final var end = SourceLocator.offsetToPosition(cu, statementEnd);
+    final var start = Positions.offsetToPosition(cu, statementStart);
+    final var end = Positions.offsetToPosition(cu, statementEnd);
     final var edit = new WorkspaceEdit();
     edit.setChanges(Map.of(request.uri(), List.of(new TextEdit(new Range(start, end), wrapped))));
 

@@ -43,7 +43,7 @@ class ExtractionSupportTest {
     final CompilationUnitTree cu = parsed.cu();
     final var scope = TreePath.getPath(cu, cu.getTypeDecls().get(0));
     final String content = SampleFixture.sourceContent(cu);
-    final TreePath selected = SourceLocator.pathAt(trees, cu, content.indexOf("String"));
+    final TreePath selected = CursorElements.pathAt(trees, cu, content.indexOf("String"));
 
     final List<TreePath> occurrences = ExtractionSupport.occurrences(scope, selected, trees);
 

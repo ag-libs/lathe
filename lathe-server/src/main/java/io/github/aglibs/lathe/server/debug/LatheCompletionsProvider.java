@@ -4,7 +4,7 @@ import com.microsoft.java.debug.core.adapter.ICompletionsProvider;
 import com.microsoft.java.debug.core.protocol.Types.CompletionItem;
 import com.sun.jdi.Location;
 import com.sun.jdi.StackFrame;
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -81,7 +81,7 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
     // column 0, so its own line is where the cursor sits; the column is a 0-based offset into the
     // snippet.
     final int frameLine = location.lineNumber() - 1;
-    final int lineStart = SourceLocator.toOffset(content, frameLine, 0);
+    final int lineStart = Positions.toOffset(content, frameLine, 0);
     final int snippetLine = frameLine + 1;
     final int cursorColumn = Math.max(0, Math.min(column, snippet.length()));
     final String synthetic =

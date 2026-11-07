@@ -364,10 +364,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final long offset =
-        SourceLocator.toOffset(
-            analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
+        Positions.toOffset(analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
     return Optional.of(
         new Cursor(
-            analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset), offset));
+            analysis, CursorElements.pathAt(analysis.trees(), analysis.tree(), offset), offset));
   }
 }

@@ -71,13 +71,13 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
 
   @Override
   public Void visitMethodInvocation(final MethodInvocationTree node, final Void ignored) {
-    final var element = SourceLocator.elementAt(trees, getCurrentPath());
+    final var element = CursorElements.elementAt(trees, getCurrentPath());
     if (element instanceof ExecutableElement) {
       final var sel = node.getMethodSelect();
       if (sel instanceof final MemberSelectTree mst) {
         final String name = mst.getIdentifier().toString();
         final long startOff =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, mst), name);
+            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, mst), name);
         if (startOff >= 0) {
           addCallSite(element, rangeFor(startOff, name));
         }
@@ -100,7 +100,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
         final long startOff =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
+            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
         if (startOff >= 0) {
           addCallSite(element, rangeFor(startOff, name));
         }
@@ -116,7 +116,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
     if (element instanceof ExecutableElement && !element.getSimpleName().contentEquals("<init>")) {
       final String name = node.getName().toString();
       final long startOff =
-          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+          DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (startOff >= 0) {
         addCallSite(element, rangeFor(startOff, name));
       }
@@ -133,7 +133,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   }
 
   private Range rangeFor(final long startOff, final String name) {
-    return SourceLocator.nameRange(SourceLocator.offsetToPosition(cu, startOff), name);
+    return Positions.nameRange(Positions.offsetToPosition(cu, startOff), name);
   }
 
   private List<CallHierarchyOutgoingCall> buildResults(

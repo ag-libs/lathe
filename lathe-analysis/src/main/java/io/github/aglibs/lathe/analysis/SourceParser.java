@@ -1,9 +1,12 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -11,12 +14,16 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.VariableElement;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
@@ -74,7 +81,7 @@ public final class SourceParser implements AutoCloseable {
               return parseFile(
                   file,
                   (trees, cu) -> {
-                    final var path = SourceLocator.declarationPath(cu, element);
+                    final var path = declarationPath(cu, element);
                     return path != null ? fn.apply(trees, path) : null;
                   });
             });
@@ -128,5 +135,68 @@ public final class SourceParser implements AutoCloseable {
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[parser] failed to close fm");
     }
+  }
+
+  public static TreePath declarationPath(final CompilationUnitTree cu, final Element target) {
+    if (target == null) {
+      return null;
+    }
+    final var result = new AtomicReference<TreePath>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree tree, final Void unused) {
+        if ((target.getKind().isClass() || target.getKind().isInterface())
+            && tree.getSimpleName().contentEquals(target.getSimpleName())) {
+          result.set(getCurrentPath());
+        }
+        return super.visitClass(tree, unused);
+      }
+
+      @Override
+      public Void visitMethod(final MethodTree tree, final Void unused) {
+        final boolean nameMatch =
+            target.getKind() == ElementKind.CONSTRUCTOR
+                ? tree.getName().contentEquals("<init>")
+                : tree.getName().contentEquals(DeclarationNames.declarationName(target));
+        if ((target.getKind() == ElementKind.METHOD || target.getKind() == ElementKind.CONSTRUCTOR)
+            && nameMatch
+            && matchParameters(
+                tree.getParameters(), ((ExecutableElement) target).getParameters())) {
+          result.set(getCurrentPath());
+        }
+        return super.visitMethod(tree, unused);
+      }
+
+      @Override
+      public Void visitVariable(final VariableTree tree, final Void unused) {
+        if ((target.getKind() == ElementKind.FIELD || target.getKind() == ElementKind.ENUM_CONSTANT)
+            && tree.getName().contentEquals(target.getSimpleName())
+            && getCurrentPath().getParentPath().getLeaf() instanceof ClassTree) {
+          result.set(getCurrentPath());
+        }
+        return super.visitVariable(tree, unused);
+      }
+    }.scan(cu, null);
+    return result.get();
+  }
+
+  private static boolean matchParameters(
+      final List<? extends VariableTree> treeParams,
+      final List<? extends VariableElement> targetParams) {
+    if (treeParams.size() != targetParams.size()) {
+      return false;
+    }
+
+    return IntStream.range(0, treeParams.size())
+        .allMatch(
+            i -> {
+              final String treeType = simplifyType(treeParams.get(i).getType().toString());
+              final String targetType = simplifyType(targetParams.get(i).asType().toString());
+              return treeType.equals(targetType);
+            });
+  }
+
+  private static String simplifyType(final String typeStr) {
+    return typeStr.replaceAll("[a-zA-Z0-9_]+\\.", "").replaceAll("\\s+", "").replace("...", "[]");
   }
 }

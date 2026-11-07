@@ -41,7 +41,7 @@ public final class HierarchyFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     if (!(element instanceof final TypeElement typeElement)) {
       return List.of();
     }
@@ -57,7 +57,7 @@ public final class HierarchyFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
+    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return List.of();
     }

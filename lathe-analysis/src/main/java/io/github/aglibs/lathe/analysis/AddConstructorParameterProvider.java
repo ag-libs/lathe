@@ -257,7 +257,7 @@ final class AddConstructorParameterProvider {
         return null;
       }
 
-      final var pos = SourceLocator.offsetToPosition(cu, end);
+      final var pos = Positions.offsetToPosition(cu, end);
       return new TextEdit(new Range(pos, pos), ", %s".formatted(param));
     }
 
@@ -273,7 +273,7 @@ final class AddConstructorParameterProvider {
       return null;
     }
 
-    final var pos = SourceLocator.offsetToPosition(cu, open + 1);
+    final var pos = Positions.offsetToPosition(cu, open + 1);
     return new TextEdit(new Range(pos, pos), param);
   }
 
@@ -294,7 +294,7 @@ final class AddConstructorParameterProvider {
       final long end = positions.getEndPosition(cu, last);
       final long start = positions.getStartPosition(cu, last);
       final String indent = CodeActionSupport.lineIndent(source, (int) start);
-      final var pos = SourceLocator.offsetToPosition(cu, end);
+      final var pos = Positions.offsetToPosition(cu, end);
       return new TextEdit(new Range(pos, pos), "\n%s%s".formatted(indent, bind));
     }
 
@@ -308,8 +308,8 @@ final class AddConstructorParameterProvider {
     }
 
     final String indent = CodeActionSupport.lineIndent(source, (int) methodStart);
-    final var open = SourceLocator.offsetToPosition(cu, brace + 1);
-    final var close = SourceLocator.offsetToPosition(cu, bodyEnd - 1);
+    final var open = Positions.offsetToPosition(cu, brace + 1);
+    final var close = Positions.offsetToPosition(cu, bodyEnd - 1);
     return new TextEdit(new Range(open, close), "\n%s  %s\n%s".formatted(indent, bind, indent));
   }
 
@@ -347,7 +347,7 @@ final class AddConstructorParameterProvider {
         return null;
       }
 
-      final var pos = SourceLocator.offsetToPosition(cu, end);
+      final var pos = Positions.offsetToPosition(cu, end);
       return new TextEdit(new Range(pos, pos), ", %s".formatted(name));
     }
 
@@ -356,7 +356,7 @@ final class AddConstructorParameterProvider {
       return null;
     }
 
-    final var pos = SourceLocator.offsetToPosition(cu, callEnd - 1);
+    final var pos = Positions.offsetToPosition(cu, callEnd - 1);
     return new TextEdit(new Range(pos, pos), name);
   }
 
@@ -375,7 +375,7 @@ final class AddConstructorParameterProvider {
     final VariableTree lastField = CodeActionSupport.lastField(cls, cu, positions, brace);
     if (lastField == null) {
       final String classIndent = CodeActionSupport.lineIndent(source, (int) classStart);
-      final var pos = SourceLocator.offsetToPosition(cu, brace + 1);
+      final var pos = Positions.offsetToPosition(cu, brace + 1);
       return new TextEdit(
           new Range(pos, pos),
           "\n%s  %s(final %s %s) {\n%s    this.%s = %s;\n%s  }\n"
@@ -390,7 +390,7 @@ final class AddConstructorParameterProvider {
     }
 
     final String indent = CodeActionSupport.lineIndent(source, (int) fieldStart);
-    final var pos = SourceLocator.offsetToPosition(cu, fieldEnd);
+    final var pos = Positions.offsetToPosition(cu, fieldEnd);
     return new TextEdit(
         new Range(pos, pos),
         "\n\n%s%s(final %s %s) {\n%s  this.%s = %s;\n%s}"

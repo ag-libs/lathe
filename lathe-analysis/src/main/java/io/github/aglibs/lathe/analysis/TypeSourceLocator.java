@@ -87,12 +87,12 @@ public final class TypeSourceLocator {
       final String name) {
     try {
       final Position start =
-          SourceLocator.declarationNamePosition(trees, tree, path, name).orElse(null);
+          DeclarationNames.declarationNamePosition(trees, tree, path, name).orElse(null);
       if (start == null) {
         return null;
       }
 
-      return new Location(sourceFile.toUri().toString(), SourceLocator.nameRange(start, name));
+      return new Location(sourceFile.toUri().toString(), Positions.nameRange(start, name));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
