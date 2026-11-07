@@ -12,6 +12,8 @@ import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import org.gradle.testkit.runner.BuildTask;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -72,6 +74,93 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(main.compilerArgs()).containsExactly("-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
         .contains(fixture.path("build/classes/java/main"));
+  }
+
+  // A build that points every compile, the test one too, at one generated-sources directory, as
+  // Apache Fineract does. The compiles stand in for a processor, each writing a source there; the
+  // test compile cleans the directory on a full compile, so the main capture must copy it first.
+  @Test
+  void capture_testCompileSharingMainsGeneratedSourcesDir_capturesMainsBeforeTheTestCompile()
+      throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file("settings.gradle", SETTINGS)
+            .file(
+                "build.gradle",
+                GradleFixture.JAVA
+                    + """
+                    def shared = layout.buildDirectory.dir('generated/sources/annotationProcessor/java/main')
+                    tasks.withType(JavaCompile).configureEach {
+                      options.generatedSourceOutputDirectory = shared
+                    }
+                    tasks.named('compileJava') {
+                      doLast { shared.get().file('MainGen.java').asFile.text = 'class MainGen {}' }
+                    }
+                    tasks.named('compileTestJava') {
+                      doLast { shared.get().file('TestGen.java').asFile.text = 'class TestGen {}' }
+                    }
+                    """)
+            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
+            .file(
+                "src/test/java/com/example/AppTest.java",
+                "package com.example; class AppTest {}\n");
+
+    final var build = fixture.runner("testClasses").build();
+
+    final List<String> order = build.getTasks().stream().map(BuildTask::getPath).toList();
+    assertThat(order.indexOf(":latheCaptureMain")).isLessThan(order.indexOf(":compileTestJava"));
+    assertThat(build.task(":latheCaptureTest").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    final Path mainMirror =
+        dir.resolve(".lathe").resolve(LatheLayout.generatedSourcesDir(LatheLayout.CLASSES_DIR));
+    assertThat(mainMirror.resolve("MainGen.java")).exists();
+    assertThat(mainMirror.resolve("TestGen.java")).doesNotExist();
+    final String shared = fixture.path("build/generated/sources/annotationProcessor/java/main");
+    assertThat(params("", LatheLayout.CLASSES_DIR).generatedSourcesDir()).isEqualTo(shared);
+    assertThat(params("", LatheLayout.TEST_CLASSES_DIR).generatedSourcesDir()).isEqualTo(shared);
+  }
+
+  // A task that runs after the classes and writes into the processed resources, as Apache
+  // Fineract's OpenAPI spec does: the classes depend on the capture, so the task runs after it and
+  // the next build mirrors its file; a resource processResources expands is captured when the
+  // property it expands changes, and an unchanged build leaves the capture up to date.
+  @Test
+  void capture_taskWritingIntoProcessedResourcesAfterClasses_runsAfterTheCaptureAndIsMirrored()
+      throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file("settings.gradle", SETTINGS)
+            .file(
+                "build.gradle",
+                GradleFixture.JAVA
+                    + """
+                    def spec = tasks.register('spec') {
+                      dependsOn 'classes'
+                      def out = layout.buildDirectory.dir('resources/main/static')
+                      outputs.dir(out)
+                      doLast { out.get().file('api.json').asFile.text = '{}' }
+                    }
+                    tasks.named('jar') { dependsOn spec }
+                    tasks.named('processResources') {
+                      def v = providers.gradleProperty('v')
+                      inputs.property('v', v)
+                      expand(v: v.get())
+                    }
+                    """)
+            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
+            .file("src/main/resources/app.properties", "v=${v}\n");
+
+    final var first = fixture.runner("jar", "-Pv=1").build();
+    final var second = fixture.runner("jar", "-Pv=1").build();
+    final var unchanged = fixture.runner("jar", "-Pv=1").build();
+    final var expanded = fixture.runner("jar", "-Pv=2").build();
+
+    final List<String> order = first.getTasks().stream().map(BuildTask::getPath).toList();
+    assertThat(order.indexOf(":latheCaptureMain")).isLessThan(order.indexOf(":spec"));
+    assertThat(second.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(dir.resolve(".lathe/classes/static/api.json")).exists();
+    assertThat(unchanged.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.UP_TO_DATE);
+    assertThat(expanded.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(dir.resolve(".lathe/classes/app.properties")).content().isEqualTo("v=2\n");
   }
 
   // A processor built in the same build: its output is mirrored for the editor, and a library

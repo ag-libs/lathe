@@ -9605,6 +9605,49 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-32 — A Gradle task writing into a directory Lathe's capture reads fails the build — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the Gradle front-end: `latheSync`, and so every Lathe feature, on such a build.**
+
+Found by the jdtls comparison's setup check (2026-11-06) on Apache Fineract at `d63beed7c`, Lathe 0.3.1 (the Gradle plugin built from the `v0.3.1` tag).
+
+### Observed behaviour
+
+`./gradlew latheSync -Plathe.capture.only=true` fails after about 3 minutes:
+`Task ':fineract-validation:latheCaptureMain' uses this output of task ':fineract-validation:compileTestJava' without declaring an explicit or implicit dependency`, on `build/generated/sources/annotationProcessor/java/main`.
+Without Lathe the build succeeds.
+
+Fineract's root `build.gradle` sets `options.generatedSourceOutputDirectory` to `$buildDir/generated/sources/annotationProcessor/java/main` for every `JavaCompile` task, so `compileTestJava` writes its processor output into the main tree's directory too.
+`LatheCaptureTask` declares the main compile's generated-sources directory as a tracked input (`@InputFiles` on `getGeneratedSourcesDir()`), and `latheCaptureMain` depends on `compileJava` only, so Gradle 9 sees an input another task also writes, with no order between them, and stops the build.
+Were the build to pass, the main tree's generated-sources mirror would also hold the test compile's generated sources.
+
+With that fixed, the same build failed on a second directory: Fineract's `resolve` task depends on `classes`, generates the OpenAPI spec from the compiled code, and writes it into `fineract-provider/build/resources/main/static`, the processed-resources directory `LatheCaptureTask` tracked as an input (`getResourcesDir()`).
+The third directory the capture reads, the classes, has no such writer in Fineract: its static weaving is a `doLast` of `compileJava` itself.
+
+### Probe
+
+Apache Fineract with Lathe 0.3.1 on Gradle: `JAVA_HOME=<JDK 25> ./gradlew --no-daemon --init-script <Lathe init script> latheSync -Plathe.capture.only=true`.
+
+### Resolution
+
+The plugin orders the tasks instead of hiding the overlap, so the capture never reads a directory while another task writes it:
+- the source set's `classes` task depends on its capture, so a task that runs after the classes and writes into what the capture reads (Fineract's `resolve`) runs after the capture; the processed resources stay a tracked input, so the next build mirrors that task's file, and a resource `processResources` filters or expands is captured when it changes;
+- the test compile runs after the main capture (`mustRunAfter`), so the main capture copies a shared generated-sources directory before the test compile cleans and refills it; that directory is read without being tracked (`@Internal`), as the compiled classes, a tracked input, change whenever it does.
+
+A first version marked both directories `@Internal` alone; review found it only silenced Gradle: the capture could then copy a directory another task was writing, run after the test compile had emptied main's generated sources, and miss filtered resources.
+The same order covers a task after the classes that writes into the classes directory (offline instrumentation, post-compile weaving). Not covered, as no project here has one: a task with no order to the classes at all that writes into a directory the capture reads.
+
+### Regression targets
+
+`LatheCaptureTaskFunctionalTest.capture_testCompileSharingMainsGeneratedSourcesDir_capturesMainsBeforeTheTestCompile` and
+`LatheCaptureTaskFunctionalTest.capture_taskWritingIntoProcessedResourcesAfterClasses_runsAfterTheCaptureAndIsMirrored`, each of which fails with Fineract's error without the fix.
+
+---
+
 ## WS-31 — A module that depends on a shaded reactor module shows false errors — done
 
 **Status: done.**
