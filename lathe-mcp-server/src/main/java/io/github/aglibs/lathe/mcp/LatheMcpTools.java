@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.LatheEngine.TestScope;
+import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
@@ -36,6 +37,7 @@ import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -636,16 +638,23 @@ final class LatheMcpTools {
         file -> outlineResult(file, engine.outline(file), engine.notes(List.of(file))));
   }
 
+  // An enum argument by its constant's name, case-insensitive.
+  private static <E extends Enum<E>> Optional<E> enumArg(final Class<E> type, final String name) {
+    return Arrays.stream(type.getEnumConstants())
+        .filter(constant -> constant.name().equalsIgnoreCase(name))
+        .findFirst();
+  }
+
   // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
   private static TestScope testScope(final String scope) {
-    return scope == null ? TestScope.CLASS : TestScope.from(scope).orElse(null);
+    return scope == null ? TestScope.CLASS : enumArg(TestScope.class, scope).orElse(null);
   }
 
   // Optional, case-insensitive; absent means the tool's default, unknown means null.
   private static SymbolScope symbolScope(
       final CallToolRequest request, final SymbolScope defaultScope) {
     final String scope = stringArg(request, "scope");
-    return scope == null ? defaultScope : SymbolScope.from(scope).orElse(null);
+    return scope == null ? defaultScope : enumArg(SymbolScope.class, scope).orElse(null);
   }
 
   private static CallToolResult handleCallHierarchy(
@@ -654,7 +663,7 @@ final class LatheMcpTools {
     final CallDirection direction =
         directionArg == null
             ? CallDirection.INCOMING
-            : CallDirection.from(directionArg).orElse(null);
+            : enumArg(CallDirection.class, directionArg).orElse(null);
     if (direction == null) {
       return error("call_hierarchy 'direction' must be one of incoming, outgoing");
     }
@@ -1244,12 +1253,12 @@ final class LatheMcpTools {
             messageText(d));
   }
 
-  private static String deferralText(final String reason) {
+  private static String deferralText(final ReconcileOutcome.DeferReason reason) {
     return switch (reason) {
-      case "BUILD_FILES_PENDING" -> "a pending build-file or dependency change needs a sync";
-      case "BUILD_IN_PROGRESS" -> "a build is in progress";
-      case "OTHER_SERVER_WRITING" -> "another Lathe server on this workspace is updating .lathe/";
-      default -> reason;
+      case BUILD_FILES_PENDING -> "a pending build-file or dependency change needs a sync";
+      case BUILD_IN_PROGRESS -> "a build is in progress";
+      case OTHER_SERVER_WRITING -> "another Lathe server on this workspace is updating .lathe/";
+      case NONE -> "no reason";
     };
   }
 

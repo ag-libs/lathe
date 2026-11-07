@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.engine;
 
+import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 
@@ -15,7 +16,7 @@ import java.util.List;
  * changed files and their callers in their own and in dependent modules.
  */
 public record LatheVerifyChange(
-    String deferral,
+    ReconcileOutcome.DeferReason deferral,
     List<LatheModuleDiagnostics> perModule,
     List<String> affectedModules,
     String suggestedSync) {

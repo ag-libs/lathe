@@ -172,7 +172,8 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
         .as("the agent's edits are still compiled while the sync is pending")
         .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
-    assertThat(engine.verifyChange(List.of()).deferral()).isEqualTo("BUILD_FILES_PENDING");
+    assertThat(engine.verifyChange(List.of()).deferral())
+        .isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
 
     Files.writeString(pom, "<project/>");
     engine.diagnostics(fx.caller());

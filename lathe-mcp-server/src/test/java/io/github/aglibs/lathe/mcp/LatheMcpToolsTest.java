@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
+import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
@@ -581,14 +582,21 @@ class LatheMcpToolsTest {
             text(
                 LatheMcpTools.verifyChangeResult(
                     new LatheVerifyChange(
-                        "BUILD_IN_PROGRESS", List.of(), List.of(), ".lathe/lathe-sync.sh"),
+                        ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS,
+                        List.of(),
+                        List.of(),
+                        ".lathe/lathe-sync.sh"),
                     LatheMcpTools.NO_NOTES)))
         .isEqualTo(
             "Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.");
     assertThat(
             text(
                 LatheMcpTools.verifyChangeResult(
-                    new LatheVerifyChange("OTHER_SERVER_WRITING", List.of(), List.of(), null),
+                    new LatheVerifyChange(
+                        ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING,
+                        List.of(),
+                        List.of(),
+                        null),
                     LatheMcpTools.NO_NOTES)))
         .isEqualTo(
             "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check in a moment.");

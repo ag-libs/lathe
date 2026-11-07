@@ -45,7 +45,6 @@ import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -143,24 +142,12 @@ public final class LatheEngine {
     public TestSelectionKind selectionKind() {
       return selectionKind;
     }
-
-    public String wireName() {
-      return name().toLowerCase(Locale.ROOT);
-    }
-
-    public static Optional<TestScope> from(final String wireName) {
-      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
-    }
   }
 
   /** Which way {@link #callHierarchy} walks: callers of the symbol, or callees it invokes. */
   public enum CallDirection {
     INCOMING,
-    OUTGOING;
-
-    public static Optional<CallDirection> from(final String wireName) {
-      return Arrays.stream(values()).filter(d -> d.name().equalsIgnoreCase(wireName)).findFirst();
-    }
+    OUTGOING
   }
 
   // Which code an answer covers: the reactor's own (generated sources included), or also the JDK
@@ -168,10 +155,6 @@ public final class LatheEngine {
   public enum SymbolScope {
     REACTOR,
     ALL;
-
-    public static Optional<SymbolScope> from(final String wireName) {
-      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
-    }
 
     public boolean includes(final LatheLocation.Origin origin) {
       return this == ALL || origin != LatheLocation.Origin.EXTERNAL;
@@ -766,7 +749,8 @@ public final class LatheEngine {
       throw new Refused(
           scope == TestScope.METHOD
               ? "no test method '%s' in %s".formatted(method, file.getFileName())
-              : "no %s test target in %s".formatted(scope.wireName(), file.getFileName()));
+              : "no %s test target in %s"
+                  .formatted(scope.name().toLowerCase(Locale.ROOT), file.getFileName()));
     }
 
     final long outermost =
@@ -860,7 +844,7 @@ public final class LatheEngine {
           outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
               ? null
               : LatheLayout.SYNC_SCRIPT_COMMAND;
-      return new LatheVerifyChange(outcome.deferral().name(), List.of(), List.of(), sync);
+      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync);
     }
 
     if (plan.changed().isEmpty()) {
