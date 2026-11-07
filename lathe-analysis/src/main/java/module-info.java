@@ -12,7 +12,7 @@ module io.github.aglibs.lathe.analysis {
 
   exports io.github.aglibs.lathe.analysis;
 
-  // TypeHierarchyExplorerResult (the lathe.typeHierarchy command result) and RunTarget cross the
+  // TypeHierarchyExplorerResult (the lathe.types.hierarchy command result) and RunTarget cross the
   // JSON-RPC boundary as raw records; Gson reflects on their accessors.
   opens io.github.aglibs.lathe.analysis to
       com.google.gson;

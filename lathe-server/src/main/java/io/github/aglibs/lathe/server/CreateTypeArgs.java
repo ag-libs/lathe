@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.validcheck.ValidCheck;
 
-// A lathe.createType request. moduleRel and pkg may be empty (reactor-root module, default
+// A lathe.types.create request. moduleRel and pkg may be empty (reactor-root module, default
 // package).
 record CreateTypeArgs(String moduleRel, SourceScope kind, String pkg, TypeKind type, String name) {
 

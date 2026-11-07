@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TokenScanner;
+import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
@@ -134,35 +135,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     codeActionOptions.setResolveProvider(true);
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
-    capabilities.setExecuteCommandProvider(
-        new ExecuteCommandOptions(
-            List.of(
-                LatheWorkspaceService.RUN_TEST_COMMAND,
-                LatheWorkspaceService.RUN_MAIN_COMMAND,
-                LatheWorkspaceService.RUN_NAMED_COMMAND,
-                LatheWorkspaceService.DEBUG_TEST_COMMAND,
-                LatheWorkspaceService.DEBUG_MAIN_COMMAND,
-                LatheWorkspaceService.DEBUG_NAMED_COMMAND,
-                LatheWorkspaceService.LIST_RUN_CONFIGS_COMMAND,
-                LatheWorkspaceService.SAVE_RUN_CONFIG_COMMAND,
-                LatheWorkspaceService.CANCEL_TEST_COMMAND,
-                LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
-                LatheWorkspaceService.DIR_RUNNABLES_COMMAND,
-                LatheWorkspaceService.TEST_SOURCES_COMMAND,
-                LatheWorkspaceService.TEST_COUNTERPARTS_COMMAND,
-                LatheWorkspaceService.TEST_MODULES_COMMAND,
-                LatheWorkspaceService.DISCOVER_TESTS_COMMAND,
-                LatheWorkspaceService.RESOURCES_COMMAND,
-                LatheWorkspaceService.RESOURCE_OPEN_COMMAND,
-                LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,
-                LatheWorkspaceService.INSTANTIATIONS_COMMAND,
-                LatheWorkspaceService.TYPE_HIERARCHY_COMMAND,
-                LatheWorkspaceService.CREATE_TYPE_COMMAND,
-                LatheWorkspaceService.MODULES_COMMAND,
-                LatheWorkspaceService.PACKAGES_COMMAND,
-                LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
-                LatheWorkspaceService.MISSING_IMPORTS_COMMAND,
-                LatheWorkspaceService.IMPORT_EDITS_COMMAND)));
+    capabilities.setExecuteCommandProvider(new ExecuteCommandOptions(LatheCommands.ALL));
     capabilities.setExperimental(Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL));
     return capabilities;
   }

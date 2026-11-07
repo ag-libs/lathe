@@ -12,16 +12,25 @@ function M.client(bufnr)
   return vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
 end
 
---- Run a server command; `on_result` gets its result, unless the server answers an error, which is
---- notified (at `opts.level`, ERROR by default) instead.
+--- Run a server command (a name from lathe.commands); `on_result`, when given, gets its result. An
+--- error the server answers is notified (at `opts.level`, ERROR by default), dropped with
+--- `opts.silent`, or handed to `opts.on_error(err)` instead.
 function M.exec(client, bufnr, command, arguments, on_result, opts)
-  local level = (opts and opts.level) or vim.log.levels.ERROR
+  opts = opts or {}
   client:request("workspace/executeCommand", {
     command = command,
     arguments = arguments,
   }, function(err, result)
     if err then
-      M.notify(err.message, level)
+      if opts.on_error then
+        opts.on_error(err)
+      elseif not opts.silent then
+        M.notify(err.message, opts.level or vim.log.levels.ERROR)
+      end
+      return
+    end
+
+    if not on_result then
       return
     end
 
@@ -34,6 +43,15 @@ function M.exec(client, bufnr, command, arguments, on_result, opts)
       error(failure, 0) -- rethrown as raised, not as raised here
     end
   end, bufnr)
+end
+
+--- Run a server command from a nio task (neotest's async context): returns `err, result`, as nio's
+--- client request does.
+function M.exec_nio(client, command, arguments, bufnr)
+  return client.request.workspace_executeCommand({
+    command = command,
+    arguments = arguments,
+  }, bufnr)
 end
 
 --- Let the user pick one of `entries` (each with a `display`, and an `ordinal` to match): in

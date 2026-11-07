@@ -1,7 +1,7 @@
 -- Run the current buffer's `main` class from Lathe's captured `.lathe/` bytecode, and mark
 -- runnable mains in the sign column. Tests keep going through lathe.neotest; this is the
 -- main-only surface -- RunnableKind.MAIN, which the neotest adapter deliberately excludes
--- (a `main` is not a test). Discovery reuses `lathe.runnables.list` and execution
+-- (a `main` is not a test). Discovery reuses `lathe.runnables.file` and execution
 -- `lathe.run.main`; console output reuses lathe.output, so there is no output code here.
 --
 -- Uses core vim.lsp directly (no neotest/nio), so it loads headlessly and independently of
@@ -45,6 +45,7 @@ local SIGN_TEXT = "▶"
 local active_token
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local lathe_client = util.client
 
 local function in_range(range, line)
@@ -56,7 +57,7 @@ end
 --- the class gutter); else the file's only main if there is exactly one; else nil (no main, or
 --- several with the cursor on none). Always returns a MAIN target -- a MAIN_CLASS hit resolves to
 --- its class's method (id == the method's parentId) so the launch path is unchanged. Pure over the
---- raw lathe.runnables.list targets, so it is unit-testable without a live client.
+--- raw lathe.runnables.file targets, so it is unit-testable without a live client.
 function M.main_target_for(targets, cursor_line)
   local mains = {}
   local main_by_class = {}
@@ -115,18 +116,22 @@ function M.refresh_signs(bufnr)
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.runnables.list",
-    arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
-  }, function(err, targets)
-    if err or not targets then
-      return
-    end
+  util.exec(
+    client,
+    bufnr,
+    commands.RUNNABLES_FILE,
+    { { uri = vim.uri_from_bufnr(bufnr) } },
+    function(targets)
+      if not targets then
+        return
+      end
 
-    vim.schedule(function()
-      place_signs(bufnr, targets)
-    end)
-  end, bufnr)
+      vim.schedule(function()
+        place_signs(bufnr, targets)
+      end)
+    end,
+    { silent = true }
+  )
 end
 
 local notify = util.notify
@@ -167,20 +172,21 @@ local function launch(client, command, args, label)
   output.reset()
   output.ensure_open()
   notify("Running " .. label, vim.log.levels.INFO)
-  client:request("workspace/executeCommand", {
-    command = command,
-    arguments = { args },
-  }, function(err, outcome)
+  local function finish(err, outcome)
     vim.schedule(function()
       on_finished(label, err, outcome)
     end)
-  end)
+  end
+
+  util.exec(client, nil, command, { args }, function(outcome)
+    finish(nil, outcome)
+  end, { on_error = finish })
 end
 
 local function launch_main(client, target)
   launch(
     client,
-    "lathe.run.main",
+    commands.RUN_MAIN,
     { moduleRel = target.moduleRel, mainClass = target.parentId },
     target.parentId
   )
@@ -196,7 +202,7 @@ function M.run_named(name)
   end
 
   last_config = name
-  launch(client, "lathe.run.named", { name = name }, name)
+  launch(client, commands.RUN_NAMED, { name = name }, name)
 end
 
 --- Re-runs the most recently run named config (:LatheRunLast).
@@ -242,11 +248,8 @@ function M.run(bufnr)
   end
 
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
-  client:request("workspace/executeCommand", {
-    command = "lathe.runnables.list",
-    arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
-  }, function(err, targets)
-    local target = not err and targets and M.main_target_for(targets, cursor_line) or nil
+  local function run_target(targets)
+    local target = targets and M.main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
       if not target then
         -- Main-only surface: no main means the user wants tests, which stay with neotest. Delegate
@@ -263,10 +266,23 @@ function M.run(bufnr)
 
       launch_main(client, target)
     end)
-  end, bufnr)
+  end
+
+  util.exec(
+    client,
+    bufnr,
+    commands.RUNNABLES_FILE,
+    { { uri = vim.uri_from_bufnr(bufnr) } },
+    run_target,
+    {
+      on_error = function()
+        run_target(nil)
+      end,
+    }
+  )
 end
 
---- The `lathe.runconfig.save` request body for a resolved runnable target: a MAIN pins its class, a
+--- The `lathe.runConfigs.save` request body for a resolved runnable target: a MAIN pins its class, a
 --- test pins a single selector. A MAIN_CLASS resolves to its main method. Returns nil for a target
 --- with no saveable shape.
 local function save_request(targets, t)
@@ -298,7 +314,7 @@ end
 
 --- The save request for a cursor position: the method-level target (main or test) under the cursor,
 --- else the class-level one, else the file's only main; nil when nothing runnable resolves. Pure over
---- the raw lathe.runnables.list targets, so it is unit-testable without a live client.
+--- the raw lathe.runnables.file targets, so it is unit-testable without a live client.
 function M._save_target_for(targets, cursor_line)
   for _, t in ipairs(targets) do
     if
@@ -346,11 +362,8 @@ function M.save(name, overwrite)
   end
 
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
-  client:request("workspace/executeCommand", {
-    command = "lathe.runnables.list",
-    arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
-  }, function(err, targets)
-    local request = not err and targets and M._save_target_for(targets, cursor_line) or nil
+  local function save_target(targets)
+    local request = targets and M._save_target_for(targets, cursor_line) or nil
     vim.schedule(function()
       if not request then
         notify(
@@ -362,16 +375,30 @@ function M.save(name, overwrite)
 
       request.name = name
       request.overwrite = overwrite
-      client:request("workspace/executeCommand", {
-        command = "lathe.runconfig.save",
-        arguments = { request },
-      }, function(save_err, saved)
+      local function finish(save_err, saved)
         vim.schedule(function()
           on_saved(save_err, saved)
         end)
-      end)
+      end
+
+      util.exec(client, nil, commands.RUN_CONFIGS_SAVE, { request }, function(saved)
+        finish(nil, saved)
+      end, { on_error = finish })
     end)
-  end, bufnr)
+  end
+
+  util.exec(
+    client,
+    bufnr,
+    commands.RUNNABLES_FILE,
+    { { uri = vim.uri_from_bufnr(bufnr) } },
+    save_target,
+    {
+      on_error = function()
+        save_target(nil)
+      end,
+    }
+  )
 end
 
 --- Refreshes the saved-config name cache from the server (for :LatheRun/:LatheDebug completion).
@@ -382,16 +409,11 @@ function M.refresh_configs()
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.runconfigs.list",
-    arguments = { {} },
-  }, function(err, configs)
-    if err or not configs then
-      return
+  util.exec(client, nil, commands.RUN_CONFIGS_LIST, { {} }, function(configs)
+    if configs then
+      config_list = configs
     end
-
-    config_list = configs
-  end)
+  end, { silent = true })
 end
 
 --- Command-completion over the cached config names, prefix-filtered by the current argument.
@@ -419,10 +441,7 @@ function M.stop()
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.run.cancel",
-    arguments = { { token = active_token } },
-  })
+  util.exec(client, nil, commands.RUN_CANCEL, { { token = active_token } }, nil, { silent = true })
 end
 
 --- Registers the run commands and keeps the gutter signs and the run configs current.

@@ -6,6 +6,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.map;
 import static org.mockito.Mockito.mock;
 
 import com.google.gson.JsonParser;
+import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
@@ -98,32 +99,32 @@ class LatheLanguageServerTest {
 
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
         .containsExactlyInAnyOrder(
-            LatheWorkspaceService.RUN_TEST_COMMAND,
-            LatheWorkspaceService.RUN_MAIN_COMMAND,
-            LatheWorkspaceService.RUN_NAMED_COMMAND,
-            LatheWorkspaceService.DEBUG_TEST_COMMAND,
-            LatheWorkspaceService.DEBUG_MAIN_COMMAND,
-            LatheWorkspaceService.DEBUG_NAMED_COMMAND,
-            LatheWorkspaceService.LIST_RUN_CONFIGS_COMMAND,
-            LatheWorkspaceService.SAVE_RUN_CONFIG_COMMAND,
-            LatheWorkspaceService.CANCEL_TEST_COMMAND,
-            LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
-            LatheWorkspaceService.DIR_RUNNABLES_COMMAND,
-            LatheWorkspaceService.TEST_SOURCES_COMMAND,
-            LatheWorkspaceService.TEST_COUNTERPARTS_COMMAND,
-            LatheWorkspaceService.TEST_MODULES_COMMAND,
-            LatheWorkspaceService.DISCOVER_TESTS_COMMAND,
-            LatheWorkspaceService.RESOURCES_COMMAND,
-            LatheWorkspaceService.RESOURCE_OPEN_COMMAND,
-            LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,
-            LatheWorkspaceService.INSTANTIATIONS_COMMAND,
-            LatheWorkspaceService.TYPE_HIERARCHY_COMMAND,
-            LatheWorkspaceService.CREATE_TYPE_COMMAND,
-            LatheWorkspaceService.MODULES_COMMAND,
-            LatheWorkspaceService.PACKAGES_COMMAND,
-            LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
-            LatheWorkspaceService.MISSING_IMPORTS_COMMAND,
-            LatheWorkspaceService.IMPORT_EDITS_COMMAND);
+            LatheCommands.RUN_TEST,
+            LatheCommands.RUN_MAIN,
+            LatheCommands.RUN_NAMED,
+            LatheCommands.DEBUG_TEST,
+            LatheCommands.DEBUG_MAIN,
+            LatheCommands.DEBUG_NAMED,
+            LatheCommands.RUN_CONFIGS_LIST,
+            LatheCommands.RUN_CONFIGS_SAVE,
+            LatheCommands.RUN_CANCEL,
+            LatheCommands.RUNNABLES_FILE,
+            LatheCommands.RUNNABLES_DIR,
+            LatheCommands.TESTS_SOURCES,
+            LatheCommands.TESTS_COUNTERPARTS,
+            LatheCommands.TESTS_MODULES,
+            LatheCommands.TESTS_DISCOVER,
+            LatheCommands.RESOURCES_LIST,
+            LatheCommands.RESOURCES_OPEN,
+            LatheCommands.RESOURCES_REFRESH,
+            LatheCommands.TYPES_INSTANTIATIONS,
+            LatheCommands.TYPES_HIERARCHY,
+            LatheCommands.TYPES_CREATE,
+            LatheCommands.WORKSPACE_MODULES,
+            LatheCommands.WORKSPACE_PACKAGES,
+            LatheCommands.WORKSPACE_CONTEXT,
+            LatheCommands.IMPORTS_MISSING,
+            LatheCommands.IMPORTS_EDITS);
   }
 
   @Test

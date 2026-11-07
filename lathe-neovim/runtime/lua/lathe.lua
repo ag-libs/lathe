@@ -276,11 +276,11 @@ function M.setup(opts)
   require("lathe.new").setup()
 
   -- Instantiations surface: :LatheInstances lists where the type under the cursor is `new`-ed up
-  -- (via the server's lathe.instantiations command) in the quickfix. Suggested mapping: grN.
+  -- (via the server's lathe.types.instantiations command) in the quickfix. Suggested mapping: grN.
   require("lathe.instances").setup()
 
   -- Type-hierarchy surface: :LatheTypeHierarchy shows the full both-directions transitive hierarchy
-  -- of the type under the cursor (via the server's lathe.typeHierarchy command) in Telescope, or the
+  -- of the type under the cursor (via the server's lathe.types.hierarchy command) in Telescope, or the
   -- built-in fuzzy picker when Telescope is absent. Suggested mapping: grh.
   require("lathe.typehierarchy").setup()
 
@@ -291,7 +291,7 @@ function M.setup(opts)
   require("lathe.resources").setup()
 
   -- Missing-imports surface: :LatheMissingImports adds an import for every unresolved type in the
-  -- buffer (server's lathe.missingImports command). Unambiguous names are added automatically; a name
+  -- buffer (server's lathe.imports.missing command). Unambiguous names are added automatically; a name
   -- with several candidates is offered one at a time. Also surfaced as the "Add missing imports…"
   -- code action. Suggested mapping: <leader>li.
   require("lathe.imports").setup()

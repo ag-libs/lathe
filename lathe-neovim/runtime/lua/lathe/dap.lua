@@ -1,5 +1,5 @@
 -- Debug the test or main class under the cursor by attaching nvim-dap to a Lathe replay launched
--- under a suspended JDWP agent. Mirrors lathe.run's discovery (`lathe.runnables.list`), but instead
+-- under a suspended JDWP agent. Mirrors lathe.run's discovery (`lathe.runnables.file`), but instead
 -- of `lathe.run.*` it drives `lathe.debug.test` / `lathe.debug.main`: the server launches the JVM
 -- suspended and opens an in-process DAP host, returning the ports nvim-dap attaches to. All
 -- DAP/JDWP wire handling lives server-side (Microsoft java-debug); this module only registers the
@@ -33,6 +33,7 @@ local PRECEDENCE = { TEST_METHOD, TEST_CLASS, TEST_PACKAGE }
 local active_tokens = {}
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local lathe_client = util.client
 
 local notify = util.notify
@@ -51,7 +52,7 @@ end
 
 --- The TEST runnable to debug for a cursor position: the innermost target (method, then class,
 --- then package) whose range contains `cursor_line` (0-based); else nil. Pure over the raw
---- lathe.runnables.list targets, so it is unit-testable without a live client.
+--- lathe.runnables.file targets, so it is unit-testable without a live client.
 function M._test_target_for(targets, cursor_line)
   for _, kind in ipairs(PRECEDENCE) do
     for _, t in ipairs(targets) do
@@ -131,17 +132,17 @@ local function start_adapter(callback, config)
 
   local command, argument
   if config.lathe_config_name then
-    command = "lathe.debug.named"
+    command = commands.DEBUG_NAMED
     argument = { name = config.lathe_config_name, token = config.lathe_token }
   elseif config.lathe_main_class then
-    command = "lathe.debug.main"
+    command = commands.DEBUG_MAIN
     argument = {
       moduleRel = config.lathe_module_rel,
       mainClass = config.lathe_main_class,
       token = config.lathe_token,
     }
   else
-    command = "lathe.debug.test"
+    command = commands.DEBUG_TEST
     argument = {
       moduleRel = config.lathe_module_rel,
       selections = config.lathe_selections,
@@ -149,14 +150,15 @@ local function start_adapter(callback, config)
     }
   end
 
-  client:request("workspace/executeCommand", {
-    command = command,
-    arguments = { argument },
-  }, function(err, result)
-    if err or not result then
-      vim.schedule(function()
-        notify("debug start error: " .. vim.inspect(err), vim.log.levels.ERROR)
-      end)
+  local function failed(err)
+    vim.schedule(function()
+      notify("debug start error: " .. vim.inspect(err), vim.log.levels.ERROR)
+    end)
+  end
+
+  util.exec(client, nil, command, { argument }, function(result)
+    if not result then
+      failed(nil)
       return
     end
 
@@ -173,7 +175,7 @@ local function start_adapter(callback, config)
         end,
       })
     end)
-  end)
+  end, { on_error = failed })
 end
 
 --- The debug route for a resolved cursor target. Pure so the branch choice is unit-testable without a
@@ -211,11 +213,8 @@ function M.debug(bufnr)
   end
 
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
-  client:request("workspace/executeCommand", {
-    command = "lathe.runnables.list",
-    arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
-  }, function(err, targets)
-    targets = (not err and targets) or {}
+  local function debug_target(targets)
+    targets = targets or {}
     local test = M._test_target_for(targets, cursor_line)
     local main = not test and require("lathe.run").main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
@@ -230,7 +229,20 @@ function M.debug(bufnr)
         notify("no test or main here to debug", vim.log.levels.WARN)
       end
     end)
-  end, bufnr)
+  end
+
+  util.exec(
+    client,
+    bufnr,
+    commands.RUNNABLES_FILE,
+    { { uri = vim.uri_from_bufnr(bufnr) } },
+    debug_target,
+    {
+      on_error = function()
+        debug_target(nil)
+      end,
+    }
+  )
 end
 
 --- Debugs a saved config selected by name (cursor-independent), via nvim-dap's attach flow. The
@@ -269,10 +281,7 @@ function M.stop()
   for _, token in ipairs(tokens) do
     active_tokens[token] = nil
     if client then
-      client:request("workspace/executeCommand", {
-        command = "lathe.run.cancel",
-        arguments = { { token = token } },
-      })
+      util.exec(client, nil, commands.RUN_CANCEL, { { token = token } }, nil, { silent = true })
     end
   end
 

@@ -1,8 +1,8 @@
 -- :LatheResourceFind [name] -- find a resource by name across this workspace's reactor and
--- dependency resources, via the server's `lathe.resources` command. Each row shows a source icon and
+-- dependency resources, via the server's `lathe.resources.list` command. Each row shows a source icon and
 -- coordinate (module / GAV) then the path, matching the find_files look; fuzzy matching is
 -- case-insensitive and client-side, from Telescope's sorter or the `lathe.pick` fallback. A reactor
--- hit opens its editable file; a dependency hit is extracted read-only on open (`lathe.resourceOpen`).
+-- hit opens its editable file; a dependency hit is extracted read-only on open (`lathe.resources.open`).
 
 local M = {}
 
@@ -12,6 +12,7 @@ local ICON_REACTOR = "\u{25A3}" -- ▣ white square with black centre
 local ICON_DEPENDENCY = "\u{25C6}" -- ◆ black diamond
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local notify = util.notify
 
 -- "<icon>  <coordinate>" for the origin column, matching the find_files look: the GAV for a
@@ -53,21 +54,24 @@ local function open_entry(entry, client)
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.resourceOpen",
-    arguments = { { jar = entry.jar, entry = entry.entry } },
-  }, function(err, path)
-    if err or not path then
-      notify(err and err.message or "could not open resource", vim.log.levels.ERROR)
-      return
-    end
+  util.exec(
+    client,
+    nil,
+    commands.RESOURCES_OPEN,
+    { { jar = entry.jar, entry = entry.entry } },
+    function(path)
+      if not path then
+        notify("could not open resource", vim.log.levels.ERROR)
+        return
+      end
 
-    vim.schedule(function()
-      vim.cmd.edit(vim.fn.fnameescape(path))
-      vim.bo.readonly = true
-      vim.bo.modifiable = false
-    end)
-  end)
+      vim.schedule(function()
+        vim.cmd.edit(vim.fn.fnameescape(path))
+        vim.bo.readonly = true
+        vim.bo.modifiable = false
+      end)
+    end
+  )
 end
 
 --- Lists every resource in the workspace (reactor + dependencies) and opens the picked one. `query`
@@ -79,7 +83,7 @@ function M.find(query)
     return
   end
 
-  util.exec(client, nil, "lathe.resources", {}, function(result)
+  util.exec(client, nil, commands.RESOURCES_LIST, {}, function(result)
     if not result or #result == 0 then
       notify("no resources found", vim.log.levels.INFO)
       return
@@ -117,10 +121,14 @@ function M.setup()
       end
       for _, client in ipairs(vim.lsp.get_clients({ name = "lathe" })) do
         if client.root_dir and vim.startswith(name, client.root_dir) then
-          client:request("workspace/executeCommand", {
-            command = "lathe.resource.refresh",
-            arguments = { { uri = vim.uri_from_fname(name) } },
-          })
+          util.exec(
+            client,
+            nil,
+            commands.RESOURCES_REFRESH,
+            { { uri = vim.uri_from_fname(name) } },
+            nil,
+            { silent = true }
+          )
           return
         end
       end

@@ -44,6 +44,7 @@ end, KINDS)
 local cache = { packages = {} }
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local notify = util.notify
 
 local function warn(message)
@@ -257,7 +258,7 @@ end
 -- package in both roots offers a main row and a test row) plus the module list. Silent: callers
 -- decide what an empty reactor means (a prompt warns; completion priming ignores it).
 local function collect_destinations(client, bufnr, cb)
-  execute(client, bufnr, "lathe.modules", {}, function(modules)
+  execute(client, bufnr, commands.WORKSPACE_MODULES, {}, function(modules)
     modules = modules or {}
     local dests = {}
     local pending = #modules
@@ -266,7 +267,7 @@ local function collect_destinations(client, bufnr, cb)
     end
 
     for _, module in ipairs(modules) do
-      execute(client, bufnr, "lathe.packages", { moduleRel = module }, function(packages)
+      execute(client, bufnr, commands.WORKSPACE_PACKAGES, { moduleRel = module }, function(packages)
         for _, entry in ipairs(packages or {}) do
           if entry.pkg ~= "" then
             dests[#dests + 1] = { module = module, scope = entry.scope, pkg = entry.pkg }
@@ -358,7 +359,7 @@ local submit, name_step, open_where, create_module_info, module_info_flow
 -- package-info sends the fixed stem as name (ignored by the server); module-info sends the JPMS module
 -- name and always the main root.
 submit = function(client, bufnr, kind, dest, scope, name)
-  execute(client, bufnr, "lathe.createType", {
+  execute(client, bufnr, commands.TYPES_CREATE, {
     moduleRel = dest.module,
     kind = scope,
     pkg = kind == "module-info" and "" or (dest.pkg or ""),
@@ -413,7 +414,7 @@ end
 -- the module's base package and it always lands at the main source root, so there is no prompt. The
 -- rare case where nothing can be derived (a module with no packages yet) falls back to asking.
 create_module_info = function(client, bufnr, module)
-  execute(client, bufnr, "lathe.packages", { moduleRel = module }, function(packages)
+  execute(client, bufnr, commands.WORKSPACE_PACKAGES, { moduleRel = module }, function(packages)
     local dest = { module = module, pkg = "" }
     local name = M._base_package(packages)
     if name ~= "" then
@@ -432,7 +433,7 @@ module_info_flow = function(client, bufnr, ctx, guided)
     return create_module_info(client, bufnr, ctx.moduleRel)
   end
 
-  execute(client, bufnr, "lathe.modules", {}, function(modules)
+  execute(client, bufnr, commands.WORKSPACE_MODULES, {}, function(modules)
     modules = modules or {}
     if #modules == 0 then
       warn("no modules found — run a build first")
@@ -493,23 +494,29 @@ function M.create(kind_arg, pkg_arg)
     return
   end
 
-  execute(client, bufnr, "lathe.resolveContext", { uri = vim.uri_from_bufnr(bufnr) }, function(ctx)
-    if kind_arg and kind_arg ~= "" then
-      dispatch(client, bufnr, kind_arg, ctx, pkg_arg, false)
-      return
-    end
+  execute(
+    client,
+    bufnr,
+    commands.WORKSPACE_CONTEXT,
+    { uri = vim.uri_from_bufnr(bufnr) },
+    function(ctx)
+      if kind_arg and kind_arg ~= "" then
+        dispatch(client, bufnr, kind_arg, ctx, pkg_arg, false)
+        return
+      end
 
-    pick.pick({
-      title = "New:",
-      items = KINDS,
-      format = label_of,
-      on_choice = function(item)
-        if item then
-          dispatch(client, bufnr, item.type, ctx, nil, true)
-        end
-      end,
-    })
-  end)
+      pick.pick({
+        title = "New:",
+        items = KINDS,
+        format = label_of,
+        on_choice = function(item)
+          if item then
+            dispatch(client, bufnr, item.type, ctx, nil, true)
+          end
+        end,
+      })
+    end
+  )
 end
 
 -- ── :LatheGoToTest ───────────────────────────────────────────────────────────
@@ -532,7 +539,7 @@ local function offer_test(client, bufnr)
       execute(
         client,
         bufnr,
-        "lathe.resolveContext",
+        commands.WORKSPACE_CONTEXT,
         { uri = vim.uri_from_bufnr(bufnr) },
         function(ctx)
           if not ctx then
@@ -565,7 +572,7 @@ function M.go_to_test()
   execute(
     client,
     bufnr,
-    "lathe.testCounterparts",
+    commands.TESTS_COUNTERPARTS,
     { uri = vim.uri_from_bufnr(bufnr) },
     function(found)
       local targets = found and found.targets or {}

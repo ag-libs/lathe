@@ -1,5 +1,5 @@
 -- Verifies lathe.neotest's position-forest builder: the pure, neotest/nio-independent
--- transformation from lathe.runnables.list's flat, parentId-linked RunTarget list into
+-- transformation from lathe.runnables.file's flat, parentId-linked RunTarget list into
 -- the nested-list shape neotest.types.Tree.from_list expects. Exercises exactly the bug
 -- class found during manual validation: a class's real parent (its package) is
 -- deliberately not a tracked node, and naively treating "grouped under some parentId key"
@@ -981,7 +981,7 @@ do
       end
     end,
   }
-  install_nio({ ["lathe.resolveContext"] = { moduleRel = "demo", scope = "test", pkg = "demo" } })
+  install_nio({ ["lathe.workspace.context"] = { moduleRel = "demo", scope = "test", pkg = "demo" } })
   adapter.build_spec({ tree = file_tree })
   local class_run = command_arg("lathe.run.test")
   spec.check(
@@ -995,7 +995,7 @@ do
     "demo.FooTest"
   )
 
-  install_nio({ ["lathe.resolveContext"] = vim.NIL })
+  install_nio({ ["lathe.workspace.context"] = vim.NIL })
   local no_module = adapter.build_spec({ tree = file_tree })
   spec.check(
     "file in no module yields a skip spec",

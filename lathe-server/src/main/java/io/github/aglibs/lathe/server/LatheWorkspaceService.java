@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
@@ -29,37 +30,14 @@ import org.eclipse.lsp4j.services.WorkspaceService;
 
 final class LatheWorkspaceService implements WorkspaceService {
 
-  static final String RUN_TEST_COMMAND = "lathe.run.test";
-  static final String RUN_MAIN_COMMAND = "lathe.run.main";
-  static final String CANCEL_TEST_COMMAND = "lathe.run.cancel";
-  static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
-  static final String DIR_RUNNABLES_COMMAND = "lathe.runnables.dir";
-  static final String TEST_SOURCES_COMMAND = "lathe.testSources";
-  static final String TEST_COUNTERPARTS_COMMAND = "lathe.testCounterparts";
-  static final String TEST_MODULES_COMMAND = "lathe.tests.modules";
-  static final String DISCOVER_TESTS_COMMAND = "lathe.tests.discover";
-  static final String RESOURCES_COMMAND = "lathe.resources";
-  static final String RESOURCE_OPEN_COMMAND = "lathe.resourceOpen";
-  static final String RESOURCE_REFRESH_COMMAND = "lathe.resource.refresh";
-  static final String DEBUG_TEST_COMMAND = "lathe.debug.test";
-  static final String DEBUG_MAIN_COMMAND = "lathe.debug.main";
-  static final String RUN_NAMED_COMMAND = "lathe.run.named";
-  static final String DEBUG_NAMED_COMMAND = "lathe.debug.named";
-  static final String LIST_RUN_CONFIGS_COMMAND = "lathe.runconfigs.list";
-  static final String SAVE_RUN_CONFIG_COMMAND = "lathe.runconfig.save";
-  static final String INSTANTIATIONS_COMMAND = "lathe.instantiations";
-  static final String TYPE_HIERARCHY_COMMAND = "lathe.typeHierarchy";
-  static final String CREATE_TYPE_COMMAND = "lathe.createType";
-  static final String MODULES_COMMAND = "lathe.modules";
-  static final String PACKAGES_COMMAND = "lathe.packages";
-  static final String RESOLVE_CONTEXT_COMMAND = "lathe.resolveContext";
-  static final String MISSING_IMPORTS_COMMAND = "lathe.missingImports";
-  static final String IMPORT_EDITS_COMMAND = "lathe.importEdits";
-
   private static final Gson GSON = new Gson();
 
   private static final Set<String> VALIDATING_COMMANDS =
-      Set.of(RUN_NAMED_COMMAND, DEBUG_NAMED_COMMAND, SAVE_RUN_CONFIG_COMMAND, CREATE_TYPE_COMMAND);
+      Set.of(
+          LatheCommands.RUN_NAMED,
+          LatheCommands.DEBUG_NAMED,
+          LatheCommands.RUN_CONFIGS_SAVE,
+          LatheCommands.TYPES_CREATE);
 
   private final SessionHost host;
 
@@ -106,32 +84,33 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<?> dispatch(final ExecuteCommandParams params) {
     return switch (params.getCommand()) {
-      case RUN_TEST_COMMAND -> runTest(params);
-      case RUN_MAIN_COMMAND -> runMain(params);
-      case CANCEL_TEST_COMMAND -> cancelTest(params);
-      case LIST_RUNNABLES_COMMAND -> listRunnables(params);
-      case DIR_RUNNABLES_COMMAND -> dirRunnables(params);
-      case TEST_SOURCES_COMMAND -> testSources(params);
-      case TEST_COUNTERPARTS_COMMAND -> testCounterparts(params);
-      case TEST_MODULES_COMMAND -> host.onLoop(session -> session.layout().testModules());
-      case DISCOVER_TESTS_COMMAND -> discoverTests(params);
-      case RESOURCES_COMMAND -> host.onLoop(session -> session.queries().resources());
-      case RESOURCE_OPEN_COMMAND -> resourceOpen(params);
-      case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
-      case DEBUG_TEST_COMMAND -> debugTest(params);
-      case DEBUG_MAIN_COMMAND -> debugMain(params);
-      case RUN_NAMED_COMMAND -> runNamed(params);
-      case DEBUG_NAMED_COMMAND -> debugNamed(params);
-      case LIST_RUN_CONFIGS_COMMAND -> host.onLoop(session -> session.runs().listRunConfigs());
-      case SAVE_RUN_CONFIG_COMMAND -> saveRunConfig(params);
-      case INSTANTIATIONS_COMMAND -> instantiations(params);
-      case TYPE_HIERARCHY_COMMAND -> typeHierarchy(params);
-      case CREATE_TYPE_COMMAND -> createType(params);
-      case MODULES_COMMAND -> modules();
-      case PACKAGES_COMMAND -> packages(params);
-      case RESOLVE_CONTEXT_COMMAND -> resolveContext(params);
-      case MISSING_IMPORTS_COMMAND -> missingImports(params);
-      case IMPORT_EDITS_COMMAND -> importEdits(params);
+      case LatheCommands.RUN_TEST -> runTest(params);
+      case LatheCommands.RUN_MAIN -> runMain(params);
+      case LatheCommands.RUN_CANCEL -> cancelTest(params);
+      case LatheCommands.RUNNABLES_FILE -> listRunnables(params);
+      case LatheCommands.RUNNABLES_DIR -> dirRunnables(params);
+      case LatheCommands.TESTS_SOURCES -> testSources(params);
+      case LatheCommands.TESTS_COUNTERPARTS -> testCounterparts(params);
+      case LatheCommands.TESTS_MODULES -> host.onLoop(session -> session.layout().testModules());
+      case LatheCommands.TESTS_DISCOVER -> discoverTests(params);
+      case LatheCommands.RESOURCES_LIST -> host.onLoop(session -> session.queries().resources());
+      case LatheCommands.RESOURCES_OPEN -> resourceOpen(params);
+      case LatheCommands.RESOURCES_REFRESH -> refreshResource(params);
+      case LatheCommands.DEBUG_TEST -> debugTest(params);
+      case LatheCommands.DEBUG_MAIN -> debugMain(params);
+      case LatheCommands.RUN_NAMED -> runNamed(params);
+      case LatheCommands.DEBUG_NAMED -> debugNamed(params);
+      case LatheCommands.RUN_CONFIGS_LIST ->
+          host.onLoop(session -> session.runs().listRunConfigs());
+      case LatheCommands.RUN_CONFIGS_SAVE -> saveRunConfig(params);
+      case LatheCommands.TYPES_INSTANTIATIONS -> instantiations(params);
+      case LatheCommands.TYPES_HIERARCHY -> typeHierarchy(params);
+      case LatheCommands.TYPES_CREATE -> createType(params);
+      case LatheCommands.WORKSPACE_MODULES -> modules();
+      case LatheCommands.WORKSPACE_PACKAGES -> packages(params);
+      case LatheCommands.WORKSPACE_CONTEXT -> resolveContext(params);
+      case LatheCommands.IMPORTS_MISSING -> missingImports(params);
+      case LatheCommands.IMPORTS_EDITS -> importEdits(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -336,7 +315,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     return host.onLoopFuture(session -> session.features().missingImportsFuture(uri));
   }
 
-  // The edits for the imports a client chose from lathe.missingImports, placed by the server so
+  // The edits for the imports a client chose from lathe.imports.missing, placed by the server so
   // each goes to its sorted place in its group.
   private CompletableFuture<?> importEdits(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);

@@ -1,6 +1,6 @@
 -- Verifies lathe.resources (:LatheResourceFind): dispatches the lathe.resources command, maps the
 -- result into "<name>  <origin>" picker entries, and opens the picked one -- a reactor FILE opens its
--- editable path, a dependency JAR dispatches lathe.resourceOpen and opens the extracted path. Warns
+-- editable path, a dependency JAR dispatches lathe.resources.open and opens the extracted path. Warns
 -- with no client and notifies on an empty result. Telescope is absent headlessly, so the built-in
 -- `lathe.pick` fallback is exercised, stubbed via package.loaded so no window opens.
 --
@@ -55,7 +55,7 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
   local commands = {}
   stub_client(function(_, method, params, callback, _)
     commands[#commands + 1] = params.command
-    if params.command == "lathe.resources" then
+    if params.command == "lathe.resources.list" then
       callback(nil, {
         {
           name = "com/x/schema.graphqls",
@@ -81,7 +81,7 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
 
   resources.find("schema")
 
-  spec.check("dispatch method command", commands[1], "lathe.resources")
+  spec.check("dispatch method command", commands[1], "lathe.resources.list")
   spec.check("entry count", picked and #picked.items, 2)
   spec.check(
     "display leads with source icon + module + path",
@@ -108,9 +108,13 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
     "/w/app/src/main/resources/com/x/schema.graphqls"
   )
 
-  -- a dependency JAR extracts on the server (lathe.resourceOpen), then opens the returned path
+  -- a dependency JAR extracts on the server (lathe.resources.open), then opens the returned path
   picked.on_choice(picked.items[2])
-  spec.check("jar entry dispatches lathe.resourceOpen", commands[#commands], "lathe.resourceOpen")
+  spec.check(
+    "jar entry dispatches lathe.resources.open",
+    commands[#commands],
+    "lathe.resources.open"
+  )
   spec.check("jar entry opens the extracted path", edited, "/cache/lib/META-INF/config.xml")
 
   vim.cmd, vim.schedule = orig_cmd, orig_schedule

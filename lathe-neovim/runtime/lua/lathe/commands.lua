@@ -1,0 +1,31 @@
+-- The server's workspace/executeCommand names: lathe.<area>.<action>. The server keeps the same
+-- table in LatheCommands.java (a drift test compares them); renaming one is a protocol change
+-- (version.lua's PROTOCOL).
+return {
+  RUN_TEST = "lathe.run.test",
+  RUN_MAIN = "lathe.run.main",
+  RUN_NAMED = "lathe.run.named",
+  RUN_CANCEL = "lathe.run.cancel",
+  DEBUG_TEST = "lathe.debug.test",
+  DEBUG_MAIN = "lathe.debug.main",
+  DEBUG_NAMED = "lathe.debug.named",
+  RUN_CONFIGS_LIST = "lathe.runConfigs.list",
+  RUN_CONFIGS_SAVE = "lathe.runConfigs.save",
+  RUNNABLES_FILE = "lathe.runnables.file",
+  RUNNABLES_DIR = "lathe.runnables.dir",
+  TESTS_DISCOVER = "lathe.tests.discover",
+  TESTS_MODULES = "lathe.tests.modules",
+  TESTS_SOURCES = "lathe.tests.sources",
+  TESTS_COUNTERPARTS = "lathe.tests.counterparts",
+  RESOURCES_LIST = "lathe.resources.list",
+  RESOURCES_OPEN = "lathe.resources.open",
+  RESOURCES_REFRESH = "lathe.resources.refresh",
+  WORKSPACE_MODULES = "lathe.workspace.modules",
+  WORKSPACE_PACKAGES = "lathe.workspace.packages",
+  WORKSPACE_CONTEXT = "lathe.workspace.context",
+  TYPES_CREATE = "lathe.types.create",
+  TYPES_HIERARCHY = "lathe.types.hierarchy",
+  TYPES_INSTANTIATIONS = "lathe.types.instantiations",
+  IMPORTS_MISSING = "lathe.imports.missing",
+  IMPORTS_EDITS = "lathe.imports.edits",
+}

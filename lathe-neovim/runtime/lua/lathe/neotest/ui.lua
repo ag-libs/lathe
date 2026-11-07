@@ -2,6 +2,7 @@
 -- actual values, and list the last run's tests in the quickfix.
 local common = require("lathe.neotest.common")
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local discovery = require("lathe.neotest.discovery")
 local run_results = require("lathe.neotest.results")
 
@@ -151,7 +152,7 @@ function M.open_diff()
 end
 
 --- Lists the last run's executed tests in the quickfix window, failures first and jumpable, with each
---- test's time. className -> source path is resolved server-side (lathe.testSources,
+--- test's time. className -> source path is resolved server-side (lathe.tests.sources,
 --- pure path math, no attribution). Reflects the last run; the next run replaces it. Bind <leader>tq.
 function M.open_results()
   local run = run_results.last_run()
@@ -170,10 +171,11 @@ function M.open_results()
       for _, tr in ipairs(run.results) do
         names[#names + 1] = tr.className
       end
-      local err, sources = client.request.workspace_executeCommand({
-        command = "lathe.testSources",
-        arguments = { { moduleRel = run.module_rel, classNames = names } },
-      })
+      local err, sources = util.exec_nio(
+        client,
+        commands.TESTS_SOURCES,
+        { { moduleRel = run.module_rel, classNames = names } }
+      )
       if not err and sources then
         for _, source in ipairs(sources) do
           paths[source.className] = source.path

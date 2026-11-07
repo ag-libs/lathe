@@ -5,7 +5,7 @@
 --
 -- Discovery and execution both go through the already-running Lathe LSP server rather
 -- than spawning Maven or a treesitter-query scan: discover_positions calls
--- lathe.runnables.list (real attributed-analysis discovery, not syntax guessing), and
+-- lathe.runnables.file (real attributed-analysis discovery, not syntax guessing), and
 -- build_spec calls lathe.run.test synchronously via nio.lsp, replaying from captured
 -- .lathe/ bytecode -- no Maven invocation, no recompilation. build_spec is not declared
 -- async but neotest always invokes it from inside TestRunner:run_tree's async chain, so

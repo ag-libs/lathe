@@ -2,6 +2,7 @@
 -- session) on the server, streams each test's result back as it finishes, and stops runs.
 local common = require("lathe.neotest.common")
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local discovery = require("lathe.neotest.discovery")
 local outcome = require("lathe.neotest.outcome")
 -- Safe to require at load: lathe.output uses only core Neovim APIs (no neotest/nio), and owns the
@@ -84,10 +85,7 @@ function M.stop()
     end
 
     for _, token in ipairs(tokens) do
-      client.request.workspace_executeCommand({
-        command = "lathe.run.cancel",
-        arguments = { { token = token } },
-      })
+      util.exec_nio(client, commands.RUN_CANCEL, { { token = token } })
     end
   end)
 end
@@ -146,14 +144,11 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
 
   util.notify("Running " .. label, vim.log.levels.INFO)
   common.nio().run(function()
-    local err, outcome = client.request.workspace_executeCommand({
-      command = "lathe.run.test",
-      arguments = {
-        {
-          moduleRel = module_rel,
-          selections = selections,
-          token = token,
-        },
+    local err, outcome = util.exec_nio(client, commands.RUN_TEST, {
+      {
+        moduleRel = module_rel,
+        selections = selections,
+        token = token,
       },
     }, 0)
     -- Every testEvent for this run has already been handled (they precede the run.test response
@@ -197,10 +192,8 @@ function M.build_spec(args)
     -- reactor root) is resolved server-side from the real reactor layout: the client parses no
     -- paths and needs no attribution, so it works even for a never-opened module. Blocking
     -- round-trip in neotest's async run context, like discover_positions' runnables.list call.
-    local err, run = client.request.workspace_executeCommand({
-      command = "lathe.runnables.dir",
-      arguments = { { uri = vim.uri_from_fname(pos.path) } },
-    })
+    local err, run =
+      util.exec_nio(client, commands.RUNNABLES_DIR, { { uri = vim.uri_from_fname(pos.path) } })
     if not err and run and run.selections and #run.selections > 0 then
       -- Key on the dir node's id (not a package name, which matches no node) so results()' fan-out
       -- lands the aggregate here and clears every descendant; per-test statuses still win.
