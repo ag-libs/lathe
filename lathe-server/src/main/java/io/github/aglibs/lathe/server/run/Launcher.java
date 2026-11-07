@@ -86,12 +86,15 @@ public final class Launcher {
   }
 
   // Split on whitespace, which misreads a quoted option: so this only ever adds the note, never
-  // decides what the launch gets.
+  // decides what the launch gets. Each option is named up to its value, which may be a password
+  // (-Dhttp.proxyPassword=...) and the note reaches an agent's context through MCP run_test.
   private static Optional<String> unappliedOptionNote(
       final String name, final String value, final Set<String> applied) {
     final List<String> missing =
         Arrays.stream(value.trim().split("\\s+"))
             .filter(option -> !option.isEmpty() && !applied.contains(option))
+            .map(Launcher::withoutValue)
+            .distinct()
             .toList();
     if (missing.isEmpty()) {
       return Optional.empty();
@@ -100,6 +103,11 @@ public final class Launcher {
     return Optional.of(
         "%s%s not applied: the build's test JVM ran without %s; set it in the run configuration's env to add it"
             .formatted(TranscriptLine.NOTE_PREFIX, name, String.join(" ", missing)));
+  }
+
+  private static String withoutValue(final String option) {
+    final int value = option.indexOf('=');
+    return value < 0 ? option : option.substring(0, value);
   }
 
   private static List<String> commandLine(final List<String> argv) throws IOException {

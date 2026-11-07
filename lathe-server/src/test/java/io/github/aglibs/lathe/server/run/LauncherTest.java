@@ -88,8 +88,8 @@ class LauncherTest {
   }
 
   // Options the capture already has stay quiet, "--add-opens=x" against the replay's two-argument
-  // form included; one the build's test JVM ran without is named; and a variable the run
-  // configuration sets, or one the launch inherits, gets no note.
+  // form included; one the build's test JVM ran without is named, without its value (it may be a
+  // password); and a variable the run configuration sets, or one the launch inherits, gets no note.
   @Test
   void unappliedOptionNotes_optionsTheBuildRanWithout_namedOnce() {
     final var launch =
@@ -107,14 +107,18 @@ class LauncherTest {
     assertThat(
             Launcher.unappliedOptionNotes(
                 Map.of(
-                    "JAVA_TOOL_OPTIONS", " -javaagent:a.jar  -Dproxy=x ",
-                    "_JAVA_OPTIONS", "-Dcaptured=1 --add-opens=java.base/java.lang=ALL-UNNAMED",
-                    "JDK_JAVA_OPTIONS", "-Dother=1"),
+                    "JAVA_TOOL_OPTIONS",
+                    " -javaagent:a.jar  -Dhttp.proxyPassword=secret -javaagent:b.jar=destfile=c ",
+                    "_JAVA_OPTIONS",
+                    "-Dcaptured=1 --add-opens=java.base/java.lang=ALL-UNNAMED",
+                    "JDK_JAVA_OPTIONS",
+                    "-Dother=1"),
                 launch))
         .containsExactly(
             TranscriptLine.NOTE_PREFIX
-                + "JAVA_TOOL_OPTIONS not applied: the build's test JVM ran without -Dproxy=x; set it"
-                + " in the run configuration's env to add it");
+                + "JAVA_TOOL_OPTIONS not applied: the build's test JVM ran without"
+                + " -Dhttp.proxyPassword -javaagent:b.jar; set it in the run configuration's env to"
+                + " add it");
     assertThat(
             Launcher.unappliedOptionNotes(
                 Map.of("JAVA_TOOL_OPTIONS", "-Dproxy=x"),
