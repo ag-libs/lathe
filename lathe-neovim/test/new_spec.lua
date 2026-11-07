@@ -202,7 +202,13 @@ do -- anchored: :LatheNew <kind> in a buffer fills the destination from context;
   spec.check("anchored: pkg", args.pkg, "com.example.core")
   spec.check("anchored: name from the prompt", args.name, "Foo")
   spec.check("anchored: no destination picker", where_opened, false)
-  spec.check("anchored: the created file is opened", vim.api.nvim_buf_get_name(0), path)
+  -- Real paths: on macOS the temp dir is under /var, a symlink to /private/var, which the buffer
+  -- name resolves.
+  spec.check(
+    "anchored: the created file is opened",
+    vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0)),
+    vim.uv.fs_realpath(path)
+  )
 end
 
 do -- typed: a fuzzy-completed package goes to the server's best destination for it; no picker
