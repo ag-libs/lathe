@@ -49,7 +49,7 @@ final class LaunchSessionTest {
   }
 
   private static LaunchSession launchSession(final Process process, final Path resultsSink) {
-    return new LaunchSession(process, resultsSink, NO_STREAM, NO_EVENTS);
+    return new LaunchSession(process, List.of(), resultsSink, NO_STREAM, NO_EVENTS);
   }
 
   @Test
@@ -89,18 +89,23 @@ final class LaunchSessionTest {
   }
 
   @Test
-  void constructor_processPrintsToBothStreams_streamsEachLineTaggedToConsumer()
+  void constructor_noteThenProcessOutput_streamsEachLineTaggedToConsumer()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
+    final var note = new TranscriptLine(TranscriptLine.Stream.COMMAND, "note: n");
     final var session =
-        new LaunchSession(start("echo", "out:out", "err:err"), null, streamed::add, NO_EVENTS);
+        new LaunchSession(
+            start("echo", "out:out", "err:err"), List.of(note), null, streamed::add, NO_EVENTS);
 
-    session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
+    assertThat(streamed).as("the launch's note before any output").first().isEqualTo(note);
     assertThat(streamed)
         .containsExactlyInAnyOrder(
+            note,
             new TranscriptLine(TranscriptLine.Stream.STDOUT, "out"),
             new TranscriptLine(TranscriptLine.Stream.STDERR, "err"));
+    assertThat(outcome.output()).as("kept for an MCP answer").contains(note);
   }
 
   @Test
@@ -109,7 +114,8 @@ final class LaunchSessionTest {
     final Path sink = dir.resolve("results.ndjson");
     Files.writeString(sink, RECORDS, StandardCharsets.UTF_8);
     final List<TestResult> streamed = Collections.synchronizedList(new ArrayList<>());
-    final var session = new LaunchSession(start("exit", "0"), sink, NO_STREAM, streamed::add);
+    final var session =
+        new LaunchSession(start("exit", "0"), List.of(), sink, NO_STREAM, streamed::add);
 
     session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -187,7 +193,8 @@ final class LaunchSessionTest {
   @Test
   void onExit_markedOutput_tagsEachLineWithTheTestRunningThen() throws Exception {
     final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
-    final var session = new LaunchSession(start("marked"), null, streamed::add, NO_EVENTS);
+    final var session =
+        new LaunchSession(start("marked"), List.of(), null, streamed::add, NO_EVENTS);
 
     final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -205,7 +212,8 @@ final class LaunchSessionTest {
   void cancel_processWithChild_stopsTheChildToo() throws Exception {
     final var lines = new LinkedBlockingQueue<String>();
     final var session =
-        new LaunchSession(start("spawn"), null, line -> lines.add(line.text()), NO_EVENTS);
+        new LaunchSession(
+            start("spawn"), List.of(), null, line -> lines.add(line.text()), NO_EVENTS);
     final ProcessHandle child =
         ProcessHandle.of(Long.parseLong(lines.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)))
             .orElseThrow();
