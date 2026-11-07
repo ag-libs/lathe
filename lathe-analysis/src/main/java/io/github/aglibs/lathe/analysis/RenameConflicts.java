@@ -28,7 +28,7 @@ import javax.lang.model.util.Types;
 // a sibling type, or a variable in scope. Not detected: the new name shadowing the symbol at a use
 // (a local of that name where the renamed field is read), a subclass member the renamed one would
 // override or hide, and a type name other files import.
-public final class RenameConflicts {
+final class RenameConflicts {
 
   private static final Set<ElementKind> VARIABLES =
       Set.of(

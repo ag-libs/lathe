@@ -12,7 +12,7 @@ import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 
-public final class HoverFormatter {
+final class HoverFormatter {
 
   private HoverFormatter() {}
 

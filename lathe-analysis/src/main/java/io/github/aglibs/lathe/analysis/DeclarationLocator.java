@@ -14,7 +14,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
-public final class DeclarationLocator {
+final class DeclarationLocator {
 
   private DeclarationLocator() {}
 
