@@ -8,13 +8,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.aglibs.lathe.analysis.CompileMode;
-import io.github.aglibs.lathe.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -23,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.IntConsumer;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
@@ -250,40 +246,30 @@ class CompilationWorkerTest {
   }
 
   @Test
-  void searchReferencesTransient_activeRequest_delegatesToContext() {
+  void submit_activeRequest_runsAgainstTheSession() {
     final String uri = "file:///A.java";
     final String content = "class A {}";
     final List<TransientSource> sources = List.of(new TransientSource(uri, content));
-    final ReferenceTarget target = mock(ReferenceTarget.class);
-    final ReferenceMatch match = mock(ReferenceMatch.class);
-    final IntConsumer progress = hits -> {};
+    final TransientAnalysis analysis = mock(TransientAnalysis.class);
     final CancelChecker cancelChecker = () -> {};
-    when(context.searchReferencesTransient(
-            sources, target, false, Set.of(), progress, cancelChecker))
-        .thenReturn(new SearchHits<>(List.of(match), List.of()));
+    when(context.transientAnalyses(sources, cancelChecker)).thenReturn(List.of(analysis));
 
-    final var result =
+    final List<TransientAnalysis> result =
         worker
-            .submit(
-                session ->
-                    session.searchReferencesTransient(
-                        sources, target, false, Set.of(), progress, cancelChecker),
-                cancelChecker)
+            .submit(session -> session.transientAnalyses(sources, cancelChecker), cancelChecker)
             .join();
 
-    assertThat(result.hits()).containsExactly(match);
+    assertThat(result).containsExactly(analysis);
   }
 
   @Test
-  void searchReferencesTransient_cancelledWhileQueued_skipsContext() {
+  void submit_cancelledWhileQueued_skipsTheSession() {
     final String uri = "file:///A.java";
     final String content = "class A {}";
     final List<TransientSource> sources = List.of(new TransientSource(uri, content));
-    final IntConsumer progress = hits -> {};
     final var entered = new CountDownLatch(1);
     final var release = new CountDownLatch(1);
     final var cancelled = new AtomicBoolean();
-    final ReferenceTarget target = mock(ReferenceTarget.class);
     final CancelChecker cancelChecker =
         () -> {
           if (cancelled.get()) {
@@ -301,12 +287,8 @@ class CompilationWorkerTest {
 
     final CompletableFuture<CompileResponse> blocker = worker.compile(request);
     await(entered);
-    final CompletableFuture<SearchHits<ReferenceMatch>> cancelledFuture =
-        worker.submit(
-            session ->
-                session.searchReferencesTransient(
-                    sources, target, false, Set.of(), progress, cancelChecker),
-            cancelChecker);
+    final CompletableFuture<List<TransientAnalysis>> cancelledFuture =
+        worker.submit(session -> session.transientAnalyses(sources, cancelChecker), cancelChecker);
     cancelled.set(true);
     release.countDown();
 
@@ -318,8 +300,7 @@ class CompilationWorkerTest {
         .satisfiesAnyOf(
             thrown -> assertThat(thrown).isInstanceOf(CancellationException.class),
             thrown -> assertThat(thrown).hasCauseInstanceOf(CancellationException.class));
-    verify(context, never())
-        .searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker);
+    verify(context, never()).transientAnalyses(sources, cancelChecker);
   }
 
   private void assertTermination(final Throwable failure, final int expectedStatus) {

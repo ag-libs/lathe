@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -102,12 +103,19 @@ class RenameProviderTest {
         """;
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final var target = session.resolveTarget(requestAt(source, posOf(source, "int x = 1", "x")));
+      final var target =
+          session.references().resolveTarget(requestAt(source, posOf(source, "int x = 1", "x")));
       assertThat(target.isLocalScope()).isTrue();
 
       final List<Location> occurrences =
           session
-              .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+              .references()
+              .references(
+                  session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  true,
+                  Set.of())
               .hits()
               .stream()
               .map(match -> new Location(match.uri(), match.range()))
@@ -145,11 +153,19 @@ class RenameProviderTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
       final var target =
-          session.resolveTarget(requestAt(source, posOf(source, "\tcache.put", "cache")));
+          session
+              .references()
+              .resolveTarget(requestAt(source, posOf(source, "\tcache.put", "cache")));
 
       final List<Range> ranges =
           session
-              .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+              .references()
+              .references(
+                  session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  true,
+                  Set.of())
               .hits()
               .stream()
               .map(match -> match.range())
@@ -177,7 +193,7 @@ class RenameProviderTest {
       session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
       final var request = requestAt(source, posOf(source, "int field", "field"));
 
-      assertThat(session.resolveTarget(request).isLocalScope()).isFalse();
+      assertThat(session.references().resolveTarget(request).isLocalScope()).isFalse();
     }
   }
 
@@ -190,11 +206,14 @@ class RenameProviderTest {
         source,
         session -> {
           assertThat(
-                  session.resolveRenameTarget(
-                      requestAt(source, posOf(source, "int field", "field"))))
+                  session
+                      .references()
+                      .resolveRenameTarget(requestAt(source, posOf(source, "int field", "field"))))
               .isNotNull();
           assertThat(
-                  session.resolveRenameTarget(requestAt(source, posOf(source, "void run", "run"))))
+                  session
+                      .references()
+                      .resolveRenameTarget(requestAt(source, posOf(source, "void run", "run"))))
               .isNotNull();
         });
   }
@@ -208,12 +227,16 @@ class RenameProviderTest {
         source,
         session -> {
           assertThat(
-                  session.resolveRenameTarget(
-                      requestAt(source, posOf(source, "class Outer", "Outer"))))
+                  session
+                      .references()
+                      .resolveRenameTarget(
+                          requestAt(source, posOf(source, "class Outer", "Outer"))))
               .isNotNull();
           assertThat(
-                  session.resolveRenameTarget(
-                      requestAt(source, posOf(source, "class Inner", "Inner"))))
+                  session
+                      .references()
+                      .resolveRenameTarget(
+                          requestAt(source, posOf(source, "class Inner", "Inner"))))
               .isNotNull();
         });
   }
@@ -250,7 +273,10 @@ class RenameProviderTest {
     withSession(
         source,
         session ->
-            assertThat(session.resolveRenameTarget(requestAt(source, posOf(source, "RED", "RED"))))
+            assertThat(
+                    session
+                        .references()
+                        .resolveRenameTarget(requestAt(source, posOf(source, "RED", "RED"))))
                 .isNotNull());
   }
 
@@ -300,14 +326,18 @@ class RenameProviderTest {
               .forEach(
                   (context, token) ->
                       assertThat(
-                              session.resolveRenameTarget(
-                                  requestAt(source, posOf(source, context, token))))
+                              session
+                                  .references()
+                                  .resolveRenameTarget(
+                                      requestAt(source, posOf(source, context, token))))
                           .as(token)
                           .isNull());
 
           final var link =
-              session.resolveRenameTarget(
-                  requestAt(source, posOf(source, "{@link Helper}", "Helper")));
+              session
+                  .references()
+                  .resolveRenameTarget(
+                      requestAt(source, posOf(source, "{@link Helper}", "Helper")));
           assertThat(link).isNotNull();
           assertThat(link.simpleName()).isEqualTo("Helper");
         });
@@ -326,8 +356,9 @@ class RenameProviderTest {
         source,
         session -> {
           final var target =
-              session.resolveRenameTarget(
-                  requestAt(source, posOf(source, "new Widget()", "Widget")));
+              session
+                  .references()
+                  .resolveRenameTarget(requestAt(source, posOf(source, "new Widget()", "Widget")));
           // the constructor site resolves to the (nested) type rename, not a <init> target
           assertThat(target).isNotNull();
           assertThat(target.simpleName()).isEqualTo("Widget");
@@ -480,7 +511,9 @@ class RenameProviderTest {
       final String context,
       final String token,
       final String newName) {
-    return session.renameConflict(requestAt(source, posOf(source, context, token)), newName);
+    return session
+        .references()
+        .renameConflict(requestAt(source, posOf(source, context, token)), newName);
   }
 
   private static void withSession(
@@ -499,10 +532,18 @@ class RenameProviderTest {
       final String cursorToken,
       final String newName) {
     final var target =
-        session.resolveRenameTarget(requestAt(source, posOf(source, cursorText, cursorToken)));
+        session
+            .references()
+            .resolveRenameTarget(requestAt(source, posOf(source, cursorText, cursorToken)));
     final List<Location> occurrences =
         session
-            .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+            .references()
+            .references(
+                session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {}),
+                TempSourceCompiler.TEST_URI,
+                target,
+                true,
+                Set.of())
             .hits()
             .stream()
             .map(match -> new Location(match.uri(), match.range()))

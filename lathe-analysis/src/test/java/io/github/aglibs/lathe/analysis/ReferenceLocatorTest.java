@@ -996,11 +996,17 @@ class ReferenceLocatorTest {
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> results =
           session
-              .searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false)
+              .references()
+              .references(
+                  session.analysis(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
 
       assertThat(results).hasSize(1);
-      assertThat(session.resolveTarget(request)).isNotNull();
+      assertThat(session.references().resolveTarget(request)).isNotNull();
     }
   }
 
@@ -1015,15 +1021,33 @@ class ReferenceLocatorTest {
     try (final var session = new SourceAnalysisSession(countingCompiler)) {
       final List<ReferenceMatch> first =
           session
-              .searchReferencesTransient(sources, target, false, Set.of(), hits -> {}, () -> {})
+              .references()
+              .references(
+                  session.transientAnalyses(sources, () -> {}).get(0).analysis(),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
       final List<ReferenceMatch> second =
           session
-              .searchReferencesTransient(sources, target, false, Set.of(), hits -> {}, () -> {})
+              .references()
+              .references(
+                  session.transientAnalyses(sources, () -> {}).get(0).analysis(),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
       final List<ReferenceMatch> cached =
           session
-              .searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false)
+              .references()
+              .references(
+                  session.analysis(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
 
       assertThat(first).hasSize(1);
@@ -1130,7 +1154,7 @@ class ReferenceLocatorTest {
               new Position(9999, 0),
               List.of(),
               LibrarySources.none());
-      assertThat(session.resolveTarget(request)).isNull();
+      assertThat(session.references().resolveTarget(request)).isNull();
     }
   }
 
@@ -1238,11 +1262,17 @@ class ReferenceLocatorTest {
               posOf(source, context, token),
               List.of(),
               LibrarySources.none());
-      return session.instantiationTargets(request).stream()
+      return session.references().instantiationTargets(request).stream()
           .flatMap(
               target ->
                   session
-                      .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, false)
+                      .references()
+                      .references(
+                          session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {}),
+                          TempSourceCompiler.TEST_URI,
+                          target,
+                          false,
+                          Set.of())
                       .hits()
                       .stream())
           .map(match -> match.range().getStart())

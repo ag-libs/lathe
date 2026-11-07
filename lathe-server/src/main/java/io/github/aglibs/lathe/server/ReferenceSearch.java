@@ -9,7 +9,9 @@ import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.SearchHits;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
@@ -23,6 +25,7 @@ import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -99,7 +102,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
     return cursorWorker
-        .submit(session -> session.resolveTarget(request), cancelChecker)
+        .submit(session -> session.references().resolveTarget(request), cancelChecker)
         .thenCompose(
             target -> {
               cancelChecker.checkCanceled();
@@ -177,7 +180,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
 
     return cursorWorker
-        .submit(session -> session.instantiationTargets(request), cancelChecker)
+        .submit(session -> session.references().instantiationTargets(request), cancelChecker)
         .thenCompose(
             targets -> {
               cancelChecker.checkCanceled();
@@ -227,7 +230,7 @@ final class ReferenceSearch {
     }
 
     return cursorWorker
-        .submit(session -> session.resolveContractTarget(request), cancelChecker)
+        .submit(session -> session.references().resolveContractTarget(request), cancelChecker)
         .thenApply(contract -> contract != null ? contract : target);
   }
 
@@ -242,7 +245,7 @@ final class ReferenceSearch {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     return cursorWorker
-        .submit(session -> session.generatedAccessorTargets(request))
+        .submit(session -> session.references().generatedAccessorTargets(request))
         .thenCompose(
             accessors -> {
               CompletableFuture<List<ReferenceMatch>> all =
@@ -497,15 +500,14 @@ final class ReferenceSearch {
     router.touchAnalysisCache(doc.uri());
     return worker
         .submit(
-            session ->
-                session.searchReferences(
-                    doc.uri(),
-                    doc.content(),
-                    doc.version(),
-                    target,
-                    includeDeclaration,
-                    exposureFamily,
-                    cancelChecker),
+            session -> {
+              final AttributedFileAnalysis analysis =
+                  session.analysis(doc.uri(), doc.content(), doc.version(), cancelChecker);
+              cancelChecker.checkCanceled();
+              return session
+                  .references()
+                  .references(analysis, doc.uri(), target, includeDeclaration, exposureFamily);
+            },
             cancelChecker)
         .whenComplete(advancing(progress, false));
   }
@@ -523,14 +525,41 @@ final class ReferenceSearch {
         chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
     return worker.submit(
         session ->
-            session.searchReferencesTransient(
+            searchBatch(
+                session,
                 sources,
                 target,
                 includeDeclaration,
                 exposureFamily,
-                hits -> progress.advance(true, hits),
+                progress,
                 cancelChecker),
         cancelChecker);
+  }
+
+  // Attributes the files together, then searches each; on the module's worker.
+  private static SearchHits<ReferenceMatch> searchBatch(
+      final SourceAnalysisSession session,
+      final List<TransientSource> sources,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final Set<String> exposureFamily,
+      final ProgressReporter.Task progress,
+      final CancelChecker cancelChecker) {
+    final List<TransientAnalysis> analyses = session.transientAnalyses(sources, cancelChecker);
+    cancelChecker.checkCanceled();
+    final var results = new ArrayList<SearchHits<ReferenceMatch>>();
+    for (final TransientAnalysis analysis : analyses) {
+      cancelChecker.checkCanceled();
+      final SearchHits<ReferenceMatch> found =
+          session
+              .references()
+              .references(
+                  analysis.analysis(), analysis.uri(), target, includeDeclaration, exposureFamily);
+      results.add(found);
+      progress.advance(true, found.hits().size());
+    }
+
+    return SearchHits.merge(results);
   }
 
   List<ModuleSourceConfig> planSearchScope(
@@ -591,7 +620,7 @@ final class ReferenceSearch {
           final var request = router.featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
-              .submit(session -> session.resolveTarget(request))
+              .submit(session -> session.references().resolveTarget(request))
               .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
               .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"));
         });
@@ -606,9 +635,14 @@ final class ReferenceSearch {
     return worker
         .submit(
             session ->
-                session.searchReferences(
-                    doc.uri(), doc.content(), doc.version(), target, true, Set.of(), () -> {}),
-            () -> {})
+                session
+                    .references()
+                    .references(
+                        session.analysis(doc.uri(), doc.content(), doc.version(), () -> {}),
+                        doc.uri(),
+                        target,
+                        true,
+                        Set.of()))
         .thenApply(found -> toHighlights(found.hits()));
   }
 
@@ -759,7 +793,7 @@ final class ReferenceSearch {
 
     final var t = Stopwatch.start();
     return cursorWorker
-        .submit(session -> session.resolveTarget(request))
+        .submit(session -> session.references().resolveTarget(request))
         .thenCompose(
             target ->
                 implementationForTarget(
@@ -955,7 +989,12 @@ final class ReferenceSearch {
       router.touchAnalysisCache(openFile.uri());
       return worker
           .get()
-          .submit(session -> session.queryFile(uri, openFile.content(), openFile.version(), query));
+          .submit(
+              session -> {
+                final AttributedFileAnalysis analysis =
+                    session.analysis(uri, openFile.content(), openFile.version(), () -> {});
+                return analysis != null ? query.apply(analysis) : List.of();
+              });
     }
 
     return eventLoop
@@ -971,8 +1010,9 @@ final class ReferenceSearch {
                                     w ->
                                         w.submit(
                                             session ->
-                                                session.queryFileTransient(
-                                                    uri, file.content(), query))))
+                                                query.apply(
+                                                    session.transientAnalysis(
+                                                        uri, file.content(), () -> {})))))
                     .orElseGet(() -> CompletableFuture.completedFuture(List.of())));
   }
 
@@ -1099,14 +1139,15 @@ final class ReferenceSearch {
                   router.touchAnalysisCache(doc.uri());
                   return worker
                       .submit(
-                          session ->
-                              session.searchIncomingCalls(
-                                  doc.uri(),
-                                  doc.content(),
-                                  doc.version(),
-                                  target,
-                                  family,
-                                  cancelChecker),
+                          session -> {
+                            final AttributedFileAnalysis analysis =
+                                session.analysis(
+                                    doc.uri(), doc.content(), doc.version(), cancelChecker);
+                            cancelChecker.checkCanceled();
+                            return session
+                                .references()
+                                .incomingCalls(analysis, doc.uri(), target, family);
+                          },
                           cancelChecker)
                       .whenComplete(advancing(progress, false));
                 }),
@@ -1116,9 +1157,14 @@ final class ReferenceSearch {
                   cancelChecker.checkCanceled();
                   return worker
                       .submit(
-                          session ->
-                              session.searchIncomingCallsTransient(
-                                  d.uri(), d.content(), target, family, cancelChecker),
+                          session -> {
+                            final AttributedFileAnalysis analysis =
+                                session.transientAnalysis(d.uri(), d.content(), cancelChecker);
+                            cancelChecker.checkCanceled();
+                            return session
+                                .references()
+                                .incomingCalls(analysis, d.uri(), target, family);
+                          },
                           cancelChecker)
                       .whenComplete(advancing(progress, true));
                 }));

@@ -38,13 +38,12 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).hasSize(1);
@@ -82,13 +81,12 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls)
@@ -117,13 +115,12 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).isEmpty();
@@ -152,13 +149,12 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).hasSize(1);
@@ -190,13 +186,12 @@ class CallHierarchyIncomingLocatorTest {
       // FeatureImpl.setup(); it must not be reported.
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).isEmpty();

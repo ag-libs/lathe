@@ -118,11 +118,24 @@ class SourceAnalysisSessionTest {
     try (final var session = new SourceAnalysisSession(compiler)) {
       assertThatThrownBy(
               () ->
-                  session.searchReferences(uri, content, 1, target, false, Set.of(), cancelChecker))
+                  session
+                      .references()
+                      .references(
+                          session.analysis(uri, content, 1, cancelChecker),
+                          uri,
+                          target,
+                          false,
+                          Set.of()))
           .isInstanceOf(CancellationException.class);
       cancelled.set(false);
 
-      assertThat(session.searchReferences(uri, content, 1, target, false).hits()).isEmpty();
+      assertThat(
+              session
+                  .references()
+                  .references(
+                      session.analysis(uri, content, 1, () -> {}), uri, target, false, Set.of())
+                  .hits())
+          .isEmpty();
       verify(compiler, times(2)).compile(eq(uri), eq(content), eq(CompileMode.OPEN), any());
     }
   }
@@ -400,7 +413,16 @@ class SourceAnalysisSessionTest {
       final Path sourceFile = Path.of(analysis.tree().getSourceFile().toUri());
       Files.delete(sourceFile);
 
-      assertThatThrownBy(() -> session.searchReferences(uri, content, 1, target, false))
+      assertThatThrownBy(
+              () ->
+                  session
+                      .references()
+                      .references(
+                          session.analysis(uri, content, 1, () -> {}),
+                          uri,
+                          target,
+                          false,
+                          Set.of()))
           .isInstanceOf(UncheckedIOException.class);
     }
   }

@@ -82,7 +82,13 @@ class LombokAnalysisTest {
           .contains("String name");
       assertThat(
               session
-                  .searchReferences(uri(), SOURCE, 1, session.resolveTarget(request), true)
+                  .references()
+                  .references(
+                      session.analysis(uri(), SOURCE, 1, () -> {}),
+                      uri(),
+                      session.references().resolveTarget(request),
+                      true,
+                      Set.of())
                   .hits()
                   .stream()
                   .map(match -> match.range().getStart()))
@@ -143,13 +149,17 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(
-              session.generatedAccessorTargets(
-                  requestAt(SOURCE, position(SOURCE, "private String name", "name"))))
+              session
+                  .references()
+                  .generatedAccessorTargets(
+                      requestAt(SOURCE, position(SOURCE, "private String name", "name"))))
           .extracting(ReferenceTarget::simpleName)
           .containsExactlyInAnyOrder("getName", "setName");
       assertThat(
-              session.generatedAccessorTargets(
-                  requestAt(SOURCE, position(SOURCE, "String greeting", "greeting"))))
+              session
+                  .references()
+                  .generatedAccessorTargets(
+                      requestAt(SOURCE, position(SOURCE, "String greeting", "greeting"))))
           .isEmpty();
     }
   }
@@ -161,19 +171,25 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(
-              session.renameConflict(
-                  requestAt(SOURCE, position(SOURCE, "private String name", "name")), "label"))
+              session
+                  .references()
+                  .renameConflict(
+                      requestAt(SOURCE, position(SOURCE, "private String name", "name")), "label"))
           .hasValueSatisfying(
               reason ->
                   assertThat(reason).contains("Lombok generates getName(), setName() from it"));
       assertThat(
-              session.renameConflict(
-                  requestAt(SOURCE, position(SOURCE, "+ getName()", "getName")), "label"))
+              session
+                  .references()
+                  .renameConflict(
+                      requestAt(SOURCE, position(SOURCE, "+ getName()", "getName")), "label"))
           .hasValueSatisfying(
               reason -> assertThat(reason).contains("Lombok generates it from `name`"));
       assertThat(
-              session.renameConflict(
-                  requestAt(SOURCE, position(SOURCE, "String greeting", "greeting")), "hello"))
+              session
+                  .references()
+                  .renameConflict(
+                      requestAt(SOURCE, position(SOURCE, "String greeting", "greeting")), "hello"))
           .isEmpty();
     }
   }
@@ -204,10 +220,10 @@ class LombokAnalysisTest {
       session.compile(uri(), source, 1, CompileMode.OPEN);
       final var field = requestAt(source, position(source, "private int fCount", "fCount"));
 
-      assertThat(session.generatedAccessorTargets(field))
+      assertThat(session.references().generatedAccessorTargets(field))
           .extracting(ReferenceTarget::simpleName)
           .containsExactlyInAnyOrder("getCount", "setCount");
-      assertThat(session.renameConflict(field, "fTotal"))
+      assertThat(session.references().renameConflict(field, "fTotal"))
           .hasValueSatisfying(
               reason ->
                   assertThat(reason).contains("Lombok generates getCount(), setCount() from it"));

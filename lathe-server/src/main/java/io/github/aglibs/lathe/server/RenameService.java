@@ -76,7 +76,7 @@ final class RenameService {
     final var t = Stopwatch.start();
     return module
         .worker()
-        .submit(session -> session.resolveRenameTarget(request))
+        .submit(session -> session.references().resolveRenameTarget(request))
         .thenApply(
             target -> {
               if (target == null) {
@@ -297,8 +297,10 @@ final class RenameService {
                           .workerFor(entry.getKey())
                           .submit(
                               session ->
-                                  session.renameBindingConflict(
-                                      check, visible, checked, cancelChecker),
+                                  session
+                                      .references()
+                                      .renameBindingConflict(
+                                          check, visible, checked, cancelChecker),
                               cancelChecker)
                           .thenApply(conflict -> conflict.stream().toList());
                     }))
@@ -415,11 +417,12 @@ final class RenameService {
     final var request = router.featureRequest(openFile, pos);
     final ModuleSourceConfig cursorConfig = module.config();
     return cursorWorker
-        .submit(session -> session.renameConflict(request, newName))
+        .submit(session -> session.references().renameConflict(request, newName))
         .thenCompose(
             conflict -> {
               refuseIfPresent(conflict);
-              return cursorWorker.submit(session -> session.resolveRenameTarget(request));
+              return cursorWorker.submit(
+                  session -> session.references().resolveRenameTarget(request));
             })
         .thenCompose(
             target -> {
