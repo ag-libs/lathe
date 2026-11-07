@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
-import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
@@ -12,7 +11,6 @@ import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
@@ -115,6 +113,7 @@ public final class LatheEngine {
   private final AtomicLong runToken = new AtomicLong();
   private final Path workspaceRoot;
   private final Path latheDir;
+  private final DiskEdits diskEdits;
 
   /**
    * What a {@link #runTest} call replays — the adapter between the MCP {@code scope} wire value and
@@ -162,6 +161,11 @@ public final class LatheEngine {
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    this.diskEdits =
+        new DiskEdits(
+            latheDir,
+            changed ->
+                request((session, cancel, progress) -> session.writePass().writeReported(changed)));
     host.connect(new NoopLanguageClient());
     // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
     host.setDocumentsFollowDisk(true);
@@ -529,7 +533,12 @@ public final class LatheEngine {
                 })
             .sorted(Comparator.comparing(LatheFileEdit::uri))
             .toList();
-    writeAndCommit(textEdits, moves, files);
+    diskEdits.apply(
+        textEdits,
+        moves,
+        files.stream()
+            .map(written -> LatheUri.toPath(written.uri()))
+            .collect(Collectors.toUnmodifiableSet()));
     final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
     // A rename changes only what resolves to the symbol: the name left as text is the agent's to
     // review, never edited here.
@@ -561,38 +570,6 @@ public final class LatheEngine {
 
   // Holds the reactor lock while writing, so an editor's server on the same workspace never
   // reconciles a half-written rename, and returns once the mirror holds the whole change.
-  private void writeAndCommit(
-      final Map<String, List<TextEdit>> textEdits,
-      final Map<String, String> moves,
-      final List<LatheFileEdit> files) {
-    IOUtil.unchecked(() -> LatheLock.acquire(LatheLayout.reactorLockFile(latheDir)));
-    try {
-      textEdits.forEach(LatheEngine::applyFileEdits);
-      moves.forEach(
-          (oldUri, newUri) ->
-              IOUtil.unchecked(() -> Files.move(LatheUri.toPath(oldUri), LatheUri.toPath(newUri))));
-      final Set<Path> changed =
-          files.stream()
-              .map(file -> LatheUri.toPath(file.uri()))
-              .collect(Collectors.toUnmodifiableSet());
-      request((session, cancel, progress) -> session.writePass().writeReported(changed));
-      // An editor's server on this workspace sees the files freshly stamped, so it would never
-      // re-index the renamed types; the touch makes it re-scan the mirror, as after a Maven sync.
-      final Path manifest = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
-      if (Files.exists(manifest)) {
-        IOUtil.unchecked(() -> FileUtil.touch(manifest));
-      }
-
-    } finally {
-      IOUtil.unchecked(() -> LatheLock.release(LatheLayout.reactorLockFile(latheDir)));
-    }
-  }
-
-  private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
-    final var path = LatheUri.toPath(uri);
-    final String updated = Positions.applyEdits(read(path), edits);
-    IOUtil.unchecked(() -> Files.writeString(path, updated));
-  }
 
   // Runs the formatter the project pins, as the editor's format-on-save does, and writes the result
   // like a rename. Empty when the file was already formatted.
@@ -645,10 +622,8 @@ public final class LatheEngine {
   }
 
   private String writeFile(final Path file, final String uri, final List<TextEdit> edits) {
-    final var edit =
-        new LatheFileEdit(uri, displayPath(file, uri), LatheLocation.Origin.REACTOR, edits.size());
-    writeAndCommit(Map.of(uri, edits), Map.of(), List.of(edit));
-    return edit.path();
+    diskEdits.apply(Map.of(uri, edits), Map.of(), Set.of(file));
+    return displayPath(file, uri);
   }
 
   // The formatter answers with one edit spanning what changed; its lines in the formatted file.
