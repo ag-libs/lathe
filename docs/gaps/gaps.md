@@ -739,37 +739,6 @@ None yet.
 
 ---
 
-## EG-089 — Definition and hover on an interface call land on a nested implementation in the same file
-
-**Status: documented**
-
-**Value: medium — Size: S–M**
-
-**Affects: the editor's definition and hover, MCP `get_definition` and `describe_symbol`.**
-
-Found by the exploratory MCP round (2026-11-04) on Helidon.
-
-### Observed behaviour
-
-At `SocketTransportBinding.java:192` (`listenerConfig.backlog()`), definition goes to `ListenerConfig.java:3455`, a method of
-the nested `ListenerConfigImpl`, not to the interface method at `:403` the call binds to (`invokeinterface
-ListenerConfig.backlog`), and hover shows no javadoc ("Accept backlog." is on `:403`).
-Every generated Helidon `*Config` has this shape; hand-written code too (`builder/codegen Utils.java:139 packageName` →
-`TypeName.java:1475` in `TypeNameImpl`, not `:265`).
-It needs the call resolved through compiled classes and the source file holding a nested class that implements the method;
-the same layout compiled from source in one file resolves right. References and implementations from those sites are right.
-
-### Fix direction
-
-When mapping a binary method to its source, match the declaring class's binary name (`ListenerConfig`, not
-`ListenerConfig$ListenerConfigImpl`) before the method name and signature.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-090 — Incoming calls of an override miss callers that dispatch to it from an upstream module
 
 **Status: documented**
@@ -1587,41 +1556,6 @@ None yet.
 
 ---
 
-## WS-32 — A Gradle build that writes main's and test's generated sources to one directory fails under Lathe
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the Gradle front-end: `latheSync`, and so every Lathe feature, on such a build.**
-
-Found by the jdtls comparison's setup check (2026-11-06) on Apache Fineract at `d63beed7c`, Lathe 0.3.1 (the Gradle plugin built from the `v0.3.1` tag).
-
-### Observed behaviour
-
-`./gradlew latheSync -Plathe.capture.only=true` fails after about 3 minutes:
-`Task ':fineract-validation:latheCaptureMain' uses this output of task ':fineract-validation:compileTestJava' without declaring an explicit or implicit dependency`, on `build/generated/sources/annotationProcessor/java/main`.
-Without Lathe the build succeeds.
-
-Fineract's root `build.gradle` sets `options.generatedSourceOutputDirectory` to `$buildDir/generated/sources/annotationProcessor/java/main` for every `JavaCompile` task, so `compileTestJava` writes its processor output into the main tree's directory too.
-`LatheCaptureTask` declares the main compile's generated-sources directory as a tracked input (`@InputFiles` on `getGeneratedSourcesDir()`), and `latheCaptureMain` depends on `compileJava` only, so Gradle 9 sees an input another task also writes, with no order between them, and stops the build.
-Were the build to pass, the main tree's generated-sources mirror would also hold the test compile's generated sources.
-
-### Probe
-
-Apache Fineract with Lathe 0.3.1 on Gradle: `JAVA_HOME=<JDK 25> ./gradlew --no-daemon --init-script <Lathe init script> latheSync -Plathe.capture.only=true`.
-
-### Fix direction
-
-Stop tracking the generated-sources directory as a task input (`@Internal`): the compiled classes, already an input, change whenever the generated sources do.
-Decide separately whether the mirror should keep a test compile's sources that land in the main tree's directory.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1906,8 +1840,10 @@ Accepting the top row is the natural move, yet a test belongs in the test root.
 
 ### Fix direction
 
-`_order_destinations` in `lua/lathe/new.lua` ranks the buffer's package and module first but ignores scope there,
-so the alphabetical tie-break (`main` < `test`) decides.
+`SourceLayout.destinations` now owns the ranking (moved from `lua/lathe/new.lua` in `6d40d341`).
+Its unfiltered list ranks both scopes equally within the buffer's package and module,
+so the alphabetical tie-break (`main` < `test`) still decides.
+The typed-package path already prefers the kind's scope; that partial improvement does not fix the unfiltered list.
 Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
 
 ### Regression targets
@@ -2034,6 +1970,7 @@ Found by the agent-tooling landscape review (2026-10-24).
 A failing test or a log gives an agent a stack trace; each frame names a class and a line, not a file.
 LSP4J-MCP has `resolve_stack_trace`. Lathe's editor already resolves stack frames through the type
 index, including package-private dependency types.
+The editor-neutral `lathe.stack.resolve` command shipped in `e4896954`; exposing a stack-trace tool through MCP remains open.
 
 ### Fix direction
 
@@ -2121,7 +2058,7 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 Server edits break lines with `\n`, which is right for an editor: it applies them in its buffer, in the
 document's own line separator.
-`LatheEngine.applyFileEdits` writes them to disk verbatim, so in a CRLF file (Git for Windows'
+`DiskEdits.applyFileEdits` writes them to disk verbatim, so in a CRLF file (Git for Windows'
 default `core.autocrlf=true` checkout) `fix_imports` leaves mixed line endings:
 
 ```
@@ -2143,7 +2080,7 @@ The tests do not cover it: their sources are text blocks, so LF even on the Wind
 ### Fix direction
 
 Convert at the disk-write boundary only, never in the edits an editor applies (a `\r` inside Neovim
-buffer lines): in `LatheEngine.applyFileEdits`, write each edit's line breaks in the file's separator,
+buffer lines): in `DiskEdits.applyFileEdits`, write each edit's line breaks in the file's separator,
 normalizing a `\r\n` already in an edit first so a CRLF formatter result does not become `\r\r\n`.
 Keep the check private to that method; the reverted attempt shared a `lineSeparatorOf` helper with
 `EclipseFormatEngine` through `SourceLocator`, which was the wrong home.
@@ -2151,35 +2088,6 @@ Matching the separator of the line an edit lands next to, instead of a whole-fil
 handle files that are already mixed.
 Tests must build CRLF content explicitly (`"…\r\n"`): `fix_imports` and `format_file` on a CRLF file,
 asserting no bare `\n` and no `\r\r`.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-42 — An unparseable line on stdin leaves the MCP server running but deaf
-
-**Status: deferred.**
-
-Decision (2026-10-30): only a broken client sends one, and after it the session is over either way.
-**Affects: MCP.**
-
-Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
-
-### Observed behaviour
-
-The SDK's stdio transport (`StdioServerTransportProvider`) stops reading at the first line it cannot decode as JSON-RPC, a blank line included, and closes the session;
-the server answers nothing more.
-The process keeps running.
-End of input closes the session the same way, but there the server now exits, as a client closing stdin means it is done.
-A client that sent such a line waits on its requests until its own timeout.
-
-### Fix direction
-
-Exit when the session's transport closes, whatever closed it, rather than only at end of input:
-wrap the transport provider and its session transport, and end the process when the session closes them.
-That implements two SDK interfaces, so weigh it against SDK upgrades.
 
 ### Regression targets
 

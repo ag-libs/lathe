@@ -24,7 +24,8 @@ Such source sets are common. In the five public Gradle builds Lathe is checked o
 | Other | Hibernate ORM `jakartaData`, `providerFixture`; Micronaut `cremaRuntime`; Caffeine `codeGen` |
 
 Until 2026-11-07 a capture-only sync even ran those suites' tests in full, for nothing ([TE-16](../gaps/gaps-archive.md));
-it now skips every test task other than `test`.
+the initial fix skipped every test task other than `test`.
+Step 2 superseded that restriction: capture-only syncs now capture each source set's test-task launch (§4.9).
 
 ## 2. Background
 
@@ -75,7 +76,7 @@ with the class path its own compile has, so the editor reports what the build re
 `testFixtures` consumed by another project resolves to the fixtures, not the whole test code.
 
 **Non-goals for step 1.**
-Running and debugging tests of the new trees (step 2, [TE-12](../gaps/gaps.md)): a run is refused there with a reason.
+Running and debugging tests of the new trees were deferred to step 2 ([TE-12](../gaps/gaps-archive.md#te-12--on-gradle-only-each-projects-test-task-is-captured--done)), now implemented (§4.9).
 Source sets with no Java sources (Kotlin- or Groovy-only) stay uncaptured, as their files are today.
 Creating a type in a new tree from the create-type dialog (it offers main and test).
 Maven, OpenJDK: unchanged apart from writing the test flag (§4.2).
@@ -209,7 +210,7 @@ Checked on Hibernate ORM: a capture-only sync captures `jakartaData`, `integrati
 
 1. **Spike** on Hibernate ORM (`tooling/metamodel-generator`: `jakartaData`, `integrationTest`, `dataIntegrationTest`; `hibernate-ant`: `legacyTest`) and Caffeine (`testFixtures` consumed across projects, `jmh`, the suites, `codeGen`), with the plugin change alone and the server as is, to see what the server already does with extra trees and settle §9.
 2. **Step 1**, one PR, a commit per layer: core and install, the Gradle plugin, the server, docs.
-3. **Step 2** (TE-12), its own design update and PR.
+3. **Step 2** (TE-12), completed in PR #131; the implemented design is in §4.9.
 
 ## 7. Verification
 

@@ -2,15 +2,15 @@
 
 ## Status
 
-**Shipped (slices 0–4, 2026-10-25); Plugin Portal release wiring remains.** Lathe derived its whole model from a **Maven** build (the
+**Shipped (slices 0–4, 2026-10-25); Plugin Portal release wiring implemented (`2c3162a1`).** Lathe derived its whole model from a **Maven** build (the
 [Maven extension](lathe-maven-extension.md) injects the compiler shim, `init`/`sync` goals, and
 the test-capture dependency; [Run, Test, and Debug](lathe-run-test-debug.md) captures and
 replays from `.lathe/`). This document designs an equivalent **Gradle** front-end that produces the
 identical `.lathe/` contract, so every downstream component — the language server, `lathe-test-runner`,
 the MCP server, and all editor clients — works unchanged.
 
-**In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
-Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete, and slice 3 (main launch) too. Slice 4 (test capture) is done: as on Maven, every build that compiles tests refreshes the workspace files, and every test run captures its launch (see [The sync command](#the-sync-command)). The user guide is [Gradle](../guide/gradle.md); the Plugin Portal release wiring remains, for 0.2.0.
+**Delivery history:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
+Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete, and slice 3 (main launch) too. Slice 4 (test capture) is done: as on Maven, every build that compiles tests refreshes the workspace files, and every test run captures its launch (see [The sync command](#the-sync-command)). The user guide is [Gradle](../guide/gradle.md); the Plugin Portal release wiring is implemented in the release workflow.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -1024,7 +1024,7 @@ What they found:
 1. **Lathe reached `buildSrc` and included builds** (Micronaut's `buildSrc`, Hibernate's `local-build-plugins`, JUnit's `gradle/base`), each writing a `.lathe/` of its own, because an init script applies to every build.
    *Fixed in slice 1:* the settings plugin acts only on the root build. Included builds holding application code are not captured yet.
 2. **Source sets other than `main` and `test` are not captured** — Caffeine's `codeGen` and `testFixtures`; `integrationTest` and `jmh` are common elsewhere.
-   Their files get no module configuration in the editor, and the test classpath reads their output from `build/`, so `gradle clean` takes it away. Maven has no counterpart; a later slice decides whether to capture them as more trees.
+   This historical limitation is resolved: [Gradle Source Sets](../planned/lathe-gradle-source-sets.md) captures every Java source set as its own tree and captures its test-task launch (PRs #127 and #131).
 3. **Siblings reach the classpath as jars more often than the spike suggested**: a modular consumer, and every Micronaut module, compile against `build/libs/*.jar`, and Micronaut's processor path holds sibling jars too. The `workspace.json` `outputs` map of slice 2 must remap both shapes.
 4. **Mixed Kotlin/Groovy modules** compile Java against `build/classes/kotlin/main`, which Lathe does not mirror; Kotlin sources themselves are out of scope.
 

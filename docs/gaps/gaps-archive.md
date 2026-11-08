@@ -7,6 +7,39 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-089 — Definition and hover on an interface call land on a nested implementation in the same file — done
+
+**Status: done.**
+
+**Value: medium — Size: S–M**
+
+**Affects: the editor's definition and hover, MCP `get_definition` and `describe_symbol`.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+At `SocketTransportBinding.java:192` (`listenerConfig.backlog()`), definition goes to `ListenerConfig.java:3455`, a method of
+the nested `ListenerConfigImpl`, not to the interface method at `:403` the call binds to (`invokeinterface
+ListenerConfig.backlog`), and hover shows no javadoc ("Accept backlog." is on `:403`).
+Every generated Helidon `*Config` has this shape; hand-written code too (`builder/codegen Utils.java:139 packageName` →
+`TypeName.java:1475` in `TypeNameImpl`, not `:265`).
+It needs the call resolved through compiled classes and the source file holding a nested class that implements the method;
+the same layout compiled from source in one file resolves right. References and implementations from those sites are right.
+
+### Resolution
+
+`ec760788` matches a parsed declaration only under its own enclosing type chain, then matches method parameters from their type trees.
+Definition lookup and parsed Javadoc lookup both use `SourceParser.declarationPath`, so a nested implementation no longer replaces its interface declaration.
+The remaining ambiguity between overloads whose parameter types have the same simple name is outside this gap.
+
+### Regression targets
+
+`SourceParserTest.declarationPath_sameNamedNestedTypes_findsTheTargetsOwn` and
+`SourceParserTest.declarationPath_overloadsByParameterType_findsEach`.
+
+---
+
 ## EG-070 — `typeDefinition` is missing — done
 
 **Status: done.**
@@ -12277,6 +12310,35 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-42 — An unparseable line on stdin leaves the MCP server running but deaf — done
+
+**Status: done.**
+
+**Affects: MCP.**
+
+Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
+
+### Observed behaviour
+
+The SDK's stdio transport (`StdioServerTransportProvider`) stops reading at the first line it cannot decode as JSON-RPC, a blank line included, and closes the session;
+the server answers nothing more.
+The process keeps running.
+End of input closes the session the same way, but there the server now exits, as a client closing stdin means it is done.
+A client that sent such a line waits on its requests until its own timeout.
+
+### Resolution
+
+`a7c30f5a` reads complete stdin lines through `ClientInput` and drops lines rejected by the SDK's own JSON-RPC parser before they reach its stdio transport.
+The server keeps answering subsequent requests and still exits when stdin closes.
+This supersedes the proposed transport-wrapper/exit approach.
+
+### Regression targets
+
+`LatheMcpServerTest.main_garbageLineThenStdinClosed_serverKeepsAnsweringThenExits` starts the real server,
+sends an invalid line after initialization, checks that `tools/list` still answers, and checks exit after closing stdin.
+
+---
 
 ## MC-73 — A file that does not compile gives an empty answer from stale classes, without saying so — done
 
