@@ -574,14 +574,19 @@ final class ReferenceSearch {
               : List.of();
       case REACTOR_MODULES ->
           cursorConfig != null
-              ? state.moduleGraph().referenceSearchScope(cursorConfig)
+              ? state.moduleGraph().referenceSearchScope(cursorConfig).stream()
+                  .filter(
+                      config ->
+                          reactorIndex.sameDeclaration(
+                              target.qualifiedName(), cursorConfig, config))
+                  .toList()
               : state.registry().allConfigs();
     };
   }
 
   ModuleSourceConfig declaringConfigFor(
       final ReferenceTarget target, final ModuleSourceConfig fallback) {
-    return reactorIndex.declaringConfig(target.qualifiedName()).orElse(fallback);
+    return reactorIndex.declaringConfig(target.qualifiedName(), fallback).orElse(fallback);
   }
 
   // The candidates' answers in one list; a cancelled search stops as each one arrives.
@@ -749,7 +754,14 @@ final class ReferenceSearch {
     final List<Path> searchRoots = config.searchRoots();
     final var planner =
         new ReferenceCandidatePlanner(state.candidateIndex(), reactorIndex.current());
-    final ReferenceCandidatePlanner.CandidatePlan plan = planner.planCandidates(config, target);
+    final ReferenceCandidatePlanner.CandidatePlan plan =
+        planner.planCandidates(
+            config,
+            target,
+            reactorIndex
+                .entryFor(target.qualifiedName(), config)
+                .or(() -> reactorIndex.current().findType(target.qualifiedName()))
+                .orElse(null));
     // A package-private static method's callers share its package, but a declaration exposing its
     // family to them may sit in any package of the module: the first phase looks module-wide.
     final Path firstPhasePackage = plan.exposureFamily().isEmpty() ? packageRel : null;
@@ -824,6 +836,10 @@ final class ReferenceSearch {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    final ModuleSourceConfig asking =
+        state.registry().moduleSourceFor(LatheUri.toPath(request.uri())).orElse(null);
+    final ModuleSourceConfig declaring = declaringConfigFor(target, asking);
+
     // Only an interface, or its method, can be implemented by lambdas.
     final CompletableFuture<Optional<String>> samInterface =
         target.kind().isInterface() || target.kind() == ElementKind.METHOD
@@ -834,9 +850,15 @@ final class ReferenceSearch {
         sam ->
             target.isType()
                 ? implementationsOfType(
-                    target, request, cursorWorker, sam, indexSnapshot, lambdaSnapshot)
+                    target, request, cursorWorker, sam, indexSnapshot, lambdaSnapshot, declaring)
                 : implementationsIn(
-                    target, sam, indexSnapshot, lambdaSnapshot, entry -> true, uri -> true));
+                    target,
+                    sam,
+                    indexSnapshot,
+                    lambdaSnapshot,
+                    entry -> true,
+                    uri -> true,
+                    declaring));
   }
 
   // A type's named subtypes come from the type index alone; its local and anonymous subclasses, and
@@ -849,18 +871,26 @@ final class ReferenceSearch {
       final CompilationWorker cursorWorker,
       final Optional<String> samInterface,
       final WorkspaceTypeIndex indexSnapshot,
-      final Map<String, List<String>> lambdaSnapshot) {
+      final Map<String, List<String>> lambdaSnapshot,
+      final ModuleSourceConfig declaring) {
+    final Set<String> reactorDuplicateNames = reactorIndex.ambiguousHierarchyNames();
     return FeatureAnswers.concatAll(
         Stream.of(
             cursorWorker.submit(
-                session -> session.navigation().typeImplementations(request, indexSnapshot)),
+                session ->
+                    session
+                        .navigation()
+                        .typeImplementations(request, indexSnapshot, reactorDuplicateNames)),
             implementationsIn(
                     target,
                     samInterface,
                     indexSnapshot,
                     lambdaSnapshot,
-                    entry -> !TypeSourceLocator.isNamedDeclaration(entry),
-                    uri -> docs.get(uri) != null)
+                    entry ->
+                        !TypeSourceLocator.isNamedDeclaration(entry)
+                            || reactorDuplicateNames.contains(entry.binaryName()),
+                    uri -> docs.get(uri) != null,
+                    declaring)
                 .exceptionally(
                     failure -> {
                       LOG.log(
@@ -883,7 +913,8 @@ final class ReferenceSearch {
       final WorkspaceTypeIndex indexSnapshot,
       final Map<String, List<String>> lambdaSnapshot,
       final Predicate<TypeIndexEntry> subtypes,
-      final Predicate<String> namingFiles) {
+      final Predicate<String> namingFiles,
+      final ModuleSourceConfig declaring) {
     final Map<Path, Set<String>> candidatesByFile =
         Stream.of(
                 subtypeImplementationFiles(target, indexSnapshot, subtypes),
@@ -891,6 +922,7 @@ final class ReferenceSearch {
                 bytecodeLambdaImplementationFiles(
                     target, samInterface, indexSnapshot, lambdaSnapshot))
             .flatMap(stream -> stream)
+            .filter(entry -> seesDeclaration(target, declaring, entry.getKey()))
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey, Map.Entry::getValue, ReferenceSearch::unionNames));
@@ -908,18 +940,41 @@ final class ReferenceSearch {
                                 LatheUri.fromPath(entry.getKey())))));
   }
 
+  boolean seesDeclaration(
+      final ReferenceTarget target, final ModuleSourceConfig declaring, final Path file) {
+    eventLoop.checkOnLoop();
+    return state
+        .registry()
+        .moduleSourceFor(file)
+        .map(asking -> reactorIndex.sameDeclaration(target.qualifiedName(), declaring, asking))
+        .orElse(true);
+  }
+
   // The files of the target's subtypes the filter keeps; an anonymous `Outer$1` maps to Outer's
   // file.
   Stream<Map.Entry<Path, Set<String>>> subtypeImplementationFiles(
       final ReferenceTarget target,
       final WorkspaceTypeIndex indexSnapshot,
       final Predicate<TypeIndexEntry> subtypes) {
-    return indexSnapshot.transitiveSubtypes(target.qualifiedName()).stream()
-        .filter(subtypes)
-        .flatMap(
-            entry ->
-                TypeSourceLocator.findSourceFile(entry, state.registry().allSourceRoots()).stream()
-                    .map(path -> Map.entry(path, Set.of(entry.binaryName()))));
+    final Stream<Map.Entry<Path, Set<String>>> staticCandidates =
+        indexSnapshot.transitiveSubtypes(target.qualifiedName()).stream()
+            .filter(entry -> !indexSnapshot.isReactorType(entry.binaryName()))
+            .filter(subtypes)
+            .flatMap(
+                entry ->
+                    TypeSourceLocator.findSourceFile(entry, state.registry().allSourceRoots())
+                        .stream()
+                        .map(path -> Map.entry(path, Set.of(entry.binaryName()))));
+    final Stream<Map.Entry<Path, Set<String>>> reactorCandidates =
+        reactorIndex.subtypes(target.qualifiedName()).stream()
+            .filter(declaration -> subtypes.test(declaration.entry()))
+            .flatMap(
+                declaration ->
+                    TypeSourceLocator.findSourceFile(
+                            declaration.entry(), declaration.owner().searchRoots())
+                        .stream()
+                        .map(path -> Map.entry(path, Set.of(declaration.entry().binaryName()))));
+    return Stream.concat(staticCandidates, reactorCandidates);
   }
 
   // Files that spell the functional interface (via the identifier index) — the freshest path for

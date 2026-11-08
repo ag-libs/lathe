@@ -7,6 +7,55 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: references, implementations, definition, rename, MCP `search_symbols` and `analyze_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+`equalsverifier-core` has a stub `nl.jqno.equalsverifier.internal.versionspecific.SequencedCollectionsValueSupplier`;
+`equalsverifier-21` has the real class under the same name and depends on core (a multi-release overlay).
+`search_symbols` lists only the `-21` one; definition from `equalsverifier-core/.../BuiltinVersionSpecificValueProvider.java:24`
+lands in `-21`; `find_references` from the core declaration answers the two `-21` lines and misses core's own uses (lines 8
+and 24), still saying "no need to re-verify with grep"; `find_implementations` of `GenericValueSupplier.get()` finds 8 of 10
+(not the two core stubs).
+`rename_symbol` on the core stub renamed and moved the `-21` file, left core untouched, and `verify_change` said "No errors".
+The log shows `[type-index] duplicate type … skipped`: the index keeps one entry per binary name.
+
+### Resolution
+
+`ReactorTypeIndex` retains owner-qualified declarations and subtype edges instead of using the deduplicated candidate index as declaration identity.
+Lookup follows the asking source tree and its captured classpath/module-path order.
+Reference searches, incoming calls, rename guards, and implementation searches keep the selected declaration's identity; symbol search emits each copy with its own metadata and location.
+Duplicate subtypes and descendants are attributed in their own compile so differing inheritance cannot produce false implementations.
+Refresh removes the replaced tree's old ownership and subtype edges and leaves other copies intact.
+No persisted schema changes are required.
+
+The existing refusal to introduce a conflicting type name is preserved.
+The regression checks a refused collision and two successful renames to fresh names, verifying that old names disappear while the untouched copy stays searchable.
+
+Verified with full analysis/server `verify`, targeted tests on JDK 17, and a live LSP probe of a neutral three-module Maven workspace on JDK 25.
+The consumer prefers the first captured dependency; both copies appear in symbols and type/method implementations; each copy's reference and rename-preview file set is isolated.
+The probe applies no source edits.
+
+### Regression targets
+
+- `DuplicateTypeTest.references_sameBinaryName_keepsDeclaringTreeSeparate` (types and members, both owners)
+- `DuplicateTypeTest.definition_sameBinaryName_prefersTheAskingTree`
+- `DuplicateTypeTest.rename_sameBinaryName_editsOnlyTheSelectedDeclarationAndItsCallers`
+- `DuplicateTypeTest.searchSymbols_sameBinaryName_returnsBothDeclarations`
+- `DuplicateTypeTest.implementations_sameBinaryName_returnsBothImplementations`
+- `DuplicateTypeTest.implementations_differentHierarchyUnderSameBinaryName_checksEachOwnersCompile`
+- `DuplicateTypeTest.renameTwice_duplicateTypeIndexRefresh_keepsTheUntouchedCopyAndRejectsCollision`
+
+---
+
 ## FR-025 — A constructor's uses through `super(...)`, `this(...)` and anonymous subclasses are not found — done
 
 **Status: done.**

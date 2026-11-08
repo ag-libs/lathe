@@ -170,6 +170,12 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
     if (targetMethod == null) {
       if (unnamed) {
         unnamedClassLocation(candidateType, classPath).ifPresent(results::add);
+      } else if (!candidateType.equals(targetType)
+          && candidateBinaryNames.contains(
+              analysis.elements().getBinaryName(candidateType).toString())
+          && isSubtypeOfTarget(candidateType)) {
+        locationAtPath(classPath, analysis.tree(), candidateType.getSimpleName().toString())
+            .ifPresent(results::add);
       }
 
       return;

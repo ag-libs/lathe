@@ -13,7 +13,6 @@ import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
-import io.github.aglibs.lathe.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -429,13 +428,7 @@ final class DocumentFeatures {
 
   List<SymbolInformation> workspaceSymbol(final String query, final boolean reactorOnly) {
     final var t = Stopwatch.start();
-    final List<Path> sourceDirs = state.typeSourceDirs();
-    final List<SymbolInformation> results =
-        WorkspaceSymbolResolver.resolve(
-            query,
-            reactorIndex.current(),
-            sourceDirs,
-            entry -> !reactorOnly || reactorIndex.current().isReactorType(entry.binaryName()));
+    final List<SymbolInformation> results = reactorIndex.symbols(query, reactorOnly);
     LOG.info(
         () -> "[symbol] query=%s %dms hits=%d".formatted(query, t.elapsedMs(), results.size()));
     return results;

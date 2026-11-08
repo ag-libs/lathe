@@ -83,7 +83,7 @@ final class RenameService {
                 return null;
               }
 
-              requireRenameable(target);
+              requireRenameable(target, uri);
               // Refuse a type whose declaring file must move when the client cannot apply the file
               // rename, rather than returning a half-rename that leaves a public type in a
               // mismatched file.
@@ -102,8 +102,13 @@ final class RenameService {
 
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
   // the reactor (JDK or a dependency), one a processor regenerates, or a method overriding either.
-  private void requireRenameable(final ReferenceTarget target) {
-    final List<Path> roots = state.registry().allSourceRoots();
+  private void requireRenameable(final ReferenceTarget target, final String uri) {
+    final ModuleSourceConfig asking =
+        state.registry().moduleSourceFor(LatheUri.toPath(uri)).orElseThrow();
+    final List<Path> roots =
+        state.registry().visibleConfigs(asking).stream()
+            .flatMap(config -> config.searchRoots().stream())
+            .toList();
     final Map<String, Optional<Path>> declarations =
         Stream.concat(Stream.of(target.qualifiedName()), target.overriddenDeclarers().stream())
             .distinct()
@@ -117,7 +122,7 @@ final class RenameService {
         .anyMatch(
             declaration ->
                 declaration.getValue().isEmpty()
-                    && !reactorIndex.current().isReactorType(declaration.getKey()))) {
+                    && reactorIndex.entryFor(declaration.getKey(), asking).isEmpty())) {
       throw FeatureAnswers.refused(
           "`%s` is declared, or overrides a method declared, outside the project (JDK or a dependency), so it cannot be renamed"
               .formatted(target.simpleName()));
@@ -166,7 +171,7 @@ final class RenameService {
   // superclass's method, which then implements nothing; the rename cannot change it. Only an
   // interface method can be implemented that way: a class method is what its subtypes inherit.
   private CompletableFuture<ReferenceTarget> requireImplementationsRenamed(
-      final ReferenceTarget target) {
+      final ReferenceTarget target, final ModuleSourceConfig asking) {
     if (target.kind() != ElementKind.METHOD
         || target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       return CompletableFuture.completedFuture(target);
@@ -174,8 +179,7 @@ final class RenameService {
 
     final boolean onInterface =
         reactorIndex
-            .current()
-            .findType(target.qualifiedName())
+            .entryFor(target.qualifiedName(), asking)
             .filter(type -> type.kind() == TypeKind.INTERFACE)
             .isPresent();
     final CompletableFuture<List<String>> inheritedOutside =
@@ -184,6 +188,10 @@ final class RenameService {
                 search
                     .subtypeImplementationFiles(
                         target, reactorIndex.current(), TypeSourceLocator::isNamedDeclaration)
+                    .filter(
+                        entry ->
+                            search.seesDeclaration(
+                                target, search.declaringConfigFor(target, asking), entry.getKey()))
                     .map(
                         entry ->
                             search.fileQueryFuture(
@@ -430,10 +438,11 @@ final class RenameService {
                 return CompletableFuture.completedFuture((WorkspaceEdit) null);
               }
 
-              requireRenameable(target);
+              requireRenameable(target, uri);
               return search
                   .referenceSearchTarget(cursorWorker, request, target, cancelChecker)
-                  .thenCompose(this::requireImplementationsRenamed)
+                  .thenCompose(
+                      searchTarget -> requireImplementationsRenamed(searchTarget, cursorConfig))
                   .thenCompose(
                       searchTarget ->
                           search

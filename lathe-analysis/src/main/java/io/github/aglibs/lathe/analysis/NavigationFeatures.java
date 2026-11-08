@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -284,6 +285,13 @@ public final class NavigationFeatures {
 
   public List<Location> typeImplementations(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
+    return typeImplementations(request, typeIndex, Set.of());
+  }
+
+  public List<Location> typeImplementations(
+      final SourceFeatureRequest request,
+      final WorkspaceTypeIndex typeIndex,
+      final Set<String> excludedTypes) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()) {
@@ -300,6 +308,7 @@ public final class NavigationFeatures {
     final List<Path> sourceRoots = request.typeSourceRoots();
     final List<Location> results =
         typeIndex.transitiveSubtypes(binaryName).stream()
+            .filter(entry -> !excludedTypes.contains(entry.binaryName()))
             .flatMap(entry -> typeHierarchyResolver.locateSource(entry, sourceRoots).stream())
             .toList();
     LOG.fine(
