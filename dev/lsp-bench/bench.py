@@ -155,13 +155,24 @@ def wait_ready(client, repo, probe, start, ready_timeout, request_timeout):
         time.sleep(0.25)
 
 
-def run_cases(client, repo, cases, capabilities, reps, request_timeout):
+def thread_dumps(pids, out_dir, label):
+    """jstack of each JVM among the server's processes, for a request that timed out."""
+    jstack = Path(S.JDTLS_JAVA_HOME) / "bin" / "jstack"
+    for pid in sorted(pids):
+        dump = subprocess.run([str(jstack), str(pid)], capture_output=True, text=True)
+        if dump.returncode == 0:
+            (out_dir / ("%s-%d.jstack" % (label, pid))).write_text(dump.stdout, encoding="utf-8")
+
+
+def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeout):
     results = {}
     for case in cases:
         if not capabilities.get(Q.CAPABILITY[case["method"]]):
             results[case["name"]] = {"method": case["method"], "supported": False}
             continue
         first_ms, answer, error = timed(client, repo, case, request_timeout)
+        if error and "timed out" in error:
+            on_timeout()
         summary = Q.summarize(repo, case, answer)
         times = [timed(client, repo, case, request_timeout)[0] for _ in range(reps)]
         results[case["name"]] = {
@@ -184,6 +195,9 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
     before = set(M.processes())
     result = {"server": server, "mode": mode, "cases": {}}
     result["build_ms"] = S.SERVERS_BY_NAME[server]["prepare"](name, project, mode, state, log)
+    # What the build left running (Gradle's worker processes outlive it) is not the server's.
+    M.stop_leftovers(before, str(repo))
+    before = set(M.processes())
     spec = S.SERVERS_BY_NAME[server]["spec"](name, project, state, args.heap, jdtls_overrides(args))
     if server == "lathe":
         result["server_version"] = S.lathe_server_version(repo)
@@ -217,7 +231,8 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         result["import_ms"] = (imported_at - start) * 1000 if server == "jdtls" and imported_at else None
         result["startup_peak_mb"] = sampler.peak_mb(until=ready_at)
         result["cases"] = run_cases(client, repo, cases.CASES, init.get("capabilities", {}), args.reps,
-                                    args.request_timeout)
+                                    args.request_timeout,
+                                    lambda: thread_dumps(sampler.pids, out_dir, label))
         result["query_peak_mb"] = sampler.peak_mb(since=ready_at)
         time.sleep(5)
         sampler.sample()
@@ -278,16 +293,27 @@ def environment(name, project, args):
     }
 
 
+def slept_s():
+    """Seconds the machine has spent suspended since boot: the boot clock counts them, the
+    monotonic clock does not."""
+    return time.clock_gettime(time.CLOCK_BOOTTIME) - time.clock_gettime(time.CLOCK_MONOTONIC)
+
+
 def measured_run(server, name, project, cases, mode, args, out_dir, label):
-    """One run, repeated when the machine was busy before or after it (README.md, Runs)."""
+    """One run, repeated when the machine was busy before or after it, or slept during it
+    (README.md, Runs)."""
     for attempt in range(1, LOAD_ATTEMPTS + 1):
         load_before = os.getloadavg()
+        slept_before = slept_s()
         result = run_server(server, name, project, cases, mode, args, out_dir, label)
         result["load"] = {"before": load_before, "after": os.getloadavg(), "attempt": attempt}
+        if slept_s() - slept_before > 1:
+            print("  the machine slept during the run, run discarded", flush=True)
+            continue
         if not (load_before[0] > os.cpu_count() or overloaded()):
             return result
         print("  load above %d cores, run discarded" % os.cpu_count(), flush=True)
-    result["error"] = "load above the core count on every attempt"
+    result["error"] = "no attempt ran on an idle, awake machine"
     return result
 
 

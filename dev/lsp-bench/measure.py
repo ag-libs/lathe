@@ -66,6 +66,15 @@ def stop_started(before):
     kill(descendants(table, started_daemons(table, before)))
 
 
+def stop_leftovers(before, repo):
+    """Stop the processes a build started and left running: new since `before`, and naming the
+    project's clone or Gradle in their command line. Never a process that was already running."""
+    table = processes()
+    left = {pid for pid, (_p, _r, _c, cmd) in table.items()
+            if pid not in before and pid != os.getpid() and (repo in cmd or "gradle" in cmd.lower())}
+    kill(descendants(table, left))
+
+
 class Sampler:
     """Samples a server's processes every `interval` seconds on a thread of its own."""
 
