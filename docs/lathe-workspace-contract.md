@@ -55,7 +55,7 @@ On Maven a tree is current when its compile source roots hold Java, or its outpu
 | `<moduleRel>/lsp-params-<tree>.json` | `ModuleConfigData` | required |
 | `lathe-launcher.sh`, `lathe-mcp-launcher.sh` (`.cmd` on Windows) | scripts (executable on POSIX) | required |
 | `lathe-server.args`, `lathe-mcp.args` | java @argfiles the launchers read | required |
-| `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
+| `lathe.lock`, `<moduleRel>/module.lock` | UTF-8 PID + process start time, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
 | `<moduleRel>/lsp-stamps-<tree>.json` | `CompiledStampsData` | recommended |
 | `<moduleRel>/<tree>/` (`classes/`, `test-classes/`, `classes-<name>/`) | bytecode mirror | recommended, unless `externalOutput` |
@@ -112,8 +112,12 @@ server walks up to as well, so a launcher started in a module directory still us
 
 ### `lathe.lock`, `module.lock`
 
-An empty file; only its existence and mtime matter (`LatheLock`).
-It is held while it exists and its mtime is under 2 minutes old; an older lock is stale and ignored.
+A UTF-8 file containing the owning process's PID on the first line and its start instant (ISO-8601) on the second (`LatheLock`).
+A fresh lock whose owner has exited is ignored immediately, without deleting the file.
+A different start instant means the PID was reused, so that lock is ignored too.
+Empty markers, incomplete or malformed ownership metadata, and unavailable process information retain the mtime fallback.
+If the writer cannot obtain its start instant, it writes an empty marker.
+Any lock with an mtime at least 2 minutes old is stale and ignored, even if its owner is alive.
 
 - **Reactor lock** `.lathe/lathe.lock`: held for a whole build that writes `.lathe/`.
   The Maven extension takes it (`BuildLock`) after the projects are read and heartbeats it every 30 seconds until the session ends;

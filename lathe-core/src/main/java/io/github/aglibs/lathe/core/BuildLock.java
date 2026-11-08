@@ -13,8 +13,7 @@ import java.util.concurrent.TimeUnit;
 // spurious prompt, never a failed build.
 public final class BuildLock implements AutoCloseable {
 
-  // Refresh well inside LatheLock's staleness window so a live build never looks crashed, while a
-  // real crash (the heartbeat thread dies with the JVM) self-heals within that window.
+  // Keep the mtime fallback fresh even when the platform cannot report process ownership.
   private static final long HEARTBEAT_MS = 30_000;
 
   private final Path latheDir;
