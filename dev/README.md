@@ -17,7 +17,7 @@ All files live in `dev/` and are never shipped with the distribution.
 | `lsp.py` | Python LSP client library (`LspClient` base + `LatheClient` preset) and CLI diagnostics tool |
 | `jdtls.py` | `JdtlsClient` preset — runs Eclipse jdtls on Corretto 25 for differential testing |
 | `jdtls_diff.py` | Differential tester — drives Lathe and jdtls over identical probes, reports divergences |
-| `lsp-bench/` | Lathe and jdtls benchmark: the pre-registered projects, queries and metrics (`README.md`); the harness follows |
+| `lsp-bench/` | Lathe and jdtls benchmark: the pre-registered projects, queries and metrics (`README.md`); `setup.sh`, then `bench.py <project>` (`--prime` first), writes `results/<run>/report.md`; `pick.py` applies the position rules |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 | `mcp.py` | Minimal MCP stdio client (`McpClient`) and CLI for the Lathe MCP server |
 | `mcp_battery.py` | MCP release battery on a real workspace: every tool, tools agreeing with each other, a probe file of less common constructs, renames that keep what names mean, bad requests, server health |

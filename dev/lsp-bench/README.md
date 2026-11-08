@@ -94,4 +94,22 @@ Then every row with its raw results and the command that reproduces it, the rows
 
 ## Amendments
 
-None yet.
+- **2026-11-07, after spring-petclinic's first run (its queries are java-index's, which no rule picks):**
+  the rules under [Queries](#queries) name "the main module" without saying which; each project's is now named in `projects.py` before its first run:
+  the module its other modules build on (`dropwizard-core`, Helidon's `webserver/webserver`, `hibernate-core`, `fineract-core`, `openmetadata-service`).
+  How the rules are applied by text search, and the base class for the kinds without a rule of their own, are in `pick.py`'s description.
+- **2026-11-07, during the unmeasured priming runs, before any measured run of the projects named:**
+  - The build row of a Maven project holds no test capture: `process-test-classes` stops before Surefire runs, and Maven captures a launch only when tests run. The Gradle rows (`latheSync -Plathe.capture.only=true`) do capture. [Metrics](#metrics) said "with its capture" for both.
+  - jdtls cannot import Helidon from a fresh checkout: its Maven integration resolves the compiler plugin's dependencies (Helidon's own annotation processors, `28.0.0-SNAPSHOT`) only from a repository. jdtls's cold Helidon runs therefore run `mvn install -DskipTests` first, into a repository of their own under `.work/`, and that install is timed as jdtls's build row.
+  - Dropwizard's `pgpverify` rejects an unsigned artifact. Lathe's releases are signed; the pinned local build is not, so Lathe's Dropwizard build allows the `io.github.ag-libs` group unsigned (`pgp-keys-map.list`) and verifies everything else.
+  - The readiness probe must be a query whose right answer no server disputes. Hibernate ORM's was a constructor call, where Lathe answers the class and jdtls the constructor; its probe is now a method call, and the constructor call a query of its own.
+  - The getter rule now requires the getter's body to be `return field;`: it had matched a local variable beside a static method of the getter's name.
+  - Dropwizard's checks of two queries were wrong (Jetty's `setHandler` is `Handler.Wrapper`'s; `MigrationsBundle` does not override `run`); both servers answered alike, and the checks were corrected.
+  - jdtls starts with the Lombok agent vscode-java gives it by default (`java.jdt.ls.lombokSupport.enabled`), the project's own Lombok, on the projects that use Lombok (Fineract, OpenMetadata); without it jdtls would not see Lombok's generated members.
+  - jdtls does not import Apache Fineract: the Gradle model jdtls fetches through Buildship creates every task, and a plugin of Fineract's (its `tiOrder` task) fails on Gradle 9.7.1 when created. Turning off jdtls's Gradle annotation processing (`java.import.gradle.annotationProcessing.enabled=false`), a labelled variant, does not avoid it. Fineract is reported as a project jdtls does not import, with Lathe's numbers alone.
+  - Fineract declares its repositories per project, so Gradle ignores a repository added in settings; Lathe's build adds the pinned build's repository to each project, for the `io.github.ag-libs` group only. A released Lathe comes from Maven Central, which Fineract declares.
+  - OpenMetadata builds on JDK 21, the Java it targets: its Lombok (1.18.36) predates JDK 25.
+- **2026-11-08, during the measured runs:**
+  - Fineract's Gradle build leaves worker processes running after it ends, and the harness counted them as Lathe's: its first measured cold runs reported 10 processes and 9.9 to 14.7 GB. The harness now stops what a build leaves (new processes naming the clone or Gradle) and takes the server's baseline after the build; Fineract's Lathe runs were measured again. No other project's runs counted more than the server's own process.
+  - A run during which the machine suspends is discarded and repeated, as one on a busy machine is: one Fineract run spanned a suspend (the lid closed), so a request seemed to take 101 minutes. The run was discarded.
+  - A request that times out saves a thread dump of each of the server's JVMs beside the run's results.
