@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.Tree;
+import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -13,6 +15,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 // What a symbol at a cursor is as a search target (references, rename, instantiations, contracts,
@@ -85,6 +88,58 @@ public final class ReferenceFeatures {
         ? null
         : ReferenceTarget.from(
             element, cur.analysis().trees(), cur.analysis().types(), cur.analysis().elements());
+  }
+
+  public Optional<List<Location>> localRenameTextMentions(final SourceFeatureRequest request) {
+    final Optional<Cursor> at = session.cursor(request);
+    if (at.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final Cursor cur = at.get();
+    final Element element = renameElement(request, cur);
+    if (element == null) {
+      return Optional.empty();
+    }
+
+    final var analysis = cur.analysis();
+    final var trees = analysis.trees();
+    final ReferenceTarget target =
+        ReferenceTarget.from(element, trees, analysis.types(), analysis.elements());
+    if (!target.isLocalScope()) {
+      return Optional.empty();
+    }
+
+    final TreePath declaration = trees.getPath(element);
+    for (TreePath scope = declaration == null ? null : declaration.getParentPath();
+        scope != null;
+        scope = scope.getParentPath()) {
+      final Tree tree = scope.getLeaf();
+      switch (tree.getKind()) {
+        case METHOD,
+            LAMBDA_EXPRESSION,
+            BLOCK,
+            FOR_LOOP,
+            ENHANCED_FOR_LOOP,
+            CATCH,
+            TRY,
+            CLASS,
+            INTERFACE,
+            ENUM,
+            ANNOTATION_TYPE,
+            RECORD -> {
+          return Optional.of(
+              TextMentions.literals(
+                      trees, analysis.tree(), tree, element.getSimpleName().toString())
+                  .stream()
+                  .map(location -> new Location(request.uri(), location.getRange()))
+                  .toList());
+        }
+        default -> {}
+      }
+    }
+
+    return Optional.of(List.of());
   }
 
   // Why renaming the symbol at the cursor to newName would collide with an existing declaration.

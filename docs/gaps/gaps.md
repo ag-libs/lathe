@@ -946,35 +946,6 @@ None yet.
 
 ---
 
-## FR-028 — Renaming a parameter or record component leaves its `@param` tag
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: rename, the editor and MCP.**
-
-Found by the exploratory MCP round (2026-11-04) on Helidon.
-
-### Observed behaviour
-
-Renaming `handler` to `task` at `Handler.java:37` leaves `@param handler` at line 34; `ProxyProtocolV2Data.java:186`
-`hostName` to `host` leaves `@param hostName` at line 184.
-The "Not renamed — review" list names 12 `"handler"` string literals in unrelated modules (messaging tests, JwtProvider,
-declarative codegen) for a method-local parameter, and not the `@param` tag.
-Not EG-050, which covers `{@link}` and `{@code}`.
-
-### Fix direction
-
-Rename the `@param` name of the method (or record) that declares the parameter, and leave string literals outside the
-declaring scope off the review list for a local symbol.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-029 — References to a widely used method take 12–27 s on a very large codebase
 
 **Status: documented**

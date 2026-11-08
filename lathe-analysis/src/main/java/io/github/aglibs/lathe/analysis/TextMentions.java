@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.LiteralTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -59,7 +60,7 @@ public final class TextMentions {
       return javaFiles.stream()
           .filter(file -> mayQuote(file, name))
           .flatMap(
-              file -> parser.parseFile(file, (trees, cu) -> literals(trees, cu, name)).stream())
+              file -> parser.parseFile(file, (trees, cu) -> literals(trees, cu, cu, name)).stream())
           .flatMap(List::stream)
           .toList();
     }
@@ -80,21 +81,25 @@ public final class TextMentions {
                         || wordStarts(line, name).anyMatch(at -> qualified(line, at))));
   }
 
-  private static List<Location> literals(
-      final Trees trees, final CompilationUnitTree cu, final String name) {
+  static List<Location> literals(
+      final Trees trees, final CompilationUnitTree cu, final Tree scope, final String name) {
     final var found = new ArrayList<Location>();
     new TreeScanner<Void, Void>() {
       @Override
       public Void visitLiteral(final LiteralTree node, final Void ignored) {
         if (node.getValue() instanceof final String text && namesIt(text, name)) {
           final long start = trees.getSourcePositions().getStartPosition(cu, node);
+          if (start < 0) {
+            return null;
+          }
+
           final Position at = Positions.offsetToPosition(cu, start);
           found.add(new Location(cu.getSourceFile().toUri().toString(), new Range(at, at)));
         }
 
         return null;
       }
-    }.scan(cu, null);
+    }.scan(scope, null);
     return List.copyOf(found);
   }
 

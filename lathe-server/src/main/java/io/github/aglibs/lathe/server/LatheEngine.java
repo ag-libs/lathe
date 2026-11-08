@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
@@ -44,6 +45,7 @@ import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -524,6 +526,15 @@ public final class LatheEngine {
    */
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
+    final String original = read(file);
+    final Optional<List<Location>> localMentions =
+        request(
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.renames().localTextMentionsFuture(uri, pos)));
     // The engine moves files itself, so a type's rename may move its file.
     final WorkspaceEdit edit =
         request(
@@ -571,7 +582,15 @@ public final class LatheEngine {
     // A rename changes only what resolves to the symbol: the name left as text is the agent's to
     // review, never edited here.
     final List<Location> mentions =
-        textMentions(oldName).stream()
+        localMentions
+            .map(
+                found ->
+                    renamedMentions(
+                        found,
+                        original,
+                        textEdits.getOrDefault(LatheUri.fromPath(file), List.of())))
+            .orElseGet(() -> textMentions(oldName))
+            .stream()
             .filter(
                 mention ->
                     origin(LatheUri.toPath(mention.getUri())) == LatheLocation.Origin.REACTOR)
@@ -582,6 +601,33 @@ public final class LatheEngine {
         files,
         mentions.stream().limit(LISTED_MENTIONS).map(this::toLatheLocation).toList(),
         mentions.size());
+  }
+
+  private static List<Location> renamedMentions(
+      final List<Location> mentions, final String original, final List<TextEdit> edits) {
+    final String renamed = Positions.applyEdits(original, edits);
+    final var results = new ArrayList<Location>();
+    for (final Location mention : mentions) {
+      final Position at = mention.getRange().getStart();
+      final int before = Positions.toOffset(original, at.getLine(), at.getCharacter());
+      int after = before;
+      for (final TextEdit edit : edits) {
+        final Range range = edit.getRange();
+        final int end =
+            Positions.toOffset(original, range.getEnd().getLine(), range.getEnd().getCharacter());
+        if (end <= before) {
+          final int start =
+              Positions.toOffset(
+                  original, range.getStart().getLine(), range.getStart().getCharacter());
+          after += edit.getNewText().length() - (end - start);
+        }
+      }
+
+      final var position = Positions.offsetToPosition(renamed, after);
+      results.add(new Location(mention.getUri(), new Range(position, position)));
+    }
+
+    return List.copyOf(results);
   }
 
   // Best effort: the rename is on disk by now, and a scan that fails must not report it as failed.

@@ -64,6 +64,16 @@ final class RenameService {
     this.docs = docs;
   }
 
+  CompletableFuture<Optional<List<Location>>> localTextMentionsFuture(
+      final String uri, final Position pos) {
+    return router.positionFeature(
+        "rename",
+        uri,
+        pos,
+        Optional.empty(),
+        (session, request) -> session.references().localRenameTextMentions(request));
+  }
+
   CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
       prepareRenameFuture(final String uri, final Position pos, final boolean fileRenameSupported) {
     final OpenDocument openFile = docs.get(uri);
