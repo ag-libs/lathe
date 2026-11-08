@@ -27,10 +27,46 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 // The read-only tools: diagnostics, definition, references, call hierarchy, implementations,
 // describe, symbol search and outline.
 class LatheEngineNavigationTest extends LatheEngineTestBase {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void definition_constructorInAnotherFile_returnsSelectedOverloadAtWorkspacePath(
+      final boolean implicit) throws Exception {
+    final String declaration =
+        implicit
+            ? "package com.example; class Widget {}"
+            : """
+            package com.example;
+            class Widget {
+              Widget(int value) {}
+              Widget(String value) {}
+            }
+            """;
+    final String source =
+        "package com.example; class Caller { Object value = new Widget(%s); }"
+            .formatted(implicit ? "" : "\"text\"");
+    final Path widget = TestCompiler.writeModuleSource(tmp, "com/example/Widget.java", declaration);
+    final Path caller = TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", source);
+    compileIntoMirror(widget, caller);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(source, "Widget(");
+
+    assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value())
+        .singleElement()
+        .satisfies(
+            target -> {
+              assertThat(target.uri()).isEqualTo(widget.toUri().toString());
+              assertThat(target.origin()).isEqualTo(LatheLocation.Origin.REACTOR);
+              assertThat(target.snippet())
+                  .isEqualTo(implicit ? declaration : "Widget(String value) {}");
+            });
+  }
+
   @Test
   void diagnostics_cleanSource_returnsNoDiagnostics() throws Exception {
     final Path source =

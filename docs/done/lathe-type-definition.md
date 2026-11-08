@@ -11,6 +11,12 @@ It is distinct from:
 - `textDocument/declaration`, which jumps from overriding methods to their contract.
 - `typeHierarchy`, which navigates inheritance relationships from a type declaration.
 
+For `new Widget(...)`, definition resolves the invoked constructor overload through javac's attributed creation tree (EG-096).
+It reuses the constructor resolver used by references, including anonymous-subclass delegation, and falls back to the type declaration when the constructor has no source declaration.
+Ordinary type references and generic type arguments still resolve to their type declarations.
+Type definition continues to return `Widget` itself.
+The existing definition locator maps compiler overlay paths to real workspace files; its URI regression also covers constructors.
+
 ---
 
 ## 2. Current State

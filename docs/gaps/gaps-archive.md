@@ -7,6 +7,32 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-096 — Definition on a constructor call goes to the class — done
+
+**Status: done.**
+
+**Affects: the editor's definition and MCP `get_definition` on `new X(...)`.**
+
+Found by the jdtls comparison's benchmark (2026-11-08) on Hibernate ORM.
+Definition on `PersistEvent` in a constructor call selected its class declaration instead of the invoked overload.
+
+### Resolution
+
+Definition now consults the existing javac constructor resolver before the ordinary cursor element.
+Generic, diamond, qualified, and anonymous-subclass creations select the invoked overload.
+An implicit constructor without a source declaration falls back to its type.
+Ordinary type references and generic arguments retain type navigation, and the existing locator preserves real workspace URIs.
+See [Type Definition Navigation](../done/lathe-type-definition.md#1-goal) for the distinction between definition and type definition.
+
+### Regression targets
+
+- `DefinitionLocatorTest.definition_constructorCall_returnsInvokedOverload`
+- `DefinitionLocatorTest.definition_typeReference_returnsTypeDeclaration`
+- `DefinitionLocatorTest.locate_sameFile_overlayCompilationUnit_returnsRealWorkspaceFile` (extended to constructors)
+- `LatheEngineNavigationTest.definition_constructorInAnotherFile_returnsSelectedOverloadAtWorkspacePath` (explicit and implicit constructors)
+
+---
+
 ## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one — done
 
 **Status: done.**

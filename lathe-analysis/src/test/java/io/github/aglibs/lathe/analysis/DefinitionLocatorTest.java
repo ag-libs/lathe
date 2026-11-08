@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.testing.SampleFixture;
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,8 +17,81 @@ import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Location;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class DefinitionLocatorTest extends SampleFixture {
+  @ParameterizedTest
+  @CsvSource({
+    "new Box<String>(42), Box(int value)",
+    "new Box<>(\"text\"), Box(String value)",
+    "new Test.Box<String>(42), Box(int value)",
+    "new Box<String>(\"anonymous\") {}, Box(String value)"
+  })
+  void definition_constructorCall_returnsInvokedOverload(
+      final String invocation, final String declaration) {
+    final String source =
+        """
+        class Test {
+          static class Box<T> {
+            Box(int value) {}
+            Box(String value) {}
+          }
+          Object value = %s;
+        }
+        """
+            .formatted(invocation);
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              1,
+              posOf(source, invocation, "Box"),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .hasValueSatisfying(
+              location -> {
+                assertThat(location.getUri()).endsWith("/Test.java");
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(posOf(source, declaration, "Box"));
+              });
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({"Box<Payload> field, Box", "new Box<Payload>(42), Payload"})
+  void definition_typeReference_returnsTypeDeclaration(final String context, final String token) {
+    final String source =
+        """
+        class Test {
+          static class Payload {}
+          static class Box<T> { Box(int value) {} }
+          Box<Payload> field = new Box<Payload>(42);
+        }
+        """;
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              1,
+              posOf(source, context, token),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .hasValueSatisfying(
+              location ->
+                  assertThat(location.getRange().getStart())
+                      .isEqualTo(posOf(source, "class " + token, token)));
+    }
+  }
 
   private static final String GREETER_SOURCE =
       """
@@ -169,9 +243,10 @@ class DefinitionLocatorTest extends SampleFixture {
     assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(18);
   }
 
-  @Test
-  void locate_sameFile_overlayCompilationUnit_returnsRealWorkspaceFile(@TempDir final Path tempDir)
-      throws IOException {
+  @ParameterizedTest
+  @ValueSource(strings = {"greet", "<init>"})
+  void locate_sameFile_overlayCompilationUnit_returnsRealWorkspaceFile(
+      final String member, @TempDir final Path tempDir) throws IOException {
     // The compiler parses an open buffer from its temp overlay copy, so the attributed compilation
     // unit's source file is that overlay path. Definition must resolve to the real workspace file
     // under the source roots, never the detached overlay copy.
@@ -183,18 +258,20 @@ class DefinitionLocatorTest extends SampleFixture {
     final var overlayFile = tempDir.resolve("Greeter.java");
     Files.writeString(overlayFile, GREETER_SOURCE);
 
-    final var parsed = TestJavac.parse(overlayFile);
-    final var greet = memberNamed(parsed.task().getElements().getTypeElement("Greeter"), "greet");
-    assertThat(parsed.trees().getPath(greet)).isNotNull();
+    try (final var parsed = TestJavac.parse(overlayFile)) {
+      final var element =
+          memberNamed(parsed.task().getElements().getTypeElement("Greeter"), member);
+      assertThat(parsed.trees().getPath(element)).isNotNull();
 
-    final var location =
-        new DefinitionLocator(parsed.parser())
-            .locate(greet, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString());
+      final var location =
+          new DefinitionLocator(parsed.parser())
+              .locate(element, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString());
 
-    assertThat(location).isPresent();
-    assertThat(location.get().getUri())
-        .isEqualTo(realFile.toUri().toString())
-        .isNotEqualTo(overlayFile.toUri().toString());
+      assertThat(location).isPresent();
+      assertThat(location.get().getUri())
+          .isEqualTo(realFile.toUri().toString())
+          .isNotEqualTo(overlayFile.toUri().toString());
+    }
   }
 
   @Test
