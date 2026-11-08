@@ -15,10 +15,12 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class LatheLock {
 
-  private static final System.Logger LOG = System.getLogger(LatheLock.class.getName());
+  private static final Logger LOG = Logger.getLogger(LatheLock.class.getName());
 
   private static final long STALE_MS = 2 * 60 * 1000;
   private static final long POLL_INTERVAL_MS = 100;
@@ -128,11 +130,11 @@ public final class LatheLock {
           .orElse("");
     } catch (final SecurityException | UnsupportedOperationException e) {
       LOG.log(
-          System.Logger.Level.DEBUG,
+          Level.FINE,
+          e,
           () ->
               "[lock-owner] %s process inspection unavailable; using mtime expiry %dms"
-                  .formatted(lockFile, timer.elapsedMs()),
-          e);
+                  .formatted(lockFile, timer.elapsedMs()));
       return "";
     }
   }
@@ -163,11 +165,11 @@ public final class LatheLock {
         | SecurityException
         | UnsupportedOperationException e) {
       LOG.log(
-          System.Logger.Level.DEBUG,
+          Level.FINE,
+          e,
           () ->
               "[lock-owner] %s ownership unavailable; using mtime expiry %dms"
-                  .formatted(lockFile, timer.elapsedMs()),
-          e);
+                  .formatted(lockFile, timer.elapsedMs()));
       return true;
     }
   }

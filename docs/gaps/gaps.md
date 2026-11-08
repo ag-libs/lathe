@@ -1379,7 +1379,7 @@ Retain the two-minute mtime fallback for empty markers, malformed metadata and u
 
 ### Regression targets
 
-`LatheLockTest.isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks` (kills a JVM that acquired both locks),
+`LatheLockTest.isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks` (checks fresh markers naming a JVM that has exited),
 `LatheLockTest.isBuilding_reusedPid_ignoresFreshLock`,
 `LatheLockTest.isBuilding_incompleteOrMalformedOwner_usesMtimeExpiry`,
 `LatheLockTest.isBuilding_invalidUtf8Owner_usesMtimeExpiry`,

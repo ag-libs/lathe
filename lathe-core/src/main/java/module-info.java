@@ -1,4 +1,5 @@
 module io.github.aglibs.lathe.core {
+  requires java.logging;
   requires com.google.gson;
   requires io.github.aglibs.validcheck;
 

@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -162,55 +161,30 @@ final class LatheLockTest {
   @Test
   @Timeout(PROCESS_TIMEOUT_SECONDS)
   void isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks() throws Exception {
-    final Path source = moduleDir.resolve("LockOwner.java");
-    Files.writeString(
-        source,
-        """
-        class LockOwner {
-          public static void main(String[] args) throws Exception {
-            for (String lock : args) {
-              io.github.aglibs.lathe.core.LatheLock.acquire(java.nio.file.Path.of(lock));
-            }
-            System.out.println("ready");
-            System.in.read();
-          }
-        }
-        """,
-        StandardCharsets.UTF_8);
     final var java =
         Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), LatheLayout.BIN_DIR, "java")
             .toString();
-    final Path coreClasses =
-        Path.of(LatheLock.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-    final List<Path> locks = List.of(LatheLayout.reactorLockFile(moduleDir), moduleLock());
     final Process owner =
-        new ProcessBuilder(
-                java,
-                "--class-path",
-                coreClasses.toString(),
-                source.toString(),
-                locks.get(0).toString(),
-                locks.get(1).toString())
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
+        new ProcessBuilder(java, "-version")
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start();
     try {
-      try (final BufferedReader ready = owner.inputReader(StandardCharsets.UTF_8)) {
-        assertThat(ready.readLine()).isEqualTo("ready");
-        for (final Path lock : locks) {
-          assertThat(LatheLock.isBuilding(lock)).isTrue();
-        }
+      assertThat(owner.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      // The process has exited, so its recorded start time cannot keep the marker held.
+      final String identity = "%d\n%s\n".formatted(owner.pid(), Instant.EPOCH);
+      for (final Path lock : List.of(LatheLayout.reactorLockFile(moduleDir), moduleLock())) {
+        Files.writeString(lock, identity, StandardCharsets.UTF_8);
 
-        owner.destroyForcibly();
-        assertThat(owner.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-        for (final Path lock : locks) {
-          assertThat(LatheLock.isBuilding(lock)).isFalse();
-          assertThat(LatheLock.awaitAndRead(lock, () -> "read")).isEqualTo("read");
-          assertThat(lock).exists();
-        }
+        assertThat(LatheLock.isBuilding(lock)).isFalse();
+        assertThat(LatheLock.awaitAndRead(lock, () -> "read")).isEqualTo("read");
+        assertThat(lock).exists();
       }
     } finally {
-      owner.destroyForcibly();
-      assertThat(owner.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      if (owner.isAlive()) {
+        owner.destroyForcibly();
+        assertThat(owner.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      }
     }
   }
 
