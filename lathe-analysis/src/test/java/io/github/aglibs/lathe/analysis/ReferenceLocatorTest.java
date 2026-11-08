@@ -85,6 +85,83 @@ class ReferenceLocatorTest {
         LibrarySources.none());
   }
 
+  @Test
+  void references_moduleDirectives_matchesOnlyTypeIdentifiersAndRenamesOnlyTheLeaf(
+      @TempDir final Path tmp) throws IOException {
+    final String source =
+        """
+        module example.app {
+          provides java.lang.Runnable with com.example.Provider, com.other.Provider;
+          uses java.lang.Runnable;
+        }
+        """;
+    final Path descriptor = Files.writeString(tmp.resolve("module-info.java"), source);
+    final Path pkg = Files.createDirectories(tmp.resolve("com/example"));
+    final Path provider =
+        Files.writeString(
+            pkg.resolve("Provider.java"),
+            "package com.example; public class Provider implements Runnable { public void run() {} }");
+    final Path otherPackage = Files.createDirectories(tmp.resolve("com/other"));
+    final Path otherProvider =
+        Files.writeString(
+            otherPackage.resolve("Provider.java"),
+            "package com.other; public class Provider implements Runnable { public void run() {} }");
+    try (final TestJavac.ParsedSource parsed =
+        TestJavac.parse(descriptor, List.of("-proc:none"), provider, otherProvider)) {
+      final var analysis =
+          new AttributedFileAnalysis(
+              parsed.trees(),
+              parsed.task().getElements(),
+              parsed.task().getTypes(),
+              parsed.cu(),
+              null);
+      final ReferenceTarget target =
+          ReferenceTarget.from(
+              analysis.elements().getTypeElement("com.example.Provider"),
+              analysis.trees(),
+              analysis.types(),
+              analysis.elements());
+      final List<ReferenceMatch> matches =
+          ReferenceLocator.references(analysis, target, descriptor.toUri().toString(), false);
+      assertThat(matches).hasSize(1);
+      assertThat(matches.get(0).range().getStart())
+          .isEqualTo(posOf(source, "com.example.Provider", "Provider"));
+      final var edit =
+          RenameProvider.toWorkspaceEdit(
+              matches.stream().map(ReferenceMatch::toLocation).toList(), "RenamedProvider");
+      assertThat(
+              Positions.applyEdits(
+                  source, RenameProvider.textEdits(edit).get(descriptor.toUri().toString())))
+          .isEqualTo(source.replace("com.example.Provider", "com.example.RenamedProvider"));
+
+      final ReferenceTarget service =
+          ReferenceTarget.from(
+              analysis.elements().getTypeElement("java.lang.Runnable"),
+              analysis.trees(),
+              analysis.types(),
+              analysis.elements());
+      final List<ReferenceMatch> serviceMatches =
+          ReferenceLocator.references(analysis, service, descriptor.toUri().toString(), false);
+      assertThat(serviceMatches).hasSize(2);
+      assertThat(serviceMatches)
+          .extracting(match -> match.range().getStart())
+          .containsExactly(
+              posOf(source, "provides java.lang.Runnable", "Runnable"),
+              posOf(source, "uses java.lang.Runnable", "Runnable"));
+
+      final ReferenceTarget unrelated =
+          ReferenceTarget.from(
+              analysis.elements().getTypeElement("java.lang.String"),
+              analysis.trees(),
+              analysis.types(),
+              analysis.elements());
+      assertThat(
+              ReferenceLocator.references(
+                  analysis, unrelated, descriptor.toUri().toString(), false))
+          .isEmpty();
+    }
+  }
+
   // --- fields ---
 
   @Test

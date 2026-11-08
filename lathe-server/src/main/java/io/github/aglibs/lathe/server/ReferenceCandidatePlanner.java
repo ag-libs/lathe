@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -176,10 +177,14 @@ final class ReferenceCandidatePlanner {
     final Stream<String> importTokens = tokensBuilder.build();
 
     final List<Path> packageRoots = config.searchRoots();
+    final Path moduleInfo = Path.of(LatheLayout.MODULE_INFO_JAVA);
     return Stream.concat(
             importTokens.flatMap(token -> index.candidateUris(token).stream()),
             simpleCandidates.stream()
-                .filter(uri -> isInPackage(LatheUri.toPath(uri), packageRoots, packageRel)))
+                .filter(
+                    uri ->
+                        LatheUri.toPath(uri).getFileName().equals(moduleInfo)
+                            || isInPackage(LatheUri.toPath(uri), packageRoots, packageRel)))
         .collect(Collectors.toUnmodifiableSet());
   }
 

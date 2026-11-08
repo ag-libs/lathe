@@ -1033,37 +1033,6 @@ None yet.
 
 ---
 
-## FR-027 — `module-info.java` `provides … with` is missed by references and rename, and listed once per package segment
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: references, rename, the editor and MCP.**
-
-Found by the exploratory MCP round (2026-11-04) on Helidon.
-
-### Observed behaviour
-
-In a fresh session, `find_references` on `HstsFeatureProvider` (`webserver/hsts/.../HstsFeatureProvider.java:29`) answers 2
-references, not the `with io.helidon.webserver.hsts.HstsFeatureProvider;` at `module-info.java:42`; renaming it reports
-"2 edit(s) across 1 file(s)", moves the file and leaves `module-info.java` on the old name (`verify_change` then reports
-`cannot find symbol` there). The same for `ServerFeatureProvider`: 79 references, none in a `module-info.java`.
-Once `module-info.java` has been analyzed in the session, the line is found, but four times (once per package segment), and
-renaming from that line writes `with io.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider;`.
-Related to EG-071 (per-segment matching of package names in `module-info.java`).
-
-### Fix direction
-
-Include the module's `module-info.java` among the files searched for a type's uses, and match a qualified name in a
-directive by its last segment's element only.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-028 — Renaming a parameter or record component leaves its `@param` tag
 
 **Status: documented**

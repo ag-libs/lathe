@@ -319,6 +319,16 @@ New:
 The client capability capture and `RenameFile` op that a public-type file rename would need are part of
 the deferred follow-up (see Deferred), not this delivery.
 
+## Module directives (FR-027)
+
+Type renames include a closed `module-info.java` through the reference candidate planner.
+A qualified type in `provides … with` or `uses` contributes its type identifier's exact range, preserving the package segments.
+The descriptor produces the same edit whether it was already open or discovered on disk, and a rename initiated at the provider name in the directive uses the same pipeline.
+See [Module descriptor references](lathe-find-references.md#module-descriptor-references-fr-027) for candidate selection and exact javac element matching.
+
+`RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments` checks the editor service with a closed descriptor, an open descriptor, and a rename initiated from the directive.
+The test also checks the declaring file's rename operation and that requesting the edit leaves the source files unchanged.
+
 ## Testing (the correctness gate)
 
 - Unit, per kind: local, parameter, field × (private / package / public), method (non-override and

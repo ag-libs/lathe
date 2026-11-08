@@ -23,6 +23,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
+import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -30,9 +31,72 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 // An editor-applied rename: held until its last save, then committed as one write.
 class RenameTest extends ServiceTestBase {
+
+  @ParameterizedTest
+  @CsvSource({"false, false", "true, false", "true, true"})
+  void rename_serviceProvider_findsDescriptorAndKeepsPackageSegments(
+      final boolean descriptorOpen, final boolean fromDescriptor) throws Exception {
+    final String descriptorSource =
+        "module example.app { provides java.lang.Runnable with com.example.Provider; }";
+    final String providerSource =
+        "package com.example; public class Provider implements Runnable { public void run() {} }";
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put("module-info.java", descriptorSource);
+    sources.put("com/example/Provider.java", providerSource);
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    final Path descriptor = files.get(0);
+    final Path provider = files.get(1);
+    service.setFileRenameSupported(true);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(provider, providerSource);
+    if (descriptorOpen) {
+      openDoc(descriptor, descriptorSource);
+    }
+
+    awaitWorkerIdle();
+    final List<? extends Location> references =
+        service
+            .references(
+                referenceParams(provider, providerSource, providerSource.indexOf("Provider"), null))
+            .get(10, TimeUnit.SECONDS);
+    assertThat(
+            references.stream()
+                .filter(location -> location.getUri().equals(descriptor.toUri().toString())))
+        .singleElement()
+        .satisfies(
+            location ->
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(
+                        offsetToPosition(descriptorSource, descriptorSource.indexOf("Provider"))));
+
+    final Path origin = fromDescriptor ? descriptor : provider;
+    final String content = fromDescriptor ? descriptorSource : providerSource;
+    final WorkspaceEdit edit =
+        service
+            .rename(
+                new RenameParams(
+                    new TextDocumentIdentifier(origin.toUri().toString()),
+                    offsetToPosition(content, content.indexOf("Provider")),
+                    "RenamedProvider"))
+            .get(10, TimeUnit.SECONDS);
+    final Map<String, List<TextEdit>> edits = RenameProvider.textEdits(edit);
+    assertThat(edits.get(descriptor.toUri().toString())).hasSize(1);
+    assertThat(Positions.applyEdits(descriptorSource, edits.get(descriptor.toUri().toString())))
+        .isEqualTo(
+            "module example.app { provides java.lang.Runnable with com.example.RenamedProvider; }");
+    assertThat(RenameProvider.fileMoves(edit))
+        .containsEntry(
+            provider.toUri().toString(),
+            provider.resolveSibling("RenamedProvider.java").toUri().toString());
+    assertThat(Files.readString(descriptor)).isEqualTo(descriptorSource);
+  }
 
   @Test
   void rename_editorAppliesMoveAndSavesEveryFile_compilesEachOnceAfterOneBatchAtTheLastSave()
