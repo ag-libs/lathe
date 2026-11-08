@@ -36,6 +36,14 @@ Constructor-keyword definition, hover, and name recognition already resolve in a
 regression coverage preserves that behavior alongside the newly found call sites.
 Tests cover overloaded constructors, explicit delegation, ordinary and anonymous generic construction, anonymous field initializers, implicit-call exclusion, and type-argument cursor positions.
 
+## Declaration ownership across source trees (FR-026)
+
+References to a binary name are searched in the trees that resolve it to the selected declaration.
+The cursor's tree and captured path order determine that declaration; another module's same-named class is a separate target.
+This applies to type and member references, incoming calls, and the reference set used for rename.
+Candidate planning uses the selected owner's type kind, so a same-named declaration cannot change static-method search planning.
+See [Duplicate binary names](lathe-reactor-type-index.md#duplicate-binary-names-fr-026) for ownership, source ordering, subtype candidates, and refresh behavior.
+
 ---
 
 ## 1. Goal

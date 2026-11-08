@@ -970,38 +970,6 @@ None yet.
 
 ---
 
-## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: references, implementations, definition, rename, MCP `search_symbols` and `analyze_change`.**
-
-Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
-
-### Observed behaviour
-
-`equalsverifier-core` has a stub `nl.jqno.equalsverifier.internal.versionspecific.SequencedCollectionsValueSupplier`;
-`equalsverifier-21` has the real class under the same name and depends on core (a multi-release overlay).
-`search_symbols` lists only the `-21` one; definition from `equalsverifier-core/.../BuiltinVersionSpecificValueProvider.java:24`
-lands in `-21`; `find_references` from the core declaration answers the two `-21` lines and misses core's own uses (lines 8
-and 24), still saying "no need to re-verify with grep"; `find_implementations` of `GenericValueSupplier.get()` finds 8 of 10
-(not the two core stubs).
-`rename_symbol` on the core stub renamed and moved the `-21` file, left core untouched, and `verify_change` said "No errors".
-The log shows `[type-index] duplicate type … skipped`: the index keeps one entry per binary name.
-
-### Fix direction
-
-Key the reactor's type index by module and binary name, and resolve a name from the module asking (its own copy first, then
-its dependencies'), so each module sees the copy javac would.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-028 — Renaming a parameter or record component leaves its `@param` tag
 
 **Status: documented**

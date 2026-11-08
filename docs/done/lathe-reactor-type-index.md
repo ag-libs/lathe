@@ -19,13 +19,36 @@ Javac remains the authority for dependency scope, JPMS readability, exports, and
 
 ---
 
+## Duplicate binary names (FR-026)
+
+A binary name is unique within a compile, not across the workspace.
+`ReactorTypeIndex` retains a `Declaration` for each `(ModuleSourceConfig, TypeIndexEntry)` pair, so a module or source-set overlay cannot overwrite another tree's declaration.
+The broad `WorkspaceTypeIndex` still deduplicates type-name candidates; ownership-sensitive operations consult the declarations and their source trees instead of treating that candidate view as declaration identity.
+No persisted shard or workspace schema change is needed.
+
+Declaration lookup prefers the asking tree, then its captured classpath and module-path order.
+`WorkspaceModuleRegistry.visibleConfigs` preserves that order rather than putting every dependency in an unordered set.
+Source lookup uses those roots first, followed by the existing workspace-wide browsing fallback.
+Reference search and rename keep only trees resolving the target to the selected owner, and rename's source and metadata guards use that same context.
+
+Symbol search enumerates each duplicate from its own shard and source roots, retaining the correct kind and location for each copy.
+Subtype candidates retain every owned declaration and every parent edge, including cases where two copies have different supertypes.
+Ambiguous types and their descendants are checked with javac in their own compile; unique named types keep the existing index-based lookup.
+The semantic search excludes the target type itself while preserving exact-type lambda implementations.
+
+A shard refresh removes its old ownership and parent edges before inserting the new immutable entries.
+Rename and subsequent searches therefore keep the untouched copy, drop old names, and find the new names.
+The existing refusal to introduce a conflicting type name remains in place.
+
+`DuplicateTypeTest` covers declaration and member references, own-tree and classpath-ordered navigation, isolated renames, duplicate symbols and implementations, differing inheritance, and refresh after repeated renames.
+
 ## Implementation Status
 
 Static dependency and JDK shards are produced during `lathe:sync` and loaded from `.lathe/workspace.json`.
 
 Reactor classes under `.lathe/<moduleRel>/classes` and `.lathe/<moduleRel>/test-classes` are now indexed in memory by
 the server.
-`WorkspaceSession` scans loaded `ModuleSourceConfig.latheClassesDir()` directories on startup/reload,
+`ReactorTypeIndex` scans loaded `ModuleSourceConfig.latheClassesDir()` directories on startup/reload,
 merges the resulting entries with static dependency/JDK shards,
 and refreshes the routed reactor shard after successful save-time full compiles.
 
@@ -36,8 +59,7 @@ Generated-source cleanup remains future work.
 
 ## Ownership
 
-`WorkspaceSession` owns the current immutable `WorkspaceTypeIndex` snapshot and the mutable shard state used to
-rebuild it.
+`ReactorTypeIndex` owns the current immutable `WorkspaceTypeIndex` snapshot and the mutable shard state used to rebuild it on the server event loop.
 
 `WorkspaceModuleRegistry` owns loaded `ModuleSourceConfig` entries and lazy `CompilationWorker`s.
 

@@ -38,6 +38,13 @@ final class ReferenceCandidatePlanner {
   }
 
   CandidatePlan planCandidates(final ModuleSourceConfig config, final ReferenceTarget target) {
+    return planCandidates(config, target, typeIndex.findType(target.qualifiedName()).orElse(null));
+  }
+
+  CandidatePlan planCandidates(
+      final ModuleSourceConfig config,
+      final ReferenceTarget target,
+      final TypeIndexEntry declaringType) {
     final var kind = target.kind();
     // A constructor's simple name is javac's "<init>", which no source file ever spells; key
     // candidate discovery on the declaring type's simple name instead.
@@ -68,7 +75,7 @@ final class ReferenceCandidatePlanner {
     }
 
     if (kind == ElementKind.METHOD && target.staticMember()) {
-      return planStaticMethod(config, target, simpleCandidates);
+      return planStaticMethod(config, target, simpleCandidates, declaringType);
     }
 
     // Instance methods, fields and enum constants (and any other unhandled kind) use the broad
@@ -91,13 +98,13 @@ final class ReferenceCandidatePlanner {
   private CandidatePlan planStaticMethod(
       final ModuleSourceConfig config,
       final ReferenceTarget target,
-      final Set<String> simpleCandidates) {
+      final Set<String> simpleCandidates,
+      final TypeIndexEntry declaringType) {
     final var owner = target.qualifiedName();
     final boolean interfaceMethod =
-        typeIndex
-            .findType(owner)
-            .map(entry -> entry.kind() == TypeKind.INTERFACE || entry.kind() == TypeKind.ANNOTATION)
-            .orElse(false);
+        declaringType != null
+            && (declaringType.kind() == TypeKind.INTERFACE
+                || declaringType.kind() == TypeKind.ANNOTATION);
     if (interfaceMethod) {
       return onePhase(narrowToFamily(Set.of(owner), target, simpleCandidates));
     }

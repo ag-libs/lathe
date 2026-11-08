@@ -8,12 +8,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
@@ -29,6 +29,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   // Where every worker completes its results: the server's event loop.
   private final Executor delivery;
   private final List<ModuleSourceConfig> moduleSources;
+  private final Map<Path, ModuleSourceConfig> configsByOutput;
   private final Map<String, CompilationWorker> workers = new HashMap<>();
   private final CompilationWorker externalWorker;
 
@@ -40,6 +41,13 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
         new CompilationAdmission(Runtime.getRuntime().availableProcessors());
     this.delivery = delivery;
     this.moduleSources = moduleSources;
+    this.configsByOutput =
+        moduleSources.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    ModuleSourceConfig::latheClassesDir,
+                    config -> config,
+                    (first, ignored) -> first));
     this.externalWorker = CompilationWorker.external(manifest, compilationAdmission, delivery);
   }
 
@@ -147,26 +155,28 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
       return allSourceRoots();
     }
 
-    // Remapped once per request, not per tree: this runs for every hover and completion.
-    final Set<Path> seen = asking.get().compiledAgainst();
-    final Map<Integer, List<Path>> byRank =
-        moduleSources.stream()
-            .collect(
-                Collectors.groupingBy(
-                    config -> lookupRank(asking.get(), seen, config),
-                    TreeMap::new,
-                    Collectors.flatMapping(
-                        config -> config.searchRoots().stream(), Collectors.toList())));
-    return byRank.values().stream().flatMap(List::stream).toList();
+    return Stream.concat(
+            visibleConfigs(asking.get()).stream().flatMap(config -> config.searchRoots().stream()),
+            allSourceRoots().stream())
+        .distinct()
+        .toList();
   }
 
-  private static int lookupRank(
-      final ModuleSourceConfig asking, final Set<Path> seen, final ModuleSourceConfig config) {
-    if (config.equals(asking)) {
-      return 0;
+  // Keep the captured path order: two dependencies may provide the same binary name.
+  public List<ModuleSourceConfig> visibleConfigs(final ModuleSourceConfig asking) {
+    final var ordered = new LinkedHashSet<ModuleSourceConfig>();
+    ordered.add(asking);
+    final List<Path> paths =
+        Stream.concat(asking.remappedClasspath().stream(), asking.remappedModulepath().stream())
+            .toList();
+    for (final Path path : paths) {
+      final ModuleSourceConfig config = configsByOutput.get(path);
+      if (config != null) {
+        ordered.add(config);
+      }
     }
 
-    return seen.contains(config.latheClassesDir()) ? 1 : 2;
+    return List.copyOf(ordered);
   }
 
   public CompilationWorker workerFor(final ModuleSourceConfig config) {

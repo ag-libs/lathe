@@ -1,13 +1,18 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,6 +23,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.eclipse.lsp4j.SymbolInformation;
 
 // The workspace type index and the reactor shards it is built from: each tree's bytecode types plus
 // the types of its sources not built yet. Event-loop state: every entry point checks the loop, and
@@ -32,6 +38,8 @@ final class ReactorTypeIndex {
   private final Supplier<Set<Path>> openSourcePaths;
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
+  private final Map<String, List<Declaration>> declarations = new HashMap<>();
+  private final Map<String, List<Declaration>> directSubtypeDeclarations = new HashMap<>();
   // MODULE_SYSTEM only: the bytecode base scanned once (modules/ changes just on make+sync), kept
   // apart from reactorShards so per-save delta refresh never rescans it. Empty for CLASSPATH.
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorBaseShards =
@@ -63,6 +71,8 @@ final class ReactorTypeIndex {
   void load() {
     eventLoop.checkOnLoop();
     reactorShards.clear();
+    declarations.clear();
+    directSubtypeDeclarations.clear();
     reactorBaseShards.clear();
     reactorLambdaShards.clear();
     scanReactorShards();
@@ -94,15 +104,176 @@ final class ReactorTypeIndex {
         typeIndex, Stream.concat(reactorShards.values().stream(), Stream.of(openEntries)).toList());
   }
 
-  // The tree whose shard declares the type, if any.
-  Optional<ModuleSourceConfig> declaringConfig(final String binaryName) {
+  // Binary names are unique within a compile, not across the workspace.
+  Optional<ModuleSourceConfig> declaringConfig(
+      final String binaryName, final ModuleSourceConfig asking) {
     eventLoop.checkOnLoop();
-    return reactorShards.entrySet().stream()
-        .filter(
-            entry ->
-                entry.getValue().stream().anyMatch(type -> type.binaryName().equals(binaryName)))
+    final List<ModuleSourceConfig> owners = declaringConfigs(binaryName);
+    if (owners.size() == 1) {
+      return Optional.of(owners.get(0));
+    }
+
+    if (asking == null) {
+      return Optional.empty();
+    }
+
+    return state.registry().visibleConfigs(asking).stream().filter(owners::contains).findFirst();
+  }
+
+  List<ModuleSourceConfig> declaringConfigs(final String binaryName) {
+    eventLoop.checkOnLoop();
+    return declarations.getOrDefault(binaryName, List.of()).stream()
+        .map(Declaration::owner)
+        .distinct()
+        .toList();
+  }
+
+  boolean sameDeclaration(
+      final String binaryName,
+      final ModuleSourceConfig declaring,
+      final ModuleSourceConfig asking) {
+    eventLoop.checkOnLoop();
+    return declaringConfigs(binaryName).size() < 2
+        || declaringConfig(binaryName, asking).filter(owner -> owner.equals(declaring)).isPresent();
+  }
+
+  Set<String> duplicateNames() {
+    eventLoop.checkOnLoop();
+    return declarations.entrySet().stream()
+        .filter(entry -> entry.getValue().size() > 1)
         .map(Map.Entry::getKey)
-        .findFirst();
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  List<SymbolInformation> symbols(final String query, final boolean reactorOnly) {
+    eventLoop.checkOnLoop();
+    final Set<String> duplicates = duplicateNames();
+    final List<SymbolInformation> ordinary =
+        WorkspaceSymbolResolver.resolve(
+            query,
+            typeIndex,
+            state.typeSourceDirs(),
+            entry ->
+                !duplicates.contains(entry.binaryName())
+                    && (!reactorOnly || typeIndex.isReactorType(entry.binaryName())));
+    if (duplicates.isEmpty()) {
+      return ordinary;
+    }
+
+    final var results = new ArrayList<>(ordinary);
+    for (final var shard : reactorShards.entrySet()) {
+      final List<TypeIndexEntry> entries =
+          shard.getValue().stream()
+              .filter(entry -> duplicates.contains(entry.binaryName()))
+              .toList();
+      if (!entries.isEmpty()) {
+        final WorkspaceTypeIndex index =
+            WorkspaceTypeIndex.empty().withReactorEntries(List.of(entries));
+        results.addAll(
+            WorkspaceSymbolResolver.resolve(
+                query, index, shard.getKey().searchRoots(), entry -> true));
+      }
+    }
+
+    return List.copyOf(results);
+  }
+
+  record Declaration(ModuleSourceConfig owner, TypeIndexEntry entry) {
+    Declaration {
+      ValidCheck.check().notNull(owner, "owner").notNull(entry, "entry").validate();
+    }
+  }
+
+  Optional<TypeIndexEntry> entryFor(final String binaryName, final ModuleSourceConfig asking) {
+    eventLoop.checkOnLoop();
+    return declaringConfig(binaryName, asking)
+        .flatMap(
+            owner ->
+                declarations.getOrDefault(binaryName, List.of()).stream()
+                    .filter(declaration -> declaration.owner().equals(owner))
+                    .map(Declaration::entry)
+                    .findFirst());
+  }
+
+  // Candidate discovery retains all parent edges; javac checks them in each owning compile.
+  List<Declaration> subtypes(final String binaryName) {
+    eventLoop.checkOnLoop();
+    final var visited = new LinkedHashSet<String>();
+    final var pending = new ArrayDeque<String>();
+    pending.add(binaryName);
+    while (!pending.isEmpty()) {
+      final String name = pending.removeFirst();
+      if (!visited.add(name)) {
+        continue;
+      }
+
+      for (final TypeIndexEntry subtype : typeIndex.directSubtypes(name)) {
+        pending.add(subtype.binaryName());
+      }
+
+      for (final Declaration subtype : directSubtypeDeclarations.getOrDefault(name, List.of())) {
+        pending.add(subtype.entry().binaryName());
+      }
+    }
+
+    visited.remove(binaryName);
+    return visited.stream()
+        .flatMap(name -> declarations.getOrDefault(name, List.of()).stream())
+        .toList();
+  }
+
+  Set<String> ambiguousHierarchyNames() {
+    eventLoop.checkOnLoop();
+    final Set<String> duplicates = duplicateNames();
+    return Stream.concat(
+            duplicates.stream(),
+            duplicates.stream()
+                .flatMap(name -> subtypes(name).stream())
+                .map(declaration -> declaration.entry().binaryName()))
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private void replaceShard(final ModuleSourceConfig config, final List<TypeIndexEntry> entries) {
+    eventLoop.checkOnLoop();
+    final List<TypeIndexEntry> previous = reactorShards.put(config, entries);
+    if (previous != null) {
+      for (final TypeIndexEntry entry : previous) {
+        removeDeclarations(declarations, entry.binaryName(), config);
+        for (final String parent : entry.directSupertypes()) {
+          removeDeclarations(directSubtypeDeclarations, parent, config);
+        }
+      }
+    }
+
+    for (final TypeIndexEntry entry : entries) {
+      final var declaration = new Declaration(config, entry);
+      declarations.merge(
+          entry.binaryName(), List.of(declaration), ReactorTypeIndex::mergeDeclarations);
+      for (final String parent : entry.directSupertypes()) {
+        directSubtypeDeclarations.merge(
+            parent, List.of(declaration), ReactorTypeIndex::mergeDeclarations);
+      }
+    }
+  }
+
+  private static List<Declaration> mergeDeclarations(
+      final List<Declaration> left, final List<Declaration> right) {
+    return Stream.concat(left.stream(), right.stream()).distinct().toList();
+  }
+
+  private static void removeDeclarations(
+      final Map<String, List<Declaration>> index,
+      final String name,
+      final ModuleSourceConfig owner) {
+    final List<Declaration> remaining =
+        index.getOrDefault(name, List.of()).stream()
+            .filter(declaration -> !declaration.owner().equals(owner))
+            .toList();
+    if (remaining.isEmpty()) {
+      index.remove(name);
+    } else {
+      index.put(name, remaining);
+    }
   }
 
   // Rebuilds the index if a shard was refreshed since the last build.
@@ -124,7 +295,7 @@ final class ReactorTypeIndex {
     for (final var config : state.registry().allConfigs()) {
       final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
       reactorBaseShards.put(config, scan.entries());
-      reactorShards.put(config, withSourceDelta(config, scan.entries()));
+      replaceShard(config, withSourceDelta(config, scan.entries()));
       reactorLambdaShards.put(config, scan.lambdaImplementors());
       scan.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
     }
@@ -158,7 +329,7 @@ final class ReactorTypeIndex {
     }
 
     reactorBaseShards.put(config, base);
-    reactorShards.put(config, withSourceDelta(config, base));
+    replaceShard(config, withSourceDelta(config, base));
     reactorIndexStale = true;
   }
 
