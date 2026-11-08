@@ -93,7 +93,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   @Override
   public Void visitIdentifier(final IdentifierTree node, final Void ignored) {
     final var name = node.getName().toString();
-    if (!name.equals("this") && !name.equals("super")) {
+    if (positions.getEndPosition(cu, node) >= 0) {
       final var element = trees.getElement(getCurrentPath());
       if (matchesTarget(element)) {
         addMatch(positions.getStartPosition(cu, node), name.length(), roleForElement(element));
@@ -127,9 +127,9 @@ final class ReferenceLocator extends SourceTreeLocator {
 
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
-    final var element = trees.getElement(getCurrentPath());
+    final Element element = CursorElements.newClassConstructor(trees, getCurrentPath());
     if (target.matchesFamily(element, types, elements, targetMethod)) {
-      final var id = node.getIdentifier();
+      final Tree id = CursorElements.newClassType(node);
       final String name =
           id instanceof final MemberSelectTree mst
               ? mst.getIdentifier().toString()

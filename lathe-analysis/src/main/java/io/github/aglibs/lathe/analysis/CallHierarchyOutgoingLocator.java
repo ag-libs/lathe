@@ -7,6 +7,7 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -72,7 +73,8 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   @Override
   public Void visitMethodInvocation(final MethodInvocationTree node, final Void ignored) {
     final var element = CursorElements.elementAt(trees, getCurrentPath());
-    if (element instanceof ExecutableElement) {
+    if (element instanceof ExecutableElement
+        && positions.getEndPosition(cu, node.getMethodSelect()) >= 0) {
       final var sel = node.getMethodSelect();
       if (sel instanceof final MemberSelectTree mst) {
         final String name = mst.getIdentifier().toString();
@@ -90,10 +92,10 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
 
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
-    final var element = trees.getElement(getCurrentPath());
+    final Element element = CursorElements.newClassConstructor(trees, getCurrentPath());
     if (element instanceof ExecutableElement
         && !element.getEnclosingElement().getSimpleName().isEmpty()) {
-      final var id = node.getIdentifier();
+      final Tree id = CursorElements.newClassType(node);
       final String name =
           id instanceof final MemberSelectTree mst
               ? mst.getIdentifier().toString()

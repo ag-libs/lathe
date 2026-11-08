@@ -98,6 +98,49 @@ class CallHierarchyIncomingLocatorTest {
   }
 
   @Test
+  void
+      searchIncomingCalls_delegationAndAnonymousGenericCreation_keepsConstructorOverloadsSeparate() {
+    final String content =
+        """
+        class Box<T> {
+            Box(int count) {}
+            Box(String value) {}
+            Box() { this(1); }
+        }
+        class Child extends Box<String> {
+            Child() { super(2); }
+            Child(String value) { super(value); }
+        }
+        class Caller {
+            void build() { new Box<String>(3) {}; }
+            void other() { new Box<String>("other") {}; }
+        }
+        """;
+    final var targetRequest =
+        request(content, SampleFixture.posOf(content, "Box(int count)", "Box"));
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyIncomingCall> calls =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  targetFrom(items.get(0)),
+                  Set.of())
+              .hits();
+      assertThat(calls)
+          .extracting(call -> call.getFromRanges().get(0).getStart())
+          .containsExactlyInAnyOrder(
+              SampleFixture.posOf(content, "this(1)", "this"),
+              SampleFixture.posOf(content, "super(2)", "super"),
+              SampleFixture.posOf(content, "new Box<String>(3)", "Box"));
+      assertThat(calls).allSatisfy(call -> assertThat(call.getFromRanges()).hasSize(1));
+    }
+  }
+
+  @Test
   void searchIncomingCalls_noCallers_returnsEmpty() {
     final String content =
         """

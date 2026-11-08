@@ -970,37 +970,6 @@ None yet.
 
 ---
 
-## FR-025 — A constructor's uses through `super(...)`, `this(...)` and anonymous subclasses are not found
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: the editor's references and call hierarchy, MCP `find_references`, `call_hierarchy` and `analyze_change`.**
-
-Found by the exploratory MCP round (2026-11-04) on Dropwizard.
-
-### Observed behaviour
-
-`find_references` on `HibernateBundle.java:31` (`protected HibernateBundle(Class<?> entity, Class<?>... entities)`) answers
-only the declaration. It misses `super(...)` at `dual/HibernateBundle.java:21` and the anonymous `new HibernateBundle<X>(Person.class) { … }`
-at `HelloWorldApplication:42`, `MultipleUnitOfWorkTest:105/117`, `SubResourcesTest:132` and more; incoming calls say
-"No callers found" and `analyze_change` "1 production, 0 test; relevant tests: none".
-`JdbiHealthCheck:19` misses the `this(...)` at line 27.
-Changing the constructor's signature, `verify_change` reports 8 errors at exactly those sites.
-Definition and hover on the `this`/`super` keyword answer that the position is not on a name.
-
-### Fix direction
-
-Count a `super(...)`/`this(...)` call and the implicit superclass constructor call of an anonymous class body as uses of the
-constructor they resolve to, and resolve `this`/`super` in an explicit constructor call to that constructor.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one
 
 **Status: documented**

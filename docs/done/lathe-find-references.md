@@ -18,6 +18,24 @@ Regression coverage: `ReferenceCandidatePlannerTest.planCandidates_moduleDirecti
 `ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifierRanges`, and
 `RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments`.
 
+## Constructor delegation and anonymous construction (FR-025)
+
+Explicit `this(...)` and `super(...)` identifiers are constructor invocations when javac resolves them to a constructor.
+Their source ranges participate in references and incoming calls, with the resolved signature keeping overloads separate.
+A compiler-inserted delegation has no source end position and contributes no fictitious source occurrence.
+Outgoing calls apply the same source-position guard.
+
+A parameterized or annotated creation is anchored on its underlying type name.
+For an anonymous creation, javac resolves the `new` expression to a synthetic anonymous constructor;
+`CursorElements.newClassConstructor` follows that constructor's attributed delegation to the actual superclass overload.
+References and both call-hierarchy directions share this resolution, without matching constructors by argument text or inferred types.
+The reference target at an anonymous subclass creation uses the same overload, while a cursor on a type argument remains a type reference.
+Anonymous interface creation keeps its interface target rather than resolving to the implicit `Object()` call.
+
+Constructor-keyword definition, hover, and name recognition already resolve in attributed analysis;
+regression coverage preserves that behavior alongside the newly found call sites.
+Tests cover overloaded constructors, explicit delegation, ordinary and anonymous generic construction, anonymous field initializers, implicit-call exclusion, and type-argument cursor positions.
+
 ---
 
 ## 1. Goal

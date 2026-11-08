@@ -1,7 +1,9 @@
 package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,6 +18,43 @@ import org.junit.jupiter.api.io.TempDir;
 class CallHierarchyOutgoingLocatorTest {
 
   @TempDir private Path sourceRoot;
+
+  @Test
+  void outgoingCalls_anonymousGenericConstruction_resolvesSuperclassOverloads() throws IOException {
+    final String constructors = "class Box<T> { Box(int count) {} Box(String value) {} }";
+    Files.writeString(sourceRoot.resolve("Box.java"), constructors);
+    final String content =
+        """
+        class Caller {
+            void build() {
+                new Box<String>(1) {};
+                new Box<String>("other") {};
+            }
+        }
+        """
+            + constructors;
+    final var request = request(content, SampleFixture.posOf(content, "void build()", "build"));
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+      final List<CallHierarchyOutgoingCall> calls =
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+      assertThat(calls)
+          .extracting(
+              call -> call.getTo().getSelectionRange().getStart(),
+              call -> call.getFromRanges().get(0).getStart())
+          .containsExactlyInAnyOrder(
+              tuple(
+                  SampleFixture.posOf(constructors, "Box(int count)", "Box"),
+                  SampleFixture.posOf(content, "new Box<String>(1)", "Box")),
+              tuple(
+                  SampleFixture.posOf(constructors, "Box(String value)", "Box"),
+                  SampleFixture.posOf(content, "new Box<String>(\"other\")", "Box")));
+      assertThat(calls).allSatisfy(call -> assertThat(call.getFromRanges()).hasSize(1));
+    }
+  }
 
   @Test
   void outgoingCalls_methodWithCallee_returnsCallWithRange() throws IOException {
