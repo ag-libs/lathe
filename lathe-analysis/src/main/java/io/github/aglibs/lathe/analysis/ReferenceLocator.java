@@ -184,7 +184,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
-    final var element = CursorElements.elementAt(trees, getCurrentPath());
+    final var element = trees.getElement(getCurrentPath());
     if (target.matchesFamily(element, types, elements, targetMethod)) {
       addMatchAtIdentifier(node, node.getIdentifier().toString(), roleForMemberSelect(element));
     }

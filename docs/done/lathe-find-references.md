@@ -3,6 +3,21 @@
 Working design draft.
 This document describes `textDocument/references` and the foundation it should leave for later rename/refactor work.
 
+## Module descriptor references (FR-027)
+
+A type search keeps `module-info.java` candidates that spell the target's simple name even without an import or a matching package directory.
+Module directives use qualified names at the source root, so import/package narrowing alone would discard their uses.
+The normal module visibility and semantic matching still apply.
+
+Occurrence matching resolves each member-select tree directly through `Trees.getElement`.
+Cursor recovery is inappropriate here: it skips package elements and walks outward, making a package prefix resolve to the type at the end of a qualified name.
+Exact tree resolution reports the referenced type's identifier once, while still finding enclosing types when they are actually named.
+The same occurrence ranges drive references, highlights, and rename.
+
+Regression coverage: `ReferenceCandidatePlannerTest.planCandidates_moduleDirectiveIncludesType_returnsDescriptorWithoutImports`,
+`ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifierRanges`, and
+`RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments`.
+
 ---
 
 ## 1. Goal

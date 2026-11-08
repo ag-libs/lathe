@@ -7,6 +7,44 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-027 — `module-info.java` `provides … with` is missed by references and rename, and listed once per package segment — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: references, rename, the editor and MCP.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+In a fresh session, `find_references` on `HstsFeatureProvider` (`webserver/hsts/.../HstsFeatureProvider.java:29`) answers 2
+references, not the `with io.helidon.webserver.hsts.HstsFeatureProvider;` at `module-info.java:42`; renaming it reports
+"2 edit(s) across 1 file(s)", moves the file and leaves `module-info.java` on the old name (`verify_change` then reports
+`cannot find symbol` there). The same for `ServerFeatureProvider`: 79 references, none in a `module-info.java`.
+Once `module-info.java` has been analyzed in the session, the line is found, but four times (once per package segment), and
+renaming from that line writes `with io.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider;`.
+Related to EG-071 (per-segment matching of package names in `module-info.java`).
+
+### Resolution
+
+Type-reference candidate selection retains module descriptors that spell the target's simple name even when no import or package directory matches.
+`ReferenceLocator` resolves member-select trees directly through `Trees.getElement`, so package prefixes no longer recover outward to the final type.
+The referenced identifier contributes exactly one occurrence and rename edit.
+The same search works before and after opening the descriptor, and when rename starts on the provider name in the directive.
+
+Verified on Helidon's `HstsFeatureProvider` (2026-11-08) with the rebuilt server: one descriptor reference with the file closed or open, and one rename edit covering only `HstsFeatureProvider`.
+The probe inspected the edit without applying it.
+
+### Regression targets
+
+- `ReferenceCandidatePlannerTest.planCandidates_moduleDirectiveIncludesType_returnsDescriptorWithoutImports`
+- `ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifierRanges` (provider, service in `provides`/`uses`, unrelated type, and exact identifier range)
+- `RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments` (descriptor closed/open, rename from declaration/directive, and file move)
+
+---
+
 ## EG-089 — Definition and hover on an interface call land on a nested implementation in the same file — done
 
 **Status: done.**

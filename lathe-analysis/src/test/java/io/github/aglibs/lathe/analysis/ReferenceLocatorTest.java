@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,6 +84,79 @@ class ReferenceLocatorTest {
         posOf(ReferenceLocatorTest.METHOD_SOURCE, "run();", "run"),
         List.of(),
         LibrarySources.none());
+  }
+
+  @Test
+  void references_moduleDirectives_matchesOnlyTypeIdentifierRanges(@TempDir final Path tmp)
+      throws IOException {
+    final String source =
+        """
+        module example.app {
+          provides java.lang.Runnable with com.example.Provider, com.other.Provider;
+          uses java.lang.Runnable;
+        }
+        """;
+    final Path descriptor = Files.writeString(tmp.resolve("module-info.java"), source);
+    final Path pkg = Files.createDirectories(tmp.resolve("com/example"));
+    final Path provider =
+        Files.writeString(
+            pkg.resolve("Provider.java"),
+            "package com.example; public class Provider implements Runnable { public void run() {} }");
+    final Path otherPackage = Files.createDirectories(tmp.resolve("com/other"));
+    final Path otherProvider =
+        Files.writeString(
+            otherPackage.resolve("Provider.java"),
+            "package com.other; public class Provider implements Runnable { public void run() {} }");
+    try (final TestJavac.ParsedSource parsed =
+        TestJavac.parse(descriptor, List.of("-proc:none"), provider, otherProvider)) {
+      final var analysis =
+          new AttributedFileAnalysis(
+              parsed.trees(),
+              parsed.task().getElements(),
+              parsed.task().getTypes(),
+              parsed.cu(),
+              null);
+      final ReferenceTarget target =
+          ReferenceTarget.from(
+              analysis.elements().getTypeElement("com.example.Provider"),
+              analysis.trees(),
+              analysis.types(),
+              analysis.elements());
+      final List<ReferenceMatch> matches =
+          ReferenceLocator.references(analysis, target, descriptor.toUri().toString(), false);
+      assertThat(matches)
+          .extracting(ReferenceMatch::range)
+          .containsExactly(
+              new Range(
+                  posOf(source, "com.example.Provider", "Provider"),
+                  Positions.offsetToPosition(
+                      source, source.indexOf("Provider") + "Provider".length())));
+
+      final ReferenceTarget service =
+          ReferenceTarget.from(
+              analysis.elements().getTypeElement("java.lang.Runnable"),
+              analysis.trees(),
+              analysis.types(),
+              analysis.elements());
+      final List<ReferenceMatch> serviceMatches =
+          ReferenceLocator.references(analysis, service, descriptor.toUri().toString(), false);
+      assertThat(serviceMatches)
+          .extracting(match -> match.range().getStart())
+          .containsExactly(
+              posOf(source, "provides java.lang.Runnable", "Runnable"),
+              posOf(source, "uses java.lang.Runnable", "Runnable"));
+
+      final ReferenceTarget unrelated =
+          ReferenceTarget.from(
+              analysis.elements().getTypeElement("java.lang.String"),
+              analysis.trees(),
+              analysis.types(),
+              analysis.elements());
+      assertThat(
+              ReferenceLocator.references(
+                  analysis, unrelated, descriptor.toUri().toString(), false))
+          .isEmpty();
+    }
   }
 
   // --- fields ---
