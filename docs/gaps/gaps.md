@@ -1194,36 +1194,6 @@ None yet.
 
 ---
 
-## FR-031 — References to `Entity.getEntityRepository` miss every use outside its own file on OpenMetadata
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor's references, incoming calls and rename, and MCP `find_references` and `call_hierarchy`, for at least this method.**
-
-Found by the jdtls comparison's benchmark (2026-11-08) on OpenMetadata at `9a2ee8b124`, Lathe `0.3.99-c15d3a55`, built on JDK 21.
-
-### Observed behaviour
-
-References to `Entity.getEntityRepository(String)` (`openmetadata-service/.../service/Entity.java:780`, a static method of a class of static members) return 22 locations, all in `Entity.java`, in 7.8 s.
-Text search finds about 1,086 calls in `openmetadata-service` alone, such as `(BotRepository) Entity.getEntityRepository(Entity.BOT)` in `AutoPilotApp.java`.
-Incoming calls of the same method list only `Entity`'s own methods, in 13.5 s.
-Every run answered alike, with the heap capped at 2 GB as well.
-Other reference queries in the same session do cross files: references to the `getEntity(String, UUID, String, Include)` overload in the same class return 250.
-
-What sets this method apart, still to narrow: its parameter carries Lombok's `@NonNull` (Lombok rewrites the method's body), its return type is a wildcard generic (`EntityRepository<? extends EntityInterface<?>>`), and most callers cast the result.
-
-### Reproduce
-
-`dev/lsp-bench/bench.py openmetadata --servers lathe --runs 1`, query "references: widely used method" (`cases/openmetadata.py`).
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-032 — Implementations of an interface method and incoming calls take seconds on a large codebase
 
 **Status: documented**
@@ -1246,7 +1216,7 @@ Found by the jdtls comparison's benchmark (2026-11-08), Lathe `0.3.99-c15d3a55`,
 | Dropwizard | incoming calls of `Environment.jersey()` | 78 references | 0.63 s |
 
 Implementations of a class, and subtypes, answer from the type index in 14–121 ms on the same projects; implementations of a *method* compile the implementing files.
-Incoming calls cost about what references to the same method cost, and more: OpenMetadata's incoming calls in FR-031 take 13.5 s.
+Incoming calls cost about what references to the same method cost, and more: OpenMetadata's incoming calls of `Entity.getEntityRepository` took 13.5 s.
 
 ### Fix direction
 
