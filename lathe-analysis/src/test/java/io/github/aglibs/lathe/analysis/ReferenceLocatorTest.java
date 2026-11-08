@@ -1287,6 +1287,103 @@ class ReferenceLocatorTest {
     }
   }
 
+  private static final String CONSTRUCTOR_SOURCE =
+      """
+      class Base<T> {
+          Base(int n) {}
+          Base(String value) {}
+          Base() { this(1); }
+      }
+      class Child extends Base<String> {
+          Child() { super(2); }
+          Child(String value) { super(value); }
+      }
+      class Implicit extends Base<String> {}
+      class Use {
+          Base<String> field = new Base<String>(5) {};
+          void make() {
+              new Base<String>(3);
+              new Base<String>(4) {};
+              new Base<String>("other") {};
+          }
+      }
+      """;
+
+  @Test
+  void references_constructorDelegationAndGenericAnonymousCreation_keepsOverloadsSeparate()
+      throws IOException {
+    final var analysis = compile(CONSTRUCTOR_SOURCE);
+    final ReferenceTarget target = targetAt(analysis, "Base(int n)", "Base");
+
+    assertThat(refs(analysis, target, false))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(CONSTRUCTOR_SOURCE, "this(1)", "this"),
+            posOf(CONSTRUCTOR_SOURCE, "super(2)", "super"),
+            posOf(CONSTRUCTOR_SOURCE, "new Base<String>(3)", "Base"),
+            posOf(CONSTRUCTOR_SOURCE, "new Base<String>(4)", "Base"),
+            posOf(CONSTRUCTOR_SOURCE, "new Base<String>(5)", "Base"));
+
+    assertThat(refs(analysis, targetAt(analysis, "Base()", "Base"), false)).isEmpty();
+
+    final ReferenceTarget other = targetAt(analysis, "Base(String value)", "Base");
+    assertThat(refs(analysis, other, false))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(CONSTRUCTOR_SOURCE, "super(value)", "super"),
+            posOf(CONSTRUCTOR_SOURCE, "new Base<String>(\"other\")", "Base"));
+  }
+
+  @Test
+  void constructorAtNewClassType_genericAnonymousCreation_resolvesConstructorButNotTypeArgument() {
+    final var analysis = compile(CONSTRUCTOR_SOURCE);
+    final ReferenceTarget expected = targetAt(analysis, "Base(int n)", "Base");
+    assertThat(newClassTargetAt(analysis, "new Base<String>(4)", "Base")).isEqualTo(expected);
+    final var typeArgument =
+        SampleFixture.pathAt(analysis.trees(), analysis.tree(), "new Base<String>(4)", "String");
+    assertThat(CursorElements.constructorAtNewClassType(analysis.trees(), typeArgument)).isNull();
+  }
+
+  @Test
+  void constructorAtNewClassType_anonymousInterface_keepsTheInterfaceTypeTarget() {
+    final String source = "class Test { Object value = new Runnable() { public void run() {} }; }";
+    final var analysis = compile(source);
+    final var path =
+        SampleFixture.pathAt(analysis.trees(), analysis.tree(), "new Runnable()", "Runnable");
+    assertThat(CursorElements.constructorAtNewClassType(analysis.trees(), path)).isNull();
+  }
+
+  @Test
+  void resolveTarget_explicitConstructorKeywords_resolvesInvokedOverload() {
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, CONSTRUCTOR_SOURCE, 1, CompileMode.OPEN);
+      final AttributedFileAnalysis analysis =
+          session.analysis(TempSourceCompiler.TEST_URI, CONSTRUCTOR_SOURCE, 1, () -> {});
+      final ReferenceTarget expected = targetAt(analysis, "Base(int n)", "Base");
+      for (final String keyword : List.of("this(1)", "super(2)")) {
+        final String token = keyword.startsWith("this") ? "this" : "super";
+        final var request =
+            new SourceFeatureRequest(
+                TempSourceCompiler.TEST_URI,
+                CONSTRUCTOR_SOURCE,
+                1,
+                posOf(CONSTRUCTOR_SOURCE, keyword, token),
+                List.of(),
+                LibrarySources.none());
+        final ReferenceTarget target = session.references().resolveTarget(request);
+        assertThat(target).isEqualTo(expected);
+        assertThat(session.navigation().definition(request))
+            .hasValueSatisfying(
+                location ->
+                    assertThat(location.getRange().getStart())
+                        .isEqualTo(posOf(CONSTRUCTOR_SOURCE, "Base(int n)", "Base")));
+        assertThat(session.navigation().hover(request).getContents().getRight().getValue())
+            .contains("Base(int n)");
+        assertThat(session.navigation().onName(request)).isTrue();
+      }
+    }
+  }
+
   // --- constructors at new-class sites ---
 
   private static final String NEW_CLASS_SOURCE =

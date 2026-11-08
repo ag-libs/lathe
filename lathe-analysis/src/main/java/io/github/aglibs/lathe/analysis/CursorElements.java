@@ -1,12 +1,16 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -107,21 +111,70 @@ public final class CursorElements {
    * when the enclosing element is not a constructor.
    */
   static Element constructorAtNewClassType(final Trees trees, final TreePath path) {
-    TreePath child = null;
-    for (TreePath p = path; p != null; p = p.getParentPath()) {
-      if (p.getLeaf() instanceof final NewClassTree nc) {
-        if (child == null || child.getLeaf() != nc.getIdentifier()) {
-          return null;
-        }
-
-        final var element = trees.getElement(p);
-        return element != null && element.getKind() == ElementKind.CONSTRUCTOR ? element : null;
-      }
-
-      child = p;
+    final TreePath creationPath = TreePaths.nearest(path, NewClassTree.class);
+    if (creationPath == null) {
+      return null;
     }
 
-    return null;
+    final NewClassTree creation = (NewClassTree) creationPath.getLeaf();
+    if (path.getLeaf() != newClassType(creation)) {
+      return null;
+    }
+
+    final Element element = newClassConstructor(trees, creationPath);
+    return element != null && element.getKind() == ElementKind.CONSTRUCTOR ? element : null;
+  }
+
+  static Tree newClassType(final NewClassTree creation) {
+    Tree type = creation.getIdentifier();
+    while (true) {
+      if (type instanceof final ParameterizedTypeTree parameterized) {
+        type = parameterized.getType();
+      } else if (type instanceof final AnnotatedTypeTree annotated) {
+        type = annotated.getUnderlyingType();
+      } else {
+        return type;
+      }
+    }
+  }
+
+  // javac binds an anonymous creation to its synthetic constructor. Its attributed delegation
+  // identifies the superclass overload without guessing from erased or inferred argument types.
+  static Element newClassConstructor(final Trees trees, final TreePath path) {
+    final Element constructor = trees.getElement(path);
+    if (!(path.getLeaf() instanceof final NewClassTree creation)
+        || creation.getClassBody() == null
+        || constructor == null) {
+      return constructor;
+    }
+
+    if (creation.getClassBody().getExtendsClause() == null) {
+      return null;
+    }
+
+    final var constructorPath = trees.getPath(constructor);
+    if (constructorPath == null
+        || !(constructorPath.getLeaf() instanceof final MethodTree method)
+        || method.getBody() == null) {
+      return constructor;
+    }
+
+    final var bodyPath = new TreePath(constructorPath, method.getBody());
+    for (final var statement : method.getBody().getStatements()) {
+      if (!(statement instanceof final ExpressionStatementTree expression)
+          || !(expression.getExpression() instanceof MethodInvocationTree)) {
+        continue;
+      }
+
+      final var callPath =
+          new TreePath(new TreePath(bodyPath, statement), expression.getExpression());
+      final Element delegated = trees.getElement(callPath);
+      if (delegated != null && delegated.getKind() == ElementKind.CONSTRUCTOR) {
+        return delegated;
+      }
+    }
+
+    return constructor;
   }
 
   private static Element resolveStaticImportMember(

@@ -9,6 +9,7 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
@@ -70,19 +71,23 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
   @Override
   public Void visitIdentifier(final IdentifierTree node, final Void ignored) {
-    final var name = node.getName().toString();
-    if (!name.equals("this") && !name.equals("super")) {
-      final var element = trees.getElement(getCurrentPath());
-      if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
-        final var parent = getCurrentPath().getParentPath().getLeaf();
-        if (!(parent instanceof MethodTree)
-            && !(parent instanceof VariableTree)
-            && !(parent instanceof ClassTree)) {
-          final long startOff = positions.getStartPosition(cu, node);
-          addCallSite(rangeFor(startOff, name));
-        }
-      }
+    if (positions.getEndPosition(cu, node) < 0) {
+      return null;
     }
+
+    final var element = trees.getElement(getCurrentPath());
+    if (!target.matchesWithOverrides(element, types, elements, targetMethod)) {
+      return super.visitIdentifier(node, ignored);
+    }
+
+    final var parent = getCurrentPath().getParentPath().getLeaf();
+    if (!(parent instanceof MethodTree)
+        && !(parent instanceof VariableTree)
+        && !(parent instanceof ClassTree)) {
+      final long startOff = positions.getStartPosition(cu, node);
+      addCallSite(rangeFor(startOff, node.getName().toString()));
+    }
+
     return super.visitIdentifier(node, ignored);
   }
 
@@ -107,9 +112,9 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
-    final var element = trees.getElement(getCurrentPath());
+    final Element element = CursorElements.newClassConstructor(trees, getCurrentPath());
     if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
-      final var id = node.getIdentifier();
+      final Tree id = CursorElements.newClassType(node);
       final String name =
           id instanceof final MemberSelectTree mst
               ? mst.getIdentifier().toString()

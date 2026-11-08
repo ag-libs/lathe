@@ -7,6 +7,53 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-025 — A constructor's uses through `super(...)`, `this(...)` and anonymous subclasses are not found — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor's references and call hierarchy, MCP `find_references`, `call_hierarchy` and `analyze_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+`find_references` on `HibernateBundle.java:31` (`protected HibernateBundle(Class<?> entity, Class<?>... entities)`) answers
+only the declaration. It misses `super(...)` at `dual/HibernateBundle.java:21` and the anonymous `new HibernateBundle<X>(Person.class) { … }`
+at `HelloWorldApplication:42`, `MultipleUnitOfWorkTest:105/117`, `SubResourcesTest:132` and more; incoming calls say
+"No callers found" and `analyze_change` "1 production, 0 test; relevant tests: none".
+`JdbiHealthCheck:19` misses the `this(...)` at line 27.
+Changing the constructor's signature, `verify_change` reports 8 errors at exactly those sites.
+Definition and hover on the `this`/`super` keyword answer that the position is not on a name.
+
+### Resolution
+
+Reference and incoming-call matching include explicit constructor delegation identifiers, while javac's missing end positions exclude compiler-inserted calls from source results.
+Parameterized and annotated creations use the underlying type identifier.
+For anonymous subclasses, `CursorElements.newClassConstructor` follows the synthetic constructor's attributed delegation to the actual superclass overload; references and both call-hierarchy directions share it.
+Anonymous interface creation remains an interface target, and type arguments remain type references.
+Definition, hover, and name recognition on explicit constructor keywords already work in attributed analysis and are preserved by regression tests.
+
+Verified on Dropwizard (2026-11-08), on JDK 25 with the rebuilt server and a freshly synced workspace:
+`JdbiHealthCheck` has three references including `this(...)` at line 27, and `HibernateBundle` has five including `super(...)` and four anonymous constructions, including `HelloWorldApplication`'s field initializer.
+Incoming calls and keyword definition/hover probes pass.
+The old schema-3 workspace lacked reactor-output mappings and excluded the example module from search; installing the current SNAPSHOT and resyncing produced schema 6 with the dependency edges.
+No probe edits were applied to sources.
+
+### Regression targets
+
+- `ReferenceLocatorTest.references_constructorDelegationAndGenericAnonymousCreation_keepsOverloadsSeparate`
+- `ReferenceLocatorTest.constructorAtNewClassType_genericAnonymousCreation_resolvesConstructorButNotTypeArgument`
+- `ReferenceLocatorTest.constructorAtNewClassType_anonymousInterface_keepsTheInterfaceTypeTarget`
+- `ReferenceLocatorTest.resolveTarget_explicitConstructorKeywords_resolvesInvokedOverload`
+- `CallHierarchyIncomingLocatorTest.searchIncomingCalls_delegationAndAnonymousGenericCreation_keepsConstructorOverloadsSeparate`
+- `CallHierarchyOutgoingLocatorTest.outgoingCalls_anonymousGenericConstruction_resolvesSuperclassOverloads`
+
+The full analysis/server verification and the constructor regressions on JDK 17 pass.
+
+---
+
 ## FR-027 — `module-info.java` `provides … with` is missed by references and rename, and listed once per package segment — done
 
 **Status: done.**
