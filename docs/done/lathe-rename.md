@@ -329,6 +329,21 @@ See [Module descriptor references](lathe-find-references.md#module-descriptor-re
 `RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments` checks the editor service with a closed descriptor, an open descriptor, and a rename initiated from the directive.
 The test also checks the declaring file's rename operation and that requesting the edit leaves the source files unchanged.
 
+## Javadoc parameter names and local review (FR-028)
+
+The shared `JavadocReferences` traversal visits the name node of each javac `ParamTree`.
+Method, constructor, and generic type parameters resolve through `DocTrees`; record-header tags resolve against the declaring record's components.
+Record components participate in the accessor's existing rename family.
+The accessor's parameter signature must match, so a same-named overload cannot rename the component or its tag.
+Only the name span changes: descriptions, angle brackets, unresolved tags, and tags belonging to unrelated declarations remain untouched.
+The same resolved ranges support references and renames started from a tag.
+
+For a local symbol, the MCP rename review uses string literals inside its declaring javac syntax scope instead of scanning reactor sources and resources.
+It captures those mentions on the module worker before applying the rename, translates compiler temporary-file URIs to the document URI, and adjusts the locations by the applied edits.
+Members and types retain the reactor-wide text review; a canonical record-constructor parameter is normalized to its component before selecting that scope.
+
+Regression coverage lives in `RenameProviderTest` (constructor and generic type parameters) and `LatheEngineRenameTest` (method parameters, record components, Javadoc cursors, local blocks, and canonical record parameters).
+
 ## Testing (the correctness gate)
 
 - Unit, per kind: local, parameter, field × (private / package / public), method (non-override and

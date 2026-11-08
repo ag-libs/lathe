@@ -7,6 +7,41 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-028 — Renaming a parameter or record component leaves its `@param` tag — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: rename, the editor and MCP.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+Renaming a method parameter or record component left its Javadoc `@param` tag unchanged.
+The MCP review list also included same-named string literals in unrelated modules for a method-local parameter.
+
+### Resolution
+
+The shared javac `DocTrees` traversal now resolves `@param` name nodes for method and constructor parameters, generic type parameters, and record components.
+Reference search and rename consume the exact identifier spans, including when the rename starts from the tag.
+Descriptions, unresolved tags, and unrelated declarations are left untouched.
+
+For local symbols, the MCP review list scans string literals only within the declaring syntax scope.
+Mention locations are mapped back to the document URI and adjusted for applied edits.
+Members and types retain reactor-wide review, including a canonical constructor parameter normalized to its record component.
+See [Rename](../done/lathe-rename.md#javadoc-parameter-names-and-local-review-fr-028).
+
+### Regression targets
+
+- `RenameProviderTest.rename_constructorParameter_updatesOnlyMatchingParamName`
+- `RenameProviderTest.rename_typeParameter_updatesIdentifierInsideAngleBracketsOnly`
+- `RenameProviderTest.rename_recordAccessorOverload_leavesComponentAndParamTagUntouched`
+- `LatheEngineRenameTest.rename_parameter_updatesOnlyItsParamTagAndListsOnlyLocalText` (declaration and Javadoc cursors)
+- `LatheEngineRenameTest.rename_recordComponent_updatesRecordParamTagAndAccessorUses` (declaration and Javadoc cursors)
+- `LatheEngineRenameTest.rename_localVariable_listsOnlyTextInsideDeclaringBlock`
+- `LatheEngineRenameTest.rename_canonicalRecordParameter_keepsMemberTextReviewAcrossFiles`
+
+---
+
 ## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one — done
 
 **Status: done.**

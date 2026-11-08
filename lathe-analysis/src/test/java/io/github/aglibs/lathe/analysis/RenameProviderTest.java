@@ -17,6 +17,74 @@ import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 
 class RenameProviderTest {
+  @Test
+  void rename_recordAccessorOverload_leavesComponentAndParamTagUntouched() {
+    final String source =
+        """
+        /** @param name component description */
+        record Test(String name) {
+          String name(int index) { return name; }
+          String call() { return name(1); }
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final List<TextEdit> edits =
+              renameEdits(session, source, "String name(int", "name", "lookup");
+          assertThat(Positions.applyEdits(source, edits))
+              .isEqualTo(source.replace("name(int", "lookup(int").replace("name(1)", "lookup(1)"));
+        });
+  }
+
+  @Test
+  void rename_constructorParameter_updatesOnlyMatchingParamName() {
+    final String source =
+        """
+        class Test {
+          /**
+           * @param handler handler description
+           * @param missing invalid tag
+           */
+          Test(String handler) { System.out.println(handler); }
+          /** @param handler other constructor */
+          Test(int handler) {}
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final List<TextEdit> edits =
+              renameEdits(session, source, "String handler", "handler", "task");
+          assertThat(Positions.applyEdits(source, edits))
+              .contains("@param task handler description", "Test(String task)", "println(task)")
+              .contains(
+                  "@param missing invalid tag",
+                  "@param handler other constructor",
+                  "Test(int handler)");
+        });
+  }
+
+  @Test
+  void rename_typeParameter_updatesIdentifierInsideAngleBracketsOnly() {
+    final String source =
+        """
+        /** @param <T> T description */
+        class Test<T> {
+          /** @param <T> method type parameter */
+          <T> T other(T value) { return value; }
+          T field;
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          final List<TextEdit> edits = renameEdits(session, source, "Test<T>", "T>", "Value");
+          assertThat(Positions.applyEdits(source, edits))
+              .contains("@param <Value> T description", "class Test<Value>", "Value field")
+              .contains("@param <T> method type parameter", "<T> T other(T value)");
+        });
+  }
 
   // --- name validation ---
 
