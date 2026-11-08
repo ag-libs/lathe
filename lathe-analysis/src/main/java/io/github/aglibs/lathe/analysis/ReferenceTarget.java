@@ -373,14 +373,17 @@ public record ReferenceTarget(
 
   /**
    * When this target is a record accessor, other members backing the same component count as
-   * references too: the backing {@code FIELD} (in-body reads and writes) and the canonical
-   * constructor {@code PARAMETER} that javac reports for compact/canonical constructor bodies. A
-   * same-named parameter of a non-canonical constructor is a distinct member and is excluded.
+   * references too: the {@code RECORD_COMPONENT}, backing {@code FIELD} (in-body reads and writes),
+   * and the canonical constructor {@code PARAMETER} that javac reports for compact/canonical
+   * constructor bodies. A same-named parameter of a non-canonical constructor is a distinct member
+   * and is excluded.
    */
   private boolean matchesRecordComponentMember(
       final Element element, final Types types, final Elements elements) {
     final var elementKind = element.getKind();
-    if (elementKind != ElementKind.FIELD && elementKind != ElementKind.PARAMETER) {
+    if (elementKind != ElementKind.FIELD
+        && elementKind != ElementKind.PARAMETER
+        && elementKind != ElementKind.RECORD_COMPONENT) {
       return false;
     }
 
@@ -389,13 +392,17 @@ public record ReferenceTarget(
     }
 
     final var record = enclosingRecord(element);
-    if (record == null
-        || !qualifiedName.equals(elements.getBinaryName(record).toString())
-        || componentNamed(record, simpleName) == null) {
+    if (record == null || !qualifiedName.equals(elements.getBinaryName(record).toString())) {
       return false;
     }
 
-    return elementKind == ElementKind.FIELD
+    final RecordComponentElement component = componentNamed(record, simpleName);
+    if (component == null
+        || !erasedDescriptor.equals(buildDescriptor(component.getAccessor(), types))) {
+      return false;
+    }
+
+    return elementKind != ElementKind.PARAMETER
         || isCanonicalConstructorParameter(element, record, types);
   }
 

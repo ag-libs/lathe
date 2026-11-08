@@ -18,9 +18,131 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 // rename_symbol: what it rewrites across files and modules, and every reason it refuses.
 class LatheEngineRenameTest extends LatheEngineTestBase {
+  @Test
+  void rename_canonicalRecordParameter_keepsMemberTextReviewAcrossFiles() throws Exception {
+    final String source =
+        """
+        package com.example;
+        record Sample(String hostName) {
+          Sample(String hostName) { this.hostName = hostName; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    final Path labels =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Labels.java",
+            "package com.example; class Labels { String key = \"hostName\"; }");
+    compileIntoMirror(file, labels);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename = renameAt(file, source, "hostName) { this", "host");
+
+    assertThat(Files.readString(file)).contains("record Sample(String host)", "this.host = host");
+    assertThat(rename.mentions())
+        .singleElement()
+        .satisfies(mention -> assertThat(mention.uri()).isEqualTo(labels.toUri().toString()));
+  }
+
+  @Test
+  void rename_localVariable_listsOnlyTextInsideDeclaringBlock() throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          String first() {
+            { String handler = "handler"; System.out.println(handler); }
+            return "handler";
+          }
+          String second() { return "handler"; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    compileIntoMirror(file);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename = renameAt(file, source, "handler =", "longerTask");
+
+    assertThat(rename.mentions())
+        .singleElement()
+        .satisfies(
+            mention -> {
+              assertThat(mention.line()).isEqualTo(3);
+              assertThat(mention.column())
+                  .isEqualTo(Files.readAllLines(file).get(3).indexOf("\"handler\""));
+            });
+    assertThat(rename.mentionCount()).isEqualTo(1);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void rename_parameter_updatesOnlyItsParamTagAndListsOnlyLocalText(final boolean fromJavadoc)
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          /** @param handler handler description */
+          String first(String handler) { return handler + "handler"; }
+          /** @param handler unrelated description */
+          String second(String handler) { return handler + "handler"; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/Labels.java",
+        "package com.example; class Labels { String key = \"handler\"; }");
+    compileIntoMirror(file);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename =
+        renameAt(file, source, fromJavadoc ? "handler handler" : "handler)", "task");
+
+    assertThat(Files.readString(file))
+        .contains(
+            "@param task handler description", "first(String task) { return task + \"handler\";")
+        .contains("@param handler unrelated description", "second(String handler)");
+    assertThat(rename.mentions())
+        .singleElement()
+        .satisfies(
+            mention -> {
+              assertThat(mention.uri()).isEqualTo(file.toUri().toString());
+              assertThat(mention.line()).isEqualTo(3);
+            });
+    assertThat(rename.mentionCount()).isEqualTo(1);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void rename_recordComponent_updatesRecordParamTagAndAccessorUses(final boolean fromJavadoc)
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        /** @param hostName hostName description */
+        record Sample(String hostName) {
+          /** @param hostName unrelated method parameter */
+          String other(String hostName) { return hostName; }
+        }
+        class Use { String read(Sample value) { return value.hostName(); } }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    compileIntoMirror(file);
+    engine = new LatheEngine(tmp);
+
+    renameAt(file, source, fromJavadoc ? "hostName hostName" : "hostName)", "host");
+
+    assertThat(Files.readString(file))
+        .contains("@param host hostName description", "record Sample(String host)", "value.host()")
+        .contains("@param hostName unrelated method parameter", "other(String hostName)");
+  }
+
   @Test
   void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText()
       throws Exception {
