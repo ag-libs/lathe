@@ -113,7 +113,7 @@ Found so far, before stage 2 started, by the stage 0 setup checks (all Lathe's, 
 Every loss from stages 1 and 2 becomes a gap, is fixed, and is measured again with the stage 1 harness.
 
 Found by stage 1, in order of priority:
-1. **FR-031:** on OpenMetadata, references to and incoming calls of `Entity.getEntityRepository` miss every use outside its own file (22 of about 1,086).
+1. **FR-031:** on OpenMetadata, references to and incoming calls of `Entity.getEntityRepository` missed every use outside its own file (22 of about 1,086): a type-use annotation on a parameter (`@NonNull`) made the declaration's descriptor differ from its callers' on JDK 21 and older. Fixed in #136.
 2. **FR-029:** references to a method whose name many files spell take 21–28 s (Hibernate ORM's `getId`, Fineract's `Money.of`).
 3. **FR-032:** implementations of an interface method and incoming calls take 0.5–4.4 s on large projects (13.5 s with FR-031's method).
 4. **WS-17:** with no heap cap Lathe reaches 4–9 GB on the large projects; at 2 GB every answer stays the same and most queries are at most a third slower, Fineract's slowest 76%.
