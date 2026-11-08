@@ -185,8 +185,16 @@ public final class NavigationFeatures {
     }
 
     final Cursor cur = at.get();
-    final var element = cur.elementOrJavadocReference();
-    final var result = findDefinitionLocation(request, cur, element);
+    final var constructor =
+        CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
+    final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
+    final var result =
+        findDefinitionLocation(request, cur, element)
+            .or(
+                () ->
+                    constructor == null
+                        ? Optional.empty()
+                        : findDefinitionLocation(request, cur, cur.elementOrJavadocReference()));
 
     LOG.fine(
         () ->

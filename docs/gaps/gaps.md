@@ -887,30 +887,6 @@ None yet.
 
 ---
 
-## EG-096 — Definition on the type name of a constructor call goes to the class, not the constructor
-
-**Status: documented**
-
-**Affects: the editor's definition and MCP `get_definition` on `new X(...)`.**
-
-Found by the jdtls comparison's benchmark (2026-11-08) on Hibernate ORM.
-
-### Observed behaviour
-
-With the cursor on `PersistEvent` in `firePersist( new PersistEvent( entityName, object, this ) )` (`SessionImpl.java:683`), Lathe answers `PersistEvent`'s class declaration (`PersistEvent.java:13`).
-jdtls and IntelliJ answer the constructor the call invokes (`PersistEvent.java:18`, one of two).
-Which is right is a contract question for the comparison's stage 2, and the constructor is what the call resolves to: `javac` attributes the `NewClassTree` to that constructor.
-
-### Reproduce
-
-`dev/lsp-bench/cases/hibernate_orm.py`, query "definition: constructor call".
-
-### Regression targets
-
-None yet.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.
