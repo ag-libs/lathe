@@ -2,16 +2,23 @@ package io.github.aglibs.lathe.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 final class LatheLockTest {
 
@@ -137,6 +144,118 @@ final class LatheLockTest {
     writeStaleLock();
 
     assertThat(noLock).isFalse();
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
+  }
+
+  @Test
+  void acquire_currentOwner_recordsPidAndStartTime() throws IOException {
+    LatheLock.acquire(moduleLock());
+
+    final ProcessHandle owner = ProcessHandle.current();
+    assertThat(Files.readAllLines(moduleLock(), StandardCharsets.UTF_8))
+        .containsExactly(
+            Long.toString(owner.pid()), owner.info().startInstant().orElseThrow().toString());
+  }
+
+  @Test
+  @Timeout(30)
+  void isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks() throws Exception {
+    final Path source = moduleDir.resolve("LockOwner.java");
+    Files.writeString(
+        source,
+        """
+        class LockOwner {
+          public static void main(String[] args) throws Exception {
+            for (String lock : args) {
+              io.github.aglibs.lathe.core.LatheLock.acquire(java.nio.file.Path.of(lock));
+            }
+            System.out.println("ready");
+            System.in.read();
+          }
+        }
+        """,
+        StandardCharsets.UTF_8);
+    final var java =
+        Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), LatheLayout.BIN_DIR, "java")
+            .toString();
+    final Path coreClasses =
+        Path.of(LatheLock.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+    final List<Path> locks = List.of(LatheLayout.reactorLockFile(moduleDir), moduleLock());
+    final Process owner =
+        new ProcessBuilder(
+                java,
+                "--class-path",
+                coreClasses.toString(),
+                source.toString(),
+                locks.get(0).toString(),
+                locks.get(1).toString())
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
+            .start();
+    try {
+      try (final BufferedReader ready = owner.inputReader(StandardCharsets.UTF_8)) {
+        assertThat(ready.readLine()).isEqualTo("ready");
+        for (final Path lock : locks) {
+          assertThat(LatheLock.isBuilding(lock)).isTrue();
+        }
+
+        owner.destroyForcibly();
+        assertThat(owner.waitFor(10, TimeUnit.SECONDS)).isTrue();
+        for (final Path lock : locks) {
+          assertThat(LatheLock.isBuilding(lock)).isFalse();
+          assertThat(LatheLock.awaitAndRead(lock, () -> "read")).isEqualTo("read");
+          assertThat(lock).exists();
+        }
+      }
+    } finally {
+      owner.destroyForcibly();
+      assertThat(owner.waitFor(10, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  @Test
+  void isBuilding_reusedPid_ignoresFreshLock() throws IOException {
+    final ProcessHandle owner = ProcessHandle.current();
+    final Instant differentStart = owner.info().startInstant().orElseThrow().minusSeconds(1);
+    Files.writeString(
+        moduleLock(), "%d\n%s\n".formatted(owner.pid(), differentStart), StandardCharsets.UTF_8);
+
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "",
+        "123",
+        "invalid\n2026-01-01T00:00:00Z\n",
+        "0\n2026-01-01T00:00:00Z\n",
+        "-1\n2026-01-01T00:00:00Z\n",
+        "123\ninvalid\n",
+        "123\n2026-01-01T00:00:00Z\nextra\n"
+      })
+  void isBuilding_incompleteOrMalformedOwner_usesMtimeExpiry(final String identity)
+      throws IOException {
+    Files.writeString(moduleLock(), identity, StandardCharsets.UTF_8);
+
+    assertThat(LatheLock.isBuilding(moduleLock())).isTrue();
+    Files.setLastModifiedTime(moduleLock(), FileTime.from(Instant.now().minusSeconds(180)));
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
+  }
+
+  @Test
+  void isBuilding_invalidUtf8Owner_usesMtimeExpiry() throws IOException {
+    Files.write(moduleLock(), new byte[] {(byte) 0xff});
+
+    assertThat(LatheLock.isBuilding(moduleLock())).isTrue();
+    Files.setLastModifiedTime(moduleLock(), FileTime.from(Instant.now().minusSeconds(180)));
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
+  }
+
+  @Test
+  void isBuilding_staleLiveOwner_usesMtimeExpiry() throws IOException {
+    LatheLock.acquire(moduleLock());
+    Files.setLastModifiedTime(moduleLock(), FileTime.from(Instant.now().minusSeconds(180)));
+
     assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
   }
 

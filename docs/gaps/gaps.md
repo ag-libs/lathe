@@ -1357,7 +1357,7 @@ None yet.
 
 ## WS-23 — A killed build's locks make `verify_change` defer for about two minutes
 
-**Status: documented**
+**Status: in-progress**
 
 **Value: high — Size: S–M**
 
@@ -1373,11 +1373,17 @@ The next good sync clears them.
 
 ### Fix direction
 
-Record the owning process in the lock and treat a lock whose process is gone as free.
+The implementation records the PID and process start instant in both reactor and module locks.
+Ignore fresh locks immediately when the owner has exited or the PID has been reused, without deleting the marker.
+Retain the two-minute mtime fallback for empty markers, malformed metadata and unavailable process information.
 
 ### Regression targets
 
-None yet.
+`LatheLockTest.isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks` (kills a JVM that acquired both locks),
+`LatheLockTest.isBuilding_reusedPid_ignoresFreshLock`,
+`LatheLockTest.isBuilding_incompleteOrMalformedOwner_usesMtimeExpiry`,
+`LatheLockTest.isBuilding_invalidUtf8Owner_usesMtimeExpiry`,
+`LatheLockTest.isBuilding_staleLiveOwner_usesMtimeExpiry`.
 
 ---
 
