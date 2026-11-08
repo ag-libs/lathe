@@ -2,8 +2,9 @@
 
 ## Status
 
-**Planned (2026-11-06).** No stage has started.
+**In progress.** Stage 0 done (the pre-registration, #134); stage 1 done (the harness and all six projects measured, #135, 2026-11-08); stages 2 and 3 next.
 This document is the plan for answering "why Lathe and not jdtls?" with evidence instead of assertion.
+The measured results stay out of the repository until stage 4, as pre-registered; what they found that is Lathe's own is in the gap log, listed under stage 3 below.
 
 ## The rule
 
@@ -73,6 +74,14 @@ A pre-registration committed before any result, in the style of `dev/bench/READM
 - Run by hand before a release, not in CI: shared CI runners are too noisy for timing.
 - Done when every project has a full report. Reports are not published until stage 4.
 
+**Done (2026-11-08):** `dev/lsp-bench/` (#135) measured all six projects, 3 cold and 3 warm runs per server and one run of Lathe at jdtls's 2 GB heap, against Lathe `0.3.99-c15d3a55` (`main` at `c15d3a55`).
+What running jdtls as its users get it took, each an amendment in the pre-registration:
+- jdtls cannot import Helidon from a fresh checkout: its Maven integration resolves the compiler plugin's dependencies (Helidon's own annotation processors) only from a repository, so its runs install Helidon first, timed as its build.
+- jdtls does not import Apache Fineract at all: Buildship's Gradle model creates every task, and a Fineract plugin fails on Gradle 9.7.1 when one is created, with jdtls's annotation processing on or off.
+- vscode-java starts jdtls with a Lombok agent, so the harness does too on the Lombok projects (Fineract, OpenMetadata).
+
+What the harness itself had to learn: a server that stops reading its input while it imports deadlocks a client that writes on the reading thread; a Gradle build leaves worker processes running that must not count as the server's; a run the machine suspends during is discarded; and a readiness probe must be a query whose answer no server disputes.
+
 ## Stage 2 — Where each server disagrees with the build
 
 - Ground truth: compile each project with Maven or Gradle and collect javac's errors and warnings per file.
@@ -87,6 +96,12 @@ A pre-registration committed before any result, in the style of `dev/bench/READM
 - Output: a catalogue of disagreements with reproduction steps.
   Lathe's own become gaps to fix; jdtls's become evidence.
 
+Found by stage 1, for stage 2 to settle against the build:
+- **EG-096:** on `new X(...)`, Lathe's definition answers the class, jdtls's the constructor.
+- References where Lathe answers more than jdtls on Hibernate ORM: `import static` lines of the method, and calls through a subclass of the declaring class.
+- jdtls's answers missing or empty on Helidon (implementations of a class; test call sites) and OpenMetadata (references to an overload, implementations of an interface method, a type definition); jdtls on OpenMetadata also starts about 40 processes and 13.5 GB on its first queries.
+- References to a field read through a getter: jdtls includes the getter's callers (vscode-java's `java.references.includeAccessors`), so it answers more and slower; a difference of contract, not of speed.
+
 Found so far, before stage 2 started, by the stage 0 setup checks (all Lathe's, all fixed):
 - **WS-31:** on OpenMetadata, 98 false errors in a file that compiles against a sibling module's shaded jar, and a sync that could not compile it; fixed in #116 (a shaded jar stays on the classpath, and `lathe.sync.phase` lets the project's sync reach `package`).
 - **WS-32:** on Apache Fineract, Lathe's Gradle sync failed: `compileTestJava` writes into the generated-sources directory the main capture reads, and Gradle refuses the undeclared order; fixed in #119.
@@ -96,6 +111,14 @@ Found so far, before stage 2 started, by the stage 0 setup checks (all Lathe's, 
 ## Stage 3 — Fix wherever Lathe loses
 
 Every loss from stages 1 and 2 becomes a gap, is fixed, and is measured again with the stage 1 harness.
+
+Found by stage 1, in order of priority:
+1. **FR-031:** on OpenMetadata, references to and incoming calls of `Entity.getEntityRepository` missed every use outside its own file (22 of about 1,086): a type-use annotation on a parameter (`@NonNull`) made the declaration's descriptor differ from its callers' on JDK 21 and older. Fixed in #136.
+2. **FR-029:** references to a method whose name many files spell take 21–28 s (Hibernate ORM's `getId`, Fineract's `Money.of`).
+3. **FR-032:** implementations of an interface method and incoming calls take 0.5–4.4 s on large projects (13.5 s with FR-031's method).
+4. **WS-17:** with no heap cap Lathe reaches 4–9 GB on the large projects; at 2 GB every answer stays the same and most queries are at most a third slower, Fineract's slowest 76%.
+5. Cold start: Lathe needs the project built first (58–152 s on the large projects); the first run without a build is the `:LatheInit` candidate below.
+
 Candidates already known:
 - Repeated queries: cache an answer until the workspace changes (FR-029, third fix direction).
 - Implementations: compile a module's candidate files in batches instead of one javac task per file.
