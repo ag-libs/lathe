@@ -8,10 +8,10 @@ import java.util.stream.Collectors;
  * Reconstructs a method's RunTarget position id from a JUnit {@code MethodSource}'s identity,
  * matching {@code RunnableScanner.methodTarget}'s format exactly: {@code
  * <binaryClassName>#<methodName>(<erasedParams>)}. JUnit joins parameter types with {@code ", "}
- * and names each the way {@code Class.getName} does ({@code [I}, {@code pkg.Outer$Inner}), whereas
- * javac's erasure joins with {@code ","} and prints source form ({@code int[]}, {@code
- * pkg.Outer.Inner}), so each parameter type is turned into source form. A result whose id still
- * matches no discovered position falls through to its class.
+ * and names an array the way {@code Class.getName} does ({@code [I}, {@code [Lpkg.Outer$Inner;}),
+ * whereas the id joins with {@code ","} and writes an array {@code int[]}; both name a class by its
+ * binary name ({@code pkg.Outer$Inner}), the form JUnit loads a selected method's parameter types
+ * by. A result whose id still matches no discovered position falls through to its class.
  */
 public final class TestId {
 
@@ -27,28 +27,27 @@ public final class TestId {
     final String params =
         Arrays.stream(methodParameterTypes.replaceAll("\\s", "").split(","))
             .filter(param -> !param.isEmpty())
-            .map(TestId::sourceForm)
+            .map(TestId::idForm)
             .collect(Collectors.joining(","));
     return "%s#%s(%s)".formatted(className, methodName, params);
   }
 
   // A JVM type name read as a type descriptor's fixed grammar, not as Java source: leading '['s
-  // count the array depth, then a primitive code or L<binary name>;. A '$' in a binary name is a
-  // nesting step, which source form writes as '.'.
-  private static String sourceForm(final String jvmName) {
+  // count the array depth, then a primitive code or L<binary name>;.
+  private static String idForm(final String jvmName) {
     int depth = 0;
     while (jvmName.charAt(depth) == '[') {
       depth++;
     }
 
     if (depth == 0) {
-      return jvmName.replace('$', '.');
+      return jvmName;
     }
 
     final String element = jvmName.substring(depth);
     final String type =
         element.startsWith("L") && element.endsWith(";")
-            ? element.substring(1, element.length() - 1).replace('$', '.')
+            ? element.substring(1, element.length() - 1)
             : primitive(element);
     return type + "[]".repeat(depth);
   }

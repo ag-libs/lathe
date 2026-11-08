@@ -145,6 +145,44 @@ lambdas attributed; a failure there still leaves the named subtypes.
 
 ---
 
+## FR-031 — A method with a type-use-annotated parameter, searched from its declaration, misses every call compiled against its class file — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: references, incoming calls and rename from a method's declaration, and running one test method, when a parameter carries a type-use annotation (Lombok's `@NonNull`, JSpecify's `@Nullable` and `@NonNull`, Checker Framework's) and the server runs on JDK 21 or older, or on any JDK for an annotation with `SOURCE` retention.**
+
+Found by the jdtls comparison's benchmark (2026-11-08) on OpenMetadata at `9a2ee8b124`, Lathe `0.3.99-c15d3a55` running on JDK 21.
+
+### Observed behaviour
+
+References to `Entity.getEntityRepository(@NonNull String)` (`openmetadata-service/.../service/Entity.java:780`) from its declaration returned 22 locations, all in `Entity.java`, in 7.8 s; incoming calls listed only `Entity`'s own methods.
+The same query from a call site (`AutoPilotApp.java`) returned 1,057.
+
+### Cause
+
+A method target is matched by its owner, name and a parameter descriptor, built from the text of each parameter's erased type (`types.erasure(type).toString()`).
+javac on JDK 21 and older keeps type-use annotations through `erasure()`, and for a method compiled from source the parameter's type carries them: the declaration's descriptor read `(java.lang.@lombok.NonNull String)`.
+A caller compiled against the class file sees no annotation there (JDK 21 does not read type annotations from class files; no JDK reads a `SOURCE`-retained one), so its descriptor read `(java.lang.String)` and never matched; only `Entity.java`'s own calls, whose method is the source-compiled one, did.
+Test method ids for running one test method were built the same way, so on JDK 17 to 21 a test method with such a parameter got an id like `bar(java.lang.@NonNull String)`.
+javac 22 and later drop the annotations in `erasure()`, which hid both on newer JDKs.
+The review of the fix found a second, older flaw in those ids: a nested parameter type was written in source form (`java.util.Map.Entry`), which JUnit's `selectMethod` cannot load ("Failed to load parameter type"), so running one test method with such a parameter failed on every JDK.
+
+### Resolution
+
+A parameter's erased type is now named from its structure, not its text (`ReferenceTarget.erasedTypeName`): a class by its binary name (`java.util.Map$Entry`), an array by its component and `[]`, a primitive by its keyword, anything else (an error type, a local class) by its text as before.
+The reference descriptor and the runnable ids both use it, and `TestId`, which maps JUnit's results back to those ids, keeps JUnit's binary names instead of turning them into source form.
+
+### Regression targets
+
+`ReferenceLocatorTest.method_typeUseAnnotatedParameter_matchesCallsCompiledAgainstTheClassFile` (a `SOURCE`-retained type-use annotation, a caller compiled against the class file, an overload left alone),
+`RunnableScannerTest.runnables_typeUseAnnotatedParams_idCarriesNoAnnotation` (both fail on JDK 21 without the fix, which CI's JDK 17 and 21 rows run),
+`RunnableScannerTest.runnables_nestedTypeParam_idNamesItLoadably`, `TestIdTest.positionId_jvmFormParameterTypes_matchTheRunnableIdForm`.
+Related: CQ-0062, member completion's duplicate check, which keys on the same annotated text.
+
+---
+
 ## FR-030 — A field or enum constant reached through an expression that never names its type is missed — done
 
 **Status: done.**

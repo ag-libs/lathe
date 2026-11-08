@@ -75,7 +75,7 @@ class LspSmokeTest {
           ID_SHAPES + "#genericParam(java.util.List)",
           ID_SHAPES + "#arrayParam(int[])",
           ID_SHAPES + "#varargsParam(java.lang.String[])",
-          ID_SHAPES + "#enumParam(com.example.shapes.IdShapesTest.Shape)",
+          ID_SHAPES + "#enumParam(com.example.shapes.IdShapesTest$Shape)",
           ID_SHAPES + "#repeated()",
           ID_SHAPES + "#factory()",
           ID_SHAPES + "$Inner#innerTest()",

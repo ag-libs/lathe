@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -13,6 +16,7 @@ import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ReferenceLocatorTest {
 
@@ -230,6 +234,57 @@ class ReferenceLocatorTest {
 
     assertThat(result).hasSize(1);
     assertThat(result.get(0).range().getStart()).isEqualTo(posOf(source, "run(\"x\")", "run"));
+  }
+
+  @Test
+  void method_typeUseAnnotatedParameter_matchesCallsCompiledAgainstTheClassFile(
+      @TempDir final Path tmp) throws IOException {
+    // A type-use annotation is part of the parameter's type when the declaration is compiled from
+    // source, and absent when a caller reads the class file: always for SOURCE retention, for any
+    // retention on JDK 21 and older. Both must name one method.
+    final var repo =
+        """
+        package lib;
+        import java.lang.annotation.ElementType;
+        import java.lang.annotation.Retention;
+        import java.lang.annotation.RetentionPolicy;
+        import java.lang.annotation.Target;
+        public class Repo {
+            @Retention(RetentionPolicy.SOURCE)
+            @Target(ElementType.TYPE_USE)
+            public @interface NonNull {}
+            public static void find(@NonNull String type, @NonNull int[] ids) {}
+            public static void find(@NonNull Integer type, @NonNull int[] ids) {}
+            static void self() { find("own", new int[0]); }
+        }
+        """;
+    final var src = Files.createDirectories(tmp.resolve("src/lib"));
+    final var classes = Files.createDirectory(tmp.resolve("classes"));
+    TestJavac.compileToDir(classes, Files.writeString(src.resolve("Repo.java"), repo));
+    final var declaration = compile("file:///lib/Repo.java", repo);
+    final var target =
+        targetAt(declaration, "public static void find(@NonNull String type", "find");
+    final var caller =
+        """
+        import lib.Repo;
+        class Caller {
+            void run() {
+                Repo.find("a", new int[0]);
+                Repo.find(1, new int[0]);
+            }
+        }
+        """;
+
+    try (var callerCompiler = new TempSourceCompiler(List.of(classes))) {
+      final var callerAnalysis =
+          callerCompiler.compile(URI_B, caller, CompileMode.OPEN).fileAnalysis();
+
+      assertThat(ReferenceLocator.references(callerAnalysis, target, URI_B, false))
+          .extracting(match -> match.range().getStart())
+          .containsExactly(posOf(caller, "Repo.find(\"a\"", "find"));
+    }
+
+    assertThat(refs(declaration, target, false)).hasSize(1);
   }
 
   @Test

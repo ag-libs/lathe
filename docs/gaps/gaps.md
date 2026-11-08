@@ -1336,6 +1336,31 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
+## CQ-0062 — A member overriding one with a type-use-annotated parameter may be listed twice
+
+**Status: documented**
+
+**Affects: member completion, on a server running JDK 21 or older, or for a `SOURCE`-retained annotation.**
+
+Found reviewing the FR-031 fix (2026-11-08); suspected from the code, not yet reproduced.
+
+### Suspected behaviour
+
+`SimpleNameProvider.memberKey`, which keeps a member and an inherited one of the same signature from both being listed, keys a method on its parameters' type text (`asType().toString()`).
+FR-031 showed that text carries type-use annotations for a type compiled from source and lacks them for the same type read from a class file on JDK 21 and older.
+A source override of a library method declared `void put(@NonNull String key)` (or the reverse) would then key differently from the inherited method and be listed twice.
+
+### Probe
+
+A class compiled from source overriding a method of a class-file supertype whose parameter carries a `SOURCE`-retained type-use annotation; member completion on an instance should list the method once.
+The likely fix keys on `ReferenceTarget.erasedTypeName`, which names a type without its annotations.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
