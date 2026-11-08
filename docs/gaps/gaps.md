@@ -918,6 +918,30 @@ None yet.
 
 ---
 
+## EG-096 — Definition on the type name of a constructor call goes to the class, not the constructor
+
+**Status: documented**
+
+**Affects: the editor's definition and MCP `get_definition` on `new X(...)`.**
+
+Found by the jdtls comparison's benchmark (2026-11-08) on Hibernate ORM.
+
+### Observed behaviour
+
+With the cursor on `PersistEvent` in `firePersist( new PersistEvent( entityName, object, this ) )` (`SessionImpl.java:683`), Lathe answers `PersistEvent`'s class declaration (`PersistEvent.java:13`).
+jdtls and IntelliJ answer the constructor the call invokes (`PersistEvent.java:18`, one of two).
+Which is right is a contract question for the comparison's stage 2, and the constructor is what the call resolves to: `javac` attributes the `NewClassTree` to that constructor.
+
+### Reproduce
+
+`dev/lsp-bench/cases/hibernate_orm.py`, query "definition: constructor call".
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1132,6 +1156,22 @@ jdtls 1.63 on the same checkout: no answer within 10 minutes on a fresh workspac
 On spring-petclinic the same profile showed `ct.sym` at 34% of a 60 ms query: `--release` below the server's JDK makes javac reopen it for every task, as `JDKPlatformProvider`'s cache does not outlive the task.
 Reusing it is out of scope: it would widen what Lathe uses from the compiler.
 
+### Measured by the jdtls comparison's benchmark (2026-11-08)
+
+The stage 1 harness (`dev/lsp-bench/`, pinned Lathe `0.3.99-c15d3a55`), warm median of 10 repeats over 3 runs, uncapped heap (the last column: one warm run at `-Xmx2G`);
+references to a method whose name many files spell are the slowest query Lathe answers.
+
+| Project | Query | References | Median | At `-Xmx2G` |
+|---|---|---|---|---|
+| Hibernate ORM | `EntityAction.getId` (`getId` in 4,239 files) | 47 | 27.7 s | 29.9 s |
+| Apache Fineract | `Money.of(CurrencyData, BigDecimal)` (`of` in 1,174 files) | 125 | 21.8 s | 38.3 s |
+| Apache Fineract | `Money.of(MonetaryCurrency, BigDecimal)`, one overload | 441 | 22.3 s | 38.0 s |
+| Apache Fineract | `DataValidatorBuilder.parameter` (2,609 call sites) | 2,614 | 3.1 s | 3.7 s |
+| Hibernate ORM | `StringHelper.isNotEmpty` | 494 | 2.0 s | 2.3 s |
+
+A name spelled in few files stays fast (Hibernate ORM's `registerKeyword`, 1,274 references: 0.37 s), which is the planner cost above.
+The queries and positions are `dev/lsp-bench/cases/hibernate_orm.py` and `fineract.py` ("references: common name", "references: one overload").
+
 ### Fix direction
 
 1. **Narrow static methods to their family, exactly.**
@@ -1147,6 +1187,70 @@ Reusing it is out of scope: it would widen what Lathe uses from the compiler.
 
 Rejected: reusing `ct.sym` (above), and replacing temp files (no measurable cost; module-system and patch-module compiles need a source's file to place it in its module).
 Body stripping is a last resort: it saved about 15% in the prototype, and implicit uses (`super()`, an enhanced `for`'s `iterator()`) need their bodies.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-031 — References to `Entity.getEntityRepository` miss every use outside its own file on OpenMetadata
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: the editor's references, incoming calls and rename, and MCP `find_references` and `call_hierarchy`, for at least this method.**
+
+Found by the jdtls comparison's benchmark (2026-11-08) on OpenMetadata at `9a2ee8b124`, Lathe `0.3.99-c15d3a55`, built on JDK 21.
+
+### Observed behaviour
+
+References to `Entity.getEntityRepository(String)` (`openmetadata-service/.../service/Entity.java:780`, a static method of a class of static members) return 22 locations, all in `Entity.java`, in 7.8 s.
+Text search finds about 1,086 calls in `openmetadata-service` alone, such as `(BotRepository) Entity.getEntityRepository(Entity.BOT)` in `AutoPilotApp.java`.
+Incoming calls of the same method list only `Entity`'s own methods, in 13.5 s.
+Every run answered alike, with the heap capped at 2 GB as well.
+Other reference queries in the same session do cross files: references to the `getEntity(String, UUID, String, Include)` overload in the same class return 250.
+
+What sets this method apart, still to narrow: its parameter carries Lombok's `@NonNull` (Lombok rewrites the method's body), its return type is a wildcard generic (`EntityRepository<? extends EntityInterface<?>>`), and most callers cast the result.
+
+### Reproduce
+
+`dev/lsp-bench/bench.py openmetadata --servers lathe --runs 1`, query "references: widely used method" (`cases/openmetadata.py`).
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-032 — Implementations of an interface method and incoming calls take seconds on a large codebase
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: the editor's implementations and incoming calls, and MCP `find_implementations` and `call_hierarchy`.**
+
+Found by the jdtls comparison's benchmark (2026-11-08), Lathe `0.3.99-c15d3a55`, warm median of 10 repeats over 3 runs.
+
+### Observed behaviour
+
+| Project | Query | Answer | Median |
+|---|---|---|---|
+| Apache Fineract | implementations of `NewCommandSourceHandler.processCommand` | 461 | 3.8 s |
+| Apache Fineract | incoming calls of `DataValidatorBuilder.parameter` | 2,614 references | 4.4 s |
+| OpenMetadata | implementations of `EntityMapper.createToEntity` | 81 | 1.6 s |
+| Hibernate ORM | implementations of `RepeatableContainer.value` | 54 | 0.73 s |
+| Hibernate ORM | incoming calls of `KeywordRegistration.registerKeyword` | 1,274 references | 0.55 s |
+| Dropwizard | incoming calls of `Environment.jersey()` | 78 references | 0.63 s |
+
+Implementations of a class, and subtypes, answer from the type index in 14–121 ms on the same projects; implementations of a *method* compile the implementing files.
+Incoming calls cost about what references to the same method cost, and more: OpenMetadata's incoming calls in FR-031 take 13.5 s.
+
+### Fix direction
+
+Stage 3 of the [comparison plan](../planned/lathe-jdtls-comparison.md) lists compiling a module's candidate files in batches instead of one javac task per file; FR-029's per-module parallelism applies here too.
 
 ### Regression targets
 
@@ -1289,6 +1393,22 @@ The same workload under `LATHE_JVM_OPTS=-Xmx2g` ran at the same speed (5.5–11 
 at about 2.6 GB, so most of the growth is uncollected garbage, not memory Lathe holds.
 An editor server and an MCP server per agent, all day, add up.
 These numbers predate releasing idle module sessions (after 5 idle minutes, or earlier under memory pressure; [design](../done/lathe-memory-pressure.md)) and need re-measuring.
+
+### Re-measured by the jdtls comparison's benchmark (2026-11-08)
+
+After idle module sessions are released, Lathe `0.3.99-c15d3a55`, each server's summed RSS at its peak while answering the benchmark's 17 to 23 queries (warm runs, medians), against one run per project with `LATHE_JVM_OPTS=-Xmx2G`:
+
+| Project | Uncapped | `-Xmx2G` | Queries at 2 GB | CPU at 2 GB |
+|---|---|---|---|---|
+| spring-petclinic | 1.1 GB | 0.8 GB | about the same | 1.3× |
+| Dropwizard | 9.3 GB | 2.6 GB | 0–36% slower | 1.3× |
+| Helidon | 6.3 GB | 2.6 GB | about the same | 1.1× |
+| Hibernate ORM | 6.7 GB | 2.7 GB | 0–20% slower | 1.5× |
+| Apache Fineract | 7.6 GB | 3.6 GB | up to 76% slower (FR-029's slowest queries) | 2.9× |
+| OpenMetadata | 3.8 GB | 2.9 GB | 0–15% slower | 1.9× |
+
+Every answer stayed the same at 2 GB.
+So the earlier conclusion holds: most of the growth is uncollected garbage, and a 2 GB cap costs CPU, not correctness; Fineract's reference searches are the case a cap would visibly slow.
 
 ### Fix direction
 
