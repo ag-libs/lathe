@@ -18,6 +18,8 @@ import java.util.Optional;
 
 public final class LatheLock {
 
+  private static final System.Logger LOG = System.getLogger(LatheLock.class.getName());
+
   private static final long STALE_MS = 2 * 60 * 1000;
   private static final long POLL_INTERVAL_MS = 100;
 
@@ -27,18 +29,7 @@ public final class LatheLock {
   // scanner, an indexer) still holds it open, and writing it again is refused until that ends.
   public static void acquire(final Path lockFile) throws IOException {
     Files.createDirectories(lockFile.getParent());
-    String identity = "";
-    try {
-      final ProcessHandle owner = ProcessHandle.current();
-      identity =
-          owner
-              .info()
-              .startInstant()
-              .map(start -> "%d\n%s\n".formatted(owner.pid(), start))
-              .orElse("");
-    } catch (final SecurityException | UnsupportedOperationException e) {
-      // Restricted runtimes can still protect builds through the mtime fallback.
-    }
+    final String identity = ownerIdentity(lockFile);
 
     for (int attempt = 1; ; attempt++) {
       try {
@@ -126,7 +117,28 @@ public final class LatheLock {
     }
   }
 
+  private static String ownerIdentity(final Path lockFile) {
+    final var timer = Stopwatch.start();
+    try {
+      final ProcessHandle owner = ProcessHandle.current();
+      return owner
+          .info()
+          .startInstant()
+          .map(start -> "%d\n%s\n".formatted(owner.pid(), start))
+          .orElse("");
+    } catch (final SecurityException | UnsupportedOperationException e) {
+      LOG.log(
+          System.Logger.Level.DEBUG,
+          () ->
+              "[lock-owner] %s process inspection unavailable; using mtime expiry %dms"
+                  .formatted(lockFile, timer.elapsedMs()),
+          e);
+      return "";
+    }
+  }
+
   private static boolean ownerMayBeAlive(final Path lockFile) throws IOException {
+    final var timer = Stopwatch.start();
     try {
       final List<String> identity = Files.readAllLines(lockFile, StandardCharsets.UTF_8);
       if (identity.size() != 2) {
@@ -150,7 +162,12 @@ public final class LatheLock {
         | DateTimeParseException
         | SecurityException
         | UnsupportedOperationException e) {
-      // Empty, partially written, or uninspectable identities retain the mtime fallback.
+      LOG.log(
+          System.Logger.Level.DEBUG,
+          () ->
+              "[lock-owner] %s ownership unavailable; using mtime expiry %dms"
+                  .formatted(lockFile, timer.elapsedMs()),
+          e);
       return true;
     }
   }

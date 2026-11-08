@@ -22,6 +22,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 final class LatheLockTest {
 
+  private static final int PROCESS_TIMEOUT_SECONDS = 5;
+
   @TempDir private Path moduleDir;
 
   @Test
@@ -158,7 +160,7 @@ final class LatheLockTest {
   }
 
   @Test
-  @Timeout(30)
+  @Timeout(PROCESS_TIMEOUT_SECONDS)
   void isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks() throws Exception {
     final Path source = moduleDir.resolve("LockOwner.java");
     Files.writeString(
@@ -199,7 +201,7 @@ final class LatheLockTest {
         }
 
         owner.destroyForcibly();
-        assertThat(owner.waitFor(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(owner.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
         for (final Path lock : locks) {
           assertThat(LatheLock.isBuilding(lock)).isFalse();
           assertThat(LatheLock.awaitAndRead(lock, () -> "read")).isEqualTo("read");
@@ -208,7 +210,7 @@ final class LatheLockTest {
       }
     } finally {
       owner.destroyForcibly();
-      assertThat(owner.waitFor(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(owner.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
     }
   }
 
