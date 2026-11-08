@@ -204,8 +204,8 @@ when cut. Items are grouped, not ordered.
 
 ### Build-tool front-ends
 
-- Gradle follow-ups, now that the [Gradle front-end](guide/gradle.md) has shipped: capture of test tasks other
-  than `test` and of extra source sets (TE-12), included builds (WS-27), and formatter detection (EG-078).
+- Gradle follow-ups: included builds (WS-27) and formatter detection (EG-078).
+  Every Java source set and its test-task launch are captured (WS-33 and TE-12, completed in PRs #127 and #131).
 - OpenJDK jtreg run/test (the OpenJDK code-intelligence front-end has shipped).
 
 ### AI coding agents
