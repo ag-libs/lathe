@@ -1,12 +1,19 @@
 name: Neovim
 description: >-
-  The stable Neovim release on PATH, unpacked from its archive on GitHub into the runner's temp
-  directory. rhysd/action-setup-vim, used before, failed on the hosted runners while moving its
-  download out of /tmp ("EXDEV: cross-device link not permitted").
+  A pinned Neovim release on PATH, unpacked into the runner's temp directory and cached, so a job
+  downloads it from GitHub only on a cache miss, retrying: GitHub's release downloads failed for
+  hours on 2026-11-08 (HTTP 504). rhysd/action-setup-vim, used before, failed on the hosted runners
+  while moving its download out of /tmp ("EXDEV: cross-device link not permitted").
+inputs:
+  version:
+    description: The Neovim release; the client needs 0.12 or newer.
+    default: "0.12.6"
 runs:
   using: composite
   steps:
-    - name: Install Neovim
+    # A composite step's `if` cannot read the inputs, so the version and the directory go through
+    # the environment.
+    - name: Name Neovim ${{ inputs.version }}
       shell: bash
       run: |
         os=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
@@ -14,8 +21,25 @@ runs:
         if [ "$arch" = aarch64 ]; then
           arch=arm64
         fi
-        asset="nvim-$os-$arch"
-        curl -fsSL --retry 3 "https://github.com/neovim/neovim/releases/download/stable/$asset.tar.gz" \
-          | tar xz -C "$RUNNER_TEMP"
-        echo "$RUNNER_TEMP/$asset/bin" >> "$GITHUB_PATH"
-        "$RUNNER_TEMP/$asset/bin/nvim" --version | head -1
+        echo "LATHE_NVIM_ASSET=nvim-$os-$arch" >> "$GITHUB_ENV"
+        echo "LATHE_NVIM_HOME=$RUNNER_TEMP/nvim-${{ inputs.version }}" >> "$GITHUB_ENV"
+        echo "$RUNNER_TEMP/nvim-${{ inputs.version }}/bin" >> "$GITHUB_PATH"
+
+    - name: Restore Neovim ${{ inputs.version }}
+      id: nvim-dist
+      uses: actions/cache@v6
+      with:
+        path: ${{ env.LATHE_NVIM_HOME }}
+        key: nvim-dist-${{ runner.os }}-${{ env.LATHE_NVIM_ASSET }}-${{ inputs.version }}
+
+    - name: Download Neovim ${{ inputs.version }}
+      if: steps.nvim-dist.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # To a file, not a pipe: a retry after a broken transfer would append to what tar has read.
+        curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors --connect-timeout 20 -o "$RUNNER_TEMP/nvim.tar.gz" \
+          "https://github.com/neovim/neovim/releases/download/v${{ inputs.version }}/$LATHE_NVIM_ASSET.tar.gz"
+        mkdir -p "$LATHE_NVIM_HOME"
+        tar xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$LATHE_NVIM_HOME" --strip-components=1
+        rm "$RUNNER_TEMP/nvim.tar.gz"
+        "$LATHE_NVIM_HOME/bin/nvim" --version | head -1
