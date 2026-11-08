@@ -40,7 +40,7 @@ The probe inspected the edit without applying it.
 ### Regression targets
 
 - `ReferenceCandidatePlannerTest.planCandidates_moduleDirectiveIncludesType_returnsDescriptorWithoutImports`
-- `ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifiersAndRenamesOnlyTheLeaf` (provider, service in `provides`/`uses`, unrelated type, and applied rename text)
+- `ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifierRanges` (provider, service in `provides`/`uses`, unrelated type, and exact identifier range)
 - `RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments` (descriptor closed/open, rename from declaration/directive, and file move)
 
 ---

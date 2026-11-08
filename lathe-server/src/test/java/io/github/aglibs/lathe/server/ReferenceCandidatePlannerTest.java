@@ -156,12 +156,11 @@ class ReferenceCandidatePlannerTest {
         write(
             LatheLayout.MODULE_INFO_JAVA,
             "module example.app { provides com.example.Service with com.example.Provider; uses com.example.Service; }");
-    final Path unrelated = write("Other.java", "package other; class Other { String Provider; }");
+    write("Other.java", "package other; class Other { String Provider; }");
 
     assertThat(plan(type("com.example.Provider", "Provider"))).containsExactly(uri(descriptor));
     assertThat(plan(type("com.example.Service", "Service"))).containsExactly(uri(descriptor));
     assertThat(plan(type("com.example.Absent", "Absent"))).isEmpty();
-    assertThat(plan(type("com.example.Provider", "Provider"))).doesNotContain(uri(unrelated));
   }
 
   @Test

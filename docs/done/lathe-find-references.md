@@ -15,7 +15,7 @@ Exact tree resolution reports the referenced type's identifier once, while still
 The same occurrence ranges drive references, highlights, and rename.
 
 Regression coverage: `ReferenceCandidatePlannerTest.planCandidates_moduleDirectiveIncludesType_returnsDescriptorWithoutImports`,
-`ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifiersAndRenamesOnlyTheLeaf`, and
+`ReferenceLocatorTest.references_moduleDirectives_matchesOnlyTypeIdentifierRanges`, and
 `RenameTest.rename_serviceProvider_findsDescriptorAndKeepsPackageSegments`.
 
 ---

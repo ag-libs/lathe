@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,8 +87,8 @@ class ReferenceLocatorTest {
   }
 
   @Test
-  void references_moduleDirectives_matchesOnlyTypeIdentifiersAndRenamesOnlyTheLeaf(
-      @TempDir final Path tmp) throws IOException {
+  void references_moduleDirectives_matchesOnlyTypeIdentifierRanges(@TempDir final Path tmp)
+      throws IOException {
     final String source =
         """
         module example.app {
@@ -123,16 +124,13 @@ class ReferenceLocatorTest {
               analysis.elements());
       final List<ReferenceMatch> matches =
           ReferenceLocator.references(analysis, target, descriptor.toUri().toString(), false);
-      assertThat(matches).hasSize(1);
-      assertThat(matches.get(0).range().getStart())
-          .isEqualTo(posOf(source, "com.example.Provider", "Provider"));
-      final var edit =
-          RenameProvider.toWorkspaceEdit(
-              matches.stream().map(ReferenceMatch::toLocation).toList(), "RenamedProvider");
-      assertThat(
-              Positions.applyEdits(
-                  source, RenameProvider.textEdits(edit).get(descriptor.toUri().toString())))
-          .isEqualTo(source.replace("com.example.Provider", "com.example.RenamedProvider"));
+      assertThat(matches)
+          .extracting(ReferenceMatch::range)
+          .containsExactly(
+              new Range(
+                  posOf(source, "com.example.Provider", "Provider"),
+                  Positions.offsetToPosition(
+                      source, source.indexOf("Provider") + "Provider".length())));
 
       final ReferenceTarget service =
           ReferenceTarget.from(
@@ -142,7 +140,6 @@ class ReferenceLocatorTest {
               analysis.elements());
       final List<ReferenceMatch> serviceMatches =
           ReferenceLocator.references(analysis, service, descriptor.toUri().toString(), false);
-      assertThat(serviceMatches).hasSize(2);
       assertThat(serviceMatches)
           .extracting(match -> match.range().getStart())
           .containsExactly(
