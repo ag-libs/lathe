@@ -1,12 +1,20 @@
 name: Neovim
 description: >-
-  The stable Neovim release on PATH, unpacked from its archive on GitHub into the runner's temp
-  directory. rhysd/action-setup-vim, used before, failed on the hosted runners while moving its
-  download out of /tmp ("EXDEV: cross-device link not permitted").
+  A pinned Neovim release on PATH, unpacked into the runner's temp directory and cached, so a job
+  downloads it only on a cache miss. The download retries, then falls back to a source off GitHub
+  (the snap on Linux, Homebrew on macOS) when GitHub's release downloads fail, as they did for
+  hours on 2026-11-08 (HTTP 504). rhysd/action-setup-vim, used before, failed on the hosted runners
+  while moving its download out of /tmp ("EXDEV: cross-device link not permitted").
+inputs:
+  version:
+    description: The Neovim release; the client needs 0.12 or newer.
+    default: "0.12.6"
 runs:
   using: composite
   steps:
-    - name: Install Neovim
+    # A composite step's `if` cannot read the inputs, so the version and the directory go through
+    # the environment.
+    - name: Name Neovim ${{ inputs.version }}
       shell: bash
       run: |
         os=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
@@ -14,8 +22,52 @@ runs:
         if [ "$arch" = aarch64 ]; then
           arch=arm64
         fi
-        asset="nvim-$os-$arch"
-        curl -fsSL --retry 3 "https://github.com/neovim/neovim/releases/download/stable/$asset.tar.gz" \
-          | tar xz -C "$RUNNER_TEMP"
-        echo "$RUNNER_TEMP/$asset/bin" >> "$GITHUB_PATH"
-        "$RUNNER_TEMP/$asset/bin/nvim" --version | head -1
+        echo "LATHE_NVIM_VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+        echo "LATHE_NVIM_ASSET=nvim-$os-$arch" >> "$GITHUB_ENV"
+        echo "LATHE_NVIM_HOME=$RUNNER_TEMP/nvim-${{ inputs.version }}" >> "$GITHUB_ENV"
+
+    - name: Restore Neovim ${{ inputs.version }}
+      id: nvim-dist
+      uses: actions/cache@v6
+      with:
+        path: ${{ env.LATHE_NVIM_HOME }}
+        key: nvim-dist-${{ runner.os }}-${{ env.LATHE_NVIM_ASSET }}-${{ env.LATHE_NVIM_VERSION }}
+
+    - name: Download Neovim ${{ inputs.version }}
+      if: steps.nvim-dist.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        url="https://github.com/neovim/neovim/releases/download/v$LATHE_NVIM_VERSION/$LATHE_NVIM_ASSET.tar.gz"
+        mkdir -p "$LATHE_NVIM_HOME"
+        if curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors --connect-timeout 20 -o "$RUNNER_TEMP/nvim.tar.gz" "$url" \
+            && tar xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$LATHE_NVIM_HOME" --strip-components=1; then
+          rm "$RUNNER_TEMP/nvim.tar.gz"
+          exit 0
+        fi
+        # Off GitHub; not cached (an empty directory would be cached in its place, so remove it).
+        echo "::warning::Neovim $LATHE_NVIM_VERSION could not be downloaded from GitHub; installing it from another source"
+        rm -rf "$LATHE_NVIM_HOME" "$RUNNER_TEMP/nvim.tar.gz"
+        if [ "$RUNNER_OS" = macOS ]; then
+          brew install neovim
+        else
+          sudo snap install nvim --classic
+        fi
+
+    - name: Put Neovim on PATH
+      shell: bash
+      run: |
+        if [ -x "$LATHE_NVIM_HOME/bin/nvim" ]; then
+          echo "$LATHE_NVIM_HOME/bin" >> "$GITHUB_PATH"
+          nvim="$LATHE_NVIM_HOME/bin/nvim"
+        else
+          nvim=$(command -v nvim || echo /snap/bin/nvim)
+          echo "$(dirname "$nvim")" >> "$GITHUB_PATH"
+        fi
+        version=$("$nvim" --version | head -1)
+        echo "$version"
+        major=$(echo "$version" | sed -E 's/^NVIM v([0-9]+)\.([0-9]+).*/\1/')
+        minor=$(echo "$version" | sed -E 's/^NVIM v([0-9]+)\.([0-9]+).*/\2/')
+        if [ "$major" -eq 0 ] && [ "$minor" -lt 12 ]; then
+          echo "::error::$version is older than 0.12, which the Neovim client needs"
+          exit 1
+        fi

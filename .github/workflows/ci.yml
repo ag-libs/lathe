@@ -290,12 +290,24 @@ jobs:
         with:
           java: ${{ matrix.java }}
 
-      - name: Download Gradle ${{ matrix.gradle }} for the fixture builds
+      - name: Restore Gradle ${{ matrix.gradle }} for the fixture builds
         # The plugin itself builds on the Gradle the build tools set up; only the fixtures use this one.
+        # Cached, so a job downloads it only on a miss: the distributions are served from GitHub's
+        # release downloads, which failed for hours on 2026-11-08 (HTTP 504).
         if: matrix.gradle != '9.8.2'
+        id: fixture-gradle
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/gradle-${{ matrix.gradle }}
+          key: gradle-dist-${{ runner.os }}-${{ matrix.gradle }}
+
+      - name: Download Gradle ${{ matrix.gradle }} for the fixture builds
+        if: matrix.gradle != '9.8.2' && steps.fixture-gradle.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/gradle.zip" "https://services.gradle.org/distributions/gradle-${{ matrix.gradle }}-bin.zip"
+          curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors --connect-timeout 20 \
+            -o "$RUNNER_TEMP/gradle.zip" "https://services.gradle.org/distributions/gradle-${{ matrix.gradle }}-bin.zip"
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          rm "$RUNNER_TEMP/gradle.zip"
 
       - name: Cache the fixtures' Gradle user home
         # TestKit runs the fixtures with a Gradle user home of its own, lathe-testkit under Gradle's
