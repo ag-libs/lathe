@@ -566,22 +566,23 @@ final class ReferenceSearch {
 
   List<ModuleSourceConfig> planSearchScope(
       final ReferenceTarget target, final ModuleSourceConfig cursorConfig) {
-    return switch (target.scope()) {
-      case DECLARING_FILE -> List.of();
-      case DECLARING_MODULE ->
-          cursorConfig != null
-              ? state.moduleGraph().configsForModule(cursorConfig.moduleDir())
-              : List.of();
-      case REACTOR_MODULES ->
-          cursorConfig != null
-              ? state.moduleGraph().referenceSearchScope(cursorConfig).stream()
-                  .filter(
-                      config ->
-                          reactorIndex.sameDeclaration(
-                              target.qualifiedName(), cursorConfig, config))
-                  .toList()
-              : state.registry().allConfigs();
-    };
+    eventLoop.checkOnLoop();
+    final List<ModuleSourceConfig> candidates =
+        switch (target.scope()) {
+          case DECLARING_FILE -> List.of();
+          case DECLARING_MODULE ->
+              cursorConfig != null
+                  ? state.moduleGraph().configsForModule(cursorConfig.moduleDir())
+                  : List.of();
+          case REACTOR_MODULES ->
+              cursorConfig != null
+                  ? state.moduleGraph().referenceSearchScope(cursorConfig)
+                  : state.registry().allConfigs();
+        };
+    return candidates.stream()
+        .filter(
+            config -> reactorIndex.sameDeclaration(target.qualifiedName(), cursorConfig, config))
+        .toList();
   }
 
   ModuleSourceConfig declaringConfigFor(

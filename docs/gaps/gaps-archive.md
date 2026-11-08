@@ -33,6 +33,7 @@ The log shows `[type-index] duplicate type … skipped`: the index keeps one ent
 `ReactorTypeIndex` retains owner-qualified declarations and subtype edges instead of using the deduplicated candidate index as declaration identity.
 Lookup follows the asking source tree and its captured classpath/module-path order.
 Reference searches, incoming calls, rename guards, and implementation searches keep the selected declaration's identity; symbol search emits each copy with its own metadata and location.
+Ownership filtering also applies to package-private searches across main and test source trees in the same module.
 Duplicate subtypes and descendants are attributed in their own compile so differing inheritance cannot produce false implementations.
 Refresh removes the replaced tree's old ownership and subtype edges and leaves other copies intact.
 No persisted schema changes are required.
@@ -53,6 +54,7 @@ The probe applies no source edits.
 - `DuplicateTypeTest.implementations_sameBinaryName_returnsBothImplementations`
 - `DuplicateTypeTest.implementations_differentHierarchyUnderSameBinaryName_checksEachOwnersCompile`
 - `DuplicateTypeTest.renameTwice_duplicateTypeIndexRefresh_keepsTheUntouchedCopyAndRejectsCollision`
+- `DuplicateTypeTest.referencesAndRename_packagePrivateDuplicateInOneModule_keepsSourceTreesSeparate`
 
 ---
 

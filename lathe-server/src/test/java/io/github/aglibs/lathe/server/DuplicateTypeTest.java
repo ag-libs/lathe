@@ -3,7 +3,11 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -227,5 +231,61 @@ class DuplicateTypeTest extends LatheEngineTestBase {
         .containsExactly(files.get(other));
     assertThat(Files.readString(files.get(owner + "Use"))).contains("ChangedAgain field");
     assertThat(Files.readString(files.get(other + "Use"))).contains("Shared field");
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void referencesAndRename_packagePrivateDuplicateInOneModule_keepsSourceTreesSeparate(
+      final boolean testTree) throws Exception {
+    final String shared = "package com.example; class Shared {}";
+    final var main = new LinkedHashMap<String, String>();
+    main.put("com/example/Shared.java", shared);
+    main.put("com/example/MainUse.java", "package com.example; class MainUse { Shared field; }");
+    final List<Path> mainFiles =
+        TestCompiler.writeMirroredModule(tmp, "module", main, List.of(), 1_000L);
+    final Path testRoot = tmp.resolve("module/src/test/java");
+    final Path testCopy =
+        TestCompiler.writeAt(testRoot.resolve("com/example/Shared.java"), shared, 1_000L);
+    final Path testUse =
+        TestCompiler.writeAt(
+            testRoot.resolve("com/example/TestUse.java"),
+            "package com.example; class TestUse { Shared field; }",
+            1_000L);
+    final Path module = tmp.resolve(LatheLayout.LATHE_DIR).resolve("module");
+    final Path testOutput = module.resolve(LatheLayout.TEST_CLASSES_DIR);
+    TestJavac.compileToDir(
+        testOutput, List.of(module.resolve(LatheLayout.CLASSES_DIR)), testCopy, testUse);
+    Json.write(
+        new ModuleConfigData(
+            LatheLayout.TEST_CLASSES_DIR,
+            testOutput.toString(),
+            null,
+            List.of(testRoot.toString()),
+            List.of(module.resolve(LatheLayout.CLASSES_DIR).toString()),
+            List.of(),
+            List.of(),
+            TestCompiler.RELEASE,
+            "UTF-8",
+            false,
+            false,
+            "none",
+            List.of(),
+            null,
+            false,
+            true),
+        module.resolve(LatheLayout.paramsFileName(LatheLayout.TEST_CLASSES_DIR)));
+    engine = new LatheEngine(tmp);
+    final Path selected = testTree ? testCopy : mainFiles.get(0);
+    final Path selectedUse = testTree ? testUse : mainFiles.get(1);
+    final Path other = testTree ? mainFiles.get(0) : testCopy;
+    final var pos = positionOf(shared, "Shared");
+    assertThat(
+            engine.references(selected, pos.getLine(), pos.getCharacter(), 50).value().references())
+        .extracting(location -> LatheUri.toPath(location.uri()))
+        .containsExactlyInAnyOrder(selected, selectedUse);
+    renameAt(selected, shared, "Shared", "Renamed");
+    assertThat(Files.readString(selected.resolveSibling("Renamed.java"))).contains("class Renamed");
+    assertThat(Files.readString(selectedUse)).contains("Renamed field");
+    assertThat(Files.readString(other)).isEqualTo(shared);
   }
 }
