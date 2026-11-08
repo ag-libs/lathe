@@ -234,6 +234,41 @@ class RunnableScannerTest {
   }
 
   @Test
+  void runnables_typeUseAnnotatedParams_idCarriesNoAnnotation() {
+    final String source =
+        """
+        package demo;
+
+        import java.lang.annotation.ElementType;
+        import java.lang.annotation.Target;
+        import java.util.List;
+        import java.util.Map;
+        import org.junit.jupiter.params.ParameterizedTest;
+
+        class FooTest {
+          @Target(ElementType.TYPE_USE)
+          @interface NonNull {}
+
+          @ParameterizedTest
+          void bar_input_result(
+              @NonNull String name,
+              @NonNull int count,
+              String @NonNull [] names,
+              @NonNull List<@NonNull String> values,
+              Map.@NonNull Entry<String, String> entry) {
+          }
+        }
+        """;
+
+    final var method = scan(source).get(0);
+
+    assertThat(method.id())
+        .isEqualTo(
+            "demo.FooTest#bar_input_result(java.lang.String,int,java.lang.String[],"
+                + "java.util.List,java.util.Map.Entry)");
+  }
+
+  @Test
   void runnables_nestedClassWithTest_usesBinaryNameSeparator() {
     final String source =
         """

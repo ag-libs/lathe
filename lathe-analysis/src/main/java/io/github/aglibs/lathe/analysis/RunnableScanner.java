@@ -22,7 +22,7 @@ import org.eclipse.lsp4j.Range;
 /**
  * Walks the attributed AST for an open file, resolving each declaration's real {@code Element} so
  * parameter-type erasure and binary names match javac's own semantics exactly (mirrors {@link
- * ReferenceTarget}'s {@code buildDescriptor}/{@code getBinaryName} usage) -- unlike its syntax-only
+ * ReferenceTarget}'s {@code erasedTypeName}/{@code getBinaryName} usage) -- unlike its syntax-only
  * siblings {@link DocumentSymbolScanner}/{@link FoldingRangeScanner}, whose purposes never need
  * overload-correct signatures.
  */
@@ -168,7 +168,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
       final MethodTree node, final ExecutableElement element, final TypeElement enclosing) {
     final String erasedParams =
         element.getParameters().stream()
-            .map(param -> analysis.types().erasure(param.asType()).toString())
+            .map(param -> ReferenceTarget.erasedTypeName(param.asType(), analysis.types()))
             .collect(Collectors.joining(","));
     final String methodName = element.getSimpleName().toString();
     final String enclosingBinaryName = binaryName(enclosing);

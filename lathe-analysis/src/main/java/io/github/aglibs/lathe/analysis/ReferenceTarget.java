@@ -6,6 +6,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
@@ -15,6 +16,8 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.ArrayType;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
@@ -468,8 +471,29 @@ public record ReferenceTarget(
 
   private static String buildDescriptor(final ExecutableElement method, final Types types) {
     return method.getParameters().stream()
-        .map(p -> types.erasure(p.asType()).toString())
+        .map(p -> erasedTypeName(p.asType(), types))
         .collect(Collectors.joining(",", "(", ")"));
+  }
+
+  // A type's erasure named from its structure, not its text: the text of a type compiled from
+  // source carries its type-use annotations (java.lang.@NonNull String), the same type read from a
+  // class file does not, and both must name one method.
+  static String erasedTypeName(final TypeMirror type, final Types types) {
+    final TypeMirror erased = types.erasure(type);
+    if (erased.getKind().isPrimitive()) {
+      return erased.getKind().name().toLowerCase(Locale.ROOT);
+    }
+
+    if (erased instanceof final ArrayType array) {
+      return erasedTypeName(array.getComponentType(), types) + "[]";
+    }
+
+    if (erased instanceof final DeclaredType declared
+        && declared.asElement() instanceof final TypeElement element) {
+      return element.getQualifiedName().toString();
+    }
+
+    return erased.toString();
   }
 
   private static String enclosingBinaryName(final Element element, final Elements elements) {
