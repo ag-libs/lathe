@@ -45,11 +45,13 @@
       </plugins>
     </pluginManagement>
     <plugins>
-      <!-- Config-only (no version, no executions): Spotless never runs in this IT, but lathe:sync
-           reads this formatter config to generate .lathe/style.json with the google engine. -->
+      <!-- Config-only (no executions): Spotless never runs in this IT, but lathe:sync reads this
+           formatter config to generate .lathe/style.json with the google engine. Versioned, so Maven
+           resolves the plugin from the local repository instead of Central's metadata on every run. -->
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
+        <version>@spotless.version@</version>
         <configuration>
           <java>
             <googleJavaFormat/>
