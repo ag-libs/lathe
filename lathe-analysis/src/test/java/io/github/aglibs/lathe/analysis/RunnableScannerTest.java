@@ -265,7 +265,35 @@ class RunnableScannerTest {
     assertThat(method.id())
         .isEqualTo(
             "demo.FooTest#bar_input_result(java.lang.String,int,java.lang.String[],"
-                + "java.util.List,java.util.Map.Entry)");
+                + "java.util.List,java.util.Map$Entry)");
+  }
+
+  // JUnit loads a selected method's parameter types by name, so the id names a nested class by
+  // its binary name: java.util.Map.Entry fails to load.
+  @Test
+  void runnables_nestedTypeParam_idNamesItLoadably() throws ClassNotFoundException {
+    final String source =
+        """
+        package demo;
+
+        import java.util.Map;
+        import org.junit.jupiter.params.ParameterizedTest;
+
+        class FooTest {
+          @ParameterizedTest
+          void bar_input_result(Map.Entry<String, String> entry, Thread.State[] states) {
+          }
+        }
+        """;
+
+    final var method = scan(source).get(0);
+
+    assertThat(method.id())
+        .isEqualTo("demo.FooTest#bar_input_result(java.util.Map$Entry,java.lang.Thread$State[])");
+    final String id = method.id();
+    for (final String param : id.substring(id.indexOf('(') + 1, id.length() - 1).split(",")) {
+      assertThat(Class.forName(param.replace("[]", ""))).isNotNull();
+    }
   }
 
   @Test

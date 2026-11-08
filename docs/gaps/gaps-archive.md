@@ -167,16 +167,19 @@ javac on JDK 21 and older keeps type-use annotations through `erasure()`, and fo
 A caller compiled against the class file sees no annotation there (JDK 21 does not read type annotations from class files; no JDK reads a `SOURCE`-retained one), so its descriptor read `(java.lang.String)` and never matched; only `Entity.java`'s own calls, whose method is the source-compiled one, did.
 Test method ids for running one test method were built the same way, so on JDK 17 to 21 a test method with such a parameter got an id like `bar(java.lang.@NonNull String)`.
 javac 22 and later drop the annotations in `erasure()`, which hid both on newer JDKs.
+The review of the fix found a second, older flaw in those ids: a nested parameter type was written in source form (`java.util.Map.Entry`), which JUnit's `selectMethod` cannot load ("Failed to load parameter type"), so running one test method with such a parameter failed on every JDK.
 
 ### Resolution
 
-A parameter's erased type is now named from its structure, not its text (`ReferenceTarget.erasedTypeName`): a class by its qualified name, an array by its component and `[]`, a primitive by its keyword; unannotated types name the same as before.
-The reference descriptor and the runnable ids both use it.
+A parameter's erased type is now named from its structure, not its text (`ReferenceTarget.erasedTypeName`): a class by its binary name (`java.util.Map$Entry`), an array by its component and `[]`, a primitive by its keyword, anything else (an error type, a local class) by its text as before.
+The reference descriptor and the runnable ids both use it, and `TestId`, which maps JUnit's results back to those ids, keeps JUnit's binary names instead of turning them into source form.
 
 ### Regression targets
 
 `ReferenceLocatorTest.method_typeUseAnnotatedParameter_matchesCallsCompiledAgainstTheClassFile` (a `SOURCE`-retained type-use annotation, a caller compiled against the class file, an overload left alone),
-`RunnableScannerTest.runnables_typeUseAnnotatedParams_idCarriesNoAnnotation`; both fail on JDK 21 without the fix, which CI's JDK 17 and 21 rows run.
+`RunnableScannerTest.runnables_typeUseAnnotatedParams_idCarriesNoAnnotation` (both fail on JDK 21 without the fix, which CI's JDK 17 and 21 rows run),
+`RunnableScannerTest.runnables_nestedTypeParam_idNamesItLoadably`, `TestIdTest.positionId_jvmFormParameterTypes_matchTheRunnableIdForm`.
+Related: CQ-0062, member completion's duplicate check, which keys on the same annotated text.
 
 ---
 

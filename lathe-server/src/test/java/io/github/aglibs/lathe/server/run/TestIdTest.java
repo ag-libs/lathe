@@ -24,17 +24,17 @@ final class TestIdTest {
     assertThat(TestId.positionId("pkg.Outer$Inner", "t", "")).isEqualTo("pkg.Outer$Inner#t()");
   }
 
-  // JUnit names parameter types as Class.getName does; javac's erasure prints source form.
+  // JUnit names an array as Class.getName does; the id writes it int[], and keeps binary names.
   @Test
-  void positionId_jvmFormParameterTypes_matchJavacSourceForm() {
+  void positionId_jvmFormParameterTypes_matchTheRunnableIdForm() {
     assertThat(
             TestId.positionId(
                 "pkg.Outer$Inner",
                 "t",
                 "[I, [[J, [Ljava.lang.String;, pkg.Outer$Shape, [Lpkg.Outer$Shape;, boolean"))
         .isEqualTo(
-            "pkg.Outer$Inner#t(int[],long[][],java.lang.String[],pkg.Outer.Shape,"
-                + "pkg.Outer.Shape[],boolean)");
+            "pkg.Outer$Inner#t(int[],long[][],java.lang.String[],pkg.Outer$Shape,"
+                + "pkg.Outer$Shape[],boolean)");
   }
 
   @Test

@@ -13,11 +13,13 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
@@ -475,9 +477,10 @@ public record ReferenceTarget(
         .collect(Collectors.joining(",", "(", ")"));
   }
 
-  // A type's erasure named from its structure, not its text: the text of a type compiled from
-  // source carries its type-use annotations (java.lang.@NonNull String), the same type read from a
-  // class file does not, and both must name one method.
+  // A type's erasure named from its structure, not its text: compiled from source, its text carries
+  // its type-use annotations (java.lang.@NonNull String), which the same type read from a class
+  // file lacks on JDK 21 and older, and always for SOURCE retention. A class is named by its binary
+  // name (pkg.Outer$Inner), the form JUnit loads a test method's parameter types by.
   static String erasedTypeName(final TypeMirror type, final Types types) {
     final TypeMirror erased = types.erasure(type);
     if (erased.getKind().isPrimitive()) {
@@ -488,12 +491,19 @@ public record ReferenceTarget(
       return erasedTypeName(array.getComponentType(), types) + "[]";
     }
 
-    if (erased instanceof final DeclaredType declared
-        && declared.asElement() instanceof final TypeElement element) {
-      return element.getQualifiedName().toString();
+    if (erased.getKind() == TypeKind.DECLARED
+        && ((DeclaredType) erased).asElement() instanceof final TypeElement element
+        && element.getNestingKind() != NestingKind.LOCAL) {
+      return binaryName(element);
     }
 
     return erased.toString();
+  }
+
+  private static String binaryName(final TypeElement element) {
+    return element.getEnclosingElement() instanceof final TypeElement outer
+        ? "%s$%s".formatted(binaryName(outer), element.getSimpleName())
+        : element.getQualifiedName().toString();
   }
 
   private static String enclosingBinaryName(final Element element, final Elements elements) {
