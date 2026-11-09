@@ -7,6 +7,30 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-093 — Hover shows no overrides or deprecation — done
+
+**Status: done.**
+
+**Affects: the editor's hover and MCP `describe_symbol`.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose hover adds what a method overrides, how often a symbol is used, and a deprecation note.
+`HoverFormatter` rendered the signature and javadoc only, and the javadoc printer dropped the `@deprecated` tag.
+
+### Resolution
+
+Hover adds `**Deprecated.**` for a deprecated element (`Elements.isDeprecated`) and `**Overrides** Type.method` for the nearest method an override overrides
+(`ReferenceTarget.overriddenMethods`: a superclass's before an interface's), above the javadoc.
+The printer renders the `@deprecated` tag, which usually names the replacement, and a same-type link (`{@link #other()}`) as `other()` rather than `.other()`.
+The usage count is EG-104: it needs a cheap reference count (FR-029).
+
+### Regression targets
+
+- `HoverTest.hover_overridingMethod_namesNearestOverriddenMethod_plainMethodDoesNot`
+- `HoverTest.hover_deprecatedMethod_showsDeprecationAndItsText_currentMethodDoesNot`
+- `JavadocMarkdownPrinterTest.format_linkToMember_readsAsMemberOrTypeDotMember`
+
+---
+
 ## EG-068 — Hover and `describe_symbol` render javadoc loosely and describe the class at a constructor call — done
 
 **Status: done.**

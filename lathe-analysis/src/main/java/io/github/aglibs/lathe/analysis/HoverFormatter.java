@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -11,6 +12,8 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 
 final class HoverFormatter {
 
@@ -86,6 +89,39 @@ final class HoverFormatter {
         };
     return "%s %s%s"
         .formatted(kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()));
+  }
+
+  // What javadoc's own pages show beside the text: that the element is deprecated, and the method
+  // it overrides (the nearest, a superclass's before an interface's); empty when neither applies.
+  static String notes(final Element element, final Elements elements, final Types types) {
+    if (element == null) {
+      return "";
+    }
+
+    return Stream.of(deprecation(element, elements), overridden(element, elements, types))
+        .flatMap(Optional::stream)
+        .collect(Collectors.joining("  \n"));
+  }
+
+  private static Optional<String> deprecation(final Element element, final Elements elements) {
+    return elements.isDeprecated(element) ? Optional.of("**Deprecated.**") : Optional.empty();
+  }
+
+  private static Optional<String> overridden(
+      final Element element, final Elements elements, final Types types) {
+    if (!(element instanceof final ExecutableElement method)
+        || method.getKind() != ElementKind.METHOD
+        || !(method.getEnclosingElement() instanceof final TypeElement owner)) {
+      return Optional.empty();
+    }
+
+    return ReferenceTarget.overriddenMethods(method, owner, types, elements).stream()
+        .findFirst()
+        .map(
+            parent ->
+                "**Overrides** `%s.%s`"
+                    .formatted(
+                        parent.getEnclosingElement().getSimpleName(), parent.getSimpleName()));
   }
 
   static String formatParam(

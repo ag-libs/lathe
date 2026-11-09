@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.doctree.AttributeTree;
+import com.sun.source.doctree.DeprecatedTree;
 import com.sun.source.doctree.DocCommentTree;
 import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.EndElementTree;
@@ -124,6 +125,10 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
         paragraph();
         append("**@see** ");
         scan(s.getReference(), null);
+      } else if (tag instanceof final DeprecatedTree d) {
+        paragraph();
+        append("**@deprecated** ");
+        scan(d.getBody(), null);
       }
     }
   }
@@ -386,7 +391,9 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     return null;
   }
 
+  // `Type#member` reads as `Type.member`; a member of the same type (`#member`) as `member`.
   private static String refSignature(final ReferenceTree ref) {
-    return ref.getSignature().replace('#', '.');
+    final String signature = ref.getSignature();
+    return signature.startsWith("#") ? signature.substring(1) : signature.replace('#', '.');
   }
 }

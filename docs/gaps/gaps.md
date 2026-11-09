@@ -947,22 +947,18 @@ None yet.
 
 ---
 
-## EG-093 — Hover shows no overrides, usage count or deprecation
+## EG-104 — Hover shows no usage count
 
 **Status: documented**
 
 **Affects: the editor's hover and MCP `describe_symbol`.**
 
-Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose hover adds what a method overrides, how often a symbol is used, and a deprecation note.
-
-### Gap
-
-`HoverFormatter` renders the signature and javadoc only.
+Split from EG-093, whose overrides and deprecation notes shipped.
+The comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05) also showed how often a symbol is used.
 
 ### Fix direction
 
-Add the overridden method (from `Elements.overrides`, already used by implementations), and the `@Deprecated` state with the javadoc's `@deprecated` text.
-A usage count needs a reference count that is cheap to compute, which today it is not (FR-029).
+Add the count once a reference count is cheap to compute, which today it is not (FR-029).
 
 ### Regression targets
 

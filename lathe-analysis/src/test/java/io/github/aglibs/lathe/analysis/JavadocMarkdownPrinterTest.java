@@ -138,6 +138,15 @@ class JavadocMarkdownPrinterTest {
   }
 
   @Test
+  void format_linkToMember_readsAsMemberOrTypeDotMember() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            "class T { /** Use {@link #other()} or {@link String#isEmpty()}. */ void m() {} }");
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .isEqualTo("Use `other()` or `String.isEmpty()`.");
+  }
+
+  @Test
   void format_anchorWithoutHref_printsLabelOnly() throws IOException {
     final var tree = parseMethodDoc("class T { /** An <a id=\"x\">anchor</a>. */ void m() {} }");
     assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("An anchor.");
