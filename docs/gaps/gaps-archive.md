@@ -131,16 +131,17 @@ Measured on 2026-11-09 (one server per run; cold is the first request, warm the 
 
 | Override | Before: cold / warm, callers | After: cold / warm, callers | jdtls: cold / warm, callers |
 |---|---|---|---|
-| Dropwizard `App1.initialize` | 0.9 / 0.5 s, 0 | 1.7 / 0.8 s, 4 | 4.6 / 1.1 s, 4 |
-| Dropwizard `HelloWorldApplication.run` | 0.6 / 0.3 s, 0 | 2.5 / 1.0 s, 2 | 2.5 / 0.9 s, 2 |
+| Dropwizard `App1.initialize` | 0.9 / 0.5 s, 0 | 1.6 / 0.6 s, 4 | 4.6 / 1.1 s, 4 |
+| Dropwizard `HelloWorldApplication.run` | 0.6 / 0.3 s, 0 | 2.0 / 1.1 s, 2 | 2.5 / 0.9 s, 2 |
 | Dropwizard `MyConfiguredBundle.initialize` | 0.2 / 0.2 s, 0 | 0.8 / 0.3 s, 1 | 3.1 / 1.0 s, 1 |
-| Helidon `HttpRouteImpl.beforeStart` | 2.4 / 1.0 s, 4 | 2.6 / 1.0 s, 4 | failed (no item) |
-| Helidon `WebClientMetrics.Builder.build()` | 0.3 / 0.2 s, 1 | 14.4 / 8.1 s, 3 | failed (no item) |
+| Helidon `HttpRouteImpl.beforeStart` | 2.4 / 1.0 s, 4 | 2.0 / 1.0 s, 4 | failed (no item) |
+| Helidon `WebClientMetrics.Builder.build()` | 0.3 / 0.2 s, 1 | 12.0 / 7.0 s, 3 | failed (no item) |
 
 The Dropwizard callers are jdtls's, one for one (`Application.java:88`, `DropwizardTestSupport:302`,
 `InjectValidatorFeatureTest:44`, `ApplicationTest:39/44`, `EnvironmentCommand:66`, `Bootstrap.java:150`).
 Reading every dependent module whole (as IntelliJ and jdtls do) cost Helidon's `build()` 21.3 / 12.4 s; keeping only
-the files that import a supertype cost 7.3 / 4.2 s but missed same-package tests and lambda receivers.
+the files that import a supertype cost 7.3 / 4.2 s but missed same-package tests and lambda receivers. Listing only
+the supertypes that have the method (not `Supplier`) took the chosen filter from 14.4 / 8.1 s to 12.0 / 7.0 s.
 
 Known limits: in a module depending on the base's, a call on a `var` or a lambda parameter of a supertype, in a file
 never spelling it, is missed; an override of a common base method (Helidon's `Builder.build()`) still takes seconds.
