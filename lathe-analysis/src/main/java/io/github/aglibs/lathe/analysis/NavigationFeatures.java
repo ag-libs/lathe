@@ -104,7 +104,7 @@ public final class NavigationFeatures {
       return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
     }
 
-    final var constructor =
+    final Element constructor =
         CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
     final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
     final TypeMirror type =
@@ -116,10 +116,10 @@ public final class NavigationFeatures {
             .markdown(element, cur.analysis(), allRoots)
             .or(
                 () ->
-                    constructor == null
-                        ? Optional.empty()
-                        : javadocLocator.markdown(
-                            constructor.getEnclosingElement(), cur.analysis(), allRoots))
+                    element != null && element.getKind() == ElementKind.CONSTRUCTOR
+                        ? javadocLocator.markdown(
+                            element.getEnclosingElement(), cur.analysis(), allRoots)
+                        : Optional.empty())
             .orElse(null);
     final var origin =
         request.libraries().originLabel(element, compiler.fileManager()).orElse(null);

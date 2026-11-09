@@ -21,21 +21,27 @@ and on `new BlockingArrayQueue<>(min, max)` the answer described the class, not 
 ### Resolution
 
 `JavadocMarkdownPrinter` holds a paragraph break until the next text, so any run of `<p>`/`</p>` and source line breaks yields one blank line.
-An `<a href>` renders as a one-line markdown link, `[label](url)`; an anchor with no `href` keeps its label only.
-`JavadocLocator.markdown` resolves inheritance as the javadoc tool does: a method with no comment takes the nearest overridden method's,
+An `<a href>` renders as a one-line markdown link, `[label](url)`, with parentheses in the URL escaped;
+an anchor with no `href`, or one relative to `{@docRoot}`, keeps its label only, and an unclosed anchor ends at the next paragraph or tag.
+`JavadocLocator.markdown` resolves inheritance: a method with no comment takes the nearest overridden method's, its `@param` names renamed to the override's by position,
 and `{@inheritDoc}` in the main text, `@param` (by position), `@return` or `@throws` takes the matching part, following the chain.
+Overridden methods' docs are parsed on demand, only as far as a lookup reaches.
 Hover on the type name of `new X(…)` describes the constructor the call resolves to (`CursorElements.constructorAtNewClassType`, shared with EG-096),
-under a `class X<T>` context line; an undocumented constructor shows its class's javadoc.
-Missing signature modifiers and supertypes, also raised by the review, are EG-101.
+under a `class X<T>` context line; an undocumented constructor shows its class's javadoc, however the cursor reached it.
+Follow-ups: missing signature modifiers and supertypes (EG-101), signature help's inheritance (EG-102),
+and inheriting the parts a partial comment omits (EG-103).
 
 ### Regression targets
 
 - `JavadocMarkdownPrinterTest.format_paragraphTags_collapseToOneBlankLine`
 - `JavadocMarkdownPrinterTest.format_anchorWithHref_rendersOneLineMarkdownLink`
+- `JavadocMarkdownPrinterTest.format_anchorEdgeCases_escapeParensDropDocRootAndCloseUnclosed`
 - `JavadocMarkdownPrinterTest.format_anchorWithoutHref_printsLabelOnly`
 - `HoverTest.hover_newExpression_describesConstructorWithClassContext`
+- `HoverTest.hover_anonymousClassConstructor_omitsNamelessClassLine`
 - `HoverTest.hover_inheritDocTags_resolveFromOverriddenMethod`
 - `HoverTest.hover_undocumentedOverride_inheritsThroughChain_ownDocWins`
+- `HoverTest.hover_undocumentedOverride_namesInheritedParamsAsOverrideDoes`
 
 ---
 

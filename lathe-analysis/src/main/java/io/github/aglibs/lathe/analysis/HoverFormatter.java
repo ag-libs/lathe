@@ -38,17 +38,22 @@ final class HoverFormatter {
                   i -> formatParam(params.get(i), fmt, sourceParamNames, i, varargs && i == last))
               .collect(Collectors.joining(", "));
       final String typeParams = formatTypeParameters(exe.getTypeParameters());
+      final String typePrefix = typeParams.isEmpty() ? "" : "%s ".formatted(typeParams);
       if (exe.getKind() == ElementKind.CONSTRUCTOR) {
         // A constructor's element name is <init> and its return type is void; render it as the
         // enclosing type's name with no return type, matching how the source declares it, under
-        // its class's line for context.
+        // its class's line for context. An anonymous class has no name for that line.
         final var owner = (TypeElement) exe.getEnclosingElement();
+        final String constructor =
+            "%s%s(%s)".formatted(typePrefix, owner.getSimpleName(), paramStr);
         sig =
-            "%s\n%s%s(%s)".formatted(typeLine(owner), typeParams, owner.getSimpleName(), paramStr);
+            owner.getSimpleName().isEmpty()
+                ? constructor
+                : "%s\n%s".formatted(typeLine(owner), constructor);
       } else {
         final String returnType =
             fmt != null ? fmt.format(exe.getReturnType()) : exe.getReturnType().toString();
-        sig = "%s%s %s(%s)".formatted(typeParams, returnType, exe.getSimpleName(), paramStr);
+        sig = "%s%s %s(%s)".formatted(typePrefix, returnType, exe.getSimpleName(), paramStr);
       }
     } else if (element instanceof final TypeElement te) {
       sig = typeLine(te);
@@ -80,8 +85,7 @@ final class HoverFormatter {
           default -> "class";
         };
     return "%s %s%s"
-        .formatted(
-            kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()).stripTrailing());
+        .formatted(kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()));
   }
 
   static String formatParam(
@@ -103,15 +107,14 @@ final class HoverFormatter {
     return SourceParser.isSyntheticName(name) ? typeName : "%s %s".formatted(typeName, name);
   }
 
-  // A method's own type-parameter declaration, e.g. "<T> " or "<K, V> ", or "" when it declares
-  // none. Names only (bounds omitted) to keep the hover line compact; the trailing space slots it
-  // before the return type.
+  // A type-parameter declaration, e.g. "<T>" or "<K, V>", or "" when there is none. Names only
+  // (bounds omitted) to keep the hover line compact.
   private static String formatTypeParameters(
       final List<? extends TypeParameterElement> typeParams) {
     return typeParams.isEmpty()
         ? ""
         : typeParams.stream()
             .map(tp -> tp.getSimpleName().toString())
-            .collect(Collectors.joining(", ", "<", "> "));
+            .collect(Collectors.joining(", ", "<", ">"));
   }
 }

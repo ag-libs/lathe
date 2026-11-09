@@ -528,6 +528,55 @@ None yet.
 
 ---
 
+## EG-102 — Signature help does not resolve `{@inheritDoc}` or an undocumented override's javadoc
+
+**Status: documented**
+
+**Affects: the editor.**
+
+Found by the review of EG-068's fix (2026-11-09).
+
+### Observed behaviour
+
+Hover resolves javadoc inheritance (EG-068), but signature help reads only the method's own comment.
+For a call to an override whose doc is `/** {@inheritDoc} */`, or that has no doc,
+hover shows the overridden method's description and `@param` text, while signature help shows no description and no parameter docs.
+
+### Fix direction
+
+Have signature help take its description and parameter docs through `JavadocLocator`'s inheritance-aware path, as hover does.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-103 — A partly documented override does not inherit the parts it leaves out
+
+**Status: documented**
+
+**Affects: the editor and MCP.**
+
+Found by the review of EG-068's fix (2026-11-09).
+
+### Observed behaviour
+
+Hover inherits javadoc when an override has no comment at all, or where it writes `{@inheritDoc}`.
+The javadoc tool also fills in what a comment omits: a missing main description, `@param`, `@return` or `@throws` comes from the overridden method.
+An override documented only with `/** @throws IllegalStateException if closed */` shows just that line in hover,
+without the overridden method's description, `@param` or `@return`.
+
+### Fix direction
+
+When printing a method's doc, take each omitted part from the nearest overridden method that has it, as the javadoc tool does.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow
 
 **Status: deferred.**

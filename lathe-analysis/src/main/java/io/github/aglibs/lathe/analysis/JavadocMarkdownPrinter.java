@@ -21,7 +21,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import javax.lang.model.element.ExecutableElement;
 
 final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
@@ -40,45 +42,39 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   private boolean pendingParagraph;
   private int linkStart = -1;
   private String linkHref;
+  private List<String> displayNames = List.of();
   private List<String> paramNames = List.of();
-  private List<MethodDoc> inherited = List.of();
+  private List<ExecutableElement> inherited = List.of();
+  private Function<ExecutableElement, Optional<MethodDoc>> docOf = method -> Optional.empty();
   private DocTree currentTag;
 
   private JavadocMarkdownPrinter() {}
 
   static String format(final DocCommentTree tree) {
-    return tree == null ? "" : formatChain(List.of(new MethodDoc(List.of(), tree)));
+    return tree == null
+        ? ""
+        : formatMethod(
+            new MethodDoc(List.of(), tree), List.of(), List.of(), method -> Optional.empty());
   }
 
-  // Prints the first doc of an override chain, nearest first; an {@inheritDoc} in it takes the
-  // matching part from the next doc in the chain that has one.
-  static String formatChain(final List<MethodDoc> chain) {
-    if (chain.isEmpty()) {
-      return "";
-    }
-
+  // Prints a method's doc. An {@inheritDoc} in it takes the matching part from the first of the
+  // overridden methods, nearest first, whose doc has one; docOf finds a doc on demand, so only the
+  // ancestors a lookup reaches are parsed. @param tags show displayNames, the hovered method's own
+  // names, by position, so an inherited doc matches the signature above it.
+  static String formatMethod(
+      final MethodDoc doc,
+      final List<String> displayNames,
+      final List<ExecutableElement> inherited,
+      final Function<ExecutableElement, Optional<MethodDoc>> docOf) {
     final var printer = new JavadocMarkdownPrinter();
-    final MethodDoc own = chain.get(0);
-    printer.paramNames = own.paramNames();
-    printer.inherited = chain.subList(1, chain.size());
-    printer.scan(own.tree().getFullBody(), null);
-    printer.formatBlockTags(own.tree().getBlockTags());
+    printer.displayNames = displayNames;
+    printer.paramNames = doc.paramNames();
+    printer.inherited = inherited;
+    printer.docOf = docOf;
+    printer.scan(doc.tree().getFullBody(), null);
+    printer.formatBlockTags(doc.tree().getBlockTags());
+    printer.endLink();
     return printer.sb.toString().strip();
-  }
-
-  static boolean inheritsDoc(final DocCommentTree tree) {
-    return Boolean.TRUE.equals(
-        new DocTreeScanner<Boolean, Void>() {
-          @Override
-          public Boolean visitInheritDoc(final InheritDocTree node, final Void unused) {
-            return true;
-          }
-
-          @Override
-          public Boolean reduce(final Boolean r1, final Boolean r2) {
-            return Boolean.TRUE.equals(r1) || Boolean.TRUE.equals(r2);
-          }
-        }.scan(tree, null));
   }
 
   static String mainDescription(final DocCommentTree tree) {
@@ -114,7 +110,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     for (final DocTree tag : tags) {
       if (tag instanceof final ParamTree p && !p.isTypeParameter()) {
         paragraph();
-        append("**@param** `%s` ".formatted(p.getName()));
+        append("**@param** `%s` ".formatted(displayName(p)));
         scanTag(tag, p.getDescription());
       } else if (tag instanceof final ReturnTree r) {
         paragraph();
@@ -132,6 +128,13 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     }
   }
 
+  private String displayName(final ParamTree param) {
+    final int index = paramNames.indexOf(param.getName().toString());
+    return index >= 0 && index < displayNames.size()
+        ? displayNames.get(index)
+        : param.getName().toString();
+  }
+
   private void scanTag(final DocTree tag, final List<? extends DocTree> description) {
     currentTag = tag;
     scan(description, null);
@@ -141,6 +144,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   // The source's own line breaks around a paragraph tag would otherwise stack up into several
   // blank lines; a break is held until the next text so any run of them yields one.
   private void paragraph() {
+    endLink();
     if (inPre) {
       return;
     }
@@ -203,14 +207,20 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   @Override
   public Void visitInheritDoc(final InheritDocTree node, final Void unused) {
     for (int i = 0; i < inherited.size(); i++) {
-      final MethodDoc ancestor = inherited.get(i);
-      final Optional<DocTree> tag = currentTag == null ? Optional.empty() : matchingTag(ancestor);
+      final Optional<MethodDoc> ancestor = docOf.apply(inherited.get(i));
+      if (ancestor.isEmpty()) {
+        continue;
+      }
+
+      final Optional<DocTree> tag =
+          currentTag == null ? Optional.empty() : matchingTag(ancestor.get());
       final List<? extends DocTree> body =
           currentTag == null
-              ? ancestor.tree().getFullBody()
+              ? ancestor.get().tree().getFullBody()
               : tag.map(JavadocMarkdownPrinter::description).orElse(List.of());
       if (!body.isEmpty()) {
-        scanInherited(body, tag.orElse(null), ancestor, inherited.subList(i + 1, inherited.size()));
+        scanInherited(
+            body, tag.orElse(null), ancestor.get(), inherited.subList(i + 1, inherited.size()));
         return null;
       }
     }
@@ -222,9 +232,9 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
       final List<? extends DocTree> body,
       final DocTree tag,
       final MethodDoc ancestor,
-      final List<MethodDoc> rest) {
+      final List<ExecutableElement> rest) {
     final List<String> ownNames = paramNames;
-    final List<MethodDoc> ownInherited = inherited;
+    final List<ExecutableElement> ownInherited = inherited;
     final DocTree ownTag = currentTag;
     paramNames = ancestor.paramNames();
     inherited = rest;
@@ -312,24 +322,34 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     return null;
   }
 
+  // A {@docRoot} link has no target outside the generated docs, so only its label shows.
   private void startLink(final StartElementTree node) {
-    final Optional<String> href =
+    final Optional<AttributeTree> href =
         node.getAttributes().stream()
             .filter(AttributeTree.class::isInstance)
             .map(AttributeTree.class::cast)
             .filter(attribute -> attribute.getName().contentEquals("href"))
-            .findFirst()
-            .map(JavadocMarkdownPrinter::attributeValue);
+            .filter(attribute -> attribute.getValue() != null)
+            .filter(
+                attribute ->
+                    attribute.getValue().stream().noneMatch(JavadocMarkdownPrinter::isDocRoot))
+            .findFirst();
     if (href.isEmpty()) {
       return;
     }
 
+    endLink();
     append("[");
     linkStart = sb.length();
-    linkHref = href.get();
+    linkHref = attributeValue(href.get());
+  }
+
+  private static boolean isDocRoot(final DocTree tree) {
+    return tree.getKind() == DocTree.Kind.DOC_ROOT;
   }
 
   // The label is one line: a markdown link that wraps a source line breaks apart in some clients.
+  // An unclosed <a> ends at the next paragraph or tag rather than swallowing the rest of the doc.
   private void endLink() {
     if (linkHref == null) {
       return;
@@ -342,10 +362,13 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     linkHref = null;
   }
 
+  // Parentheses would end the markdown link target early.
   private static String attributeValue(final AttributeTree attribute) {
-    return attribute.getValue() == null
-        ? ""
-        : attribute.getValue().stream().map(DocTree::toString).collect(Collectors.joining());
+    return attribute.getValue().stream()
+        .map(DocTree::toString)
+        .collect(Collectors.joining())
+        .replace("(", "%28")
+        .replace(")", "%29");
   }
 
   @Override

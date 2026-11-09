@@ -165,6 +165,49 @@ class HoverTest extends SampleFixture {
     assertThat(hoverText(src, "new Widget<String>()", "Widget"))
         .contains("class Widget<T>\nWidget()")
         .contains("A widget class.");
+    assertThat(hoverText(src, "Widget() {}", "Widget"))
+        .contains("class Widget<T>\nWidget()")
+        .contains("A widget class.");
+  }
+
+  @Test
+  void hover_anonymousClassConstructor_omitsNamelessClassLine() {
+    final var src =
+        """
+        class User {
+          Thread make() {
+            return new Thread("worker") {};
+          }
+        }
+        """;
+    assertThat(hoverText(src, "new Thread", "new")).startsWith("```java\n(String)\n```");
+  }
+
+  @Test
+  void hover_undocumentedOverride_namesInheritedParamsAsOverrideDoes() {
+    final var src =
+        """
+        interface Shape {
+          /**
+           * Resizes the shape.
+           *
+           * @param scale the factor
+           */
+          void resize(int scale);
+        }
+
+        class Box implements Shape {
+          @Override
+          public void resize(int factor) {}
+
+          void use() { resize(2); }
+        }
+        """;
+    assertThat(hoverText(src, "resize(2)", "resize"))
+        .contains("void resize(int factor)")
+        .contains("Resizes the shape.")
+        .contains("**@param** `factor` the factor")
+        .doesNotContain("`scale`");
   }
 
   @Test
