@@ -282,24 +282,24 @@ public final class ReferenceFeatures {
         FamilyExposure.exposures(analysis, exposureFamily));
   }
 
-  // The calls to target in one attributed file, as references() reads it.
+  // The calls to the item's method in one attributed file, as references() reads it.
   public SearchHits<CallHierarchyIncomingCall> incomingCalls(
       final AttributedFileAnalysis analysis,
       final String uri,
-      final ReferenceTarget target,
+      final CallHierarchyItemData item,
       final Set<String> exposureFamily) {
     return new SearchHits<>(
-        locateIncomingCalls(uri, target, analysis),
+        locateIncomingCalls(uri, item, analysis),
         FamilyExposure.exposures(analysis, exposureFamily));
   }
 
   private List<CallHierarchyIncomingCall> locateIncomingCalls(
-      final String uri, final ReferenceTarget target, final AttributedFileAnalysis analysis) {
+      final String uri, final CallHierarchyItemData item, final AttributedFileAnalysis analysis) {
     if (analysis == null || analysis.tree() == null) {
       return List.of();
     }
     try {
-      return CallHierarchyIncomingLocator.scan(analysis, target, uri);
+      return CallHierarchyIncomingLocator.scan(analysis, item, uri);
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING, e, () -> "[incomingCalls] failed to read source for %s".formatted(uri));

@@ -42,7 +42,7 @@ class CallHierarchyIncomingLocatorTest {
               .incomingCalls(
                   session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  targetFrom(items.get(0)),
+                  itemData(items.get(0)),
                   Set.of())
               .hits();
 
@@ -85,7 +85,7 @@ class CallHierarchyIncomingLocatorTest {
               .incomingCalls(
                   session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  targetFrom(items.get(0)),
+                  itemData(items.get(0)),
                   Set.of())
               .hits();
 
@@ -127,7 +127,7 @@ class CallHierarchyIncomingLocatorTest {
               .incomingCalls(
                   session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  targetFrom(items.get(0)),
+                  itemData(items.get(0)),
                   Set.of())
               .hits();
       assertThat(calls)
@@ -162,7 +162,7 @@ class CallHierarchyIncomingLocatorTest {
               .incomingCalls(
                   session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  targetFrom(items.get(0)),
+                  itemData(items.get(0)),
                   Set.of())
               .hits();
 
@@ -195,7 +195,7 @@ class CallHierarchyIncomingLocatorTest {
               .incomingCalls(
                   session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  targetFrom(items.get(0)),
+                  itemData(items.get(0)),
                   Set.of())
               .hits();
 
@@ -231,7 +231,7 @@ class CallHierarchyIncomingLocatorTest {
               .incomingCalls(
                   session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  targetFrom(items.get(0)),
+                  itemData(items.get(0)),
                   Set.of())
               .hits();
 
@@ -239,18 +239,118 @@ class CallHierarchyIncomingLocatorTest {
     }
   }
 
-  private static ReferenceTarget targetFrom(final CallHierarchyItem item) {
-    final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
-    return new ReferenceTarget(
-        data.kind(),
-        data.ownerBinaryName(),
-        data.methodName(),
-        data.erasedDescriptor(),
-        data.scope(),
-        List.of(),
-        false,
-        data.staticMember(),
-        -1);
+  // A call through a method the override overrides counts only on a receiver that can hold the
+  // override's class (a supertype or subtype of it); an unqualified call's receiver is the
+  // enclosing class inheriting the method, and a super call never dispatches to an override.
+  @Test
+  void searchIncomingCalls_callThroughOverriddenMethod_keptOnlyOnAReceiverThatCanHoldTheOverride() {
+    final String content =
+        """
+        interface Lifecycle { void start(); }
+        interface Filter extends Lifecycle {}
+        class Base implements Lifecycle {
+          public void start() {}
+          void boot() { start(); }
+        }
+        class Impl extends Base {
+          @Override public void start() { super.start(); }
+        }
+        class ImplUser extends Impl { void go() { start(); } }
+        class BaseUser extends Base { void go() { start(); super.start(); } }
+        abstract class Sibling implements Lifecycle { void tick() { start(); } }
+        class Callers {
+          void viaLifecycle(Lifecycle l) { l.start(); }
+          void viaBase(Base b) { b.start(); }
+          void viaImpl(Impl i) { i.start(); }
+          void viaFilter(Filter f) { f.start(); }
+          java.util.function.Consumer<Lifecycle> lifecycleRef() { return Lifecycle::start; }
+          java.util.function.Consumer<Filter> filterRef() { return Filter::start; }
+        }
+        """;
+    final var caret =
+        Positions.offsetToPosition(content, content.indexOf("void start() { super") + 5);
+    final var request = request(content, caret);
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+
+      final List<CallHierarchyIncomingCall> calls =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  itemData(items.get(0)),
+                  Set.of())
+              .hits();
+
+      assertThat(calls)
+          .extracting(
+              call -> "%s.%s".formatted(call.getFrom().getDetail(), call.getFrom().getName()))
+          .containsExactlyInAnyOrder(
+              "Base.boot",
+              "ImplUser.go",
+              "Callers.viaLifecycle",
+              "Callers.viaBase",
+              "Callers.viaImpl",
+              "Callers.lifecycleRef");
+    }
+  }
+
+  // Upstream of the override its class is not on the classpath: a call through the method it
+  // overrides is matched by that method's own descriptor (Object, not the override's String), and
+  // kept only on a receiver that is the override's class or one of its supertypes.
+  @Test
+  void searchIncomingCalls_overrideNotOnClasspath_findsCallsThroughItsBaseMethodByReceiver() {
+    final String upstream =
+        """
+        interface Lifecycle<T> { void start(T config); }
+        abstract class Base<T> implements Lifecycle<T> {
+          public void start(T config) {}
+          void boot(T config) { start(config); }
+        }
+        abstract class Other<T> implements Lifecycle<T> { void tick(T config) { start(config); } }
+        class Callers {
+          void viaBase(Base<String> b) { b.start("x"); }
+          void viaLifecycle(Lifecycle<String> l) { l.start("x"); }
+          void viaOther(Other<String> o) { o.start("x"); }
+        }
+        """;
+    final String withOverride =
+        upstream + "class Impl extends Base<String> { @Override public void start(String c) {} }\n";
+    final var caret =
+        Positions.offsetToPosition(withOverride, withOverride.indexOf("void start(String") + 5);
+
+    final CallHierarchyItemData item;
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, withOverride, 1, CompileMode.OPEN);
+      item =
+          itemData(session.hierarchy().prepareCallHierarchy(request(withOverride, caret)).get(0));
+    }
+
+    assertThat(item.overriddenDeclarers()).containsExactly("Base", "Lifecycle");
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, upstream, 1, CompileMode.OPEN);
+      final List<CallHierarchyIncomingCall> calls =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, upstream, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  item,
+                  Set.of())
+              .hits();
+
+      assertThat(calls)
+          .extracting(
+              call -> "%s.%s".formatted(call.getFrom().getDetail(), call.getFrom().getName()))
+          .containsExactlyInAnyOrder("Base.boot", "Callers.viaBase", "Callers.viaLifecycle");
+    }
+  }
+
+  private static CallHierarchyItemData itemData(final CallHierarchyItem item) {
+    return CallHierarchyItemDataCodec.decode(item.getData());
   }
 
   private SourceFeatureRequest request(final String content, final Position position) {

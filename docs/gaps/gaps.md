@@ -733,38 +733,6 @@ None yet.
 
 ---
 
-## EG-080 — Incoming calls of an override include callers that can never reach it
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-Incoming calls of `HttpRouteImpl.beforeStart`, which overrides `ServerLifecycle.beforeStart`, list every caller
-of the interface method, including `Filter::beforeStart` and `OidcFeatureTest:741`.
-`Filter` is unrelated to `HttpRoute`, so those calls never reach `HttpRouteImpl`.
-Since EG-044 an override's incoming calls aggregate the parent method's callers by design;
-nothing prunes the callers whose receiver type cannot hold the override's class.
-
-### Fix direction
-
-Keep a parent-method caller only when its receiver's static type is a supertype of the override's class
-(or the override's class or a subtype), as find references already reasons about receivers;
-a method reference's qualifier type counts as the receiver.
-
-Also (exploratory round, 2026-11-04): incoming calls on EqualsVerifier's core stub `get()` include a call through the abstract base class.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
@@ -811,37 +779,6 @@ NullAway), while the check behind the notes runs with them.
 
 Run the build's javac plugins in the open compile when the module's compile args have them,
 or at least report the notes' plugin errors as diagnostics instead of contradicting them.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-090 — Incoming calls of an override miss callers that dispatch to it from an upstream module
-
-**Status: documented**
-
-**Value: medium — Size: S–M**
-
-**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
-
-Found by the exploratory MCP round (2026-11-04) on Dropwizard.
-
-### Observed behaviour
-
-Incoming calls answer "No callers found" for `App1.java:22 initialize`, `HelloWorldApplication:82 run`,
-`MyConfiguredBundle:15 initialize` and the anonymous `getDataSourceFactory` overrides at `HelloWorldApplication:44/68`.
-Their callers dispatch through the base method in an upstream module (`Application.java:88`, `EnvironmentCommand:66`,
-`Bootstrap.java:150`, `HibernateBundle:72`, `AbstractLiquibaseCommand:78`); asked on the base method, they are found.
-`HibernateBundle:47` lists only its own module's tests.
-EG-044 (done) made an override's incoming calls include calls through its base method; across modules they are missing.
-The opposite of EG-080, which lists too many.
-
-### Fix direction
-
-Search the base method's callers in the modules upstream of the override's, not only in the override's module and its
-dependents.
 
 ### Regression targets
 

@@ -478,7 +478,7 @@ public record ReferenceTarget(
     return List.copyOf(overridden);
   }
 
-  private static String buildDescriptor(final ExecutableElement method, final Types types) {
+  static String buildDescriptor(final ExecutableElement method, final Types types) {
     return method.getParameters().stream()
         .map(p -> erasedTypeName(p.asType(), types))
         .collect(Collectors.joining(",", "(", ")"));

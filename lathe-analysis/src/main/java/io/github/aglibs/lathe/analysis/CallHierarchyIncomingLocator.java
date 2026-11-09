@@ -18,9 +18,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
@@ -32,6 +36,8 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   private final Map<Element, TreePath> callerPaths = new LinkedHashMap<>();
   private final Map<Element, List<Range>> callerRanges = new LinkedHashMap<>();
   private final ExecutableElement targetMethod;
+  private final List<ReferenceTarget> overriddenTargets;
+  private final Set<String> receiverTypes;
 
   private CallHierarchyIncomingLocator(
       final Trees trees,
@@ -40,15 +46,33 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
       final ReferenceTarget target,
       final Types types,
       final Elements elements,
-      final ExecutableElement targetMethod) {
+      final ExecutableElement targetMethod,
+      final CallHierarchyItemData item) {
     super(trees, cu, content, target, types, elements);
     this.targetMethod = targetMethod;
+    this.overriddenTargets =
+        item.overridden().stream()
+            .map(
+                method ->
+                    new ReferenceTarget(
+                        ElementKind.METHOD,
+                        method.ownerBinaryName(),
+                        item.methodName(),
+                        method.erasedDescriptor(),
+                        item.scope(),
+                        List.of(),
+                        false,
+                        false,
+                        -1))
+            .toList();
+    this.receiverTypes = Set.copyOf(item.receiverTypes());
   }
 
   static List<CallHierarchyIncomingCall> scan(
-      final AttributedFileAnalysis analysis, final ReferenceTarget target, final String fileUri)
+      final AttributedFileAnalysis analysis, final CallHierarchyItemData item, final String fileUri)
       throws IOException {
     final var content = sourceContent(analysis);
+    final ReferenceTarget target = item.target();
     final ExecutableElement targetMethod =
         target.resolveMethodElement(analysis.elements(), analysis.types());
     final var locator =
@@ -59,7 +83,8 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
             target,
             analysis.types(),
             analysis.elements(),
-            targetMethod);
+            targetMethod,
+            item);
     locator.scan(analysis.tree(), null);
     return locator.buildResults(fileUri);
   }
@@ -76,7 +101,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     }
 
     final var element = trees.getElement(getCurrentPath());
-    if (!target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (!matchesCall(element) || !reachesTarget(element, null)) {
       return super.visitIdentifier(node, ignored);
     }
 
@@ -95,7 +120,8 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = CursorElements.elementAt(trees, getCurrentPath());
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (matchesCall(element)
+        && reachesTarget(element, new TreePath(getCurrentPath(), node.getExpression()))) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
         final String idName = node.getIdentifier().toString();
@@ -113,7 +139,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
     final Element element = CursorElements.newClassConstructor(trees, getCurrentPath());
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (matchesCall(element)) {
       final Tree id = CursorElements.newClassType(node);
       final String name =
           id instanceof final MemberSelectTree mst
@@ -134,7 +160,8 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (matchesCall(element)
+        && reachesTarget(element, new TreePath(getCurrentPath(), node.getQualifierExpression()))) {
       final String name = DeclarationNames.referenceName(node);
       final long startOff =
           DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
@@ -142,6 +169,70 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
         addCallSite(rangeFor(startOff, name));
       }
     }
+    return null;
+  }
+
+  // A call to the method or to an override of it, or one through a method it overrides. Where the
+  // method's class is not on the classpath (an upstream module), it cannot be resolved, so a call
+  // through an overridden method is matched by that method's own class and descriptor.
+  private boolean matchesCall(final Element element) {
+    return target.matchesWithOverrides(element, types, elements, targetMethod)
+        || targetMethod == null && throughOverridden(element);
+  }
+
+  private boolean throughOverridden(final Element element) {
+    return overriddenTargets.stream().anyMatch(method -> method.matches(element, types, elements));
+  }
+
+  // A call through a method the target overrides reaches the target only on a receiver whose
+  // static type can hold the target's class: a supertype or a subtype of it. A super call never
+  // dispatches to an override; a receiver of unknown type (code with errors) is kept. `receiver` is
+  // null for an unqualified call, whose receiver is the enclosing class inheriting the method.
+  private boolean reachesTarget(final Element called, final TreePath receiver) {
+    if (!(called instanceof final ExecutableElement method)
+        || (targetMethod == null
+            ? !throughOverridden(method)
+            : method.equals(targetMethod)
+                || !elements.overrides(
+                    targetMethod, method, (TypeElement) targetMethod.getEnclosingElement()))) {
+      return true;
+    }
+
+    if (receiver != null
+        && receiver.getLeaf() instanceof final IdentifierTree id
+        && id.getName().contentEquals("super")) {
+      return false;
+    }
+
+    final TypeMirror receiverType =
+        receiver == null ? implicitReceiver(method) : trees.getTypeMirror(receiver);
+    if (receiverType == null || types.erasure(receiverType).getKind() != TypeKind.DECLARED) {
+      return true;
+    }
+
+    final TypeMirror held = types.erasure(receiverType);
+    // Upstream the method's class cannot be a subtype of the receiver's, only it a supertype of
+    // the method's class, which receiverTypes name.
+    if (targetMethod == null) {
+      return types.asElement(held) instanceof final TypeElement heldType
+          && receiverTypes.contains(elements.getBinaryName(heldType).toString());
+    }
+
+    final TypeMirror targetClass = types.erasure(targetMethod.getEnclosingElement().asType());
+    return types.isSubtype(targetClass, held) || types.isSubtype(held, targetClass);
+  }
+
+  // The innermost enclosing class that inherits the called method: an unqualified call's `this`.
+  private TypeMirror implicitReceiver(final ExecutableElement method) {
+    final TypeMirror owner = types.erasure(method.getEnclosingElement().asType());
+    for (TreePath path = getCurrentPath(); path != null; path = path.getParentPath()) {
+      if (path.getLeaf() instanceof ClassTree
+          && trees.getElement(path) instanceof final TypeElement enclosing
+          && types.isSubtype(types.erasure(enclosing.asType()), owner)) {
+        return enclosing.asType();
+      }
+    }
+
     return null;
   }
 

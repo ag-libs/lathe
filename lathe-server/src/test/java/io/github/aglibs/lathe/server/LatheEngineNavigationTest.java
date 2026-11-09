@@ -155,6 +155,66 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .anyMatch(r -> r.uri().endsWith("Caller.java") && r.snippet().contains("greet"));
   }
 
+  // An override's callers include calls through the method it overrides from upstream, where its
+  // class is not on the classpath: in the base's own module, and in a module depending only on that
+  // one; a call on a receiver that cannot hold the override (a sibling subclass) is left out.
+  @Test
+  void callHierarchy_overrideOfAnUpstreamMethod_findsCallersThroughItAcrossModules()
+      throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "api",
+        Map.of(
+            "com/example/api/Plugin.java",
+            "package com.example.api;\npublic abstract class Plugin {\n"
+                + "  public void init() {}\n  public final void boot() { init(); }\n}\n",
+            "com/example/api/Other.java",
+            "package com.example.api;\npublic abstract class Other extends Plugin {}\n",
+            "com/example/api/Host.java",
+            "package com.example.api;\npublic class Host {\n"
+                + "  public void run(Plugin p) { p.init(); }\n"
+                + "  public void start(Other o) { o.init(); }\n}\n"),
+        List.of(),
+        1_000L);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "tool",
+        Map.of(
+            "com/example/tool/Runner.java",
+            "package com.example.tool;\nimport com.example.api.Plugin;\n"
+                + "class Runner { void go(Plugin p) { p.init(); } }\n"),
+        List.of("api"),
+        1_000L);
+    final String overrideSource =
+        "package com.example.app;\nclass MyPlugin extends com.example.api.Plugin {\n"
+            + "  @Override public void init() {}\n}\n";
+    final Path override =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of("com/example/app/MyPlugin.java", overrideSource),
+                List.of("api"),
+                1_000L)
+            .get(0);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(overrideSource, "init");
+
+    final LatheCallHierarchy incoming =
+        engine
+            .callHierarchy(
+                override,
+                pos.getLine(),
+                pos.getCharacter(),
+                CallDirection.INCOMING,
+                SymbolScope.ALL,
+                50)
+            .value();
+
+    assertThat(incoming.calls())
+        .extracting(call -> call.name())
+        .containsExactlyInAnyOrder("boot", "run", "go");
+  }
+
   @Test
   void callHierarchy_findsIncomingCallerAndOutgoingCallee() throws Exception {
     final GreetFixture fx = greetFixture();
