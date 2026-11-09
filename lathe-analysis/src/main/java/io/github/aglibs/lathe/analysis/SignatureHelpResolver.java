@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
@@ -87,12 +88,27 @@ final class SignatureHelpResolver {
     return new SignatureHelp(signatures, activeSignature, activeParam);
   }
 
-  // The overloads a method call or `new` expression can name when its arguments match none of
-  // them; empty once javac resolves the call.
+  // The overloads a method call or `new` expression can name when javac has not settled which:
+  // its arguments match none of them, or the call is still being typed (`c.greet(`), where
+  // javac's parser stands a placeholder in for the missing argument and binds the call to
+  // whichever overload that placeholder fits. Empty once a complete call resolves.
   static List<ExecutableElement> unresolvedOverloads(
       final AttributedFileAnalysis analysis, final TreePath callPath) {
     final var target = callTarget(analysis, callPath);
-    return target == null || target.resolved() != null ? List.of() : target.overloads();
+    if (target == null) {
+      return List.of();
+    }
+
+    return target.resolved() != null && !beingTyped(callPath) ? List.of() : target.overloads();
+  }
+
+  // Whether a call is still being typed: javac's parser put a placeholder in for an argument.
+  static boolean beingTyped(final TreePath callPath) {
+    final List<? extends ExpressionTree> args =
+        callPath.getLeaf() instanceof final MethodInvocationTree inv
+            ? inv.getArguments()
+            : ((NewClassTree) callPath.getLeaf()).getArguments();
+    return args.stream().anyMatch(arg -> arg.getKind() == Tree.Kind.ERRONEOUS);
   }
 
   private static CallTarget callTarget(

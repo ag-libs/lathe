@@ -7,6 +7,37 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only — done
+
+**Status: done.**
+
+**Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
+not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump found nothing.
+
+Re-probed 2026-10-30/31 through `LatheEngine.definition` and MCP `get_definition`:
+a call whose arguments matched no overload (`solo(42)` where `solo(String)`, or a wrong argument count) found nothing,
+and an unclosed call (`c.greet(`, `greet` overloaded) led to one overload only.
+
+### Resolution
+
+**A complete call whose arguments match no overload** (PR #147): definition returns every accessible method or constructor the call can name,
+through signature help's lookup (`SignatureHelpResolver.unresolvedOverloads`), so access rules, `super`/`this` and anonymous classes behave the same in both features;
+one jumps directly, several open the client's picker. `NavigationFeatures.definition`, `declaration` and `typeDefinition` return a `List<Location>`.
+
+**A call still being typed** (`c.greet(`, `new C(`): javac's parser stands a placeholder (an erroneous tree) in for the missing argument
+and binds the call to whichever overload the placeholder fits, so definition led to that guess.
+A call with a placeholder argument (`SignatureHelpResolver.beingTyped`) now counts as unsettled, and definition offers every overload.
+A call javac binds with its arguments complete, even one missing only its `)`, keeps its one overload.
+This reads javac's own tree; the sentinel pipeline the first proposal named was not needed.
+
+### Regression targets
+
+- `DefinitionLocatorTest.definition_mismatchedArguments_returnsEveryNamedOverload`
+- `DefinitionLocatorTest.definition_callBeingTyped_offersEveryOverloadUnlessArgumentsAreComplete`
+- `LatheEngineNavigationTest.definition_callWithMismatchedArguments_returnsTheMethodInAnotherFile`
+
+---
+
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references — done
 
 **Status: done.**

@@ -132,6 +132,62 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  // A call still being typed: javac's parser stands a placeholder in for a missing argument and
+  // binds the call to whichever overload fits it, so definition offers every overload instead.
+  // Each call breaks what follows it, so each gets its own source.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "c.greet( | greet | void greet(String name);void greet(String name, int times);void greet()"
+            + " | greet",
+        "c.pair( | pair | void pair(String a, String b);void pair(int a) | pair",
+        "new C( | C | C() {};C(int n) | C",
+        "c.solo( | solo | void solo(String s) | solo",
+        "c.pair(\"a\", \"b\" | pair | void pair(String a, String b) | pair",
+        "c.greet(\"x\"); | greet | void greet(String name) | greet",
+      })
+  void definition_callBeingTyped_offersEveryOverloadUnlessArgumentsAreComplete(
+      final String call, final String token, final String declarations, final String name) {
+    final String source =
+        """
+        class C {
+          C() {}
+          C(int n) {}
+          void solo(String s) {}
+          void greet(String name) {}
+          void greet(String name, int times) {}
+          void greet() {}
+          void pair(String a, String b) {}
+          void pair(int a) {}
+        }
+        class Use {
+          void use(C c) {
+            %s
+          }
+        }
+        """
+            .formatted(call);
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              1,
+              posOf(source, call, token),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .extracting(location -> location.getRange().getStart())
+          .containsExactlyInAnyOrderElementsOf(
+              Stream.of(declarations.split(";"))
+                  .map(declaration -> posOf(source, declaration, name))
+                  .toList());
+    }
+  }
+
   private static final String VAR_SOURCE =
       """
       import java.util.function.Supplier;

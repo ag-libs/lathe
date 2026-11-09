@@ -221,10 +221,17 @@ public final class NavigationFeatures {
     final Cursor cur = at.get();
     final Element element = elementForNavigation(cur);
     final Element plain = cur.elementOrJavadocReference();
-    final List<Location> overloads =
+    // A call javac bound stays bound, unless it is still being typed and the binding a guess.
+    final Optional<TreePath> call = callAtName(cur);
+    final boolean bound =
         element instanceof ExecutableElement
-            ? List.of()
-            : unresolvedCallOverloads(cur).stream()
+            && call.filter(SignatureHelpResolver::beingTyped).isEmpty();
+    final List<Location> overloads =
+        (bound
+                ? List.<ExecutableElement>of()
+                : call.map(path -> SignatureHelpResolver.unresolvedOverloads(cur.analysis(), path))
+                    .orElse(List.of()))
+            .stream()
                 .flatMap(overload -> findDefinitionLocation(request, cur, overload).stream())
                 .distinct()
                 .toList();
@@ -257,18 +264,16 @@ public final class NavigationFeatures {
 
   // The overloads of the call whose method name or created type the cursor is on, when javac
   // resolved the call to none of them.
-  private static List<ExecutableElement> unresolvedCallOverloads(final Cursor cur) {
+  // The call whose method name, or `new` type, the cursor is on.
+  private static Optional<TreePath> callAtName(final Cursor cur) {
     final TreePath parent = cur.path().getParentPath();
     if (parent != null
         && parent.getLeaf() instanceof final MethodInvocationTree call
         && call.getMethodSelect() == cur.path().getLeaf()) {
-      return SignatureHelpResolver.unresolvedOverloads(cur.analysis(), parent);
+      return Optional.of(parent);
     }
 
-    final TreePath creation = CursorElements.newClassAtType(cur.path());
-    return creation == null
-        ? List.of()
-        : SignatureHelpResolver.unresolvedOverloads(cur.analysis(), creation);
+    return Optional.ofNullable(CursorElements.newClassAtType(cur.path()));
   }
 
   // The declaration of the type of the symbol at the cursor: a variable's or field's type, a
