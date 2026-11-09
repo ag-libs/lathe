@@ -88,8 +88,8 @@ A gap reaches `done` only when:
 - the implementation is merged and verified, and
 - a regression target (test name) is recorded on the entry.
 
-Move durable design lessons to `docs/done/` only when they remain useful after the fix; the gap
-entry itself stays in its home file as the record.
+Move the resolved entry from `gaps.md` to `gaps-archive.md`, retaining its regression targets as the historical record.
+Move durable design lessons to `docs/done/` only when they remain useful after the fix.
 
 ---
 
