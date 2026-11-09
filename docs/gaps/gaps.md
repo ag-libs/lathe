@@ -228,7 +228,7 @@ Missing-source warning: no regression test yet; verified outstanding by `JdkSour
 
 ## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only
 
-**Status: deferred**
+**Status: accepted** (triaged 2026-11-09: editor-experience slice; first slice is the complete-call case)
 
 **Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
 not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump finds nothing.
@@ -491,7 +491,7 @@ None yet.
 
 ## EG-068 — Hover and `describe_symbol` render javadoc loosely and describe the class at a constructor call
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-09: editor-experience slice)
 
 **Value: medium — Size: M**
 
