@@ -281,6 +281,65 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_overridingMethod_namesNearestOverriddenMethod_plainMethodDoesNot() {
+    final var src =
+        """
+        interface Lifecycle {
+          void beforeStart();
+        }
+
+        abstract class Base implements Lifecycle {
+          @Override
+          public void beforeStart() {}
+        }
+
+        class Route extends Base {
+          @Override
+          public void beforeStart() {}
+
+          void plain() {}
+
+          void use() {
+            beforeStart();
+            plain();
+          }
+        }
+        """;
+    assertThat(hoverText(src, "    beforeStart();", "beforeStart"))
+        .contains("**Overrides** `Base.beforeStart`")
+        .doesNotContain("Lifecycle.beforeStart");
+    assertThat(hoverText(src, "    plain();", "plain")).doesNotContain("Overrides");
+  }
+
+  @Test
+  void hover_deprecatedMethod_showsDeprecationAndItsText_currentMethodDoesNot() {
+    final var src =
+        """
+        class Api {
+          /**
+           * Sends the request.
+           *
+           * @deprecated use {@link #sendAsync()} instead
+           */
+          @Deprecated
+          void send() {}
+
+          void sendAsync() {}
+
+          void use() {
+            send();
+            sendAsync();
+          }
+        }
+        """;
+    assertThat(hoverText(src, "    send();", "send"))
+        .contains("**Deprecated.**")
+        .contains("Sends the request.")
+        .contains("**@deprecated** use `sendAsync()` instead");
+    assertThat(hoverText(src, "    sendAsync();", "sendAsync")).doesNotContain("Deprecated");
+  }
+
+  @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =
         """

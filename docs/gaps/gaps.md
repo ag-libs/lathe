@@ -490,30 +490,6 @@ None yet.
 
 ---
 
-## EG-102 — Signature help does not resolve `{@inheritDoc}` or an undocumented override's javadoc
-
-**Status: documented**
-
-**Affects: the editor.**
-
-Found by the review of EG-068's fix (2026-11-09).
-
-### Observed behaviour
-
-Hover resolves javadoc inheritance (EG-068), but signature help reads only the method's own comment.
-For a call to an override whose doc is `/** {@inheritDoc} */`, or that has no doc,
-hover shows the overridden method's description and `@param` text, while signature help shows no description and no parameter docs.
-
-### Fix direction
-
-Have signature help take its description and parameter docs through `JavadocLocator`'s inheritance-aware path, as hover does.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-103 — A partly documented override does not inherit the parts it leaves out
 
 **Status: documented**
@@ -947,22 +923,18 @@ None yet.
 
 ---
 
-## EG-093 — Hover shows no overrides, usage count or deprecation
+## EG-104 — Hover shows no usage count
 
 **Status: documented**
 
 **Affects: the editor's hover and MCP `describe_symbol`.**
 
-Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose hover adds what a method overrides, how often a symbol is used, and a deprecation note.
-
-### Gap
-
-`HoverFormatter` renders the signature and javadoc only.
+Split from EG-093, whose overrides and deprecation notes shipped.
+The comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05) also showed how often a symbol is used.
 
 ### Fix direction
 
-Add the overridden method (from `Elements.overrides`, already used by implementations), and the `@Deprecated` state with the javadoc's `@deprecated` text.
-A usage count needs a reference count that is cheap to compute, which today it is not (FR-029).
+Add the count once a reference count is cheap to compute, which today it is not (FR-029).
 
 ### Regression targets
 

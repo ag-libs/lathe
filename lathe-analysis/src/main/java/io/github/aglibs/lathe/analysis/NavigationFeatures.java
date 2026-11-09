@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -121,6 +123,12 @@ public final class NavigationFeatures {
                             element.getEnclosingElement(), cur.analysis(), allRoots)
                         : Optional.empty())
             .orElse(null);
+    final String notes =
+        HoverFormatter.notes(element, cur.analysis().elements(), cur.analysis().types());
+    final String doc =
+        Stream.of(notes, javadoc)
+            .filter(part -> part != null && !part.isBlank())
+            .collect(Collectors.joining("\n\n"));
     final var origin =
         request.libraries().originLabel(element, compiler.fileManager()).orElse(null);
     final var fmt = new TypeDisplayFormatter(cur.analysis().types());
@@ -130,7 +138,7 @@ public final class NavigationFeatures {
         () ->
             "[hover] %dms element=%s type=%s doc=%s origin=%s"
                 .formatted(t.elapsedMs(), element, type, javadoc != null, origin));
-    return HoverFormatter.format(element, type, javadoc, origin, fmt, sourceParamNames)
+    return HoverFormatter.format(element, type, doc, origin, fmt, sourceParamNames)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
   }

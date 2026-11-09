@@ -15,7 +15,6 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -68,7 +67,6 @@ final class SignatureHelpResolver {
       return null;
     }
 
-    final var trees = analysis.trees();
     final var fmt = new TypeDisplayFormatter(analysis.types());
     final int activeParam = activeParamFromArgs(target.args(), positions, cu, cursorOffset);
     final List<SignatureInformation> signatures =
@@ -76,7 +74,7 @@ final class SignatureHelpResolver {
             .map(
                 m ->
                     buildSignature(
-                        m, fmt, target.name(), parser, sourceRoots, javadocLocator, trees))
+                        m, fmt, target.name(), parser, sourceRoots, javadocLocator, analysis))
             .toList();
     final int activeSignature = activeSignature(target);
 
@@ -365,7 +363,7 @@ final class SignatureHelpResolver {
       final SourceParser parser,
       final List<Path> sourceRoots,
       final JavadocLocator javadocLocator,
-      final Trees trees) {
+      final AttributedFileAnalysis analysis) {
     final var params = method.getParameters();
     final var label = new StringBuilder();
 
@@ -398,25 +396,19 @@ final class SignatureHelpResolver {
     final var sig = new SignatureInformation(label.toString());
     sig.setParameters(paramInfos);
     javadocLocator
-        .locate(method, trees, sourceRoots)
+        .signatureDocs(method, analysis, sourceRoots)
         .ifPresent(
-            tree -> {
-              final String mainDesc = JavadocMarkdownPrinter.mainDescription(tree);
-              if (!mainDesc.isBlank()) {
-                sig.setDocumentation(Either.forRight(new MarkupContent("markdown", mainDesc)));
+            docs -> {
+              if (!docs.description().isBlank()) {
+                sig.setDocumentation(
+                    Either.forRight(new MarkupContent("markdown", docs.description())));
               }
 
-              final Map<String, String> pdocs = JavadocMarkdownPrinter.paramDocs(tree);
-              if (!pdocs.isEmpty()) {
-                for (int i = 0; i < params.size(); i++) {
-                  final String name =
-                      sourceNames != null && i < sourceNames.size()
-                          ? sourceNames.get(i)
-                          : params.get(i).getSimpleName().toString();
-                  final String doc = pdocs.get(name);
-                  if (doc != null) {
-                    paramInfos.get(i).setDocumentation(new MarkupContent("markdown", doc));
-                  }
+              final int documented = Math.min(paramInfos.size(), docs.paramDocs().size());
+              for (int i = 0; i < documented; i++) {
+                final String doc = docs.paramDocs().get(i);
+                if (!doc.isBlank()) {
+                  paramInfos.get(i).setDocumentation(new MarkupContent("markdown", doc));
                 }
               }
             });
