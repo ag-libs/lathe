@@ -26,6 +26,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1186,6 +1187,12 @@ final class ReferenceSearch {
       List<ModuleSourceConfig> all, Set<ModuleSourceConfig> byName, Set<String> supertypeNames) {
 
     IncomingScope {
+      ValidCheck.check()
+          .notNull(all, "all")
+          .notNull(byName, "byName")
+          .notNull(supertypeNames, "supertypeNames")
+          .validate();
+      ValidCheck.check().assertTrue(all.containsAll(byName), "byName is part of all").validate();
       all = List.copyOf(all);
       byName = Set.copyOf(byName);
       supertypeNames = Set.copyOf(supertypeNames);
@@ -1195,9 +1202,8 @@ final class ReferenceSearch {
   // A method's callers include calls through the methods it overrides, made wherever their classes
   // are visible: in their own modules, upstream of the method's, and in the modules depending on
   // those. Besides the method's own scope, each module declaring an overridden method is read,
-  // every
-  // source set of it; a module depending on one is read only in the files naming a supertype of
-  // the method's class, as a call there reaches the method only on a receiver of such a type. A
+  // every source set of it; a module depending on one is read only in the files naming a supertype
+  // of the method's class, as a call there reaches the method only on a receiver of such a type. A
   // call on a var or a lambda parameter typed so, in a file never naming it, is missed there: read
   // whole, those modules cost a large reactor tens of seconds for a common base method.
   private IncomingScope incomingSearchScope(
@@ -1205,19 +1211,23 @@ final class ReferenceSearch {
       final CallHierarchyItemData item,
       final ModuleSourceConfig declaringConfig) {
     final List<ModuleSourceConfig> own = planSearchScope(target, declaringConfig);
+    final Map<String, ModuleSourceConfig> declarers = new LinkedHashMap<>();
+    for (final String declarer : item.overriddenDeclarers()) {
+      reactorIndex
+          .declaringConfig(declarer, declaringConfig)
+          .ifPresent(config -> declarers.put(declarer, config));
+    }
+
     final List<ModuleSourceConfig> declaring =
-        item.overriddenDeclarers().stream()
-            .flatMap(declarer -> reactorIndex.declaringConfig(declarer, declaringConfig).stream())
+        declarers.values().stream()
             .flatMap(config -> state.moduleGraph().configsForModule(config.moduleDir()).stream())
             .toList();
     final List<ModuleSourceConfig> dependents =
-        item.overriddenDeclarers().stream()
+        declarers.entrySet().stream()
             .flatMap(
                 declarer ->
-                    reactorIndex.declaringConfig(declarer, declaringConfig).stream()
-                        .flatMap(
-                            config ->
-                                planSearchScope(declaredBy(target, declarer), config).stream()))
+                    planSearchScope(declaredBy(target, declarer.getKey()), declarer.getValue())
+                        .stream())
             .toList();
     final List<ModuleSourceConfig> all =
         Stream.of(own, declaring, dependents).flatMap(List::stream).distinct().toList();
@@ -1229,14 +1239,12 @@ final class ReferenceSearch {
         () ->
             "[callHierarchy:incoming] %s modules own=%d searched=%d byName=%d"
                 .formatted(target.simpleName(), own.size(), all.size(), byName.size()));
-    return new IncomingScope(all, byName, supertypeSimpleNames(item.receiverTypes()));
-  }
-
-  private static Set<String> supertypeSimpleNames(final List<String> receiverTypes) {
-    return receiverTypes.stream()
-        .filter(name -> !name.equals(Object.class.getName()))
-        .map(name -> name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1))
-        .collect(Collectors.toUnmodifiableSet());
+    return new IncomingScope(
+        all,
+        byName,
+        item.receiverTypes().stream()
+            .map(ReferenceCandidatePlanner::simpleNameOf)
+            .collect(Collectors.toUnmodifiableSet()));
   }
 
   // The plan's files that spell one of the names.
@@ -1254,16 +1262,13 @@ final class ReferenceSearch {
   }
 
   private static ReferenceTarget declaredBy(final ReferenceTarget target, final String declarer) {
-    return new ReferenceTarget(
+    return ReferenceTarget.ofExecutable(
         target.kind(),
         declarer,
         target.simpleName(),
         target.erasedDescriptor(),
         target.scope(),
-        List.of(),
-        false,
-        target.staticMember(),
-        -1);
+        target.staticMember());
   }
 
   private Stream<CompletableFuture<SearchHits<CallHierarchyIncomingCall>>> incomingCallFutures(

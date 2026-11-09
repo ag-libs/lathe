@@ -229,7 +229,7 @@ final class ReferenceCandidatePlanner {
         index.candidateUris(target.qualifiedName() + ".*").stream());
   }
 
-  private static String simpleNameOf(final String binaryName) {
+  static String simpleNameOf(final String binaryName) {
     final int cut = Math.max(binaryName.lastIndexOf('.'), binaryName.lastIndexOf('$'));
     return cut < 0 ? binaryName : binaryName.substring(cut + 1);
   }

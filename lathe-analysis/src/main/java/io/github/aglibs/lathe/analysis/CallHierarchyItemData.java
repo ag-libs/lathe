@@ -45,16 +45,8 @@ public record CallHierarchyItemData(
   }
 
   public ReferenceTarget target() {
-    return new ReferenceTarget(
-        kind,
-        ownerBinaryName,
-        methodName,
-        erasedDescriptor,
-        scope,
-        List.of(),
-        false,
-        staticMember,
-        -1);
+    return ReferenceTarget.ofExecutable(
+        kind, ownerBinaryName, methodName, erasedDescriptor, scope, staticMember);
   }
 
   // The classes declaring a method this one overrides, each once.

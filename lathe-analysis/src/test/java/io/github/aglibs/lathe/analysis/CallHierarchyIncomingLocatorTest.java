@@ -241,16 +241,18 @@ class CallHierarchyIncomingLocatorTest {
 
   // A call through a method the override overrides counts only on a receiver that can hold the
   // override's class (a supertype or subtype of it); an unqualified call's receiver is the
-  // enclosing class inheriting the method, and a super call never dispatches to an override.
+  // enclosing class inheriting the method, and a super call, plain or qualified, never dispatches
+  // to an override.
   @Test
   void searchIncomingCalls_callThroughOverriddenMethod_keptOnlyOnAReceiverThatCanHoldTheOverride() {
     final String content =
         """
-        interface Lifecycle { void start(); }
+        interface Lifecycle { default void start() {} }
         interface Filter extends Lifecycle {}
         class Base implements Lifecycle {
           public void start() {}
           void boot() { start(); }
+          void viaDefault() { Lifecycle.super.start(); }
         }
         class Impl extends Base {
           @Override public void start() { super.start(); }
@@ -330,6 +332,9 @@ class CallHierarchyIncomingLocatorTest {
     }
 
     assertThat(item.overriddenDeclarers()).containsExactly("Base", "Lifecycle");
+    assertThat(item.receiverTypes())
+        .as("the class and the supertypes having the method, not Object")
+        .containsExactlyInAnyOrder("Impl", "Base", "Lifecycle");
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(TempSourceCompiler.TEST_URI, upstream, 1, CompileMode.OPEN);
       final List<CallHierarchyIncomingCall> calls =

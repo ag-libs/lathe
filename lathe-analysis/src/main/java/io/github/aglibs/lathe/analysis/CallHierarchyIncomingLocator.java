@@ -54,16 +54,13 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
         item.overridden().stream()
             .map(
                 method ->
-                    new ReferenceTarget(
+                    ReferenceTarget.ofExecutable(
                         ElementKind.METHOD,
                         method.ownerBinaryName(),
                         item.methodName(),
                         method.erasedDescriptor(),
                         item.scope(),
-                        List.of(),
-                        false,
-                        false,
-                        -1))
+                        false))
             .toList();
     this.receiverTypes = Set.copyOf(item.receiverTypes());
   }
@@ -101,7 +98,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     }
 
     final var element = trees.getElement(getCurrentPath());
-    if (!matchesCall(element) || !reachesTarget(element, null)) {
+    if (!callReaches(element, null)) {
       return super.visitIdentifier(node, ignored);
     }
 
@@ -120,8 +117,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = CursorElements.elementAt(trees, getCurrentPath());
-    if (matchesCall(element)
-        && reachesTarget(element, new TreePath(getCurrentPath(), node.getExpression()))) {
+    if (callReaches(element, new TreePath(getCurrentPath(), node.getExpression()))) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
         final String idName = node.getIdentifier().toString();
@@ -139,7 +135,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
     final Element element = CursorElements.newClassConstructor(trees, getCurrentPath());
-    if (matchesCall(element)) {
+    if (callReaches(element, null)) {
       final Tree id = CursorElements.newClassType(node);
       final String name =
           id instanceof final MemberSelectTree mst
@@ -160,8 +156,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (matchesCall(element)
-        && reachesTarget(element, new TreePath(getCurrentPath(), node.getQualifierExpression()))) {
+    if (callReaches(element, new TreePath(getCurrentPath(), node.getQualifierExpression()))) {
       final String name = DeclarationNames.referenceName(node);
       final long startOff =
           DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
@@ -172,40 +167,38 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     return null;
   }
 
-  // A call to the method or to an override of it, or one through a method it overrides. Where the
-  // method's class is not on the classpath (an upstream module), it cannot be resolved, so a call
-  // through an overridden method is matched by that method's own class and descriptor.
-  private boolean matchesCall(final Element element) {
-    return target.matchesWithOverrides(element, types, elements, targetMethod)
-        || targetMethod == null && throughOverridden(element);
-  }
-
-  private boolean throughOverridden(final Element element) {
-    return overriddenTargets.stream().anyMatch(method -> method.matches(element, types, elements));
-  }
-
-  // A call through a method the target overrides reaches the target only on a receiver whose
-  // static type can hold the target's class: a supertype or a subtype of it. A super call never
-  // dispatches to an override; a receiver of unknown type (code with errors) is kept. `receiver` is
-  // null for an unqualified call, whose receiver is the enclosing class inheriting the method.
-  private boolean reachesTarget(final Element called, final TreePath receiver) {
-    if (!(called instanceof final ExecutableElement method)
-        || (targetMethod == null
-            ? !throughOverridden(method)
-            : method.equals(targetMethod)
-                || !elements.overrides(
-                    targetMethod, method, (TypeElement) targetMethod.getEnclosingElement()))) {
-      return true;
+  // Whether the element is a call that can reach the method: a call to it or to an override of it,
+  // or one through a method it overrides on a receiver that can hold its class. Where the method's
+  // class is not on the classpath (an upstream module) it cannot be resolved, so a call through an
+  // overridden method is matched by that method's own class and descriptor. `receiver` is null for
+  // an unqualified call.
+  private boolean callReaches(final Element element, final TreePath receiver) {
+    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+      return !(element instanceof final ExecutableElement method)
+          || targetMethod == null
+          || method.equals(targetMethod)
+          || !elements.overrides(
+              targetMethod, method, (TypeElement) targetMethod.getEnclosingElement())
+          || receiverHolds(method, receiver);
     }
 
-    if (receiver != null
-        && receiver.getLeaf() instanceof final IdentifierTree id
-        && id.getName().contentEquals("super")) {
+    return targetMethod == null
+        && element instanceof final ExecutableElement method
+        && overriddenTargets.stream().anyMatch(other -> other.matches(method, types, elements))
+        && receiverHolds(method, receiver);
+  }
+
+  // A call through an overridden method reaches the method only on a receiver whose static type
+  // can hold the method's class: a supertype or a subtype of it. A super call, plain or qualified
+  // (`Iface.super.m()`), never dispatches to an override; a receiver of unknown type (code with
+  // errors) is kept. An unqualified call's receiver is the enclosing class inheriting the method.
+  private boolean receiverHolds(final ExecutableElement called, final TreePath receiver) {
+    if (receiver != null && isSuper(receiver.getLeaf())) {
       return false;
     }
 
     final TypeMirror receiverType =
-        receiver == null ? implicitReceiver(method) : trees.getTypeMirror(receiver);
+        receiver == null ? implicitReceiver(called) : trees.getTypeMirror(receiver);
     if (receiverType == null || types.erasure(receiverType).getKind() != TypeKind.DECLARED) {
       return true;
     }
@@ -220,6 +213,12 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
     final TypeMirror targetClass = types.erasure(targetMethod.getEnclosingElement().asType());
     return types.isSubtype(targetClass, held) || types.isSubtype(held, targetClass);
+  }
+
+  private static boolean isSuper(final Tree receiver) {
+    return receiver instanceof final IdentifierTree id && id.getName().contentEquals("super")
+        || receiver instanceof final MemberSelectTree select
+            && select.getIdentifier().contentEquals("super");
   }
 
   // The innermost enclosing class that inherits the called method: an unqualified call's `this`.

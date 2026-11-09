@@ -36,6 +36,19 @@ public record ReferenceTarget(
     boolean staticMember,
     long declarationOffset) {
 
+  // A method or constructor known by its owner's binary name and erased descriptor, as a
+  // call-hierarchy item carries it.
+  public static ReferenceTarget ofExecutable(
+      final ElementKind kind,
+      final String ownerBinaryName,
+      final String name,
+      final String erasedDescriptor,
+      final SearchScope scope,
+      final boolean staticMember) {
+    return new ReferenceTarget(
+        kind, ownerBinaryName, name, erasedDescriptor, scope, List.of(), false, staticMember, -1);
+  }
+
   public enum SearchScope {
     DECLARING_FILE,
     DECLARING_MODULE,
