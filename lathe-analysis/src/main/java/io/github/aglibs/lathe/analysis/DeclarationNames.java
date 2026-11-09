@@ -15,6 +15,8 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.tools.Diagnostic;
@@ -23,6 +25,10 @@ import org.eclipse.lsp4j.Position;
 // Where a declaration's name is in the source text, and the identifier around an offset: what
 // rename, definition and the selection ranges anchor on.
 public final class DeclarationNames {
+
+  private static final Logger LOG = Logger.getLogger(DeclarationNames.class.getName());
+
+  static final String VAR = "var";
 
   private DeclarationNames() {}
 
@@ -192,6 +198,50 @@ public final class DeclarationNames {
   // javac names a constructor reference `<init>`; the source says `new`
   static String referenceName(final MemberReferenceTree node) {
     return node.getMode() == ReferenceMode.NEW ? "new" : node.getName().toString();
+  }
+
+  // The source offset of a declaration's `var` keyword, or -1 when its type is written out or the
+  // source cannot be read. The type tree says which: attribution replaces `var` with the inferred
+  // type, which has no source position through JDK 26 and sits on the keyword from 27, while a
+  // written type always has one. Only then is the keyword looked for, after the modifiers, so an
+  // annotation's `"var"` or a variable named `var` is never taken for it.
+  public static long varKeywordStart(
+      final AttributedFileAnalysis analysis, final VariableTree varTree) {
+    final var positions = analysis.trees().getSourcePositions();
+    final CompilationUnitTree cu = analysis.tree();
+    final Optional<String> source = source(cu);
+    if (source.isEmpty()) {
+      return -1;
+    }
+
+    final String content = source.get();
+    final long typeStart =
+        varTree.getType() == null ? -1 : positions.getStartPosition(cu, varTree.getType());
+    if (typeStart >= 0) {
+      return findIdentifierFrom(content, typeStart, VAR) == typeStart ? typeStart : -1;
+    }
+
+    final long from =
+        Math.max(
+            positions.getStartPosition(cu, varTree),
+            positions.getEndPosition(cu, varTree.getModifiers()));
+    final long bound =
+        varTree.getInitializer() != null
+            ? positions.getStartPosition(cu, varTree.getInitializer())
+            : positions.getEndPosition(cu, varTree);
+    final long varStart = from < 0 ? -1 : findIdentifierFrom(content, from, VAR);
+    return varStart < 0 || (bound >= 0 && varStart >= bound) ? -1 : varStart;
+  }
+
+  // The compilation unit's source text, empty when it cannot be read (logged).
+  private static Optional<String> source(final CompilationUnitTree cu) {
+    try {
+      return Optional.of(cu.getSourceFile().getCharContent(false).toString());
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING, e, () -> "[names] %s read failed".formatted(cu.getSourceFile().toUri()));
+      return Optional.empty();
+    }
   }
 
   public static long findIdentifierFrom(

@@ -10,7 +10,6 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
-import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
@@ -93,38 +92,6 @@ public final class CodeActionSupport {
     final var target = (TypeElement) analysis.trees().getElement(TreePaths.enclosingClass(path));
     final var names = new SourceTypeNames(analysis, target);
     return new SourceType(names.formatter().format(type), names.importEditsFor(Stream.of(type)));
-  }
-
-  // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local.
-  // Read from source, not the type tree: attribution replaces the `var` node with the inferred type
-  // and whether that node keeps a source position varies by JDK (none through 26, positioned from
-  // 27), so only the source text is stable across versions. Bounded to before the initializer,
-  // where a modifier or the variable name can never be `var`.
-  static long varKeywordStart(
-      final AttributedFileAnalysis analysis,
-      final CompilationUnitTree cu,
-      final VariableTree varTree) {
-    final var positions = analysis.trees().getSourcePositions();
-    final long declStart = positions.getStartPosition(cu, varTree);
-    if (declStart < 0) {
-      return -1;
-    }
-
-    final long bound =
-        varTree.getInitializer() != null
-            ? positions.getStartPosition(cu, varTree.getInitializer())
-            : positions.getEndPosition(cu, varTree);
-    final String content = source(cu).orElse(null);
-    if (content == null) {
-      return -1;
-    }
-
-    final long varStart = DeclarationNames.findIdentifierFrom(content, declStart, "var");
-    if (varStart < 0 || (bound >= 0 && varStart >= bound)) {
-      return -1;
-    }
-
-    return varStart;
   }
 
   static boolean isInsideClosure(final TreePath path) {

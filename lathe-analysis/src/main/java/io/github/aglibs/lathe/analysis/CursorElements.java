@@ -27,6 +27,8 @@ import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 
 // The tree path and element at a cursor: the element a position names, an enum constant, the
 // constructor of `new X()`, the parameter an argument binds to, statically imported members.
@@ -126,6 +128,35 @@ public final class CursorElements {
     return creationPath != null
             && path.getLeaf() == newClassType((NewClassTree) creationPath.getLeaf())
         ? creationPath
+        : null;
+  }
+
+  // The type a `var` declaration declares when the offset is on its `var` keyword, else null; also
+  // null for a primitive, array or unresolved type, which has no declaration to show.
+  static Element varTypeAt(
+      final AttributedFileAnalysis analysis, final TreePath path, final long offset) {
+    final TreePath variablePath = TreePaths.nearest(path, VariableTree.class);
+    if (variablePath == null) {
+      return null;
+    }
+
+    // The keyword comes before the initializer: a cursor in it, often far into the file, is not on
+    // the keyword, and the source need not be read.
+    final var variable = (VariableTree) variablePath.getLeaf();
+    final var positions = analysis.trees().getSourcePositions();
+    if (variable.getInitializer() != null
+        && offset >= positions.getStartPosition(analysis.tree(), variable.getInitializer())) {
+      return null;
+    }
+
+    final long start = DeclarationNames.varKeywordStart(analysis, variable);
+    if (start < 0 || offset < start || offset >= start + DeclarationNames.VAR.length()) {
+      return null;
+    }
+
+    final TypeMirror type = analysis.trees().getTypeMirror(variablePath);
+    return type != null && type.getKind() == TypeKind.DECLARED
+        ? ((DeclaredType) type).asElement()
         : null;
   }
 

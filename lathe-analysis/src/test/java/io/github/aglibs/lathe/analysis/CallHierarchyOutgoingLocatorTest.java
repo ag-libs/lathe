@@ -128,6 +128,65 @@ class CallHierarchyOutgoingLocatorTest {
     }
   }
 
+  @Test
+  void outgoingCalls_constructorReference_listedAtNew() throws IOException {
+    final List<CallHierarchyOutgoingCall> calls =
+        outgoingCallsOfCreate(
+            """
+                Supplier<Box> box = Box::new;
+                return box;
+            """);
+
+    assertThat(calls)
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.getTo().getName()).isEqualTo("Box");
+              assertThat(call.getFromRanges())
+                  .singleElement()
+                  .satisfies(
+                      range ->
+                          assertThat(
+                                  range.getEnd().getCharacter() - range.getStart().getCharacter())
+                              .isEqualTo(3));
+            });
+  }
+
+  @Test
+  void outgoingCalls_arrayConstructorReference_skipped() throws IOException {
+    assertThat(
+            outgoingCallsOfCreate(
+                """
+                    IntFunction<int[]> array = int[]::new;
+                    return array;
+                """))
+        .isEmpty();
+  }
+
+  private List<CallHierarchyOutgoingCall> outgoingCallsOfCreate(final String body)
+      throws IOException {
+    Files.writeString(sourceRoot.resolve("Box.java"), "class Box { Box() {} }\n");
+    final String content =
+        """
+        import java.util.function.IntFunction;
+        import java.util.function.Supplier;
+        class Factory {
+            Object create() {
+        %s    }
+        }
+        class Box { Box() {} }
+        """
+            .formatted(body);
+    final var request = request(content, SampleFixture.posOf(content, "Object create()", "create"));
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+      return session
+          .hierarchy()
+          .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+    }
+  }
+
   // Only the method's own calls, a lambda's included: not a field initializer's, nor the implicit
   // constructor call of each enum constant, which elsewhere in the class are not the method's.
   @Test

@@ -421,6 +421,50 @@ class HoverTest extends SampleFixture {
         .doesNotContain("Sends.");
   }
 
+  private static final String VAR_SOURCE =
+      """
+      import java.util.function.Supplier;
+
+      /** A box. */
+      class Box {
+        /** Makes an empty box. */
+        Box() {}
+      }
+
+      class User {
+        void use() {
+          var box = new Box();
+          var count = 1;
+          final Box var = new Box();
+          var broken = undefinedCall();
+          Supplier<Box> make = Box::new;
+        }
+      }
+      """;
+
+  @Test
+  void hover_varKeyword_describesInferredType() {
+    assertThat(hoverText(VAR_SOURCE, "var box", "var")).contains("class Box").contains("A box.");
+    assertThat(hoverText(VAR_SOURCE, "var box", "box =")).contains("Box box");
+  }
+
+  @Test
+  void hover_varWithoutDeclaredType_describesVariable() {
+    assertThat(hoverText(VAR_SOURCE, "var count", "var")).doesNotContain("class");
+    assertThat(hoverText(VAR_SOURCE, "final Box var", "var")).contains("Box var");
+    // An unresolved initializer: the variable, as before, not a made-up class.
+    assertThat(hoverText(VAR_SOURCE, "var broken", "var"))
+        .contains(" broken")
+        .doesNotContain("class ");
+  }
+
+  @Test
+  void hover_constructorReferenceNew_describesConstructor() {
+    assertThat(hoverText(VAR_SOURCE, "Box::new", "new"))
+        .contains("class Box\nBox()")
+        .contains("Makes an empty box.");
+  }
+
   @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =
