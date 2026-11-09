@@ -429,7 +429,8 @@ class LatheSyncTaskFunctionalTest {
 
   // A project whose directory is outside the root build's has no place under .lathe/ (its module
   // would be ../shared, and .lathe/../shared a directory of the build): it is left out. The fixture
-  // keeps the Kotlin DSL, so the workspace records Kotlin build files as the server's build files.
+  // keeps the Kotlin DSL, so the workspace records Kotlin build files as the server's build files,
+  // all but the outside project's: Gradle compiles a Kotlin script outside the root on every run.
   @Test
   void sync_projectOutsideTheRoot_leftOutAndWritesNothingThere() throws Exception {
     final Path root = dir.resolve("root");
@@ -441,7 +442,7 @@ class LatheSyncTaskFunctionalTest {
                     .formatted(
                         GradleFixture.latheSettings("root"), GradleFixture.latheRepositories()))
             .file("build.gradle.kts", "")
-            .file("../shared/build.gradle.kts", "plugins { `java-library` }\n")
+            .file("../shared/build.gradle", "plugins { id 'java-library' }\n")
             .file(
                 "../shared/src/main/java/com/example/shared/Shared.java",
                 "package com.example.shared; public class Shared {}\n")
