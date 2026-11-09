@@ -64,6 +64,59 @@ class JavadocMarkdownPrinterTest {
     assertThat(result).contains("```").contains("code block");
   }
 
+  // --- format: paragraphs and anchors ---
+
+  @Test
+  void format_paragraphTags_collapseToOneBlankLine() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            """
+            class T {
+              /**
+               * First.
+               * <p>
+               * Second.
+               *
+               * <p>Third.</p>
+               * <p>
+               * <p>Fourth.
+               * @return the result
+               */
+              int m() { return 0; }
+            }
+            """);
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .isEqualTo("First.\n\nSecond.\n\nThird.\n\nFourth.\n\n**@return** the result");
+  }
+
+  @Test
+  void format_anchorWithHref_rendersOneLineMarkdownLink() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            """
+            class T {
+              /**
+               * See <a href="https://example.com/a">the
+               *     guide</a> here.
+               *
+               * @see <a href="https://example.com/b">Other
+               *     page</a>
+               */
+              void m() {}
+            }
+            """);
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .isEqualTo(
+            "See [the guide](https://example.com/a) here.\n\n"
+                + "**@see** [Other page](https://example.com/b)");
+  }
+
+  @Test
+  void format_anchorWithoutHref_printsLabelOnly() throws IOException {
+    final var tree = parseMethodDoc("class T { /** An <a id=\"x\">anchor</a>. */ void m() {} }");
+    assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("An anchor.");
+  }
+
   // --- format: inline tags ---
 
   @Test

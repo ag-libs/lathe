@@ -449,7 +449,7 @@ public record ReferenceTarget(
   }
 
   // Every method in the supertypes (transitively) that the method overrides, nearest first.
-  private static List<ExecutableElement> overriddenMethods(
+  static List<ExecutableElement> overriddenMethods(
       final ExecutableElement method,
       final TypeElement owner,
       final Types types,

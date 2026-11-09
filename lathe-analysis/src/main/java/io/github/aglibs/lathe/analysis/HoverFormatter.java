@@ -40,23 +40,18 @@ final class HoverFormatter {
       final String typeParams = formatTypeParameters(exe.getTypeParameters());
       if (exe.getKind() == ElementKind.CONSTRUCTOR) {
         // A constructor's element name is <init> and its return type is void; render it as the
-        // enclosing type's name with no return type, matching how the source declares it.
-        sig = "%s%s(%s)".formatted(typeParams, exe.getEnclosingElement().getSimpleName(), paramStr);
+        // enclosing type's name with no return type, matching how the source declares it, under
+        // its class's line for context.
+        final var owner = (TypeElement) exe.getEnclosingElement();
+        sig =
+            "%s\n%s%s(%s)".formatted(typeLine(owner), typeParams, owner.getSimpleName(), paramStr);
       } else {
         final String returnType =
             fmt != null ? fmt.format(exe.getReturnType()) : exe.getReturnType().toString();
         sig = "%s%s %s(%s)".formatted(typeParams, returnType, exe.getSimpleName(), paramStr);
       }
     } else if (element instanceof final TypeElement te) {
-      final var kind =
-          switch (te.getKind()) {
-            case ANNOTATION_TYPE -> "@interface";
-            case RECORD -> "record";
-            case ENUM -> "enum";
-            case INTERFACE -> "interface";
-            default -> "class";
-          };
-      sig = "%s %s".formatted(kind, te.getSimpleName());
+      sig = typeLine(te);
     } else if (element != null && type != null) {
       sig = "%s %s".formatted(type, element.getSimpleName());
     } else if (type != null) {
@@ -73,6 +68,20 @@ final class HoverFormatter {
       result = "%s\n\n*source: %s*".formatted(result, origin);
     }
     return Optional.of(result);
+  }
+
+  private static String typeLine(final TypeElement te) {
+    final var kind =
+        switch (te.getKind()) {
+          case ANNOTATION_TYPE -> "@interface";
+          case RECORD -> "record";
+          case ENUM -> "enum";
+          case INTERFACE -> "interface";
+          default -> "class";
+        };
+    return "%s %s%s"
+        .formatted(
+            kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()).stripTrailing());
   }
 
   static String formatParam(

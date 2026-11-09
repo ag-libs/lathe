@@ -504,29 +504,23 @@ None yet.
 
 ---
 
-## EG-068 — Hover and `describe_symbol` render javadoc loosely and describe the class at a constructor call
+## EG-101 — Hover and `describe_symbol` signatures leave out modifiers and supertypes
 
-**Status: accepted** (triaged 2026-11-09: editor-experience slice)
-
-**Value: medium — Size: M**
+**Status: documented**
 
 **Affects: the editor and MCP.**
 
-Found by the pre-release probes (2026-10-27) on Dropwizard, Helidon and EqualsVerifier.
+Split from EG-068 (an agent's review on Dropwizard, 2026-11-01).
 
 ### Observed behaviour
 
-- Each `<p>` becomes three or four blank lines (`Warning.NONFINAL_FIELDS`, `java.util.function.Function`).
-- An `@see <a href=…>` link breaks across lines.
-- On `new BlockingArrayQueue<>(min, max)` (Dropwizard), the answer describes the class, not the constructor
-  the call resolves to.
-
-An agent's review on Dropwizard (2026-11-01) adds: `{@inheritDoc}` is not resolved (no javadoc for an overriding `equals`), and signatures leave out modifiers and supertypes.
+A hover signature shows a method as `int run(int value)` and a type as `class Child`:
+no modifiers (`public`, `static`, `abstract`, `default`), and no `extends`/`implements` clause.
+An agent reading `describe_symbol` cannot tell an interface's default method from an abstract one, or what a type is a subtype of, without opening the file.
 
 ### Fix direction
 
-Collapse paragraph breaks to one blank line and keep links on one line.
-At a `new` expression, describe the resolved constructor (its parameters and javadoc), with the class as context.
+Render the declaration's modifiers, and a type's direct supertypes, in the hover signature.
 
 ### Regression targets
 
