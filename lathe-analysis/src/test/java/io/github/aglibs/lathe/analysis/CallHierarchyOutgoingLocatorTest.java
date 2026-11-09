@@ -12,6 +12,7 @@ import java.util.List;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -125,6 +126,55 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(calls).hasSize(1);
       assertThat(calls.get(0).getTo().getName()).isEqualTo("Box");
       assertThat(calls.get(0).getFromRanges()).hasSize(1);
+    }
+  }
+
+  @Test
+  void outgoingCalls_constructorReference_listsConstructorAtNew_arrayConstructorSkipped()
+      throws IOException {
+    Files.writeString(
+        sourceRoot.resolve("Box.java"),
+        """
+        class Box { Box() {} }
+        """);
+    final String content =
+        """
+        import java.util.function.IntFunction;
+        import java.util.function.Supplier;
+        class Factory {
+            Object create() {
+                Supplier<Box> box = Box::new;
+                IntFunction<int[]> array = int[]::new;
+                return box;
+            }
+        }
+        class Box { Box() {} }
+        """;
+    final var request = request(content, SampleFixture.posOf(content, "Object create()", "create"));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+      final List<CallHierarchyOutgoingCall> calls =
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+
+      assertThat(calls)
+          .singleElement()
+          .satisfies(
+              call -> {
+                assertThat(call.getTo().getName()).isEqualTo("Box");
+                assertThat(call.getFromRanges())
+                    .containsExactly(
+                        new Range(
+                            SampleFixture.posOf(content, "Box::new", "new"),
+                            new Position(
+                                SampleFixture.posOf(content, "Box::new", "new").getLine(),
+                                SampleFixture.posOf(content, "Box::new", "new").getCharacter()
+                                    + 3)));
+              });
     }
   }
 

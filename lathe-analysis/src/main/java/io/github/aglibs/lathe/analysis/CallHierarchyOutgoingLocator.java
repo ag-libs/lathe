@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -115,8 +116,11 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (element instanceof ExecutableElement && !element.getSimpleName().contentEquals("<init>")) {
-      final String name = node.getName().toString();
+    // `Box::new` calls Box's constructor; an array's (`int[]::new`) has no declaration to list.
+    if (element instanceof ExecutableElement
+        && element.getEnclosingElement() instanceof final TypeElement owner
+        && !owner.getSimpleName().isEmpty()) {
+      final String name = DeclarationNames.referenceName(node);
       final long startOff =
           DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (startOff >= 0) {

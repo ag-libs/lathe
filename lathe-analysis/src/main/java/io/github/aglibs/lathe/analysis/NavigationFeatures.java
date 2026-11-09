@@ -106,9 +106,7 @@ public final class NavigationFeatures {
       return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
     }
 
-    final Element constructor =
-        CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
-    final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
+    final Element element = elementForNavigation(cur);
     final TypeMirror type =
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final List<Path> allRoots = request.allSourceRoots();
@@ -143,6 +141,20 @@ public final class NavigationFeatures {
     return HoverFormatter.format(element, type, doc, origin, fmt, sourceParamNames)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);
+  }
+
+  // What hover and definition describe at the cursor: the type a `var` keyword stands for, the
+  // constructor `new X(…)` invokes, else the element there. Rename and references keep the plain
+  // element: `var` is not a name of the type.
+  private static Element elementForNavigation(final Cursor cur) {
+    final Element varType = CursorElements.varTypeAt(cur.analysis(), cur.path(), cur.offset());
+    if (varType != null) {
+      return varType;
+    }
+
+    final Element constructor =
+        CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
+    return constructor != null ? constructor : cur.elementOrJavadocReference();
   }
 
   // The simple name of the functional interface under the cursor, or whose single abstract method
@@ -209,7 +221,7 @@ public final class NavigationFeatures {
     final Cursor cur = at.get();
     final var constructor =
         CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
-    final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
+    final Element element = elementForNavigation(cur);
     final List<Location> overloads =
         element instanceof ExecutableElement
             ? List.of()

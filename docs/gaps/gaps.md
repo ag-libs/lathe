@@ -818,33 +818,6 @@ None yet.
 
 ---
 
-## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
-
-**Status: deferred** (triaged 2026-11-03: low severity for the editor)
-
-**Value: low — Size: S**
-
-**Affects: the editor and MCP `call_hierarchy` / `get_definition`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-`call_hierarchy` outgoing lists `this::compute` but not `LatheProbe::new`
-(`CallHierarchyOutgoingLocator` skips `<init>` member references).
-The `new` of `::new` and the `var` keyword resolve to nothing.
-
-### Fix direction
-
-Record `Type::new` as a constructor call; resolve `new` in `::new` to the constructor and `var` to the
-inferred type.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-090 — Incoming calls of an override miss callers that dispatch to it from an upstream module
 
 **Status: documented**

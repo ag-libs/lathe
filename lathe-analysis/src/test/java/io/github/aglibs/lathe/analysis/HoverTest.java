@@ -422,6 +422,34 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_varKeyword_describesInferredType_constructorReferenceDescribesConstructor() {
+    final var src =
+        """
+        import java.util.function.Supplier;
+
+        /** A box. */
+        class Box {
+          /** Makes an empty box. */
+          Box() {}
+        }
+
+        class User {
+          void use() {
+            var box = new Box();
+            var count = 1;
+            Supplier<Box> make = Box::new;
+          }
+        }
+        """;
+    assertThat(hoverText(src, "var box", "var")).contains("class Box").contains("A box.");
+    assertThat(hoverText(src, "var box", "box =")).contains("Box box");
+    assertThat(hoverText(src, "var count", "var")).doesNotContain("class");
+    assertThat(hoverText(src, "Box::new", "new"))
+        .contains("class Box\nBox()")
+        .contains("Makes an empty box.");
+  }
+
+  @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =
         """

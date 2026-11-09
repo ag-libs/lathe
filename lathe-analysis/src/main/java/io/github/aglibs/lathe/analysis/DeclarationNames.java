@@ -24,6 +24,8 @@ import org.eclipse.lsp4j.Position;
 // rename, definition and the selection ranges anchor on.
 public final class DeclarationNames {
 
+  static final String VAR = "var";
+
   private DeclarationNames() {}
 
   public static long declarationStartOffset(final Trees trees, final Element element) {
@@ -80,6 +82,10 @@ public final class DeclarationNames {
       final AttributedFileAnalysis analysis, final TreePath path, final long offset)
       throws IOException {
     if (path != null && nameCovers(analysis, path, offset)) {
+      return true;
+    }
+
+    if (CursorElements.varTypeAt(analysis, path, offset) != null) {
       return true;
     }
 
@@ -192,6 +198,32 @@ public final class DeclarationNames {
   // javac names a constructor reference `<init>`; the source says `new`
   static String referenceName(final MemberReferenceTree node) {
     return node.getMode() == ReferenceMode.NEW ? "new" : node.getName().toString();
+  }
+
+  // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local.
+  // Read from source, not the type tree: attribution replaces the `var` node with the inferred type
+  // and whether that node keeps a source position varies by JDK (none through 26, positioned from
+  // 27), so only the source text is stable across versions. Bounded to before the initializer,
+  // where a modifier or the variable name can never be `var`.
+  public static long varKeywordStart(
+      final AttributedFileAnalysis analysis, final VariableTree varTree, final String content) {
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final CompilationUnitTree cu = analysis.tree();
+    final long declStart = positions.getStartPosition(cu, varTree);
+    if (declStart < 0) {
+      return -1;
+    }
+
+    final long bound =
+        varTree.getInitializer() != null
+            ? positions.getStartPosition(cu, varTree.getInitializer())
+            : positions.getEndPosition(cu, varTree);
+    final long varStart = findIdentifierFrom(content, declStart, VAR);
+    if (varStart < 0 || (bound >= 0 && varStart >= bound)) {
+      return -1;
+    }
+
+    return varStart;
   }
 
   public static long findIdentifierFrom(

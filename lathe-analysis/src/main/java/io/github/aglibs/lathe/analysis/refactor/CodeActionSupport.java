@@ -95,36 +95,15 @@ public final class CodeActionSupport {
     return new SourceType(names.formatter().format(type), names.importEditsFor(Stream.of(type)));
   }
 
-  // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local.
-  // Read from source, not the type tree: attribution replaces the `var` node with the inferred type
-  // and whether that node keeps a source position varies by JDK (none through 26, positioned from
-  // 27), so only the source text is stable across versions. Bounded to before the initializer,
-  // where a modifier or the variable name can never be `var`.
+  // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local
+  // or the source cannot be read.
   static long varKeywordStart(
       final AttributedFileAnalysis analysis,
       final CompilationUnitTree cu,
       final VariableTree varTree) {
-    final var positions = analysis.trees().getSourcePositions();
-    final long declStart = positions.getStartPosition(cu, varTree);
-    if (declStart < 0) {
-      return -1;
-    }
-
-    final long bound =
-        varTree.getInitializer() != null
-            ? positions.getStartPosition(cu, varTree.getInitializer())
-            : positions.getEndPosition(cu, varTree);
-    final String content = source(cu).orElse(null);
-    if (content == null) {
-      return -1;
-    }
-
-    final long varStart = DeclarationNames.findIdentifierFrom(content, declStart, "var");
-    if (varStart < 0 || (bound >= 0 && varStart >= bound)) {
-      return -1;
-    }
-
-    return varStart;
+    return source(cu)
+        .map(content -> DeclarationNames.varKeywordStart(analysis, varTree, content))
+        .orElse(-1L);
   }
 
   static boolean isInsideClosure(final TreePath path) {

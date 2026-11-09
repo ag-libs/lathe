@@ -132,6 +132,57 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  @Test
+  void definition_varKeywordAndConstructorReference_reachTypeAndConstructor() {
+    final String source =
+        """
+        import java.util.function.Supplier;
+        class Test {
+          static class Box {
+            Box() {}
+          }
+          void use() {
+            var box = new Box();
+            var count = 1;
+            Supplier<Box> make = Box::new;
+          }
+        }
+        """;
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final Function<Position, SourceFeatureRequest> at =
+          pos ->
+              new SourceFeatureRequest(
+                  TempSourceCompiler.TEST_URI, source, 1, pos, List.of(), LibrarySources.none());
+
+      final var onVar = at.apply(posOf(source, "var box", "var"));
+      assertThat(session.navigation().definition(onVar))
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.getRange().getStart())
+                      .isEqualTo(posOf(source, "static class Box", "Box")));
+      assertThat(session.navigation().onName(onVar)).isTrue();
+
+      final var onPrimitiveVar = at.apply(posOf(source, "var count", "var"));
+      // A primitive has no declaration: `var` keeps the variable's own, as before.
+      assertThat(session.navigation().definition(onPrimitiveVar))
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.getRange().getStart())
+                      .isEqualTo(posOf(source, "var count", "count")));
+      assertThat(session.navigation().onName(onPrimitiveVar)).isFalse();
+
+      assertThat(session.navigation().definition(at.apply(posOf(source, "Box::new", "new"))))
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.getRange().getStart())
+                      .isEqualTo(posOf(source, "Box() {}", "Box")));
+    }
+  }
+
   @ParameterizedTest
   @CsvSource({"Box<Payload> field, Box", "new Box<Payload>(42), Payload"})
   void definition_typeReference_returnsTypeDeclaration(final String context, final String token) {

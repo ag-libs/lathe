@@ -7,6 +7,33 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references — done
+
+**Status: done.**
+
+**Affects: the editor and MCP `call_hierarchy` / `get_definition`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01):
+outgoing calls listed `this::compute` but not `LatheProbe::new` (`CallHierarchyOutgoingLocator` skipped `<init>` member references),
+and the `new` of `::new` and the `var` keyword resolved to nothing.
+
+### Resolution
+
+Outgoing calls list `Type::new` as a call to that constructor, at its `new`, as incoming calls already did; an array constructor reference (`int[]::new`) has no declaration and stays out.
+Definition and hover on the `var` keyword of a local reach the inferred type (`CursorElements.varTypeAt`), and MCP's on-a-name check accepts it;
+a primitive or array type has no declaration, so there `var` keeps the variable's own, as before.
+Rename and references keep the plain element: `var` is not a name of the type.
+Definition and hover on the `new` of `Type::new` already reached the constructor (EG-096); a regression test now holds it.
+The `var` keyword lookup moved from the refactor package to `DeclarationNames.varKeywordStart`, shared by both.
+
+### Regression targets
+
+- `CallHierarchyOutgoingLocatorTest.outgoingCalls_constructorReference_listsConstructorAtNew_arrayConstructorSkipped`
+- `DefinitionLocatorTest.definition_varKeywordAndConstructorReference_reachTypeAndConstructor`
+- `HoverTest.hover_varKeyword_describesInferredType_constructorReferenceDescribesConstructor`
+
+---
+
 ## EG-102 — Signature help does not resolve `{@inheritDoc}` or an undocumented override's javadoc — done
 
 **Status: done.**

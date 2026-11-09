@@ -16,6 +16,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.IOUtil;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -126,6 +127,29 @@ public final class CursorElements {
     return creationPath != null
             && path.getLeaf() == newClassType((NewClassTree) creationPath.getLeaf())
         ? creationPath
+        : null;
+  }
+
+  // The type a `var` local declares when the offset is on its `var` keyword, else null; also null
+  // for a primitive or array type, which has no declaration. The keyword has no tree of its own
+  // through JDK 26, so it is found in the source.
+  static Element varTypeAt(
+      final AttributedFileAnalysis analysis, final TreePath path, final long offset) {
+    final TreePath variablePath = TreePaths.nearest(path, VariableTree.class);
+    if (variablePath == null) {
+      return null;
+    }
+
+    final String content =
+        IOUtil.unchecked(() -> analysis.tree().getSourceFile().getCharContent(false).toString());
+    final long start =
+        DeclarationNames.varKeywordStart(analysis, (VariableTree) variablePath.getLeaf(), content);
+    if (start < 0 || offset < start || offset >= start + DeclarationNames.VAR.length()) {
+      return null;
+    }
+
+    return analysis.trees().getTypeMirror(variablePath) instanceof final DeclaredType declared
+        ? declared.asElement()
         : null;
   }
 
