@@ -332,11 +332,93 @@ class HoverTest extends SampleFixture {
           }
         }
         """;
-    assertThat(hoverText(src, "    send();", "send"))
-        .contains("**Deprecated.**")
-        .contains("Sends the request.")
-        .contains("**@deprecated** use `sendAsync()` instead");
+    final String md = hoverText(src, "    send();", "send");
+    assertThat(md).contains("**Deprecated.** use `sendAsync()` instead\n\nSends the request.");
+    assertThat(md.split("Deprecated", -1)).hasSize(2);
     assertThat(hoverText(src, "    sendAsync();", "sendAsync")).doesNotContain("Deprecated");
+  }
+
+  @Test
+  void hover_overrideOfDistantSuperclass_beatsDirectInterface_implementationIsSpecifiedBy() {
+    final var src =
+        """
+        interface Named {
+          String name();
+        }
+
+        abstract class Root {
+          public abstract String name();
+        }
+
+        abstract class Middle extends Root {}
+
+        class Leaf extends Middle implements Named {
+          @Override
+          public String name() { return "leaf"; }
+
+          void use() { name(); }
+        }
+
+        class Task implements Runnable {
+          @Override
+          public void run() {}
+
+          void use() { run(); }
+        }
+        """;
+    assertThat(hoverText(src, "void use() { name", "name"))
+        .contains("**Overrides** `Root.name`")
+        .doesNotContain("Named");
+    assertThat(hoverText(src, "void use() { run", "run"))
+        .contains("**Specified by** `Runnable.run`")
+        .doesNotContain("Overrides");
+  }
+
+  @Test
+  void hover_deprecationWithoutTag_constructorOfDeprecatedClass_andInheritedTag() {
+    final var src =
+        """
+        class Api {
+          @Deprecated
+          void old() {}
+
+          /**
+           * Sends.
+           *
+           * @deprecated use the async one
+           */
+          @Deprecated
+          void send() {}
+        }
+
+        @Deprecated
+        class OldClient {}
+
+        class Child extends Api {
+          /**
+           * Child send.
+           *
+           * @deprecated {@inheritDoc}
+           */
+          @Deprecated
+          @Override
+          void send() {}
+
+          void use() {
+            old();
+            new OldClient();
+            send();
+          }
+        }
+        """;
+    assertThat(hoverText(src, "    old();", "old")).contains("**Deprecated.**");
+    assertThat(hoverText(src, "new OldClient", "OldClient"))
+        .contains("OldClient()")
+        .contains("**Deprecated.**");
+    assertThat(hoverText(src, "    send();", "send"))
+        .contains("**Deprecated.** use the async one")
+        .contains("Child send.")
+        .doesNotContain("Sends.");
   }
 
   @Test

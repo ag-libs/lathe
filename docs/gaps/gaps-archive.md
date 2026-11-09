@@ -21,6 +21,8 @@ for a call to an override whose doc is `/** {@inheritDoc} */`, or that has no do
 
 `JavadocLocator` resolves a method's doc chain once (`docChain`: its own doc, else the nearest overridden method's, with the overridden methods `{@inheritDoc}` can reach),
 and both hover (`markdown`) and signature help (`signatureDocs`) print from it.
+A `DocReader` caches the docs one request reads, so signature help parses an ancestor shared by several overloads once;
+it lives for that request on the module's worker thread and is never stored.
 Signature help takes the main description and each parameter's description by position, so an override with other parameter names still gets its parent's parameter docs,
 and `{@inheritDoc}` inside an `@param` resolves too.
 
@@ -43,15 +45,19 @@ Found by the comparison with [java-index](https://github.com/slgobinath/java-ind
 
 ### Resolution
 
-Hover adds `**Deprecated.**` for a deprecated element (`Elements.isDeprecated`) and `**Overrides** Type.method` for the nearest method an override overrides
-(`ReferenceTarget.overriddenMethods`: a superclass's before an interface's), above the javadoc.
-The printer renders the `@deprecated` tag, which usually names the replacement, and a same-type link (`{@link #other()}`) as `other()` rather than `.other()`.
+Hover now opens a deprecated element's doc with `**Deprecated.**` and the `@deprecated` tag's text, which usually names the replacement, as the javadoc tool does;
+the printer used to drop the tag. An element deprecated without the tag, or a constructor of a deprecated class, still gets the bare note.
+`{@inheritDoc}` in a `@deprecated` tag takes the overridden method's deprecation text.
+An override gets `**Overrides** Type.method`, the nearest method up the superclass chain, or else `**Specified by** Type.method`, the interface method it implements.
+A same-type link (`{@link #other()}`) renders as `other()` rather than `.other()`.
 The usage count is EG-104: it needs a cheap reference count (FR-029).
 
 ### Regression targets
 
 - `HoverTest.hover_overridingMethod_namesNearestOverriddenMethod_plainMethodDoesNot`
 - `HoverTest.hover_deprecatedMethod_showsDeprecationAndItsText_currentMethodDoesNot`
+- `HoverTest.hover_overrideOfDistantSuperclass_beatsDirectInterface_implementationIsSpecifiedBy`
+- `HoverTest.hover_deprecationWithoutTag_constructorOfDeprecatedClass_andInheritedTag`
 - `JavadocMarkdownPrinterTest.format_linkToMember_readsAsMemberOrTypeDotMember`
 
 ---
