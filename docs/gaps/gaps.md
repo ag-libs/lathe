@@ -874,7 +874,7 @@ None yet.
 
 ## EG-092 — Symbol search finds types only, not methods and fields
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-09: beyond jdtls, which by its settings searches types, and source methods only behind `java.symbols.includeSourceMethodDeclarations` — not measured; the per-keystroke cost is the open risk)
 
 **Affects: the editor's workspace symbols and MCP `search_symbols`.**
 
