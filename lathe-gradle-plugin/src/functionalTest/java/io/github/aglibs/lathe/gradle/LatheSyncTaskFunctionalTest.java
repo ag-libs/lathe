@@ -227,7 +227,9 @@ class LatheSyncTaskFunctionalTest {
         .doesNotContain("app");
   }
 
-  // Module-access flags a forked compile and the daemon run with reach the server's jvm.args.
+  // Module-access flags a forked compile and the daemon run with reach the server's jvm.args. The
+  // daemon's come as the org.gradle.jvmargs property the plugin reads, from the command line here:
+  // set in gradle.properties it would start a daemon of its own, slow to start.
   @Test
   void sync_forkedCompileWithAccessFlags_writesThemToJvmArgs() throws Exception {
     final var fixture =
@@ -241,12 +243,13 @@ class LatheSyncTaskFunctionalTest {
                   options.fork = true
                   options.forkOptions.jvmArgs = ['--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED']
                 }
-                """)
-            .file(
-                "gradle.properties",
-                "org.gradle.jvmargs=-Xmx512m --add-opens=java.base/java.lang=ALL-UNNAMED\n");
+                """);
 
-    fixture.runner("latheSync").build();
+    fixture
+        .runner(
+            "latheSync",
+            "-Porg.gradle.jvmargs=-Xmx512m --add-opens=java.base/java.lang=ALL-UNNAMED")
+        .build();
 
     assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.JVM_ARGS_FILE))
         .content()
@@ -426,7 +429,8 @@ class LatheSyncTaskFunctionalTest {
 
   // A project whose directory is outside the root build's has no place under .lathe/ (its module
   // would be ../shared, and .lathe/../shared a directory of the build): it is left out. The fixture
-  // keeps the Kotlin DSL, so the workspace records Kotlin build files as the server's build files.
+  // keeps the Kotlin DSL, so the workspace records Kotlin build files as the server's build files,
+  // all but the outside project's: Gradle compiles a Kotlin script outside the root on every run.
   @Test
   void sync_projectOutsideTheRoot_leftOutAndWritesNothingThere() throws Exception {
     final Path root = dir.resolve("root");
@@ -438,7 +442,7 @@ class LatheSyncTaskFunctionalTest {
                     .formatted(
                         GradleFixture.latheSettings("root"), GradleFixture.latheRepositories()))
             .file("build.gradle.kts", "")
-            .file("../shared/build.gradle.kts", "plugins { `java-library` }\n")
+            .file("../shared/build.gradle", "plugins { id 'java-library' }\n")
             .file(
                 "../shared/src/main/java/com/example/shared/Shared.java",
                 "package com.example.shared; public class Shared {}\n")

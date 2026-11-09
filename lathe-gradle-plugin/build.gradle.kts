@@ -111,10 +111,10 @@ val functionalTestTask =
       testClassesDirs = functionalTest.output.classesDirs
       classpath = functionalTest.runtimeClasspath
       shouldRunAfter(tasks.test)
-      // Each fixture is a real Gradle build, slow to start (most on Windows): test classes run in
-      // parallel JVMs, one core left for the build itself. One class's tests stay in one JVM, in
-      // order.
-      maxParallelForks = (Runtime.getRuntime().availableProcessors() - 1).coerceAtLeast(1)
+      // One test JVM: every fixture build then runs on one warm TestKit daemon. Parallel test JVMs
+      // each start daemons of their own, cold and contending for the shared TestKit home: they made
+      // the suite slower (on a 16-core Linux machine, 2 JVMs by a tenth, 15 by a third).
+      maxParallelForks = 1
       // Each test as it starts and ends: CI stamps every log line with its time, so a slow or stuck
       // run shows which test it is in while it runs. On CI each fixture build's own output too, so
       // a stuck test also shows where in its build it stopped; a local run stays quiet.
