@@ -8,6 +8,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.MethodDoc;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BiFunction;
@@ -46,13 +47,20 @@ public final class JavadocLocator {
           .filter(md -> !md.isBlank());
     }
 
-    final var docs = new HashMap<ExecutableElement, Optional<MethodDoc>>();
+    // Both kinds of answer are kept, so a method is parsed at most once per hover.
+    final var documented = new HashMap<ExecutableElement, MethodDoc>();
+    final var undocumented = new HashSet<ExecutableElement>();
     final Function<ExecutableElement, Optional<MethodDoc>> docOf =
-        m ->
-            docs.computeIfAbsent(
-                m,
-                key ->
-                    readDeclaration(key, analysis.trees(), sourceRoots, JavadocLocator::methodDoc));
+        m -> {
+          if (documented.containsKey(m) || undocumented.contains(m)) {
+            return Optional.ofNullable(documented.get(m));
+          }
+
+          final Optional<MethodDoc> doc =
+              readDeclaration(m, analysis.trees(), sourceRoots, JavadocLocator::methodDoc);
+          doc.ifPresentOrElse(found -> documented.put(m, found), () -> undocumented.add(m));
+          return doc;
+        };
     final List<ExecutableElement> overridden =
         ReferenceTarget.overriddenMethods(
             method,
