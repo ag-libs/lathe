@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.JsonObject;
+import java.util.List;
 import javax.lang.model.element.ElementKind;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +17,10 @@ class CallHierarchyItemDataCodecTest {
           ElementKind.METHOD,
           "file:///com/example/Foo.java",
           ReferenceTarget.SearchScope.REACTOR_MODULES,
-          true);
+          true,
+          List.of(
+              new CallHierarchyItemData.Overridden("com.example.Base", "(java.lang.Object,int)")),
+          List.of("com.example.Foo", "com.example.Base", "java.lang.Object"));
 
   @Test
   void encode_decode_roundTrip_preservesAllFields() {
@@ -45,6 +49,8 @@ class CallHierarchyItemDataCodecTest {
     assertThat(decoded.erasedDescriptor()).isEqualTo("(java.lang.String,int)");
     assertThat(decoded.kind()).isEqualTo(ElementKind.METHOD);
     assertThat(decoded.routingUri()).isEqualTo("file:///com/example/Foo.java");
+    assertThat(decoded.overridden()).as("an item from before the lists").isEmpty();
+    assertThat(decoded.receiverTypes()).isEmpty();
     assertThat(decoded.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
     assertThat(decoded.staticMember()).isTrue();
   }

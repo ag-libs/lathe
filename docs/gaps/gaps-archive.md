@@ -42,6 +42,118 @@ The `var` keyword lookup moved from the refactor package to `DeclarationNames.va
 
 ---
 
+## EG-080 — Incoming calls of an override include callers that can never reach it — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Incoming calls of `HttpRouteImpl.beforeStart`, which overrides `ServerLifecycle.beforeStart`, list every caller
+of the interface method, including `Filter::beforeStart` and `OidcFeatureTest:741`.
+`Filter` is unrelated to `HttpRoute`, so those calls never reach `HttpRouteImpl`.
+Since EG-044 an override's incoming calls aggregate the parent method's callers by design;
+nothing prunes the callers whose receiver type cannot hold the override's class.
+
+### Fix direction
+
+Keep a parent-method caller only when its receiver's static type is a supertype of the override's class
+(or the override's class or a subtype), as find references already reasons about receivers;
+a method reference's qualifier type counts as the receiver.
+
+Also (exploratory round, 2026-11-04): incoming calls on EqualsVerifier's core stub `get()` include a call through the abstract base class.
+
+### Fix
+
+`CallHierarchyIncomingLocator` keeps a call through a method the override overrides only when its receiver can hold the
+override's class: the receiver's static type is a supertype or a subtype of it.
+An unqualified call's receiver is the innermost enclosing class inheriting the method, a method reference's is its
+qualifier, a `super` call never dispatches to an override, and a receiver of unknown type (code with errors) is kept.
+Find references and rename are unchanged: they still cover every call.
+On Helidon, `HttpRouteImpl.beforeStart` now lists its four route callers, without `Filter::beforeStart`.
+EqualsVerifier's call through the abstract base class is kept, as that receiver can hold the override.
+
+Known limit: the check is static, so a call on an interface the override's class does not implement is left out even
+if some subclass of that class implements it too. IntelliJ keeps a call whose receiver class merely inherits the base
+method; this keeps it only when the receiver can hold the override's class.
+
+### Regression targets
+
+`CallHierarchyIncomingLocatorTest.searchIncomingCalls_callThroughOverriddenMethod_keptOnlyOnAReceiverThatCanHoldTheOverride`,
+`LatheEngineNavigationTest.callHierarchy_overrideOfAnUpstreamMethod_findsCallersThroughItAcrossModules`.
+
+---
+
+## EG-090 — Incoming calls of an override miss callers that dispatch to it from an upstream module — done
+
+**Status: done.**
+
+**Value: medium — Size: S–M**
+
+**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Incoming calls answer "No callers found" for `App1.java:22 initialize`, `HelloWorldApplication:82 run`,
+`MyConfiguredBundle:15 initialize` and the anonymous `getDataSourceFactory` overrides at `HelloWorldApplication:44/68`.
+Their callers dispatch through the base method in an upstream module (`Application.java:88`, `EnvironmentCommand:66`,
+`Bootstrap.java:150`, `HibernateBundle:72`, `AbstractLiquibaseCommand:78`); asked on the base method, they are found.
+`HibernateBundle:47` lists only its own module's tests.
+EG-044 (done) made an override's incoming calls include calls through its base method; across modules they are missing.
+The opposite of EG-080, which lists too many.
+
+### Fix direction
+
+Search the base method's callers in the modules upstream of the override's, not only in the override's module and its
+dependents.
+
+### Fix
+
+Two causes: the search covered only the override's module and its dependents, and in an upstream module the override's
+class is not on the classpath, so its method could not be resolved there to match calls through the base method.
+
+- The call-hierarchy item carries the methods the override overrides, each by its own class and erased descriptor (a
+  generic base method's differs from the override's), and the override's class with its supertypes.
+- `ReferenceSearch` also reads each reactor module declaring an overridden method, every source set of it, and the
+  modules depending on it; in those, only the files spelling a supertype's simple name, as a call there reaches the
+  override only on a receiver of such a type.
+- Where the override's class is not visible, `CallHierarchyIncomingLocator` matches the base method by its own class and
+  descriptor, and checks the receiver by name against the override's class and supertypes.
+
+Measured on 2026-11-09 (one server per run; cold is the first request, warm the second; jdtls 1.51 on the same files):
+
+| Override | Before: cold / warm, callers | After: cold / warm, callers | jdtls: cold / warm, callers |
+|---|---|---|---|
+| Dropwizard `App1.initialize` | 0.9 / 0.5 s, 0 | 1.6 / 0.6 s, 4 | 4.6 / 1.1 s, 4 |
+| Dropwizard `HelloWorldApplication.run` | 0.6 / 0.3 s, 0 | 2.0 / 1.1 s, 2 | 2.5 / 0.9 s, 2 |
+| Dropwizard `MyConfiguredBundle.initialize` | 0.2 / 0.2 s, 0 | 0.8 / 0.3 s, 1 | 3.1 / 1.0 s, 1 |
+| Helidon `HttpRouteImpl.beforeStart` | 2.4 / 1.0 s, 4 | 2.0 / 1.0 s, 4 | failed (no item) |
+| Helidon `WebClientMetrics.Builder.build()` | 0.3 / 0.2 s, 1 | 12.0 / 7.0 s, 3 | failed (no item) |
+
+The Dropwizard callers are jdtls's, one for one (`Application.java:88`, `DropwizardTestSupport:302`,
+`InjectValidatorFeatureTest:44`, `ApplicationTest:39/44`, `EnvironmentCommand:66`, `Bootstrap.java:150`).
+Reading every dependent module whole (as IntelliJ and jdtls do) cost Helidon's `build()` 21.3 / 12.4 s; keeping only
+the files that import a supertype cost 7.3 / 4.2 s but missed same-package tests and lambda receivers. Listing only
+the supertypes that have the method (not `Supplier`) took the chosen filter from 14.4 / 8.1 s to 12.0 / 7.0 s.
+
+Known limits: in a module depending on the base's, a call on a `var` or a lambda parameter of a supertype, in a file
+never spelling it, is missed; an override of a common base method (Helidon's `Builder.build()`) still takes seconds.
+
+### Regression targets
+
+`CallHierarchyIncomingLocatorTest.searchIncomingCalls_overrideNotOnClasspath_findsCallsThroughItsBaseMethodByReceiver`,
+`LatheEngineNavigationTest.callHierarchy_overrideOfAnUpstreamMethod_findsCallersThroughItAcrossModules`,
+`CallHierarchyItemDataCodecTest.encode_decode_roundTrip_preservesAllFields`.
+
+---
+
 ## EG-102 — Signature help does not resolve `{@inheritDoc}` or an undocumented override's javadoc — done
 
 **Status: done.**

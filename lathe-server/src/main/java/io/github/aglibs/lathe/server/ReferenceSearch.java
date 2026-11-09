@@ -26,6 +26,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1109,17 +1110,7 @@ final class ReferenceSearch {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var target =
-        new ReferenceTarget(
-            data.kind(),
-            data.ownerBinaryName(),
-            data.methodName(),
-            data.erasedDescriptor(),
-            data.scope(),
-            List.of(),
-            false,
-            data.staticMember(),
-            -1);
+    final ReferenceTarget target = data.target();
     final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
     final var declaringPath = LatheUri.toPath(data.routingUri());
@@ -1144,7 +1135,7 @@ final class ReferenceSearch {
           .thenCompose(
               inputs ->
                   joinSearchHits(
-                      incomingCallFutures(inputs.get(0), target, cancelChecker, progress).toList(),
+                      incomingCallFutures(inputs.get(0), data, cancelChecker, progress).toList(),
                       cancelChecker))
           .thenApply(SearchHits::hits);
     }
@@ -1154,11 +1145,19 @@ final class ReferenceSearch {
             ? declaringPackageRel(declaringPath, declaringConfig.orElse(null))
             : null;
 
-    final List<ModuleSourceConfig> configs = planSearchScope(target, declaringConfig.orElse(null));
+    final IncomingScope scope = incomingSearchScope(target, data, declaringConfig.orElse(null));
 
     final var t = Stopwatch.start();
     return readSearchInputs(
-            configs.stream().map(config -> planModuleSearch(config, target, packageRel)).toList())
+            scope.all().stream()
+                .map(
+                    config ->
+                        scope.byName().contains(config)
+                            ? namingAny(
+                                planModuleSearch(config, target, packageRel),
+                                scope.supertypeNames())
+                            : planModuleSearch(config, target, packageRel))
+                .toList())
         .thenCompose(
             searchInputs ->
                 withDeferredCandidates(
@@ -1173,7 +1172,7 @@ final class ReferenceSearch {
                                   .flatMap(
                                       module ->
                                           incomingCallFutures(
-                                              module, target, cancelChecker, progress))
+                                              module, data, cancelChecker, progress))
                                   .toList();
                       progress.begin(progressTitle, searches.size());
                       return joinSearchHits(searches, cancelChecker);
@@ -1182,9 +1181,99 @@ final class ReferenceSearch {
             FeatureAnswers.logged(LOG, "callHierarchy:incoming", data.routingUri(), t, "calls"));
   }
 
+  // The modules an incoming-calls search reads, and those (byName) where it reads only the files
+  // naming one of supertypeNames.
+  private record IncomingScope(
+      List<ModuleSourceConfig> all, Set<ModuleSourceConfig> byName, Set<String> supertypeNames) {
+
+    IncomingScope {
+      ValidCheck.check()
+          .notNull(all, "all")
+          .notNull(byName, "byName")
+          .notNull(supertypeNames, "supertypeNames")
+          .validate();
+      ValidCheck.check().assertTrue(all.containsAll(byName), "byName is part of all").validate();
+      all = List.copyOf(all);
+      byName = Set.copyOf(byName);
+      supertypeNames = Set.copyOf(supertypeNames);
+    }
+  }
+
+  // A method's callers include calls through the methods it overrides, made wherever their classes
+  // are visible: in their own modules, upstream of the method's, and in the modules depending on
+  // those. Besides the method's own scope, each module declaring an overridden method is read,
+  // every source set of it; a module depending on one is read only in the files naming a supertype
+  // of the method's class, as a call there reaches the method only on a receiver of such a type. A
+  // call on a var or a lambda parameter typed so, in a file never naming it, is missed there: read
+  // whole, those modules cost a large reactor tens of seconds for a common base method.
+  private IncomingScope incomingSearchScope(
+      final ReferenceTarget target,
+      final CallHierarchyItemData item,
+      final ModuleSourceConfig declaringConfig) {
+    final List<ModuleSourceConfig> own = planSearchScope(target, declaringConfig);
+    final Map<String, ModuleSourceConfig> declarers = new LinkedHashMap<>();
+    for (final String declarer : item.overriddenDeclarers()) {
+      reactorIndex
+          .declaringConfig(declarer, declaringConfig)
+          .ifPresent(config -> declarers.put(declarer, config));
+    }
+
+    final List<ModuleSourceConfig> declaring =
+        declarers.values().stream()
+            .flatMap(config -> state.moduleGraph().configsForModule(config.moduleDir()).stream())
+            .toList();
+    final List<ModuleSourceConfig> dependents =
+        declarers.entrySet().stream()
+            .flatMap(
+                declarer ->
+                    planSearchScope(declaredBy(target, declarer.getKey()), declarer.getValue())
+                        .stream())
+            .toList();
+    final List<ModuleSourceConfig> all =
+        Stream.of(own, declaring, dependents).flatMap(List::stream).distinct().toList();
+    final Set<ModuleSourceConfig> byName =
+        all.stream()
+            .filter(config -> !own.contains(config) && !declaring.contains(config))
+            .collect(Collectors.toUnmodifiableSet());
+    LOG.fine(
+        () ->
+            "[callHierarchy:incoming] %s modules own=%d searched=%d byName=%d"
+                .formatted(target.simpleName(), own.size(), all.size(), byName.size()));
+    return new IncomingScope(
+        all,
+        byName,
+        item.receiverTypes().stream()
+            .map(ReferenceCandidatePlanner::simpleNameOf)
+            .collect(Collectors.toUnmodifiableSet()));
+  }
+
+  // The plan's files that spell one of the names.
+  private ModuleSearchPlan namingAny(final ModuleSearchPlan plan, final Set<String> names) {
+    final Set<String> naming =
+        names.stream()
+            .flatMap(name -> state.candidateIndex().candidateUris(name).stream())
+            .collect(Collectors.toUnmodifiableSet());
+    return new ModuleSearchPlan(
+        plan.worker(),
+        plan.openDocuments().stream().filter(doc -> naming.contains(doc.uri())).toList(),
+        plan.candidateUris().stream().filter(naming::contains).toList(),
+        plan.deferredUris().stream().filter(naming::contains).toList(),
+        plan.exposureFamily());
+  }
+
+  private static ReferenceTarget declaredBy(final ReferenceTarget target, final String declarer) {
+    return ReferenceTarget.ofExecutable(
+        target.kind(),
+        declarer,
+        target.simpleName(),
+        target.erasedDescriptor(),
+        target.scope(),
+        target.staticMember());
+  }
+
   private Stream<CompletableFuture<SearchHits<CallHierarchyIncomingCall>>> incomingCallFutures(
       final ModuleSearchInputs planned,
-      final ReferenceTarget target,
+      final CallHierarchyItemData item,
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
@@ -1206,7 +1295,7 @@ final class ReferenceSearch {
                             cancelChecker.checkCanceled();
                             return session
                                 .references()
-                                .incomingCalls(analysis, doc.uri(), target, family);
+                                .incomingCalls(analysis, doc.uri(), item, family);
                           },
                           cancelChecker)
                       .whenComplete(advancing(progress, false));
@@ -1223,7 +1312,7 @@ final class ReferenceSearch {
                             cancelChecker.checkCanceled();
                             return session
                                 .references()
-                                .incomingCalls(analysis, d.uri(), target, family);
+                                .incomingCalls(analysis, d.uri(), item, family);
                           },
                           cancelChecker)
                       .whenComplete(advancing(progress, true));
