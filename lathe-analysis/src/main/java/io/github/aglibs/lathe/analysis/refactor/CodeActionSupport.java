@@ -134,7 +134,7 @@ public final class CodeActionSupport {
     return new TypeDisplayFormatter(analysis.types(), type -> sourceName(analysis, target, type));
   }
 
-  private static String sourceName(
+  static String sourceName(
       final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
     final TypeElement root = nameRoot(analysis, target, type);
     final String rootName =

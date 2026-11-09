@@ -15,9 +15,10 @@ class MissingImportsResultTest {
       new MissingImportsResult(
           new ImportLayout(List.of(), new Position(0, 20)),
           List.of(
-              new MissingImportsResult.MissingImport("Objects", List.of("java.util.Objects")),
               new MissingImportsResult.MissingImport(
-                  "List", List.of("java.awt.List", "java.util.List"))));
+                  "Objects", List.of("java.util.Objects"), List.of()),
+              new MissingImportsResult.MissingImport(
+                  "List", List.of("java.awt.List", "java.util.List"), List.of())));
 
   // The chosen imports the result offers are placed by its layout, once each; a choice it does not
   // offer adds nothing.

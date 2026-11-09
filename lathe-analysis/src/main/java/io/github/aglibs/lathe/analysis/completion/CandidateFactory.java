@@ -31,13 +31,21 @@ final class CandidateFactory {
     this.typeDisplayFormatter = new TypeDisplayFormatter(types);
   }
 
+  // A nested type is written from its top-level type (Map.Entry), whose import it adds; it is never
+  // imported itself.
   static CompletionCandidate typeIndexCandidate(final TypeIndexEntry entry) {
+    final int nested = entry.binaryName().indexOf('$');
+    final String topLevel =
+        nested < 0 ? entry.binaryName() : entry.binaryName().substring(0, nested);
     final var importEdit =
-        "java.lang".equals(entry.packageName())
-            ? null
-            : new ImportEdit(entry.qualifiedName(), false);
+        "java.lang".equals(entry.packageName()) ? null : new ImportEdit(topLevel, false);
     return typeCandidate(
-        entry.simpleName(), entry.qualifiedName(), kindFor(entry.kind()), null, importEdit);
+        entry.simpleName(),
+        entry.className().replace('$', '.'),
+        entry.qualifiedName(),
+        kindFor(entry.kind()),
+        null,
+        importEdit);
   }
 
   private static CandidateKind kindFor(final TypeKind typeKind) {
@@ -57,6 +65,7 @@ final class CandidateFactory {
     final var simpleName = el.getSimpleName().toString();
     return typeCandidate(
         simpleName,
+        simpleName,
         el.getQualifiedName().toString(),
         kindForElement(el.getKind()),
         el.asType(),
@@ -73,6 +82,7 @@ final class CandidateFactory {
 
   private static CompletionCandidate typeCandidate(
       final String simpleName,
+      final String insertText,
       final String qualifiedName,
       final CandidateKind kind,
       final TypeMirror valueType,
@@ -83,7 +93,7 @@ final class CandidateFactory {
         simpleName,
         kind,
         qualifiedName,
-        simpleName,
+        insertText,
         false,
         null,
         null,

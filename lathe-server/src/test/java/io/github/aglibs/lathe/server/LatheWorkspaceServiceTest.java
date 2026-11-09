@@ -342,7 +342,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(command(LatheCommands.IMPORTS_MISSING, onBuyer))
         .asInstanceOf(InstanceOfAssertFactories.type(MissingImportsResult.class))
         .extracting(MissingImportsResult::items)
-        .isEqualTo(List.of(new MissingImport("Shop", List.of("com.example.Shop"))));
+        .isEqualTo(List.of(new MissingImport("Shop", List.of("com.example.Shop"), List.of())));
     final var chosen = new JsonArray();
     chosen.add("com.example.Shop");
     onBuyer.add("imports", chosen);

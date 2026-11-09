@@ -105,8 +105,9 @@ class McpTextTest {
             "app/src/main/java/a/Foo.java",
             List.of("java.time.Duration", "java.util.ArrayList"),
             List.of(
-                new MissingImport("List", List.of("java.util.List", "java.awt.List")),
-                new MissingImport("Fooo", List.of())));
+                new MissingImport("List", List.of("java.util.List", "java.awt.List"), List.of()),
+                new MissingImport("Fooo", List.of(), List.of()),
+                new MissingImport("Entry", List.of(), List.of("java.util.Map.Entry"))));
 
     assertThat(text(McpText.importsResult(imports, McpText.NO_NOTES)))
         .isEqualTo(
@@ -114,7 +115,7 @@ class McpTextTest {
                 "Added 2 import(s) to app/src/main/java/a/Foo.java: java.time.Duration, java.util.ArrayList",
                 "Ambiguous — add one yourself:",
                 "  List: java.util.List, java.awt.List",
-                "No import found for: Fooo"));
+                "No import found for: Fooo, Entry (nested type java.util.Map.Entry: qualify it from its outer type)"));
     assertThat(
             text(
                 McpText.importsResult(

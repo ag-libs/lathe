@@ -136,9 +136,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(result.items())
         .containsExactlyInAnyOrder(
             new MissingImportsResult.MissingImport(
-                "requireNonNull", List.of("static java.util.Objects.requireNonNull")),
+                "requireNonNull", List.of("static java.util.Objects.requireNonNull"), List.of()),
             new MissingImportsResult.MissingImport(
-                "emptyList", List.of("static java.util.Collections.emptyList")));
+                "emptyList", List.of("static java.util.Collections.emptyList"), List.of()));
   }
 
   // Qualifiers: an unresolved X in X.member may be a type or a statically imported field.
@@ -581,10 +581,13 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(codeActions(actions).get(0).getTitle()).isEqualTo("Import 'com.other.PublicClass'");
   }
 
-  // A nested type imports by its canonical name, after the top-level types of that name even when
-  // its name is shorter; one the file cannot access is not offered.
+  // A nested type is never imported itself, not even statically when the workspace imports it so:
+  // the quick fix writes it from its top-level type and imports that, fully qualified when the file
+  // gives the top-level name another type. Missing imports name it as a hint, not a candidate, so a
+  // top-level type of the same name stays the one unambiguous candidate. An inaccessible one is
+  // not offered.
   @Test
-  void codeAction_nestedType_offersCanonicalImportAfterTopLevelTypes() throws IOException {
+  void codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported() throws IOException {
     final var classDir = tmp.resolve("classes");
     final var outerFile = tmp.resolve("A.java");
     Files.writeString(
@@ -622,6 +625,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                 List.of()),
             new TypeIndexEntry(
                 "Hidden", "com.other.A$Hidden", "com.other", TypeKind.CLASS, true, List.of()));
+    final var learned =
+        new LearnedStaticImports(Map.of("java.util.Map.Entry", 3, "com.other.A.*", 1));
     final var source =
         """
         package com.example;
@@ -632,29 +637,66 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         }
         """;
 
-    final List<Diagnostic> diags =
-        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var actions =
-        session
-            .files()
-            .codeAction(
-                TempSourceCompiler.TEST_URI,
-                source,
-                1,
-                rangeAt(0, 0),
-                toRequests(diags),
-                nestedIndex,
-                LearnedStaticImports.empty());
+    final List<CodeAction> actions = codeActions(nestedActions(source, nestedIndex, learned));
 
-    assertThat(codeActions(actions))
+    assertThat(actions)
         .extracting(CodeAction::getTitle)
         .containsExactly(
-            "Import 'java.util.Map.Entry'",
+            "Qualify as 'Map.Entry' (java.util.Map.Entry)",
             "Import 'com.example.items.Item'",
-            "Import 'com.other.A.Item'");
-    assertThat(editsOf(codeActions(actions).get(0)))
-        .extracting(TextEdit::getNewText)
-        .containsExactly("\n\nimport java.util.Map.Entry;");
+            "Qualify as 'A.Item' (com.other.A.Item)");
+    assertThat(applyEdits(source, editsOf(actions.get(0))))
+        .contains("import java.util.Map;")
+        .contains("  Map.Entry<String, String> entry;")
+        .doesNotContain("import java.util.Map.Entry;");
+    assertThat(
+            session
+                .files()
+                .missingImports(TempSourceCompiler.TEST_URI, source, 1, nestedIndex, learned)
+                .items())
+        .containsExactlyInAnyOrder(
+            new MissingImportsResult.MissingImport(
+                "Entry", List.of(), List.of("java.util.Map.Entry")),
+            new MissingImportsResult.MissingImport(
+                "Item", List.of("com.example.items.Item"), List.of("com.other.A.Item")),
+            new MissingImportsResult.MissingImport("Hidden", List.of(), List.of()));
+
+    final var clashing =
+        """
+        package com.example;
+        class Test {
+          static class Map {}
+          Entry<String, String> entry;
+        }
+        """;
+    final List<CodeAction> qualified =
+        codeActions(nestedActions(clashing, nestedIndex, LearnedStaticImports.empty()));
+
+    assertThat(qualified)
+        .singleElement()
+        .satisfies(
+            action -> {
+              assertThat(action.getTitle()).isEqualTo("Qualify as 'java.util.Map.Entry'");
+              assertThat(applyEdits(clashing, editsOf(action)))
+                  .contains("  java.util.Map.Entry<String, String> entry;")
+                  .doesNotContain("import");
+            });
+  }
+
+  private List<Either<Command, CodeAction>> nestedActions(
+      final String source, final WorkspaceTypeIndex index, final LearnedStaticImports learned) {
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    return session
+        .files()
+        .codeAction(
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            index,
+            learned);
   }
 
   @Test

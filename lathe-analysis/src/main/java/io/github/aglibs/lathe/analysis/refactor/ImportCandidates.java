@@ -6,16 +6,16 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Position;
 
 // Resolves an unresolved simple type name to the fully-qualified names that are valid imports at a
-// source position: in a real package, accessible from that scope, and not already imported. A
-// nested type (`Map.Entry`) imports by its canonical name, after the top-level types. Shared by the
-// single-name import quick fix and the "add missing imports" command.
+// source position: in a real package, accessible from that scope, and not already imported. Shared
+// by the single-name import quick fix and the "add missing imports" command. A nested type is never
+// imported itself: it is written qualified from its top-level type, which is imported instead.
 public final class ImportCandidates {
 
   private ImportCandidates() {}
@@ -28,12 +28,33 @@ public final class ImportCandidates {
       final Set<String> alreadyImported) {
     final Scope scope = scopeAt(at, analysis);
     return typeIndex.searchExact(simpleName).stream()
-        .filter(entry -> entry.simpleName().equals(simpleName) && !entry.packageName().isEmpty())
-        .sorted(Comparator.comparing(TypeIndexEntry::isTopLevel, Comparator.reverseOrder()))
-        .map(TypeIndexEntry::qualifiedName)
+        .filter(
+            entry ->
+                entry.simpleName().equals(simpleName)
+                    && entry.isTopLevel()
+                    && !entry.packageName().isEmpty())
+        .map(entry -> "%s.%s".formatted(entry.packageName(), entry.simpleName()))
         .distinct()
         .filter(fqName -> !alreadyImported.contains(fqName))
         .filter(fqName -> isImportable(fqName, scope, analysis, typeIndex))
+        .toList();
+  }
+
+  // The nested types of this simple name accessible at the position, to write qualified
+  // (Map.Entry).
+  // A nested type without a class file yet has no element to write from, so it is left out.
+  public static List<TypeElement> nestedTypes(
+      final String simpleName,
+      final Position at,
+      final AttributedFileAnalysis analysis,
+      final WorkspaceTypeIndex typeIndex) {
+    final Scope scope = scopeAt(at, analysis);
+    return typeIndex.searchExact(simpleName).stream()
+        .filter(entry -> entry.simpleName().equals(simpleName) && !entry.isTopLevel())
+        .map(entry -> analysis.elements().getTypeElement(entry.qualifiedName()))
+        .filter(Objects::nonNull)
+        .filter(type -> scope == null || analysis.trees().isAccessible(scope, type))
+        .distinct()
         .toList();
   }
 
@@ -51,7 +72,7 @@ public final class ImportCandidates {
     return scope == null || analysis.trees().isAccessible(scope, typeEl);
   }
 
-  private static Scope scopeAt(final Position at, final AttributedFileAnalysis analysis) {
+  static Scope scopeAt(final Position at, final AttributedFileAnalysis analysis) {
     final long offset = Positions.toOffset(analysis.tree(), at.getLine(), at.getCharacter());
     final TreePath path = CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);
     return path != null ? analysis.trees().getScope(path) : null;

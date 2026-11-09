@@ -312,8 +312,16 @@ public final class FileFeatures {
                       memberNames.containsKey(name)
                           ? StaticImportCandidates.importSpellings(staticImports, analysis, name)
                           : List.of();
+                  final List<String> nested =
+                      typeNames.containsKey(name)
+                          ? ImportCandidates.nestedTypes(
+                                  name, typeNames.get(name), analysis, typeIndex)
+                              .stream()
+                              .map(type -> type.getQualifiedName().toString())
+                              .toList()
+                          : List.of();
                   return new MissingImportsResult.MissingImport(
-                      name, Stream.concat(types.stream(), statics.stream()).toList());
+                      name, Stream.concat(types.stream(), statics.stream()).toList(), nested);
                 })
             .filter(item -> !item.candidates().isEmpty() || plainTypeNames.contains(item.name()))
             .toList();

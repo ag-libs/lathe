@@ -118,23 +118,30 @@ class LatheEngineEditTest extends LatheEngineTestBase {
     assertThat(again.unresolved()).extracting(MissingImport::name).contains("Widget", "Fooo");
   }
 
+  // A nested type is never imported: a top-level type of the same name stays the one candidate and
+  // is added, and a name only a nested type matches is left to the agent with that type named.
   @Test
-  void fixImports_nestedType_addsItsCanonicalImport() throws Exception {
+  void fixImports_nestedTypes_neverImportedButNamedForAQualifiedName() throws Exception {
     TestCompiler.writeModuleSource(
         tmp,
         "com/example/util/Registry.java",
-        "package com.example.util; public class Registry { public static class Slot {} }");
+        "package com.example.util; public class Registry {"
+            + " public static class Slot {} public static class Mode {} }");
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/util/Mode.java", "package com.example.util; public class Mode {}");
     final Path source =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/app/App.java",
-            "package com.example.app;\nclass App {\n  Slot s;\n}\n");
+            "package com.example.app;\nclass App {\n  Slot s;\n  Mode m;\n}\n");
     engine = new LatheEngine(tmp);
 
     final LatheImports imports = engine.fixImports(source);
 
-    assertThat(imports.added()).containsExactly("com.example.util.Registry.Slot");
-    assertThat(imports.unresolved()).isEmpty();
+    assertThat(imports.added()).containsExactly("com.example.util.Mode");
+    assertThat(imports.unresolved())
+        .containsExactly(
+            new MissingImport("Slot", List.of(), List.of("com.example.util.Registry.Slot")));
   }
 
   // A call that another file of the same scope imports statically gets that static import, learned

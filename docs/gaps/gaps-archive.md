@@ -115,14 +115,22 @@ qualifying), ranked after top-level types.
 
 The type index already held nested types (`java.util.Map$Entry`, simple name `Entry`), but `ImportCandidates` named
 a candidate by its package and simple name, `java.util.Entry`, which javac could not find, so it was dropped.
-It now names it by `TypeIndexEntry.qualifiedName` (`java.util.Map.Entry`) and imports the nested type itself, as
-completion already did, after the top-level types of that name.
-The single-name quick fix, "add missing imports" and MCP `fix_imports` share that lookup.
+A nested type is now never imported itself, by a plain or a static import: it is written qualified from its top-level type.
+
+- The quick fix "Qualify as 'Map.Entry' (java.util.Map.Entry)" replaces the name and imports `java.util.Map` through
+  `CodeActionSupport.sourceName` and `importEditsFor` (CA-17's helpers), so it writes `java.util.Map.Entry` with no
+  import when the file gives `Map` another type.
+- Completion of a bare `Entr` inserts `Map.Entry` and imports `java.util.Map`.
+- "Add missing imports" and MCP `fix_imports` keep only top-level candidates, so a name with one top-level type is
+  still added automatically; `MissingImport.nested` names the nested types as a hint, which `fix_imports` reports.
+- Learned static imports were already limited to methods and fields, so they never offered a nested type.
 
 ### Regression targets
 
-`QuickFixCodeActionTest.codeAction_nestedType_offersCanonicalImportAfterTopLevelTypes`,
-`LatheEngineEditTest.fixImports_nestedType_addsItsCanonicalImport`.
+`QuickFixCodeActionTest.codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported`,
+`CompletionTypeIndexTest.typeIndex_nestedType_insertsQualifiedNameAndImportsTopLevelType`,
+`LatheEngineEditTest.fixImports_nestedTypes_neverImportedButNamedForAQualifiedName`,
+`McpTextTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`.
 
 ---
 

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeIndexTest extends CompletionTestSupport {
@@ -91,8 +92,10 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
     assertThat(items.get(0).getLabel()).isEqualTo("ArrayDeque");
   }
 
+  // A nested type completes by its simple name but is written from its top-level type, which is
+  // imported; the nested type itself is never imported.
   @Test
-  void typeIndex_nestedType_completesBySimpleNameAndImportsCanonicalName() throws IOException {
+  void typeIndex_nestedType_insertsQualifiedNameAndImportsTopLevelType() throws IOException {
     localFixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
@@ -105,8 +108,10 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
     assertThat(labels(items)).contains("Version");
     final var item = itemLabeled(items, "Version").orElseThrow();
     assertThat(item.getDetail()).isEqualTo("java.net.http.HttpClient.Version");
-    assertThat(item.getAdditionalTextEdits().get(0).getNewText())
-        .isEqualTo("import java.net.http.HttpClient.Version;\n");
+    assertThat(item.getTextEdit().getLeft().getNewText()).isEqualTo("HttpClient.Version");
+    assertThat(item.getAdditionalTextEdits())
+        .extracting(TextEdit::getNewText)
+        .containsExactly("import java.net.http.HttpClient;\n");
   }
 
   @Test

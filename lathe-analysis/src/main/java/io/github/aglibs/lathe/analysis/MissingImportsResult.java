@@ -33,10 +33,17 @@ public record MissingImportsResult(ImportLayout layout, List<MissingImport> item
     return layout.edits(chosen.stream().filter(offered::contains).distinct().toList());
   }
 
-  public record MissingImport(String name, List<String> candidates) {
+  // `nested` names the nested types of that name (java.util.Map.Entry): never imported themselves,
+  // they are written qualified from their top-level type, so they are hints, not candidates.
+  public record MissingImport(String name, List<String> candidates, List<String> nested) {
     public MissingImport {
-      ValidCheck.check().notNull(name, "name").notNull(candidates, "candidates").validate();
+      ValidCheck.check()
+          .notNull(name, "name")
+          .notNull(candidates, "candidates")
+          .notNull(nested, "nested")
+          .validate();
       candidates = List.copyOf(candidates);
+      nested = List.copyOf(nested);
     }
   }
 }

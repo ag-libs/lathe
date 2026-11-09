@@ -199,7 +199,7 @@ final class McpText {
     final List<String> unknown =
         imports.unresolved().stream()
             .filter(item -> item.candidates().isEmpty())
-            .map(MissingImport::name)
+            .map(McpText::unknownName)
             .toList();
     final String added =
         imports.added().isEmpty()
@@ -225,6 +225,14 @@ final class McpText {
             .flatMap(Optional::stream)
             .collect(Collectors.joining(System.lineSeparator()));
     return result(text, notes);
+  }
+
+  // A nested type is not imported itself, so it is named as the way to write the name instead.
+  private static String unknownName(final MissingImport item) {
+    return item.nested().isEmpty()
+        ? item.name()
+        : "%s (nested type %s: qualify it from its outer type)"
+            .formatted(item.name(), String.join(", ", item.nested()));
   }
 
   static String choiceLine(final MissingImport item) {
