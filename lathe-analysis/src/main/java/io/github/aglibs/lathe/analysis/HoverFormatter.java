@@ -38,25 +38,25 @@ final class HoverFormatter {
                   i -> formatParam(params.get(i), fmt, sourceParamNames, i, varargs && i == last))
               .collect(Collectors.joining(", "));
       final String typeParams = formatTypeParameters(exe.getTypeParameters());
+      final String typePrefix = typeParams.isEmpty() ? "" : "%s ".formatted(typeParams);
       if (exe.getKind() == ElementKind.CONSTRUCTOR) {
         // A constructor's element name is <init> and its return type is void; render it as the
-        // enclosing type's name with no return type, matching how the source declares it.
-        sig = "%s%s(%s)".formatted(typeParams, exe.getEnclosingElement().getSimpleName(), paramStr);
+        // enclosing type's name with no return type, matching how the source declares it, under
+        // its class's line for context. An anonymous class has no name for that line.
+        final var owner = (TypeElement) exe.getEnclosingElement();
+        final String constructor =
+            "%s%s(%s)".formatted(typePrefix, owner.getSimpleName(), paramStr);
+        sig =
+            owner.getSimpleName().isEmpty()
+                ? constructor
+                : "%s\n%s".formatted(typeLine(owner), constructor);
       } else {
         final String returnType =
             fmt != null ? fmt.format(exe.getReturnType()) : exe.getReturnType().toString();
-        sig = "%s%s %s(%s)".formatted(typeParams, returnType, exe.getSimpleName(), paramStr);
+        sig = "%s%s %s(%s)".formatted(typePrefix, returnType, exe.getSimpleName(), paramStr);
       }
     } else if (element instanceof final TypeElement te) {
-      final var kind =
-          switch (te.getKind()) {
-            case ANNOTATION_TYPE -> "@interface";
-            case RECORD -> "record";
-            case ENUM -> "enum";
-            case INTERFACE -> "interface";
-            default -> "class";
-          };
-      sig = "%s %s".formatted(kind, te.getSimpleName());
+      sig = typeLine(te);
     } else if (element != null && type != null) {
       sig = "%s %s".formatted(type, element.getSimpleName());
     } else if (type != null) {
@@ -73,6 +73,19 @@ final class HoverFormatter {
       result = "%s\n\n*source: %s*".formatted(result, origin);
     }
     return Optional.of(result);
+  }
+
+  private static String typeLine(final TypeElement te) {
+    final var kind =
+        switch (te.getKind()) {
+          case ANNOTATION_TYPE -> "@interface";
+          case RECORD -> "record";
+          case ENUM -> "enum";
+          case INTERFACE -> "interface";
+          default -> "class";
+        };
+    return "%s %s%s"
+        .formatted(kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()));
   }
 
   static String formatParam(
@@ -94,15 +107,14 @@ final class HoverFormatter {
     return SourceParser.isSyntheticName(name) ? typeName : "%s %s".formatted(typeName, name);
   }
 
-  // A method's own type-parameter declaration, e.g. "<T> " or "<K, V> ", or "" when it declares
-  // none. Names only (bounds omitted) to keep the hover line compact; the trailing space slots it
-  // before the return type.
+  // A type-parameter declaration, e.g. "<T>" or "<K, V>", or "" when there is none. Names only
+  // (bounds omitted) to keep the hover line compact.
   private static String formatTypeParameters(
       final List<? extends TypeParameterElement> typeParams) {
     return typeParams.isEmpty()
         ? ""
         : typeParams.stream()
             .map(tp -> tp.getSimpleName().toString())
-            .collect(Collectors.joining(", ", "<", "> "));
+            .collect(Collectors.joining(", ", "<", ">"));
   }
 }

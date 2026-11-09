@@ -64,6 +64,85 @@ class JavadocMarkdownPrinterTest {
     assertThat(result).contains("```").contains("code block");
   }
 
+  // --- format: paragraphs and anchors ---
+
+  @Test
+  void format_paragraphTags_collapseToOneBlankLine() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            """
+            class T {
+              /**
+               * First.
+               * <p>
+               * Second.
+               *
+               * <p>Third.</p>
+               * <p>
+               * <p>Fourth.
+               * @return the result
+               */
+              int m() { return 0; }
+            }
+            """);
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .isEqualTo("First.\n\nSecond.\n\nThird.\n\nFourth.\n\n**@return** the result");
+  }
+
+  @Test
+  void format_anchorWithHref_rendersOneLineMarkdownLink() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            """
+            class T {
+              /**
+               * See <a href="https://example.com/a">the
+               *     guide</a> here.
+               *
+               * @see <a href="https://example.com/b">Other
+               *     page</a>
+               */
+              void m() {}
+            }
+            """);
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .isEqualTo(
+            "See [the guide](https://example.com/a) here.\n\n"
+                + "**@see** [Other page](https://example.com/b)");
+  }
+
+  @Test
+  void format_anchorEdgeCases_escapeParensDropDocRootAndCloseUnclosed() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            """
+            class T {
+              /**
+               * A <a href="https://example.com/Foo_(bar)">wiki</a> page,
+               * a <a href="{@docRoot}/x.html">local</a> page,
+               * and an <a href="https://example.com/c">unclosed link.
+               *
+               * @param v the value
+               * @see <a href="https://example.com/d">Last</a>
+               */
+              void m(int v) {}
+            }
+            """);
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .contains("[wiki](https://example.com/Foo_%28bar%29)")
+        .contains("a local page")
+        .doesNotContain("docRoot")
+        .contains("[unclosed link.](https://example.com/c)")
+        .contains("**@param** `v` the value")
+        .contains("**@see** [Last](https://example.com/d)");
+  }
+
+  @Test
+  void format_anchorWithoutHref_printsLabelOnly() throws IOException {
+    final var tree = parseMethodDoc("class T { /** An <a id=\"x\">anchor</a>. */ void m() {} }");
+    assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("An anchor.");
+  }
+
   // --- format: inline tags ---
 
   @Test

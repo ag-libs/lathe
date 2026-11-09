@@ -135,6 +135,152 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_newExpression_describesConstructorWithClassContext() {
+    final var src =
+        """
+        /** A widget class. */
+        class Widget<T> {
+          /**
+           * Makes a sized widget.
+           *
+           * @param size the size
+           */
+          Widget(int size) {}
+
+          Widget() {}
+        }
+
+        class User {
+          void use() {
+            new Widget<String>(3);
+            new Widget<String>();
+          }
+        }
+        """;
+    assertThat(hoverText(src, "new Widget<String>(3", "Widget"))
+        .contains("class Widget<T>\nWidget(int size)")
+        .contains("Makes a sized widget.")
+        .contains("**@param** `size` the size")
+        .doesNotContain("A widget class.");
+    assertThat(hoverText(src, "new Widget<String>()", "Widget"))
+        .contains("class Widget<T>\nWidget()")
+        .contains("A widget class.");
+    assertThat(hoverText(src, "Widget() {}", "Widget"))
+        .contains("class Widget<T>\nWidget()")
+        .contains("A widget class.");
+  }
+
+  @Test
+  void hover_anonymousClassConstructor_omitsNamelessClassLine() {
+    final var src =
+        """
+        class User {
+          Thread make() {
+            return new Thread("worker") {};
+          }
+        }
+        """;
+    assertThat(hoverText(src, "new Thread", "new")).startsWith("```java\n(String)\n```");
+  }
+
+  @Test
+  void hover_undocumentedOverride_namesInheritedParamsAsOverrideDoes() {
+    final var src =
+        """
+        interface Shape {
+          /**
+           * Resizes the shape.
+           *
+           * @param scale the factor
+           */
+          void resize(int scale);
+        }
+
+        class Box implements Shape {
+          @Override
+          public void resize(int factor) {}
+
+          void use() { resize(2); }
+        }
+        """;
+    assertThat(hoverText(src, "resize(2)", "resize"))
+        .contains("void resize(int factor)")
+        .contains("Resizes the shape.")
+        .contains("**@param** `factor` the factor")
+        .doesNotContain("`scale`");
+  }
+
+  @Test
+  void hover_inheritDocTags_resolveFromOverriddenMethod() {
+    final var src =
+        """
+        class Base {
+          /**
+           * Base text.
+           *
+           * @param value the base value
+           * @return the base result
+           */
+          int run(int value) { return value; }
+        }
+
+        class Child extends Base {
+          /**
+           * {@inheritDoc} Child extra.
+           *
+           * @param v {@inheritDoc}
+           * @return {@inheritDoc}
+           */
+          @Override
+          int run(int v) { return v; }
+
+          void use() { run(1); }
+        }
+        """;
+    assertThat(hoverText(src, "run(1)", "run"))
+        .contains("Base text. Child extra.")
+        .contains("**@param** `v` the base value")
+        .contains("**@return** the base result");
+  }
+
+  @Test
+  void hover_undocumentedOverride_inheritsThroughChain_ownDocWins() {
+    final var src =
+        """
+        interface Shape {
+          /** Root doc. */
+          double area();
+        }
+
+        class Square implements Shape {
+          /** {@inheritDoc} Square part. */
+          @Override
+          public double area() { return 1; }
+        }
+
+        class Tile extends Square {
+          @Override
+          public double area() { return 2; }
+        }
+
+        class Circle implements Shape {
+          /** Own doc. */
+          @Override
+          public double area() { return 3; }
+
+          void use(Tile tile) {
+            tile.area();
+            area();
+          }
+        }
+        """;
+    assertThat(hoverText(src, "tile.area()", "area")).contains("Root doc. Square part.");
+    assertThat(hoverText(src, "    area();", "area"))
+        .contains("Own doc.")
+        .doesNotContain("Root doc.");
+  }
+
+  @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =
         """

@@ -104,14 +104,22 @@ public final class NavigationFeatures {
       return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
     }
 
-    final Element element = cur.elementOrJavadocReference();
+    final Element constructor =
+        CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
+    final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
     final TypeMirror type =
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final List<Path> allRoots = request.allSourceRoots();
+    // An undocumented constructor (an implicit one, often) is described by its class's javadoc.
     final var javadoc =
         javadocLocator
-            .locate(element, cur.analysis().trees(), allRoots)
-            .map(JavadocMarkdownPrinter::format)
+            .markdown(element, cur.analysis(), allRoots)
+            .or(
+                () ->
+                    element != null && element.getKind() == ElementKind.CONSTRUCTOR
+                        ? javadocLocator.markdown(
+                            element.getEnclosingElement(), cur.analysis(), allRoots)
+                        : Optional.empty())
             .orElse(null);
     final var origin =
         request.libraries().originLabel(element, compiler.fileManager()).orElse(null);
