@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.refactor.AddConstructorParameterProvider;
 import io.github.aglibs.lathe.analysis.refactor.AddThrowsProvider;
@@ -303,10 +304,14 @@ public final class FileFeatures {
             .distinct()
             .map(
                 name -> {
+                  final Scope scope =
+                      typeNames.containsKey(name)
+                          ? ImportCandidates.scopeAt(typeNames.get(name), analysis)
+                          : null;
                   final List<String> types =
                       typeNames.containsKey(name)
                           ? ImportCandidates.resolve(
-                              name, typeNames.get(name), analysis, typeIndex, alreadyImported)
+                              name, scope, analysis, typeIndex, alreadyImported)
                           : List.of();
                   final List<String> statics =
                       memberNames.containsKey(name)
@@ -314,12 +319,7 @@ public final class FileFeatures {
                           : List.of();
                   final List<String> nested =
                       typeNames.containsKey(name)
-                          ? ImportCandidates.nestedTypes(
-                                  name,
-                                  ImportCandidates.scopeAt(typeNames.get(name), analysis),
-                                  analysis,
-                                  typeIndex)
-                              .stream()
+                          ? ImportCandidates.nestedTypes(name, scope, analysis, typeIndex).stream()
                               .map(type -> type.getQualifiedName().toString())
                               .toList()
                           : List.of();

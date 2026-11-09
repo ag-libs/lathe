@@ -144,6 +144,38 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                             new Position(0, receiver.indexOf(".comp")))));
   }
 
+  // A call chain's receiver is rewritten at its leading name. Before the file has an analysis there
+  // is nothing to look at, so a nested type is written from its top-level type; no import is added
+  // then, for any type, as the import's place comes from the analysis.
+  @Test
+  void typeIndex_nestedType_callChainReceiverAndNoAnalysisYet_writtenFromTopLevelType()
+      throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Entry", "java.util.Map$Entry", TypeKind.INTERFACE)));
+
+    final String chain = "class Test { void m() { Entry.comparingByKey().§ } }";
+    assertThat(localFixture.complete(chain))
+        .isNotEmpty()
+        .allSatisfy(
+            item ->
+                assertThat(item.getAdditionalTextEdits())
+                    .contains(
+                        new TextEdit(
+                            new Range(
+                                new Position(0, chain.indexOf("Entry.")),
+                                new Position(0, chain.indexOf(".comparingByKey"))),
+                            "Map.Entry")));
+
+    final var cold =
+        itemLabeled(localFixture.completeWithoutCache("class Test { Entr§ field; }"), "Entry");
+    assertThat(cold)
+        .hasValueSatisfying(
+            item -> assertThat(item.getTextEdit().getLeft().getNewText()).isEqualTo("Map.Entry"));
+  }
+
   private void assertWritten(
       final String source, final String label, final String written, final String... imports) {
     final var item = itemLabeled(localFixture.complete(source), label).orElseThrow();

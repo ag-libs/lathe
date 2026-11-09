@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.ArrayList;
@@ -192,15 +193,15 @@ final class TypeReferenceCompleter {
     final var scope =
         analysis != null ? ReceiverResolver.resolveScope(analysis, req.cursorOffset()) : null;
     final var validator = new TypeIndexValidator(analysis, scope);
+    final SourceTypeNames names =
+        analysis != null ? ReceiverResolver.typeNames(analysis, scope) : null;
     final List<CompletionCandidate> typeCandidates =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix(), req.typeIndex()))
             .filter(validator::isResolvable)
             .filter(entry -> typeIndexRoleAllows(entry, analysis, scope, role))
             .limit(TYPE_INDEX_RESULT_LIMIT)
-            .map(
-                entry ->
-                    CandidateFactory.typeIndexCandidate(entry, analysis, enclosingClass(scope)))
+            .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, names))
             .toList();
     final List<CompletionItem> items =
         typeCandidates.stream().map(CompletionItemPresenter::present).toList();
@@ -412,16 +413,16 @@ final class TypeReferenceCompleter {
     }
 
     final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
+    final SourceTypeNames names = ReceiverResolver.typeNames(analysis, scope);
     final List<CompletionCandidate> subtypeCandidates =
-        instantiableSubtypeCandidates(prefix, expectedEl, analysis, typeIndex, scope);
+        instantiableSubtypeCandidates(prefix, expectedEl, analysis, typeIndex, scope, names);
     if (!(expectedEl.getSimpleName().toString().startsWith(prefix)
         && constructibleType(expectedEl, analysis, null))) {
       return subtypeCandidates;
     }
 
     return Stream.concat(
-            Stream.of(
-                CandidateFactory.typeElementCandidate(expectedEl, analysis, enclosingClass(scope))),
+            Stream.of(CandidateFactory.typeElementCandidate(expectedEl, names)),
             subtypeCandidates.stream())
         .toList();
   }
@@ -431,7 +432,8 @@ final class TypeReferenceCompleter {
       final TypeElement expectedEl,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex,
-      final Scope scope) {
+      final Scope scope,
+      final SourceTypeNames names) {
     if (typeIndex == null) {
       return List.of();
     }
@@ -443,7 +445,7 @@ final class TypeReferenceCompleter {
         .sorted(typeCandidateComparator(prefix, typeIndex))
         .limit(TYPE_INDEX_RESULT_LIMIT)
         .filter(entry -> resolvesToInstantiableSubtype(entry, expectedEl, analysis, scope))
-        .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, enclosingClass(scope)))
+        .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, names))
         .toList();
   }
 
@@ -474,11 +476,6 @@ final class TypeReferenceCompleter {
     return injected.prefix().isEmpty()
         ? new CompletionOutcome(base.items(), base.freshAnalysis(), true)
         : base;
-  }
-
-  // The class code at the cursor is written into; none outside every class (an import, a header).
-  private static TypeElement enclosingClass(final Scope scope) {
-    return scope == null ? null : scope.getEnclosingClass();
   }
 
   private static boolean indexKindAllows(final TypeKind kind, final TypeReferenceRole role) {

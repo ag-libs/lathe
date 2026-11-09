@@ -7,7 +7,6 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.DefinitionLocator;
-import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -145,15 +144,12 @@ final class CandidateGenerator {
     // never imported itself), with the import that name needs.
     final TypeElement topLevel = DefinitionLocator.topLevelClass(enumType);
     final boolean reachable = topLevel != null && isInScope(topLevel, cursorPath);
-    final TreePath classPath = cursorPath == null ? null : TreePaths.enclosingClass(cursorPath);
-    final TypeElement target =
-        classPath == null ? null : (TypeElement) snapshot.trees().getElement(classPath);
+    final SourceTypeNames names =
+        ReceiverResolver.typeNames(snapshot, ReceiverResolver.resolveScope(snapshot, cursorOffset));
     final String qualifier =
-        reachable
-            ? classQualifiedName(enumType, cursorOffset)
-            : SourceTypeNames.sourceName(snapshot, target, enumType);
+        reachable ? classQualifiedName(enumType, cursorOffset) : names.sourceName(enumType);
     final ImportEdit importEdit =
-        reachable ? null : CandidateFactory.importEditFor(snapshot, target, enumType);
+        reachable ? null : CandidateFactory.importEditFor(names, enumType);
     return proposeEnumConstantCandidates(enumType, prefix, qualifier, importEdit);
   }
 

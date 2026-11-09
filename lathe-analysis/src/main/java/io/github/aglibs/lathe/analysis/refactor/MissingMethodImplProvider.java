@@ -68,7 +68,8 @@ public final class MissingMethodImplProvider {
       return List.of();
     }
 
-    final var formatter = SourceTypeNames.sourceTypeFormatter(analysis, classElement);
+    final var names = new SourceTypeNames(analysis, classElement);
+    final var formatter = names.formatter();
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 
@@ -79,9 +80,7 @@ public final class MissingMethodImplProvider {
             buildStubs(unimplemented, formatter, types, classType));
 
     final List<TextEdit> importEdits =
-        SourceTypeNames.importEditsFor(
-            analysis,
-            classElement,
+        names.importEditsFor(
             unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));
 
     final List<TextEdit> allEdits =

@@ -303,8 +303,7 @@ public final class ExtractMethodProvider {
                               start(site.run().get(0)),
                               end(CollectionUtil.last(site.run())),
                               call(site))),
-              SourceTypeNames.importEditsFor(analysis, targetClass(), signatureTypes.stream())
-                  .stream())
+              typeNames().importEditsFor(signatureTypes.stream()).stream())
           .flatMap(edits -> edits)
           .toList();
     }
@@ -462,12 +461,13 @@ public final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return SourceTypeNames.sourceTypeFormatter(analysis, targetClass()).format(type);
+      return typeNames().formatter().format(type);
     }
 
-    // The class the new method joins.
-    private TypeElement targetClass() {
-      return (TypeElement) analysis.trees().getElement(member.getParentPath());
+    // How the class the new method joins names a type.
+    private SourceTypeNames typeNames() {
+      return new SourceTypeNames(
+          analysis, (TypeElement) analysis.trees().getElement(member.getParentPath()));
     }
 
     private String sourceOf(final TreePath first, final TreePath last) {

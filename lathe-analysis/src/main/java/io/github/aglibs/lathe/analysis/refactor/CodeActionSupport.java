@@ -91,9 +91,8 @@ public final class CodeActionSupport {
   static SourceType sourceType(
       final AttributedFileAnalysis analysis, final TreePath path, final TypeMirror type) {
     final var target = (TypeElement) analysis.trees().getElement(TreePaths.enclosingClass(path));
-    return new SourceType(
-        SourceTypeNames.sourceTypeFormatter(analysis, target).format(type),
-        SourceTypeNames.importEditsFor(analysis, target, Stream.of(type)));
+    final var names = new SourceTypeNames(analysis, target);
+    return new SourceType(names.formatter().format(type), names.importEditsFor(Stream.of(type)));
   }
 
   // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local.

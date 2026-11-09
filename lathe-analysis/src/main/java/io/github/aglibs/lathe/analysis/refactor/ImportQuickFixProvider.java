@@ -19,7 +19,6 @@ import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -30,18 +29,16 @@ public final class ImportQuickFixProvider {
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
+    final Scope scope = ImportCandidates.scopeAt(request.diag().getRange().getStart(), analysis);
     final List<Either<Command, CodeAction>> imports =
         importActions(
             request,
             analysis,
             alreadyImported ->
                 ImportCandidates.resolve(
-                    request.payload().name(),
-                    request.diag().getRange().getStart(),
-                    analysis,
-                    typeIndex,
-                    alreadyImported));
-    return Stream.concat(imports.stream(), qualifyActions(request, analysis, typeIndex).stream())
+                    request.payload().name(), scope, analysis, typeIndex, alreadyImported));
+    return Stream.concat(
+            imports.stream(), qualifyActions(request, analysis, typeIndex, scope).stream())
         .toList();
   }
 
@@ -50,29 +47,19 @@ public final class ImportQuickFixProvider {
   private static List<Either<Command, CodeAction>> qualifyActions(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
-      final WorkspaceTypeIndex typeIndex) {
-    final Position at = request.diag().getRange().getStart();
-    final Scope scope = ImportCandidates.scopeAt(at, analysis);
-    if (scope == null || scope.getEnclosingClass() == null) {
-      return List.of();
-    }
-
-    final TypeElement target = scope.getEnclosingClass();
+      final WorkspaceTypeIndex typeIndex,
+      final Scope scope) {
+    final var names =
+        new SourceTypeNames(analysis, scope == null ? null : scope.getEnclosingClass());
     return ImportCandidates.nestedTypes(request.payload().name(), scope, analysis, typeIndex)
         .stream()
-        .map(
-            type ->
-                Either.<Command, CodeAction>forRight(
-                    qualifyAction(request, analysis, target, type)))
+        .map(type -> Either.<Command, CodeAction>forRight(qualifyAction(request, names, type)))
         .toList();
   }
 
   private static CodeAction qualifyAction(
-      final CodeActionRequest request,
-      final AttributedFileAnalysis analysis,
-      final TypeElement target,
-      final TypeElement type) {
-    final String written = SourceTypeNames.sourceName(analysis, target, type);
+      final CodeActionRequest request, final SourceTypeNames names, final TypeElement type) {
+    final String written = names.sourceName(type);
     final String qualifiedName = type.getQualifiedName().toString();
     final var action = new CodeAction();
     action.setTitle(
@@ -84,7 +71,7 @@ public final class ImportQuickFixProvider {
 
     final List<TextEdit> edits =
         Stream.concat(
-                SourceTypeNames.importEditsFor(analysis, target, Stream.of(type.asType())).stream(),
+                names.importEditsFor(Stream.of(type.asType())).stream(),
                 Stream.of(new TextEdit(request.diag().getRange(), written)))
             .toList();
     final var edit = new WorkspaceEdit();

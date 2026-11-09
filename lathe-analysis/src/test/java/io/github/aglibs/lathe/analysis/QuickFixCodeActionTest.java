@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -691,6 +693,68 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                   .contains("  java.util.Map.Entry<String, String> entry;")
                   .doesNotContain("import");
             });
+  }
+
+  // A name in a class header gets the fix too; a common name nested in many types offers only the
+  // first few.
+  @Test
+  void codeAction_nestedType_inAHeaderAndNestedInManyTypes_qualifiedAtMostTenWays()
+      throws IOException {
+    final var classDir = tmp.resolve("classes");
+    final List<Path> outers =
+        IntStream.range(0, 12)
+            .mapToObj(
+                i ->
+                    IOUtil.unchecked(
+                        () ->
+                            Files.writeString(
+                                tmp.resolve("O%d.java".formatted(i)),
+                                "package com.other; public class O%d { public static class Part {} }"
+                                    .formatted(i))))
+            .toList();
+    TestJavac.compileToDir(classDir, outers.toArray(Path[]::new));
+    session.close();
+    session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
+    final WorkspaceTypeIndex partIndex =
+        TempSourceCompiler.typeIndex(
+            tmp.resolve("part_index.json"),
+            Stream.concat(
+                    IntStream.range(0, 12)
+                        .mapToObj(
+                            i ->
+                                new TypeIndexEntry(
+                                    "Part",
+                                    "com.other.O%d$Part".formatted(i),
+                                    "com.other",
+                                    TypeKind.CLASS,
+                                    true,
+                                    List.of())),
+                    Stream.of(
+                        new TypeIndexEntry(
+                            "Entry",
+                            "java.util.Map$Entry",
+                            "java.util",
+                            TypeKind.INTERFACE,
+                            true,
+                            List.of())))
+                .toArray(TypeIndexEntry[]::new));
+
+    assertThat(
+            codeActions(
+                nestedActions(
+                    "package com.example;\nclass Test {\n  Part part;\n}\n",
+                    partIndex,
+                    LearnedStaticImports.empty())))
+        .hasSize(10)
+        .allMatch(action -> action.getTitle().startsWith("Qualify as 'O"));
+    assertThat(
+            codeActions(
+                nestedActions(
+                    "package com.example;\nabstract class Header implements Entry<String, String> {}\n",
+                    partIndex,
+                    LearnedStaticImports.empty())))
+        .extracting(CodeAction::getTitle)
+        .containsExactly("Qualify as 'Map.Entry' (java.util.Map.Entry)");
   }
 
   private List<Either<Command, CodeAction>> nestedActions(

@@ -339,6 +339,7 @@ final class MemberAccessCompleter {
     }
 
     final var scope = ReceiverResolver.resolveScope(snapshot, cursorOffset);
+    final SourceTypeNames names = ReceiverResolver.typeNames(snapshot, scope);
 
     // An unimported simple name may match several classpath types (e.g. two `Objects`).
     // Offer members from every candidate, each carrying its own import edit, rather than returning
@@ -350,12 +351,7 @@ final class MemberAccessCompleter {
       }
 
       final var typeEl = snapshot.elements().getTypeElement(candidate.qualifiedName());
-      // A receiver written other than as typed (Map.Entry for Entry) is rewritten only when it is a
-      // bare name; a call chain on it has no name of its own to rewrite.
-      if (typeEl == null
-          || isMethodChain
-              && !SourceTypeNames.sourceName(snapshot, enclosingClass(scope), typeEl)
-                  .equals(lookupName)) {
+      if (typeEl == null) {
         continue;
       }
 
@@ -380,7 +376,7 @@ final class MemberAccessCompleter {
         continue;
       }
 
-      applyTypeNameEdits(items, typeEl, parsed, injected, snapshot, enclosingClass(scope));
+      applyTypeNameEdits(items, typeEl, lookupName, parsed, injected, names);
       aggregated.addAll(items);
     }
 
@@ -416,32 +412,35 @@ final class MemberAccessCompleter {
     return nameStr;
   }
 
-  // The members of a type the file does not name yet: the receiver is written as code there names
-  // the type (a nested one from a type it can name, Map.Entry, never imported itself), with the
-  // import that name needs.
+  // The members of a type the file does not name yet: the receiver's leading name is written as
+  // code there names the type (a nested one from a type it can name, Map.Entry, never imported
+  // itself), with the import that name needs.
   private static void applyTypeNameEdits(
       final List<CompletionItem> items,
       final TypeElement type,
+      final String typedName,
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected,
-      final AttributedFileAnalysis analysis,
-      final TypeElement target) {
+      final SourceTypeNames names) {
     final List<TextEdit> edits =
         Stream.concat(
-                SourceTypeNames.importEditsFor(analysis, target, Stream.of(type.asType())).stream(),
-                receiverRewrite(
-                    SourceTypeNames.sourceName(analysis, target, type), parsed, injected)
-                    .stream())
+                names.importEditsFor(Stream.of(type.asType())).stream(),
+                receiverRewrite(names.sourceName(type), typedName, parsed, injected).stream())
             .toList();
     items.forEach(
         item -> edits.forEach(edit -> CompletionItemPresenter.addAdditionalTextEdit(item, edit)));
   }
 
-  // The bare receiver name ends where javac's tree says it does and spans its own length back.
+  // The receiver text is the source slice ending where javac's tree ends the receiver, so it starts
+  // its own length back from there, and it starts with the typed name (`Entry` in `Entry` or in
+  // `Entry.comparingByKey()`).
   private static Optional<TextEdit> receiverRewrite(
-      final String written, final ParsedSentinel parsed, final SentinelInjectionResult injected) {
+      final String written,
+      final String typedName,
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected) {
     final int end = parsed.receiverEndOffset();
-    if (written.equals(parsed.receiverText()) || end < 0) {
+    if (written.equals(typedName) || end < 0 || !parsed.receiverText().startsWith(typedName)) {
       return Optional.empty();
     }
 
@@ -451,12 +450,8 @@ final class MemberAccessCompleter {
         new TextEdit(
             new Range(
                 Positions.offsetToPosition(content, start),
-                Positions.offsetToPosition(content, end)),
+                Positions.offsetToPosition(content, start + typedName.length())),
             written));
-  }
-
-  private static TypeElement enclosingClass(final Scope scope) {
-    return scope == null ? null : scope.getEnclosingClass();
   }
 
   private static SemanticCompletionContext memberAccessSemanticContext(

@@ -24,59 +24,63 @@ import org.eclipse.lsp4j.TextEdit;
 // How code written into a class of the file names a type, and the import that name needs: shared by
 // the refactors and the import fixes that write a type and by completion, so a nested type is
 // written the same way everywhere (from a type the code can name, never imported itself) and a
-// name the file already gives another type is written qualified.
+// name the file already gives another type is written qualified. One is made per request: the
+// file's imports and declared type names are read once, not for every type it names.
 public final class SourceTypeNames {
 
-  private SourceTypeNames() {}
+  private final AttributedFileAnalysis analysis;
+  private final TypeElement target;
+  private final ImportAnalyzer importAnalyzer;
+  private final Set<String> importedNames;
+  private final Set<String> declaredTypeNames;
 
-  // The imports code written into `target` needs for every type the given types mention, each once:
-  // the top-level type each written name starts from (see sourceTypeFormatter).
-  public static List<TextEdit> importEditsFor(
-      final AttributedFileAnalysis analysis,
-      final TypeElement target,
-      final Stream<? extends TypeMirror> types) {
-    final var importAnalyzer = new ImportAnalyzer(analysis);
+  // `target` is the class the code is written into; none outside every class (a header, an import)
+  // leaves only imports and the file's own types to see a name by.
+  public SourceTypeNames(final AttributedFileAnalysis analysis, final TypeElement target) {
+    this.analysis = analysis;
+    this.target = target;
+    this.importAnalyzer = new ImportAnalyzer(analysis);
+    this.importedNames = importAnalyzer.importedQualifiedNames();
+    this.declaredTypeNames = declaredTypeNames(analysis);
+  }
+
+  // The imports the code needs for every type the given types mention, each once: the top-level
+  // type each written name starts from (see formatter).
+  public List<TextEdit> importEditsFor(final Stream<? extends TypeMirror> types) {
     return types
         .flatMap(SourceTypeNames::typesIn)
         .filter(DeclaredType.class::isInstance)
         .map(type -> ((DeclaredType) type).asElement())
         .filter(TypeElement.class::isInstance)
-        .flatMap(type -> importFor(analysis, target, (TypeElement) type).stream())
+        .flatMap(type -> importFor((TypeElement) type).stream())
         .distinct()
         .map(importAnalyzer::importEdit)
         .filter(Objects::nonNull)
         .toList();
   }
 
-  // The type to import for code in `target` naming `type`: the top-level type its written name
-  // starts from, unless the file declares that type or gives its simple name another one. A nested
-  // type is never imported itself. The import may still be one the file needs no line for (an
-  // import it has, java.lang); ImportAnalyzer decides that.
-  public static Optional<String> importFor(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    final TypeElement root = nameRoot(analysis, target, type);
-    return root.getNestingKind() != NestingKind.MEMBER
-            && !declaredIn(analysis, root)
-            && !clashes(analysis, root)
-        ? Optional.of(root.getQualifiedName().toString())
+  // The import line the code naming `type` needs: the top-level type its written name starts from,
+  // unless the file declares that type, gives its simple name another one, or needs no line for it
+  // (an import it has, java.lang). A nested type is never imported itself.
+  public Optional<String> importFor(final TypeElement type) {
+    final TypeElement root = nameRoot(type);
+    return root.getNestingKind() != NestingKind.MEMBER && !declaredIn(root) && !clashes(root)
+        ? Optional.of(root.getQualifiedName().toString()).filter(importAnalyzer::needsImport)
         : Optional.empty();
   }
 
-  // For code written into `target`, a class of the file: a nested type `target` cannot see by its
-  // simple name is written from the nearest enclosing type it can (`ClassModel.Builder`, as Java
-  // code usually does; a bare `Module` could be java.lang's, two `Builder`s would clash); the name
-  // it starts from is written qualified when the file already gives that simple name another type
-  // (by an import, a declaration or its package), else simply.
-  public static TypeDisplayFormatter sourceTypeFormatter(
-      final AttributedFileAnalysis analysis, final TypeElement target) {
-    return new TypeDisplayFormatter(analysis.types(), type -> sourceName(analysis, target, type));
+  // A nested type `target` cannot see by its simple name is written from the nearest enclosing type
+  // it can (`ClassModel.Builder`, as Java code usually does; a bare `Module` could be java.lang's,
+  // two `Builder`s would clash); the name it starts from is written qualified when the file already
+  // gives that simple name another type (by an import, a declaration or its package), else simply.
+  public TypeDisplayFormatter formatter() {
+    return new TypeDisplayFormatter(analysis.types(), this::sourceName);
   }
 
-  public static String sourceName(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    final TypeElement root = nameRoot(analysis, target, type);
+  public String sourceName(final TypeElement type) {
+    final TypeElement root = nameRoot(type);
     final String rootName =
-        (clashes(analysis, root) ? root.getQualifiedName() : root.getSimpleName()).toString();
+        (clashes(root) ? root.getQualifiedName() : root.getSimpleName()).toString();
     return rootName
         + type.getQualifiedName().toString().substring(root.getQualifiedName().length());
   }
@@ -84,19 +88,17 @@ public final class SourceTypeNames {
   // The type a written name starts from: the type itself, or for a nested type `target` cannot see
   // by its simple name (as a member, or through an import of it), the nearest enclosing type it can
   // (or the top-level type).
-  private static TypeElement nameRoot(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
+  private TypeElement nameRoot(final TypeElement type) {
     return type.getNestingKind() == NestingKind.MEMBER
-            && !memberTypeInScope(analysis, target, type)
-            && !importedNames(analysis).contains(type.getQualifiedName().toString())
-        ? nameRoot(analysis, target, (TypeElement) type.getEnclosingElement())
+            && !memberTypeInScope(type)
+            && !importedNames.contains(type.getQualifiedName().toString())
+        ? nameRoot((TypeElement) type.getEnclosingElement())
         : type;
   }
 
   // A member type `target` sees by its simple name: one of its own or an enclosing class's members,
   // declared or inherited.
-  private static boolean memberTypeInScope(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
+  private boolean memberTypeInScope(final TypeElement type) {
     return Stream.iterate(
             target,
             Objects::nonNull,
@@ -104,24 +106,19 @@ public final class SourceTypeNames {
         .anyMatch(c -> analysis.elements().getAllMembers(c).contains(type));
   }
 
-  private static boolean clashes(final AttributedFileAnalysis analysis, final TypeElement type) {
+  private boolean clashes(final TypeElement type) {
     final String simpleName = type.getSimpleName().toString();
     final String qualifiedName = type.getQualifiedName().toString();
-    return importedNames(analysis).stream()
+    return importedNames.stream()
             .anyMatch(
                 imported -> !imported.equals(qualifiedName) && imported.endsWith("." + simpleName))
-        || declaredTypeNames(analysis).contains(simpleName) && !declaredIn(analysis, type)
-        || inOwnPackage(analysis, simpleName).filter(sibling -> !sibling.equals(type)).isPresent();
-  }
-
-  private static Set<String> importedNames(final AttributedFileAnalysis analysis) {
-    return new ImportAnalyzer(analysis).importedQualifiedNames();
+        || declaredTypeNames.contains(simpleName) && !declaredIn(type)
+        || inOwnPackage(simpleName).filter(sibling -> !sibling.equals(type)).isPresent();
   }
 
   // The type of the file's own package with this simple name: it is in scope there without an
   // import, and an import of another one would shadow it for the whole file.
-  private static Optional<TypeElement> inOwnPackage(
-      final AttributedFileAnalysis analysis, final String simpleName) {
+  private Optional<TypeElement> inOwnPackage(final String simpleName) {
     final ExpressionTree packageName = analysis.tree().getPackageName();
     final String name =
         packageName == null ? simpleName : "%s.%s".formatted(packageName, simpleName);
@@ -137,12 +134,12 @@ public final class SourceTypeNames {
         return super.visitClass(tree, unused);
       }
     }.scan(analysis.tree(), null);
-    return names;
+    return Set.copyOf(names);
   }
 
   // A type of the file itself is in scope by its simple name, and importing a private one would
   // not even compile.
-  private static boolean declaredIn(final AttributedFileAnalysis analysis, final TypeElement type) {
+  private boolean declaredIn(final TypeElement type) {
     final TreePath path = analysis.trees().getPath(type);
     return path != null && path.getCompilationUnit() == analysis.tree();
   }

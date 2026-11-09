@@ -18,15 +18,16 @@ import org.eclipse.lsp4j.Position;
 // imported itself: it is written qualified from its top-level type, which is imported instead.
 public final class ImportCandidates {
 
+  private static final int NESTED_TYPE_LIMIT = 10;
+
   private ImportCandidates() {}
 
   public static List<String> resolve(
       final String simpleName,
-      final Position at,
+      final Scope scope,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex,
       final Set<String> alreadyImported) {
-    final Scope scope = scopeAt(at, analysis);
     return typeIndex.searchExact(simpleName).stream()
         .filter(
             entry ->
@@ -40,8 +41,9 @@ public final class ImportCandidates {
         .toList();
   }
 
-  // The nested types of this simple name accessible in the scope, to write qualified (Map.Entry);
-  // one without a class file yet has no element to write from, so it is left out.
+  // The nested types of this simple name accessible in the scope, to write qualified (Map.Entry),
+  // the most used first; one without a class file yet has no element to write from, so it is left
+  // out. A common name (Builder) is nested in many types, so only the first few are offered.
   public static List<TypeElement> nestedTypes(
       final String simpleName,
       final Scope scope,
@@ -53,6 +55,7 @@ public final class ImportCandidates {
         .filter(Objects::nonNull)
         .filter(type -> scope == null || analysis.trees().isAccessible(scope, type))
         .distinct()
+        .limit(NESTED_TYPE_LIMIT)
         .toList();
   }
 
@@ -70,6 +73,7 @@ public final class ImportCandidates {
     return scope == null || analysis.trees().isAccessible(scope, typeEl);
   }
 
+  // The scope at a diagnostic's position; none where javac has no path there.
   public static Scope scopeAt(final Position at, final AttributedFileAnalysis analysis) {
     final long offset = Positions.toOffset(analysis.tree(), at.getLine(), at.getCharacter());
     final TreePath path = CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);

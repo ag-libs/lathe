@@ -34,20 +34,24 @@ final class CandidateFactory {
     this.typeDisplayFormatter = new TypeDisplayFormatter(types);
   }
 
-  // A type from the index, written as code in `target` names it (see SourceTypeNames): a nested
-  // type from a type the code can name (Map.Entry), whose import it adds, never imported itself. A
-  // reactor type with no class file yet has no element: it is written from its top-level type.
+  // A type from the index, written as code at the cursor names it (see SourceTypeNames): a nested
+  // type from a type the code can name (Map.Entry), whose import it adds, never imported itself.
+  // Without an analysis yet (no `names`), or for a reactor type with no class file yet, there is no
+  // element to look at: the type is written from its top-level type.
   static CompletionCandidate typeIndexCandidate(
-      final TypeIndexEntry entry, final AttributedFileAnalysis analysis, final TypeElement target) {
-    final TypeElement type = analysis.elements().getTypeElement(entry.qualifiedName());
+      final TypeIndexEntry entry,
+      final AttributedFileAnalysis analysis,
+      final SourceTypeNames names) {
+    final TypeElement type =
+        names == null ? null : analysis.elements().getTypeElement(entry.qualifiedName());
     if (type != null) {
       return typeCandidate(
           entry.simpleName(),
-          SourceTypeNames.sourceName(analysis, target, type),
+          names.sourceName(type),
           entry.qualifiedName(),
           kindFor(entry.kind()),
           null,
-          importEditFor(analysis, target, type));
+          importEditFor(names, type));
     }
 
     final int nested = entry.binaryName().indexOf('$');
@@ -64,13 +68,9 @@ final class CandidateFactory {
             : null);
   }
 
-  // The import code in `target` naming `type` needs, if the file has no line for it yet.
-  static ImportEdit importEditFor(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    return SourceTypeNames.importFor(analysis, target, type)
-        .filter(new ImportAnalyzer(analysis)::needsImport)
-        .map(name -> new ImportEdit(name, false))
-        .orElse(null);
+  // The import the code naming `type` needs, if the file has no line for it yet.
+  static ImportEdit importEditFor(final SourceTypeNames names, final TypeElement type) {
+    return names.importFor(type).map(name -> new ImportEdit(name, false)).orElse(null);
   }
 
   private static CandidateKind kindFor(final TypeKind typeKind) {
@@ -92,16 +92,16 @@ final class CandidateFactory {
         null);
   }
 
-  // A type written as code in `target` names it, with the import that name needs.
+  // A type written as code at the cursor names it, with the import that name needs.
   static CompletionCandidate typeElementCandidate(
-      final TypeElement el, final AttributedFileAnalysis analysis, final TypeElement target) {
+      final TypeElement el, final SourceTypeNames names) {
     return typeCandidate(
         el.getSimpleName().toString(),
-        SourceTypeNames.sourceName(analysis, target, el),
+        names.sourceName(el),
         el.getQualifiedName().toString(),
         kindForElement(el.getKind()),
         el.asType(),
-        importEditFor(analysis, target, el));
+        importEditFor(names, el));
   }
 
   private static CandidateKind kindForElement(final ElementKind kind) {

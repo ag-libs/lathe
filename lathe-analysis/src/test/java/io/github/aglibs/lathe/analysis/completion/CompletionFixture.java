@@ -75,6 +75,11 @@ final class CompletionFixture implements AutoCloseable {
     return engine.complete(request(cursor, cached));
   }
 
+  // Completion before the file has any analysis: the first request on a freshly opened file.
+  List<CompletionItem> completeWithoutCache(final String markedSource) {
+    return engine.complete(request(CursorFixture.cursor(markedSource), null)).items();
+  }
+
   List<CompletionItem> completeWithCache(final String cachedSource, final String markedSource) {
     final var cursor = CursorFixture.cursor(markedSource);
     final var cached = new CachedFileAnalysis(cachedSource, 0, compile(cachedSource));
