@@ -24,11 +24,14 @@ and an unclosed call (`c.greet(`, `greet` overloaded) led to one overload only.
 through signature help's lookup (`SignatureHelpResolver.unresolvedOverloads`), so access rules, `super`/`this` and anonymous classes behave the same in both features;
 one jumps directly, several open the client's picker. `NavigationFeatures.definition`, `declaration` and `typeDefinition` return a `List<Location>`.
 
-**A call still being typed** (`c.greet(`, `new C(`): javac's parser stands a placeholder (an erroneous tree) in for the missing argument
-and binds the call to whichever overload the placeholder fits, so definition led to that guess.
-A call with a placeholder argument (`SignatureHelpResolver.beingTyped`) now counts as unsettled, and definition offers every overload.
-A call javac binds with its arguments complete, even one missing only its `)`, keeps its one overload.
-This reads javac's own tree; the sentinel pipeline the first proposal named was not needed.
+**A call still being typed** (`c.greet(`, `new C(`): javac binds it to an overload anyway, so definition led to that guess.
+A call counts as being typed (`SignatureHelpResolver.beingTyped`) when an argument has an error type
+(javac's placeholder for a missing argument, a half-typed `name.` or `trim(`, an unknown name)
+or when it has no closing `)` and javac took the next statement for its last argument, so the call ends where that argument does;
+measured on the common editing states, typing above existing code included. Definition then offers every overload.
+A call whose arguments are typed keeps its one overload, even with only its `)` missing; a complete call with an unknown argument (`c.greet(nmae)`) offers them all, as its binding is a guess too.
+This reads javac's own types and positions; the sentinel pipeline the first proposal named was not needed.
+Hover and declaration still describe the overload javac bound; signature help lists them all while a call is typed.
 
 ### Regression targets
 

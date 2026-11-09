@@ -132,19 +132,27 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
-  // A call still being typed: javac's parser stands a placeholder in for a missing argument and
-  // binds the call to whichever overload fits it, so definition offers every overload instead.
-  // Each call breaks what follows it, so each gets its own source.
+  // A call still being typed: javac binds it to an overload anyway, a guess, so definition offers
+  // every overload. That is when an argument has an error type (javac's placeholder for missing
+  // input, a half-typed argument, an unknown name) or the call has no `)` and took the next
+  // statement for its last argument. A call with its arguments typed keeps its one overload. Each
+  // call breaks what follows it, so each gets its own source.
   @ParameterizedTest
   @CsvSource(
       delimiter = '|',
       value = {
-        "c.greet( | greet | void greet(String name);void greet(String name, int times);void greet()"
-            + " | greet",
+        "c.greet( | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet( label = \"x\"; | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet( other(); | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(name. | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(trim( | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(unknownThing | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(name,  other(); | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(nmae); | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
         "c.pair( | pair | void pair(String a, String b);void pair(int a) | pair",
         "new C( | C | C() {};C(int n) | C",
         "c.solo( | solo | void solo(String s) | solo",
-        "c.pair(\"a\", \"b\" | pair | void pair(String a, String b) | pair",
+        "c.greet(\"x\", 1  other(); | greet | void greet(String name, int times) | greet",
         "c.greet(\"x\"); | greet | void greet(String name) | greet",
       })
   void definition_callBeingTyped_offersEveryOverloadUnlessArgumentsAreComplete(
@@ -162,6 +170,10 @@ class DefinitionLocatorTest extends SampleFixture {
           void pair(int a) {}
         }
         class Use {
+          String label;
+          String name;
+          void other() {}
+          String trim(String s) { return s; }
           void use(C c) {
             %s
           }

@@ -31,6 +31,7 @@ import javax.lang.model.element.Name;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
@@ -89,26 +90,48 @@ final class SignatureHelpResolver {
   }
 
   // The overloads a method call or `new` expression can name when javac has not settled which:
-  // its arguments match none of them, or the call is still being typed (`c.greet(`), where
-  // javac's parser stands a placeholder in for the missing argument and binds the call to
-  // whichever overload that placeholder fits. Empty once a complete call resolves.
+  // it resolves none of them, or the call is being typed (`beingTyped`) and its binding a guess.
+  // Empty for a call javac settled.
   static List<ExecutableElement> unresolvedOverloads(
-      final AttributedFileAnalysis analysis, final TreePath callPath) {
+      final AttributedFileAnalysis analysis, final TreePath callPath, final boolean beingTyped) {
     final var target = callTarget(analysis, callPath);
     if (target == null) {
       return List.of();
     }
 
-    return target.resolved() != null && !beingTyped(callPath) ? List.of() : target.overloads();
+    return target.resolved() == null || beingTyped ? target.overloads() : List.of();
   }
 
-  // Whether a call is still being typed: javac's parser put a placeholder in for an argument.
-  static boolean beingTyped(final TreePath callPath) {
-    final List<? extends ExpressionTree> args =
-        callPath.getLeaf() instanceof final MethodInvocationTree inv
-            ? inv.getArguments()
-            : ((NewClassTree) callPath.getLeaf()).getArguments();
-    return args.stream().anyMatch(arg -> arg.getKind() == Tree.Kind.ERRONEOUS);
+  // Whether a call is still being typed, so javac's binding of it is a guess: an argument has an
+  // error type (javac's placeholder for a missing argument, a half-typed `name.` or `trim(`, an
+  // unknown name), or the call has no closing `)` and javac took the next statement for its last
+  // argument, so the call ends where that argument does. A closed call always ends after its
+  // last argument. False for anything but a method call or `new`.
+  static boolean beingTyped(final AttributedFileAnalysis analysis, final TreePath callPath) {
+    final List<? extends ExpressionTree> args = arguments(callPath.getLeaf());
+    if (args.isEmpty()) {
+      return false;
+    }
+
+    final var trees = analysis.trees();
+    final boolean errorTyped =
+        args.stream()
+            .map(arg -> trees.getTypeMirror(new TreePath(callPath, arg)))
+            .anyMatch(type -> type != null && type.getKind() == TypeKind.ERROR);
+    final var positions = trees.getSourcePositions();
+    final CompilationUnitTree cu = analysis.tree();
+    final boolean unclosed =
+        positions.getEndPosition(cu, callPath.getLeaf())
+            == positions.getEndPosition(cu, args.get(args.size() - 1));
+    return errorTyped || unclosed;
+  }
+
+  private static List<? extends ExpressionTree> arguments(final Tree call) {
+    if (call instanceof final MethodInvocationTree invocation) {
+      return invocation.getArguments();
+    }
+
+    return call instanceof final NewClassTree creation ? creation.getArguments() : List.of();
   }
 
   private static CallTarget callTarget(

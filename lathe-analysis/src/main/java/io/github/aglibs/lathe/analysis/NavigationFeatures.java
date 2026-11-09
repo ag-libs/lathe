@@ -209,8 +209,8 @@ public final class NavigationFeatures {
     return result;
   }
 
-  // The declaration of the symbol at the cursor; on a call whose arguments match no overload,
-  // every method or constructor the call can name.
+  // The declaration of the symbol at the cursor; on a call whose arguments match no overload, or
+  // one still being typed (`c.greet(`), every method or constructor the call can name.
   public List<Location> definition(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
@@ -221,20 +221,22 @@ public final class NavigationFeatures {
     final Cursor cur = at.get();
     final Element element = elementForNavigation(cur);
     final Element plain = cur.elementOrJavadocReference();
-    // A call javac bound stays bound, unless it is still being typed and the binding a guess.
+    // A call javac bound stays bound unless it is still being typed, its binding then a guess.
     final Optional<TreePath> call = callAtName(cur);
-    final boolean bound =
-        element instanceof ExecutableElement
-            && call.filter(SignatureHelpResolver::beingTyped).isEmpty();
+    final boolean beingTyped =
+        call.filter(path -> SignatureHelpResolver.beingTyped(cur.analysis(), path)).isPresent();
+    final List<ExecutableElement> candidates =
+        element instanceof ExecutableElement && !beingTyped
+            ? List.of()
+            : call.map(
+                    path ->
+                        SignatureHelpResolver.unresolvedOverloads(cur.analysis(), path, beingTyped))
+                .orElse(List.of());
     final List<Location> overloads =
-        (bound
-                ? List.<ExecutableElement>of()
-                : call.map(path -> SignatureHelpResolver.unresolvedOverloads(cur.analysis(), path))
-                    .orElse(List.of()))
-            .stream()
-                .flatMap(overload -> findDefinitionLocation(request, cur, overload).stream())
-                .distinct()
-                .toList();
+        candidates.stream()
+            .flatMap(overload -> findDefinitionLocation(request, cur, overload).stream())
+            .distinct()
+            .toList();
     final List<Location> result =
         overloads.isEmpty()
             // A substitute with no source to show (a JDK type a `var` stands for, without JDK
@@ -262,8 +264,6 @@ public final class NavigationFeatures {
     return result;
   }
 
-  // The overloads of the call whose method name or created type the cursor is on, when javac
-  // resolved the call to none of them.
   // The call whose method name, or `new` type, the cursor is on.
   private static Optional<TreePath> callAtName(final Cursor cur) {
     final TreePath parent = cur.path().getParentPath();
