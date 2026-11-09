@@ -132,6 +132,74 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  // A call still being typed: javac binds it to an overload anyway, a guess, so definition offers
+  // every overload. That is when an argument has an error type (javac's placeholder for missing
+  // input, a half-typed argument, an unknown name) or the call has no `)` and took the next
+  // statement for its last argument. A call with its arguments typed keeps its one overload. Each
+  // call breaks what follows it, so each gets its own source.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "c.greet( | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet( label = \"x\"; | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet( other(); | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(name. | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(trim( | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(unknownThing | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(name,  other(); | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.greet(nmae); | greet | void greet(String name);void greet(String name, int times);void greet() | greet",
+        "c.pair( | pair | void pair(String a, String b);void pair(int a) | pair",
+        "new C( | C | C() {};C(int n) | C",
+        "c.solo( | solo | void solo(String s) | solo",
+        "c.greet(\"x\", 1  other(); | greet | void greet(String name, int times) | greet",
+        "c.greet(\"x\"); | greet | void greet(String name) | greet",
+      })
+  void definition_callBeingTyped_offersEveryOverloadUnlessArgumentsAreComplete(
+      final String call, final String token, final String declarations, final String name) {
+    final String source =
+        """
+        class C {
+          C() {}
+          C(int n) {}
+          void solo(String s) {}
+          void greet(String name) {}
+          void greet(String name, int times) {}
+          void greet() {}
+          void pair(String a, String b) {}
+          void pair(int a) {}
+        }
+        class Use {
+          String label;
+          String name;
+          void other() {}
+          String trim(String s) { return s; }
+          void use(C c) {
+            %s
+          }
+        }
+        """
+            .formatted(call);
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              1,
+              posOf(source, call, token),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .extracting(location -> location.getRange().getStart())
+          .containsExactlyInAnyOrderElementsOf(
+              Stream.of(declarations.split(";"))
+                  .map(declaration -> posOf(source, declaration, name))
+                  .toList());
+    }
+  }
+
   private static final String VAR_SOURCE =
       """
       import java.util.function.Supplier;

@@ -188,79 +188,6 @@ Missing-source warning: no regression test yet; verified outstanding by `JdkSour
 
 ---
 
-## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only
-
-**Status: accepted** (triaged 2026-11-09; complete-call slice shipped, incomplete-call recovery remains)
-
-**Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
-not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump finds nothing.
-
-### Delivered — a complete call whose arguments match no overload
-
-With the cursor on the method name (or the type of `new T(…)`) of a call javac resolves to no overload, definition returns every accessible method or constructor that call can name:
-one jumps directly, several open the client's picker.
-The lookup is signature help's (`SignatureHelpResolver.unresolvedOverloads`), so access rules, `super`/`this` and anonymous classes behave the same in both features.
-`NavigationFeatures.definition`, `declaration` and `typeDefinition` now return a `List<Location>`; MCP `get_definition` already returned a list and needed no change.
-A call that resolves still yields its one overload.
-
-### Remaining — incomplete calls
-
-A call that does not parse as complete (`c.greet(` unclosed) still depends on javac's recovery, which may bind it to one overload.
-Recovering the call through the sentinel pipeline, as the proposed direction below describes, is not done.
-
-### Observed behaviour (before the first slice)
-
-Re-probed 2026-10-31 through MCP `get_definition`, wrong argument **types** to a method with a single declaration
-(`ofSourceTree(42)` where `ofSourceTree(String)`): `{"targets":[]}`.
-
-Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback this gap first described was removed with archived EG-100, go-to-definition):
-
-| Call | Result |
-|---|---|
-| `c.solo(` (unclosed) | `solo` |
-| `c.greet(` (unclosed, `greet` overloaded) | the first overload only |
-| `c.solo()` / `c.greet()` (wrong argument count) | nothing |
-| `solo(42)` where `solo(String)` (wrong argument type, as after a refactoring) | nothing |
-
-When the name is overloaded definition should return every candidate so the client shows a picker; when it is unambiguous it should resolve to the single method, whatever the arguments.
-
-```bash
-python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # cursor on `foo` in `foo()` with missing arguments
-# today: no result ; expected: the method declaration, or a location list for overloads
-```
-
-### Root cause
-
-A call whose arguments match no overload is erroneous, so javac attributes no method element and `CursorElements.elementAt` finds nothing to resolve.
-The pipeline also returns at most one location: `NavigationFeatures.definition` returns an `Optional<Location>` and `DocumentFeatures.definitionFuture` maps it to a 0-or-1 list,
-so overloads cannot be offered even though the LSP result type (`Either<List<Location>, …>`) allows many.
-
-### Proposed direction
-
-Recover the intended target with the existing sentinel/recovery pipeline
-(`SentinelInjector` / `SentinelParser`) already used for completion on incomplete input: obtain the
-receiver, method name, and argument index from `ParsedSentinel`. Enumerate the accessible
-`ExecutableElement`s of that name on the receiver type and return **all** declaration locations
-(single → jump, many → picker); extend `definitionFuture` to build a `List<Location>`. No ad-hoc
-parsing — sentinel pipeline + javac elements only (AGENTS.md).
-
-Deferred: the recovery integration, overload enumeration, and multi-location plumbing are the largest
-of the three and are not in the current release slice.
-
-A cheaper first slice covers the refactoring case without the sentinel pipeline: a complete call with mismatched
-arguments still parses, so the receiver's type (`getTypeMirror` on the method select's expression, or the enclosing
-class for a bare name) and the method name are known, and the candidates are the methods of that name on it.
-`SignatureHelpResolver` already resolves erroneous calls this way (`memberSelectCandidates`, `methodsNamed`);
-share that lookup, jump when there is one candidate, and list them when there are several.
-
-### Regression targets
-
-Delivered: `DefinitionLocatorTest.definition_mismatchedArguments_returnsEveryNamedOverload`,
-`LatheEngineNavigationTest.definition_callWithMismatchedArguments_returnsTheMethodInAnotherFile`.
-Incomplete calls: no regression test yet.
-
----
-
 <!-- EG-049..EG-055 were discovered by differential testing against jdtls (dev/jdtls_diff.py; see
 docs/done/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
 where jdtls returns a result Lathe does not, or the two disagree substantively. -->
@@ -811,7 +738,7 @@ None yet.
 
 ## EG-092 — Symbol search finds types only, not methods and fields
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-09: beyond jdtls, which by its settings searches types, and source methods only behind `java.symbols.includeSourceMethodDeclarations` — not measured; the per-keystroke cost is the open risk)
 
 **Affects: the editor's workspace symbols and MCP `search_symbols`.**
 

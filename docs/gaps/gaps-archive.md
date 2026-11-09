@@ -7,6 +7,40 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only — done
+
+**Status: done.**
+
+**Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
+not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump found nothing.
+
+Re-probed 2026-10-30/31 through `LatheEngine.definition` and MCP `get_definition`:
+a call whose arguments matched no overload (`solo(42)` where `solo(String)`, or a wrong argument count) found nothing,
+and an unclosed call (`c.greet(`, `greet` overloaded) led to one overload only.
+
+### Resolution
+
+**A complete call whose arguments match no overload** (PR #147): definition returns every accessible method or constructor the call can name,
+through signature help's lookup (`SignatureHelpResolver.unresolvedOverloads`), so access rules, `super`/`this` and anonymous classes behave the same in both features;
+one jumps directly, several open the client's picker. `NavigationFeatures.definition`, `declaration` and `typeDefinition` return a `List<Location>`.
+
+**A call still being typed** (`c.greet(`, `new C(`): javac binds it to an overload anyway, so definition led to that guess.
+A call counts as being typed (`SignatureHelpResolver.beingTyped`) when an argument has an error type
+(javac's placeholder for a missing argument, a half-typed `name.` or `trim(`, an unknown name)
+or when it has no closing `)` and javac took the next statement for its last argument, so the call ends where that argument does;
+measured on the common editing states, typing above existing code included. Definition then offers every overload.
+A call whose arguments are typed keeps its one overload, even with only its `)` missing; a complete call with an unknown argument (`c.greet(nmae)`) offers them all, as its binding is a guess too.
+This reads javac's own types and positions; the sentinel pipeline the first proposal named was not needed.
+Hover and declaration still describe the overload javac bound; signature help lists them all while a call is typed.
+
+### Regression targets
+
+- `DefinitionLocatorTest.definition_mismatchedArguments_returnsEveryNamedOverload`
+- `DefinitionLocatorTest.definition_callBeingTyped_offersEveryOverloadUnlessArgumentsAreComplete`
+- `LatheEngineNavigationTest.definition_callWithMismatchedArguments_returnsTheMethodInAnotherFile`
+
+---
+
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references — done
 
 **Status: done.**

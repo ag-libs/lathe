@@ -117,10 +117,10 @@ All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-ar
 ### Not in M2
 
 The broader editing-feature set (inlay hints, on-type indentation, semantic-highlighting expansion,
-generic-bound completion, `typeDefinition`), incomplete-call definition ([EG-048](gaps/gaps.md)), and
+generic-bound completion, `typeDefinition`) and
 source-browsing references are **not** M2 scope — they are in the [Backlog](#backlog).
-(Declaration-name completion, new-type creation, and the no-Maven freshness model were once listed
-here; all three have since shipped.)
+(Declaration-name completion, new-type creation, the no-Maven freshness model and incomplete-call
+definition ([EG-048](gaps/gaps-archive.md)) were once listed here; all four have since shipped.)
 
 ### Exit criteria
 
@@ -187,8 +187,8 @@ when cut. Items are grouped, not ordered.
   requests (see [lathe-interactive-request-priority.md](planned/lathe-interactive-request-priority.md)).
 - Replay a test written after the last capture without a full Maven capture
   (see [lathe-new-test-replay-loop.md](planned/lathe-new-test-replay-loop.md)).
-- References *inside* external sources (source browsing); go-to-definition on an incomplete method call
-  ([EG-048](gaps/gaps.md)); reference partial-result streaming (only if measurements justify it).
+- References *inside* external sources (source browsing); reference partial-result streaming (only if
+  measurements justify it).
 
 ### Debug and run tail
 

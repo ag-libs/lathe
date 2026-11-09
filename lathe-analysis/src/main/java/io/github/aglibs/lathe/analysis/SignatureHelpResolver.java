@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
@@ -30,6 +31,7 @@ import javax.lang.model.element.Name;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
@@ -87,12 +89,49 @@ final class SignatureHelpResolver {
     return new SignatureHelp(signatures, activeSignature, activeParam);
   }
 
-  // The overloads a method call or `new` expression can name when its arguments match none of
-  // them; empty once javac resolves the call.
+  // The overloads a method call or `new` expression can name when javac has not settled which:
+  // it resolves none of them, or the call is being typed (`beingTyped`) and its binding a guess.
+  // Empty for a call javac settled.
   static List<ExecutableElement> unresolvedOverloads(
-      final AttributedFileAnalysis analysis, final TreePath callPath) {
+      final AttributedFileAnalysis analysis, final TreePath callPath, final boolean beingTyped) {
     final var target = callTarget(analysis, callPath);
-    return target == null || target.resolved() != null ? List.of() : target.overloads();
+    if (target == null) {
+      return List.of();
+    }
+
+    return target.resolved() == null || beingTyped ? target.overloads() : List.of();
+  }
+
+  // Whether a call is still being typed, so javac's binding of it is a guess: an argument has an
+  // error type (javac's placeholder for a missing argument, a half-typed `name.` or `trim(`, an
+  // unknown name), or the call has no closing `)` and javac took the next statement for its last
+  // argument, so the call ends where that argument does. A closed call always ends after its
+  // last argument. False for anything but a method call or `new`.
+  static boolean beingTyped(final AttributedFileAnalysis analysis, final TreePath callPath) {
+    final List<? extends ExpressionTree> args = arguments(callPath.getLeaf());
+    if (args.isEmpty()) {
+      return false;
+    }
+
+    final var trees = analysis.trees();
+    final boolean errorTyped =
+        args.stream()
+            .map(arg -> trees.getTypeMirror(new TreePath(callPath, arg)))
+            .anyMatch(type -> type != null && type.getKind() == TypeKind.ERROR);
+    final var positions = trees.getSourcePositions();
+    final CompilationUnitTree cu = analysis.tree();
+    final boolean unclosed =
+        positions.getEndPosition(cu, callPath.getLeaf())
+            == positions.getEndPosition(cu, args.get(args.size() - 1));
+    return errorTyped || unclosed;
+  }
+
+  private static List<? extends ExpressionTree> arguments(final Tree call) {
+    if (call instanceof final MethodInvocationTree invocation) {
+      return invocation.getArguments();
+    }
+
+    return call instanceof final NewClassTree creation ? creation.getArguments() : List.of();
   }
 
   private static CallTarget callTarget(
