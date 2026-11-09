@@ -7,6 +7,31 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-102 — Signature help does not resolve `{@inheritDoc}` or an undocumented override's javadoc — done
+
+**Status: done.**
+
+**Affects: the editor.**
+
+Found by the review of EG-068's fix (2026-11-09).
+Hover resolved javadoc inheritance (EG-068), but signature help read only the method's own comment:
+for a call to an override whose doc is `/** {@inheritDoc} */`, or that has no doc, it showed no description and no parameter docs.
+
+### Resolution
+
+`JavadocLocator` resolves a method's doc chain once (`docChain`: its own doc, else the nearest overridden method's, with the overridden methods `{@inheritDoc}` can reach),
+and both hover (`markdown`) and signature help (`signatureDocs`) print from it.
+Signature help takes the main description and each parameter's description by position, so an override with other parameter names still gets its parent's parameter docs,
+and `{@inheritDoc}` inside an `@param` resolves too.
+
+### Regression targets
+
+- `SignatureHelpTest.signatureHelp_inheritDoc_resolvesDescriptionAndParamFromOverriddenMethod`
+- `SignatureHelpTest.signatureHelp_undocumentedOverride_takesParentDocsByPosition`
+- `JavadocMarkdownPrinterTest.signatureDocs_paramDocs_byPositionWithBlanksAndTypeParamsIgnored`
+
+---
+
 ## EG-093 — Hover shows no overrides or deprecation — done
 
 **Status: done.**

@@ -18,12 +18,11 @@ import com.sun.source.doctree.TextTree;
 import com.sun.source.doctree.ThrowsTree;
 import com.sun.source.util.DocTreeScanner;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import javax.lang.model.element.ExecutableElement;
 
 final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
@@ -35,6 +34,42 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     MethodDoc {
       ValidCheck.check().notNull(paramNames, "paramNames").notNull(tree, "tree").validate();
       paramNames = List.copyOf(paramNames);
+    }
+  }
+
+  // A method's doc to print and what an {@inheritDoc} in it can reach: `doc` is the method's own
+  // doc or, when it has none, the nearest overridden method's; `inherited` the overridden methods
+  // after it, nearest first, whose docs `docOf` reads on demand, so only the ones a lookup reaches
+  // are parsed; `displayNames` the method's own parameter names, which @param tags show by
+  // position, so an inherited doc matches the signature it describes.
+  record DocChain(
+      MethodDoc doc,
+      List<String> displayNames,
+      List<ExecutableElement> inherited,
+      Function<ExecutableElement, Optional<MethodDoc>> docOf) {
+
+    DocChain {
+      ValidCheck.check()
+          .notNull(doc, "doc")
+          .notNull(displayNames, "displayNames")
+          .notNull(inherited, "inherited")
+          .notNull(docOf, "docOf")
+          .validate();
+      displayNames = List.copyOf(displayNames);
+      inherited = List.copyOf(inherited);
+    }
+  }
+
+  // What signature help shows of a doc: its main description, and each parameter's description by
+  // position, "" for a parameter it does not document.
+  record SignatureDocs(String description, List<String> paramDocs) {
+
+    SignatureDocs {
+      ValidCheck.check()
+          .notNull(description, "description")
+          .notNull(paramDocs, "paramDocs")
+          .validate();
+      paramDocs = List.copyOf(paramDocs);
     }
   }
 
@@ -55,56 +90,55 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     return tree == null
         ? ""
         : formatMethod(
-            new MethodDoc(List.of(), tree), List.of(), List.of(), method -> Optional.empty());
+            new DocChain(
+                new MethodDoc(List.of(), tree), List.of(), List.of(), method -> Optional.empty()));
   }
 
-  // Prints a method's doc. An {@inheritDoc} in it takes the matching part from the first of the
-  // overridden methods, nearest first, whose doc has one; docOf finds a doc on demand, so only the
-  // ancestors a lookup reaches are parsed. @param tags show displayNames, the hovered method's own
-  // names, by position, so an inherited doc matches the signature above it.
-  static String formatMethod(
-      final MethodDoc doc,
-      final List<String> displayNames,
-      final List<ExecutableElement> inherited,
-      final Function<ExecutableElement, Optional<MethodDoc>> docOf) {
-    final var printer = new JavadocMarkdownPrinter();
-    printer.displayNames = displayNames;
-    printer.paramNames = doc.paramNames();
-    printer.inherited = inherited;
-    printer.docOf = docOf;
-    printer.scan(doc.tree().getFullBody(), null);
-    printer.formatBlockTags(doc.tree().getBlockTags());
+  static String formatMethod(final DocChain chain) {
+    final var printer = printing(chain);
+    printer.scan(chain.doc().tree().getFullBody(), null);
+    printer.formatBlockTags(chain.doc().tree().getBlockTags());
     printer.endLink();
     return printer.sb.toString().strip();
   }
 
-  static String mainDescription(final DocCommentTree tree) {
-    if (tree == null) {
-      return "";
-    }
+  static SignatureDocs signatureDocs(final DocChain chain) {
+    final var description = printing(chain);
+    description.scan(chain.doc().tree().getFullBody(), null);
+    description.endLink();
+    final List<String> paramDocs =
+        IntStream.range(0, chain.displayNames().size())
+            .mapToObj(index -> paramDoc(chain, index))
+            .toList();
+    return new SignatureDocs(description.sb.toString().strip(), paramDocs);
+  }
 
-    final var printer = new JavadocMarkdownPrinter();
-    printer.scan(tree.getFullBody(), null);
+  private static String paramDoc(final DocChain chain, final int index) {
+    final List<String> names = chain.doc().paramNames();
+    return chain.doc().tree().getBlockTags().stream()
+        .filter(ParamTree.class::isInstance)
+        .map(ParamTree.class::cast)
+        .filter(param -> !param.isTypeParameter())
+        .filter(param -> names.indexOf(param.getName().toString()) == index)
+        .findFirst()
+        .map(param -> printParam(chain, param))
+        .orElse("");
+  }
+
+  private static String printParam(final DocChain chain, final ParamTree param) {
+    final var printer = printing(chain);
+    printer.scanTag(param, param.getDescription());
+    printer.endLink();
     return printer.sb.toString().strip();
   }
 
-  static Map<String, String> paramDocs(final DocCommentTree tree) {
-    final var result = new LinkedHashMap<String, String>();
-    if (tree == null) {
-      return result;
-    }
-    for (final DocTree tag : tree.getBlockTags()) {
-      if (!(tag instanceof ParamTree p) || p.isTypeParameter()) {
-        continue;
-      }
-      final var printer = new JavadocMarkdownPrinter();
-      printer.scan(p.getDescription(), null);
-      final var desc = printer.sb.toString().strip();
-      if (!desc.isBlank()) {
-        result.put(p.getName().toString(), desc);
-      }
-    }
-    return result;
+  private static JavadocMarkdownPrinter printing(final DocChain chain) {
+    final var printer = new JavadocMarkdownPrinter();
+    printer.displayNames = chain.displayNames();
+    printer.paramNames = chain.doc().paramNames();
+    printer.inherited = chain.inherited();
+    printer.docOf = chain.docOf();
+    return printer;
   }
 
   private void formatBlockTags(final List<? extends DocTree> tags) {

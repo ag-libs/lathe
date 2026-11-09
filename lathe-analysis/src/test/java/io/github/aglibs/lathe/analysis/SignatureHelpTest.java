@@ -353,6 +353,65 @@ class SignatureHelpTest {
         .contains("the message");
   }
 
+  @Test
+  void signatureHelp_inheritDoc_resolvesDescriptionAndParamFromOverriddenMethod() {
+    final var source =
+        """
+        class Base {
+            /**
+             * Sends a message.
+             * @param msg the message
+             * @param retries how often to retry
+             */
+            void send(String msg, int retries) {}
+        }
+        class Child extends Base {
+            /**
+             * {@inheritDoc} Child part.
+             * @param text {@inheritDoc}
+             */
+            @Override
+            void send(String text, int count) {}
+            void caller() { send(§"hi", 1); }
+        }
+        """;
+    final var sig = signatureHelpAt(source).getSignatures().get(0);
+
+    assertThat(sig.getDocumentation().getRight().getValue())
+        .isEqualTo("Sends a message. Child part.");
+    assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
+        .isEqualTo("the message");
+    assertThat(sig.getParameters().get(1).getDocumentation()).isNull();
+  }
+
+  @Test
+  void signatureHelp_undocumentedOverride_takesParentDocsByPosition() {
+    final var source =
+        """
+        interface Sender {
+            /**
+             * Sends a message.
+             * @param msg the message
+             * @param retries how often to retry
+             */
+            void send(String msg, int retries);
+        }
+        class Impl implements Sender {
+            @Override
+            public void send(String text, int count) {}
+            void caller() { send(§"hi", 1); }
+        }
+        """;
+    final var sig = signatureHelpAt(source).getSignatures().get(0);
+
+    assertThat(sig.getLabel()).isEqualTo("void send(String text, int count)");
+    assertThat(sig.getDocumentation().getRight().getValue()).isEqualTo("Sends a message.");
+    assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
+        .isEqualTo("the message");
+    assertThat(sig.getParameters().get(1).getDocumentation().getRight().getValue())
+        .isEqualTo("how often to retry");
+  }
+
   // --- super() and this() constructor invocations ---
 
   @Test

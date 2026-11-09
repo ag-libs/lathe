@@ -5,7 +5,9 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.DocChain;
 import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.MethodDoc;
+import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.SignatureDocs;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -47,7 +49,27 @@ public final class JavadocLocator {
           .filter(md -> !md.isBlank());
     }
 
-    // Both kinds of answer are kept, so a method is parsed at most once per hover.
+    return docChain(method, analysis, sourceRoots)
+        .map(JavadocMarkdownPrinter::formatMethod)
+        .flatMap(JavadocLocator::nonBlank);
+  }
+
+  // A method's or constructor's description and parameter docs for signature help, inherited as
+  // hover inherits them; empty when it has no doc.
+  Optional<SignatureDocs> signatureDocs(
+      final ExecutableElement method,
+      final AttributedFileAnalysis analysis,
+      final List<Path> sourceRoots) {
+    return docChain(method, analysis, sourceRoots).map(JavadocMarkdownPrinter::signatureDocs);
+  }
+
+  // The method's own doc or, when it has none, the nearest overridden method's, with the overridden
+  // methods after it; empty when none of them is documented. A constructor overrides nothing.
+  private Optional<DocChain> docChain(
+      final ExecutableElement method,
+      final AttributedFileAnalysis analysis,
+      final List<Path> sourceRoots) {
+    // Both kinds of answer are kept, so a method is parsed at most once per request.
     final var documented = new HashMap<ExecutableElement, MethodDoc>();
     final var undocumented = new HashSet<ExecutableElement>();
     final Function<ExecutableElement, Optional<MethodDoc>> docOf =
@@ -62,23 +84,23 @@ public final class JavadocLocator {
           return doc;
         };
     final List<ExecutableElement> overridden =
-        ReferenceTarget.overriddenMethods(
-            method,
-            (TypeElement) method.getEnclosingElement(),
-            analysis.types(),
-            analysis.elements());
+        method.getKind() == ElementKind.METHOD
+            ? ReferenceTarget.overriddenMethods(
+                method,
+                (TypeElement) method.getEnclosingElement(),
+                analysis.types(),
+                analysis.elements())
+            : List.of();
     final Optional<MethodDoc> own = docOf.apply(method);
     if (own.isPresent()) {
-      return nonBlank(
-          JavadocMarkdownPrinter.formatMethod(
-              own.get(), own.get().paramNames(), overridden, docOf));
+      return Optional.of(new DocChain(own.get(), own.get().paramNames(), overridden, docOf));
     }
 
     for (int i = 0; i < overridden.size(); i++) {
       final Optional<MethodDoc> doc = docOf.apply(overridden.get(i));
       if (doc.isPresent()) {
-        return nonBlank(
-            JavadocMarkdownPrinter.formatMethod(
+        return Optional.of(
+            new DocChain(
                 doc.get(),
                 sourceParamNames(method, sourceRoots),
                 overridden.subList(i + 1, overridden.size()),

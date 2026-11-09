@@ -8,10 +8,14 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.DocChain;
+import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.MethodDoc;
+import io.github.aglibs.lathe.analysis.JavadocMarkdownPrinter.SignatureDocs;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import org.junit.jupiter.api.Test;
@@ -172,8 +176,7 @@ class JavadocMarkdownPrinterTest {
     final var tree =
         parseMethodDoc("class T { /** Factory method. For general use. */ void m() {} }");
     assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("Factory method. For general use.");
-    assertThat(JavadocMarkdownPrinter.mainDescription(tree))
-        .isEqualTo("Factory method. For general use.");
+    assertThat(signatureDocs(tree).description()).isEqualTo("Factory method. For general use.");
   }
 
   @Test
@@ -319,109 +322,27 @@ class JavadocMarkdownPrinterTest {
     assertThat(JavadocMarkdownPrinter.format(tree)).doesNotContain("@param");
   }
 
-  // --- mainDescription ---
+  // --- signatureDocs ---
 
   @Test
-  void mainDescription_null_returnsEmpty() {
-    assertThat(JavadocMarkdownPrinter.mainDescription(null)).isEmpty();
-  }
-
-  @Test
-  void mainDescription_excludesBlockTags() throws IOException {
+  void signatureDocs_description_excludesBlockTagsAndKeepsHtml() throws IOException {
     final var tree =
         parseMethodDoc(
             """
             class T {
               /**
-               * Says hello.
+               * Says <b>hello</b>.
                * @param msg the msg
                * @return result
                */
-              String m() { return ""; }
+              String m(String msg) { return ""; }
             }
             """);
-    final String desc = JavadocMarkdownPrinter.mainDescription(tree);
-    assertThat(desc).contains("Says hello.");
-    assertThat(desc).doesNotContain("@param");
-    assertThat(desc).doesNotContain("@return");
+    assertThat(signatureDocs(tree, "msg").description()).isEqualTo("Says **hello**.");
   }
 
   @Test
-  void mainDescription_htmlFormatted() throws IOException {
-    final var tree =
-        parseMethodDoc(
-            """
-            class T {
-              /**
-               * Returns <b>bold</b> text.
-               * @return it
-               */
-              String m() { return ""; }
-            }
-            """);
-    assertThat(JavadocMarkdownPrinter.mainDescription(tree)).isEqualTo("Returns **bold** text.");
-  }
-
-  // --- paramDocs ---
-
-  @Test
-  void paramDocs_null_returnsEmpty() {
-    assertThat(JavadocMarkdownPrinter.paramDocs(null)).isEmpty();
-  }
-
-  @Test
-  void paramDocs_singleParam_returnsMap() throws IOException {
-    final var tree =
-        parseMethodDoc(
-            """
-            class T {
-              /**
-               * Desc.
-               * @param x the x
-               */
-              void m(int x) {}
-            }
-            """);
-    assertThat(JavadocMarkdownPrinter.paramDocs(tree)).containsEntry("x", "the x");
-  }
-
-  @Test
-  void paramDocs_multipleParams_returnsAllEntries() throws IOException {
-    final var tree =
-        parseMethodDoc(
-            """
-            class T {
-              /**
-               * Desc.
-               * @param name the recipient
-               * @param count repetitions
-               */
-              void m(String name, int count) {}
-            }
-            """);
-    final var docs = JavadocMarkdownPrinter.paramDocs(tree);
-    assertThat(docs).containsEntry("name", "the recipient");
-    assertThat(docs).containsEntry("count", "repetitions");
-  }
-
-  @Test
-  void paramDocs_noParamTags_returnsEmpty() throws IOException {
-    final var tree =
-        parseMethodDoc(
-            """
-            class T {
-              /**
-               * Just a description.
-               * @return x
-               */
-              int m() { return 0; }
-            }
-            """);
-    assertThat(JavadocMarkdownPrinter.paramDocs(tree)).isEmpty();
-  }
-
-  @Test
-  void paramDocs_typeParamIgnored() throws IOException {
+  void signatureDocs_paramDocs_byPositionWithBlanksAndTypeParamsIgnored() throws IOException {
     final var tree =
         parseMethodDoc(
             """
@@ -429,33 +350,32 @@ class JavadocMarkdownPrinterTest {
               /**
                * Desc.
                * @param <E> type
-               * @param x the x
+               * @param count the {@code count} value
+               * @param name the recipient
                */
-              void m(int x) {}
+              <E> void m(String name, int count, boolean flag) {}
             }
             """);
-    final var docs = JavadocMarkdownPrinter.paramDocs(tree);
-    assertThat(docs).containsOnlyKeys("x");
-    assertThat(docs).containsEntry("x", "the x");
+    assertThat(signatureDocs(tree, "name", "count", "flag").paramDocs())
+        .containsExactly("the recipient", "the `count` value", "");
   }
 
   @Test
-  void paramDocs_richDescriptionFormatted() throws IOException {
+  void signatureDocs_noParamTags_givesBlankParamDocs() throws IOException {
     final var tree =
         parseMethodDoc(
-            """
-            class T {
-              /**
-               * Desc.
-               * @param x the {@code x} value
-               */
-              void m(int x) {}
-            }
-            """);
-    assertThat(JavadocMarkdownPrinter.paramDocs(tree).get("x")).contains("`x`");
+            "class T { /** Just a description. @return x */ int m(int x) { return 0; } }");
+    assertThat(signatureDocs(tree, "x").paramDocs()).containsExactly("");
   }
 
   // --- helpers ---
+
+  private static SignatureDocs signatureDocs(final DocCommentTree tree, final String... names) {
+    final List<String> paramNames = List.of(names);
+    return JavadocMarkdownPrinter.signatureDocs(
+        new DocChain(
+            new MethodDoc(paramNames, tree), paramNames, List.of(), method -> Optional.empty()));
+  }
 
   private static DocCommentTree parseMethodDoc(final String src) throws IOException {
     final var jfo =

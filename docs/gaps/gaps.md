@@ -490,30 +490,6 @@ None yet.
 
 ---
 
-## EG-102 — Signature help does not resolve `{@inheritDoc}` or an undocumented override's javadoc
-
-**Status: documented**
-
-**Affects: the editor.**
-
-Found by the review of EG-068's fix (2026-11-09).
-
-### Observed behaviour
-
-Hover resolves javadoc inheritance (EG-068), but signature help reads only the method's own comment.
-For a call to an override whose doc is `/** {@inheritDoc} */`, or that has no doc,
-hover shows the overridden method's description and `@param` text, while signature help shows no description and no parameter docs.
-
-### Fix direction
-
-Have signature help take its description and parameter docs through `JavadocLocator`'s inheritance-aware path, as hover does.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-103 — A partly documented override does not inherit the parts it leaves out
 
 **Status: documented**
