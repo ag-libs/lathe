@@ -112,22 +112,24 @@ public final class NavigationFeatures {
     final TypeMirror type =
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final List<Path> allRoots = request.allSourceRoots();
+    final DocReader reader = javadocLocator.reader(cur.analysis(), allRoots);
     // An undocumented constructor (an implicit one, often) is described by its class's javadoc.
-    final var javadoc =
+    final Optional<String> javadoc =
         javadocLocator
-            .markdown(element, cur.analysis(), allRoots)
+            .markdown(element, reader)
             .or(
                 () ->
                     element != null && element.getKind() == ElementKind.CONSTRUCTOR
-                        ? javadocLocator.markdown(
-                            element.getEnclosingElement(), cur.analysis(), allRoots)
-                        : Optional.empty())
-            .orElse(null);
-    final String notes =
-        HoverFormatter.notes(element, cur.analysis().elements(), cur.analysis().types());
+                        ? javadocLocator.markdown(element.getEnclosingElement(), reader)
+                        : Optional.empty());
+    final boolean deprecationShown =
+        javadoc.filter(md -> md.startsWith(JavadocMarkdownPrinter.DEPRECATED)).isPresent();
     final String doc =
-        Stream.of(notes, javadoc)
-            .filter(part -> part != null && !part.isBlank())
+        Stream.of(
+                HoverFormatter.notes(
+                    element, deprecationShown, cur.analysis().elements(), cur.analysis().types()),
+                javadoc)
+            .flatMap(Optional::stream)
             .collect(Collectors.joining("\n\n"));
     final var origin =
         request.libraries().originLabel(element, compiler.fileManager()).orElse(null);
@@ -137,7 +139,7 @@ public final class NavigationFeatures {
     LOG.fine(
         () ->
             "[hover] %dms element=%s type=%s doc=%s origin=%s"
-                .formatted(t.elapsedMs(), element, type, javadoc != null, origin));
+                .formatted(t.elapsedMs(), element, type, javadoc.isPresent(), origin));
     return HoverFormatter.format(element, type, doc, origin, fmt, sourceParamNames)
         .map(md -> new Hover(new MarkupContent("markdown", md)))
         .orElse(null);

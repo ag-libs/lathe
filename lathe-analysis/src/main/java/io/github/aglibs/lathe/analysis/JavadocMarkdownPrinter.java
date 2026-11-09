@@ -18,11 +18,12 @@ import com.sun.source.doctree.TextTree;
 import com.sun.source.doctree.ThrowsTree;
 import com.sun.source.util.DocTreeScanner;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import javax.lang.model.element.ExecutableElement;
 
 final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
@@ -39,39 +40,37 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   // A method's doc to print and what an {@inheritDoc} in it can reach: `doc` is the method's own
   // doc or, when it has none, the nearest overridden method's; `inherited` the overridden methods
-  // after it, nearest first, whose docs `docOf` reads on demand, so only the ones a lookup reaches
-  // are parsed; `displayNames` the method's own parameter names, which @param tags show by
+  // after it, nearest first, whose docs a DocReader reads on demand, so only the ones a lookup
+  // reaches are parsed; `displayNames` the method's own parameter names, which @param tags show by
   // position, so an inherited doc matches the signature it describes.
-  record DocChain(
-      MethodDoc doc,
-      List<String> displayNames,
-      List<ExecutableElement> inherited,
-      Function<ExecutableElement, Optional<MethodDoc>> docOf) {
+  record DocChain(MethodDoc doc, List<String> displayNames, List<ExecutableElement> inherited) {
 
     DocChain {
       ValidCheck.check()
           .notNull(doc, "doc")
           .notNull(displayNames, "displayNames")
           .notNull(inherited, "inherited")
-          .notNull(docOf, "docOf")
           .validate();
       displayNames = List.copyOf(displayNames);
       inherited = List.copyOf(inherited);
     }
   }
 
-  // What signature help shows of a doc: its main description, and each parameter's description by
-  // position, "" for a parameter it does not document.
-  record SignatureDocs(String description, List<String> paramDocs) {
+  // What signature help shows of a doc: its main description, and the description of each
+  // parameter it documents, by the parameter's position.
+  record SignatureDocs(String description, Map<Integer, String> paramDocs) {
 
     SignatureDocs {
       ValidCheck.check()
           .notNull(description, "description")
           .notNull(paramDocs, "paramDocs")
           .validate();
-      paramDocs = List.copyOf(paramDocs);
+      paramDocs = Map.copyOf(paramDocs);
     }
   }
+
+  // How a deprecation reads: first, as the javadoc tool puts it, with the tag's text after it.
+  static final String DEPRECATED = "**Deprecated.**";
 
   private final StringBuilder sb = new StringBuilder();
   private boolean inPre;
@@ -90,54 +89,75 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     return tree == null
         ? ""
         : formatMethod(
-            new DocChain(
-                new MethodDoc(List.of(), tree), List.of(), List.of(), method -> Optional.empty()));
+            new DocChain(new MethodDoc(List.of(), tree), List.of(), List.of()),
+            method -> Optional.empty());
   }
 
-  static String formatMethod(final DocChain chain) {
-    final var printer = printing(chain);
-    printer.scan(chain.doc().tree().getFullBody(), null);
-    printer.formatBlockTags(chain.doc().tree().getBlockTags());
+  // `docOf` reads an overridden method's doc on demand: a DocReader's, for one request.
+  static String formatMethod(
+      final DocChain chain, final Function<ExecutableElement, Optional<MethodDoc>> docOf) {
+    final var printer = printing(chain, docOf);
+    final DocCommentTree tree = chain.doc().tree();
+    tree.getBlockTags().stream()
+        .filter(DeprecatedTree.class::isInstance)
+        .map(DeprecatedTree.class::cast)
+        .findFirst()
+        .ifPresent(printer::printDeprecation);
+    printer.scan(tree.getFullBody(), null);
+    printer.formatBlockTags(tree.getBlockTags());
     printer.endLink();
     return printer.sb.toString().strip();
   }
 
-  static SignatureDocs signatureDocs(final DocChain chain) {
-    final var description = printing(chain);
+  private void printDeprecation(final DeprecatedTree tag) {
+    append("%s ".formatted(DEPRECATED));
+    scanTag(tag, tag.getBody());
+    paragraph();
+  }
+
+  static SignatureDocs signatureDocs(
+      final DocChain chain, final Function<ExecutableElement, Optional<MethodDoc>> docOf) {
+    final var description = printing(chain, docOf);
     description.scan(chain.doc().tree().getFullBody(), null);
     description.endLink();
-    final List<String> paramDocs =
-        IntStream.range(0, chain.displayNames().size())
-            .mapToObj(index -> paramDoc(chain, index))
-            .toList();
+    final Map<Integer, String> paramDocs = new HashMap<>();
+    final List<String> names = chain.doc().paramNames();
+    for (final DocTree tag : chain.doc().tree().getBlockTags()) {
+      if (!(tag instanceof final ParamTree param) || param.isTypeParameter()) {
+        continue;
+      }
+
+      final int index = names.indexOf(param.getName().toString());
+      if (index < 0 || index >= chain.displayNames().size() || paramDocs.containsKey(index)) {
+        continue;
+      }
+
+      final String doc = printParam(chain, docOf, param);
+      if (!doc.isBlank()) {
+        paramDocs.put(index, doc);
+      }
+    }
+
     return new SignatureDocs(description.sb.toString().strip(), paramDocs);
   }
 
-  private static String paramDoc(final DocChain chain, final int index) {
-    final List<String> names = chain.doc().paramNames();
-    return chain.doc().tree().getBlockTags().stream()
-        .filter(ParamTree.class::isInstance)
-        .map(ParamTree.class::cast)
-        .filter(param -> !param.isTypeParameter())
-        .filter(param -> names.indexOf(param.getName().toString()) == index)
-        .findFirst()
-        .map(param -> printParam(chain, param))
-        .orElse("");
-  }
-
-  private static String printParam(final DocChain chain, final ParamTree param) {
-    final var printer = printing(chain);
+  private static String printParam(
+      final DocChain chain,
+      final Function<ExecutableElement, Optional<MethodDoc>> docOf,
+      final ParamTree param) {
+    final var printer = printing(chain, docOf);
     printer.scanTag(param, param.getDescription());
     printer.endLink();
     return printer.sb.toString().strip();
   }
 
-  private static JavadocMarkdownPrinter printing(final DocChain chain) {
+  private static JavadocMarkdownPrinter printing(
+      final DocChain chain, final Function<ExecutableElement, Optional<MethodDoc>> docOf) {
     final var printer = new JavadocMarkdownPrinter();
     printer.displayNames = chain.displayNames();
     printer.paramNames = chain.doc().paramNames();
     printer.inherited = chain.inherited();
-    printer.docOf = chain.docOf();
+    printer.docOf = docOf;
     return printer;
   }
 
@@ -159,10 +179,6 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
         paragraph();
         append("**@see** ");
         scan(s.getReference(), null);
-      } else if (tag instanceof final DeprecatedTree d) {
-        paragraph();
-        append("**@deprecated** ");
-        scan(d.getBody(), null);
       }
     }
   }
@@ -304,6 +320,10 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
       return simpleName(own.getExceptionName()).equals(simpleName(theirs.getExceptionName()));
     }
 
+    if (currentTag instanceof DeprecatedTree) {
+      return tag instanceof DeprecatedTree;
+    }
+
     return currentTag instanceof ReturnTree && tag instanceof ReturnTree;
   }
 
@@ -314,6 +334,10 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
     if (tag instanceof final ThrowsTree t) {
       return t.getDescription();
+    }
+
+    if (tag instanceof final DeprecatedTree d) {
+      return d.getBody();
     }
 
     return ((ReturnTree) tag).getDescription();

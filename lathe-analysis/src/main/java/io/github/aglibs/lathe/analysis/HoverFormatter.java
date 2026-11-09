@@ -12,6 +12,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
@@ -91,22 +92,38 @@ final class HoverFormatter {
         .formatted(kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()));
   }
 
-  // What javadoc's own pages show beside the text: that the element is deprecated, and the method
-  // it overrides (the nearest, a superclass's before an interface's); empty when neither applies.
-  static String notes(final Element element, final Elements elements, final Types types) {
+  // What javadoc's own pages show beside the text: that the element is deprecated, unless its
+  // javadoc already opens with the deprecation, and the method it overrides or, failing that, the
+  // interface method it implements. Empty when none applies.
+  static Optional<String> notes(
+      final Element element,
+      final boolean deprecationShown,
+      final Elements elements,
+      final Types types) {
     if (element == null) {
-      return "";
+      return Optional.empty();
     }
 
-    return Stream.of(deprecation(element, elements), overridden(element, elements, types))
-        .flatMap(Optional::stream)
-        .collect(Collectors.joining("  \n"));
+    final String notes =
+        Stream.of(
+                deprecationShown ? Optional.<String>empty() : deprecation(element, elements),
+                overridden(element, elements, types))
+            .flatMap(Optional::stream)
+            .collect(Collectors.joining("  \n"));
+    return notes.isEmpty() ? Optional.empty() : Optional.of(notes);
   }
 
+  // A deprecated class's constructor is deprecated too, though javac marks only the class.
   private static Optional<String> deprecation(final Element element, final Elements elements) {
-    return elements.isDeprecated(element) ? Optional.of("**Deprecated.**") : Optional.empty();
+    final boolean deprecated =
+        elements.isDeprecated(element)
+            || (element.getKind() == ElementKind.CONSTRUCTOR
+                && elements.isDeprecated(element.getEnclosingElement()));
+    return deprecated ? Optional.of(JavadocMarkdownPrinter.DEPRECATED) : Optional.empty();
   }
 
+  // As javadoc reads it: a method found up the superclass chain is overridden, the nearest first;
+  // otherwise one from an interface is specified.
   private static Optional<String> overridden(
       final Element element, final Elements elements, final Types types) {
     if (!(element instanceof final ExecutableElement method)
@@ -115,13 +132,28 @@ final class HoverFormatter {
       return Optional.empty();
     }
 
+    TypeMirror superclass = owner.getSuperclass();
+    while (types.asElement(superclass) instanceof final TypeElement type) {
+      final Optional<ExecutableElement> parent =
+          ElementFilter.methodsIn(type.getEnclosedElements()).stream()
+              .filter(candidate -> elements.overrides(method, candidate, owner))
+              .findFirst();
+      if (parent.isPresent()) {
+        return parent.map(found -> note("Overrides", found));
+      }
+
+      superclass = type.getSuperclass();
+    }
+
     return ReferenceTarget.overriddenMethods(method, owner, types, elements).stream()
+        .filter(candidate -> candidate.getEnclosingElement().getKind().isInterface())
         .findFirst()
-        .map(
-            parent ->
-                "**Overrides** `%s.%s`"
-                    .formatted(
-                        parent.getEnclosingElement().getSimpleName(), parent.getSimpleName()));
+        .map(found -> note("Specified by", found));
+  }
+
+  private static String note(final String label, final ExecutableElement method) {
+    return "**%s** `%s.%s`"
+        .formatted(label, method.getEnclosingElement().getSimpleName(), method.getSimpleName());
   }
 
   static String formatParam(

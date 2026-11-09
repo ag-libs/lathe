@@ -15,6 +15,7 @@ import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
@@ -357,15 +358,15 @@ class JavadocMarkdownPrinterTest {
             }
             """);
     assertThat(signatureDocs(tree, "name", "count", "flag").paramDocs())
-        .containsExactly("the recipient", "the `count` value", "");
+        .containsExactlyInAnyOrderEntriesOf(Map.of(0, "the recipient", 1, "the `count` value"));
   }
 
   @Test
-  void signatureDocs_noParamTags_givesBlankParamDocs() throws IOException {
+  void signatureDocs_noParamTags_givesNoParamDocs() throws IOException {
     final var tree =
         parseMethodDoc(
             "class T { /** Just a description. @return x */ int m(int x) { return 0; } }");
-    assertThat(signatureDocs(tree, "x").paramDocs()).containsExactly("");
+    assertThat(signatureDocs(tree, "x").paramDocs()).isEmpty();
   }
 
   // --- helpers ---
@@ -373,8 +374,8 @@ class JavadocMarkdownPrinterTest {
   private static SignatureDocs signatureDocs(final DocCommentTree tree, final String... names) {
     final List<String> paramNames = List.of(names);
     return JavadocMarkdownPrinter.signatureDocs(
-        new DocChain(
-            new MethodDoc(paramNames, tree), paramNames, List.of(), method -> Optional.empty()));
+        new DocChain(new MethodDoc(paramNames, tree), paramNames, List.of()),
+        method -> Optional.empty());
   }
 
   private static DocCommentTree parseMethodDoc(final String src) throws IOException {

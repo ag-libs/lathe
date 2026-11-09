@@ -69,12 +69,14 @@ final class SignatureHelpResolver {
 
     final var fmt = new TypeDisplayFormatter(analysis.types());
     final int activeParam = activeParamFromArgs(target.args(), positions, cu, cursorOffset);
+    // One reader for every overload: overloads share ancestors, each parsed once.
+    final DocReader reader = javadocLocator.reader(analysis, sourceRoots);
     final List<SignatureInformation> signatures =
         target.overloads().stream()
             .map(
                 m ->
                     buildSignature(
-                        m, fmt, target.name(), parser, sourceRoots, javadocLocator, analysis))
+                        m, fmt, target.name(), parser, sourceRoots, javadocLocator, reader))
             .toList();
     final int activeSignature = activeSignature(target);
 
@@ -363,7 +365,7 @@ final class SignatureHelpResolver {
       final SourceParser parser,
       final List<Path> sourceRoots,
       final JavadocLocator javadocLocator,
-      final AttributedFileAnalysis analysis) {
+      final DocReader reader) {
     final var params = method.getParameters();
     final var label = new StringBuilder();
 
@@ -396,7 +398,7 @@ final class SignatureHelpResolver {
     final var sig = new SignatureInformation(label.toString());
     sig.setParameters(paramInfos);
     javadocLocator
-        .signatureDocs(method, analysis, sourceRoots)
+        .signatureDocs(method, reader)
         .ifPresent(
             docs -> {
               if (!docs.description().isBlank()) {
@@ -404,13 +406,12 @@ final class SignatureHelpResolver {
                     Either.forRight(new MarkupContent("markdown", docs.description())));
               }
 
-              final int documented = Math.min(paramInfos.size(), docs.paramDocs().size());
-              for (int i = 0; i < documented; i++) {
-                final String doc = docs.paramDocs().get(i);
-                if (!doc.isBlank()) {
-                  paramInfos.get(i).setDocumentation(new MarkupContent("markdown", doc));
-                }
-              }
+              docs.paramDocs()
+                  .forEach(
+                      (index, doc) ->
+                          paramInfos
+                              .get(index)
+                              .setDocumentation(new MarkupContent("markdown", doc)));
             });
     return sig;
   }
