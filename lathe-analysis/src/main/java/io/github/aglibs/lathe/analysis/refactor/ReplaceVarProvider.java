@@ -5,6 +5,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import java.util.List;
@@ -44,7 +45,7 @@ public final class ReplaceVarProvider {
     }
 
     final var varTree = (VariableTree) varPath.getLeaf();
-    final long varStart = CodeActionSupport.varKeywordStart(analysis, cu, varTree);
+    final long varStart = DeclarationNames.varKeywordStart(analysis, varTree);
     if (varStart < 0) {
       return List.of();
     }

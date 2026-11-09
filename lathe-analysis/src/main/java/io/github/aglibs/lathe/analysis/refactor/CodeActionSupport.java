@@ -10,7 +10,6 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
-import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
@@ -93,17 +92,6 @@ public final class CodeActionSupport {
     final var target = (TypeElement) analysis.trees().getElement(TreePaths.enclosingClass(path));
     final var names = new SourceTypeNames(analysis, target);
     return new SourceType(names.formatter().format(type), names.importEditsFor(Stream.of(type)));
-  }
-
-  // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local
-  // or the source cannot be read.
-  static long varKeywordStart(
-      final AttributedFileAnalysis analysis,
-      final CompilationUnitTree cu,
-      final VariableTree varTree) {
-    return source(cu)
-        .map(content -> DeclarationNames.varKeywordStart(analysis, varTree, content))
-        .orElse(-1L);
   }
 
   static boolean isInsideClosure(final TreePath path) {

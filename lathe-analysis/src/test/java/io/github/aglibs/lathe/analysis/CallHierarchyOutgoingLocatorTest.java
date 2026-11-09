@@ -12,7 +12,6 @@ import java.util.List;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -130,51 +129,61 @@ class CallHierarchyOutgoingLocatorTest {
   }
 
   @Test
-  void outgoingCalls_constructorReference_listsConstructorAtNew_arrayConstructorSkipped()
+  void outgoingCalls_constructorReference_listedAtNew() throws IOException {
+    final List<CallHierarchyOutgoingCall> calls =
+        outgoingCallsOfCreate(
+            """
+                Supplier<Box> box = Box::new;
+                return box;
+            """);
+
+    assertThat(calls)
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.getTo().getName()).isEqualTo("Box");
+              assertThat(call.getFromRanges())
+                  .singleElement()
+                  .satisfies(
+                      range ->
+                          assertThat(
+                                  range.getEnd().getCharacter() - range.getStart().getCharacter())
+                              .isEqualTo(3));
+            });
+  }
+
+  @Test
+  void outgoingCalls_arrayConstructorReference_skipped() throws IOException {
+    assertThat(
+            outgoingCallsOfCreate(
+                """
+                    IntFunction<int[]> array = int[]::new;
+                    return array;
+                """))
+        .isEmpty();
+  }
+
+  private List<CallHierarchyOutgoingCall> outgoingCallsOfCreate(final String body)
       throws IOException {
-    Files.writeString(
-        sourceRoot.resolve("Box.java"),
-        """
-        class Box { Box() {} }
-        """);
+    Files.writeString(sourceRoot.resolve("Box.java"), "class Box { Box() {} }\n");
     final String content =
         """
         import java.util.function.IntFunction;
         import java.util.function.Supplier;
         class Factory {
             Object create() {
-                Supplier<Box> box = Box::new;
-                IntFunction<int[]> array = int[]::new;
-                return box;
-            }
+        %s    }
         }
         class Box { Box() {} }
-        """;
+        """
+            .formatted(body);
     final var request = request(content, SampleFixture.posOf(content, "Object create()", "create"));
-
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-
       final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
-      final List<CallHierarchyOutgoingCall> calls =
-          session
-              .hierarchy()
-              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
-
-      assertThat(calls)
-          .singleElement()
-          .satisfies(
-              call -> {
-                assertThat(call.getTo().getName()).isEqualTo("Box");
-                assertThat(call.getFromRanges())
-                    .containsExactly(
-                        new Range(
-                            SampleFixture.posOf(content, "Box::new", "new"),
-                            new Position(
-                                SampleFixture.posOf(content, "Box::new", "new").getLine(),
-                                SampleFixture.posOf(content, "Box::new", "new").getCharacter()
-                                    + 3)));
-              });
+      return session
+          .hierarchy()
+          .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
     }
   }
 

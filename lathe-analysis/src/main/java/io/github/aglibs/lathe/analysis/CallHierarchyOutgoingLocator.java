@@ -3,11 +3,13 @@ package io.github.aglibs.lathe.analysis;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberReferenceTree;
+import com.sun.source.tree.MemberReferenceTree.ReferenceMode;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -17,7 +19,8 @@ import java.util.List;
 import java.util.Map;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -116,10 +119,8 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    // `Box::new` calls Box's constructor; an array's (`int[]::new`) has no declaration to list.
-    if (element instanceof ExecutableElement
-        && element.getEnclosingElement() instanceof final TypeElement owner
-        && !owner.getSimpleName().isEmpty()) {
+    // `Box::new` calls Box's constructor; an array's (`int[]::new`) has none to list.
+    if (element instanceof ExecutableElement && !arrayConstructor(node)) {
       final String name = DeclarationNames.referenceName(node);
       final long startOff =
           DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
@@ -128,6 +129,16 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
       }
     }
     return null;
+  }
+
+  private boolean arrayConstructor(final MemberReferenceTree node) {
+    if (node.getMode() != ReferenceMode.NEW) {
+      return false;
+    }
+
+    final TypeMirror qualifier =
+        trees.getTypeMirror(new TreePath(getCurrentPath(), node.getQualifierExpression()));
+    return qualifier != null && qualifier.getKind() == TypeKind.ARRAY;
   }
 
   private void addCallSite(final Element element, final Range range) {

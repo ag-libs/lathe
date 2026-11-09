@@ -219,9 +219,8 @@ public final class NavigationFeatures {
     }
 
     final Cursor cur = at.get();
-    final var constructor =
-        CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
     final Element element = elementForNavigation(cur);
+    final Element plain = cur.elementOrJavadocReference();
     final List<Location> overloads =
         element instanceof ExecutableElement
             ? List.of()
@@ -231,12 +230,14 @@ public final class NavigationFeatures {
                 .toList();
     final List<Location> result =
         overloads.isEmpty()
+            // A substitute with no source to show (a JDK type a `var` stands for, without JDK
+            // sources) leaves the cursor's own element.
             ? findDefinitionLocation(request, cur, element)
                 .or(
                     () ->
-                        constructor == null
+                        element == plain
                             ? Optional.empty()
-                            : findDefinitionLocation(request, cur, cur.elementOrJavadocReference()))
+                            : findDefinitionLocation(request, cur, plain))
                 .stream()
                 .toList()
             : overloads;

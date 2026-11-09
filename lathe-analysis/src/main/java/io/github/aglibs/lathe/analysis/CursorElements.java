@@ -16,7 +16,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.core.IOUtil;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -28,6 +27,8 @@ import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 
 // The tree path and element at a cursor: the element a position names, an enum constant, the
 // constructor of `new X()`, the parameter an argument binds to, statically imported members.
@@ -130,9 +131,8 @@ public final class CursorElements {
         : null;
   }
 
-  // The type a `var` local declares when the offset is on its `var` keyword, else null; also null
-  // for a primitive or array type, which has no declaration. The keyword has no tree of its own
-  // through JDK 26, so it is found in the source.
+  // The type a `var` declaration declares when the offset is on its `var` keyword, else null; also
+  // null for a primitive, array or unresolved type, which has no declaration to show.
   static Element varTypeAt(
       final AttributedFileAnalysis analysis, final TreePath path, final long offset) {
     final TreePath variablePath = TreePaths.nearest(path, VariableTree.class);
@@ -140,16 +140,23 @@ public final class CursorElements {
       return null;
     }
 
-    final String content =
-        IOUtil.unchecked(() -> analysis.tree().getSourceFile().getCharContent(false).toString());
-    final long start =
-        DeclarationNames.varKeywordStart(analysis, (VariableTree) variablePath.getLeaf(), content);
+    // The keyword comes before the initializer: a cursor in it, often far into the file, is not on
+    // the keyword, and the source need not be read.
+    final var variable = (VariableTree) variablePath.getLeaf();
+    final var positions = analysis.trees().getSourcePositions();
+    if (variable.getInitializer() != null
+        && offset >= positions.getStartPosition(analysis.tree(), variable.getInitializer())) {
+      return null;
+    }
+
+    final long start = DeclarationNames.varKeywordStart(analysis, variable);
     if (start < 0 || offset < start || offset >= start + DeclarationNames.VAR.length()) {
       return null;
     }
 
-    return analysis.trees().getTypeMirror(variablePath) instanceof final DeclaredType declared
-        ? declared.asElement()
+    final TypeMirror type = analysis.trees().getTypeMirror(variablePath);
+    return type != null && type.getKind() == TypeKind.DECLARED
+        ? ((DeclaredType) type).asElement()
         : null;
   }
 

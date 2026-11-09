@@ -20,17 +20,25 @@ and the `new` of `::new` and the `var` keyword resolved to nothing.
 ### Resolution
 
 Outgoing calls list `Type::new` as a call to that constructor, at its `new`, as incoming calls already did; an array constructor reference (`int[]::new`) has no declaration and stays out.
-Definition and hover on the `var` keyword of a local reach the inferred type (`CursorElements.varTypeAt`), and MCP's on-a-name check accepts it;
-a primitive or array type has no declaration, so there `var` keeps the variable's own, as before.
-Rename and references keep the plain element: `var` is not a name of the type.
+Definition and hover on the `var` keyword of a local reach the inferred type (`CursorElements.varTypeAt`);
+a primitive, array or unresolved type has no declaration, and a type without source falls back to the variable, so there `var` keeps the variable's own, as before.
+Whether a declaration uses `var` comes from its type tree (implicit through JDK 26, on the keyword from 27), so a variable named `var` or a `"var"` in an annotation is never taken for the keyword.
+Rename, references and MCP's position tools keep the plain element, and MCP's on-a-name check still refuses `var`: `var` is not a name of the type.
 Definition and hover on the `new` of `Type::new` already reached the constructor (EG-096); a regression test now holds it.
 The `var` keyword lookup moved from the refactor package to `DeclarationNames.varKeywordStart`, shared by both.
 
 ### Regression targets
 
-- `CallHierarchyOutgoingLocatorTest.outgoingCalls_constructorReference_listsConstructorAtNew_arrayConstructorSkipped`
-- `DefinitionLocatorTest.definition_varKeywordAndConstructorReference_reachTypeAndConstructor`
-- `HoverTest.hover_varKeyword_describesInferredType_constructorReferenceDescribesConstructor`
+- `CallHierarchyOutgoingLocatorTest.outgoingCalls_constructorReference_listedAtNew`
+- `CallHierarchyOutgoingLocatorTest.outgoingCalls_arrayConstructorReference_skipped`
+- `DefinitionLocatorTest.definition_varKeyword_reachesInferredType`
+- `DefinitionLocatorTest.definition_varWithoutTypeSource_staysOnVariable`
+- `DefinitionLocatorTest.definition_wordVarThatIsNoKeyword_isNotTheType`
+- `DefinitionLocatorTest.definition_constructorReferenceNew_reachesConstructor`
+- `DefinitionLocatorTest.onName_varKeyword_isNoName`
+- `HoverTest.hover_varKeyword_describesInferredType`
+- `HoverTest.hover_varWithoutDeclaredType_describesVariable`
+- `HoverTest.hover_constructorReferenceNew_describesConstructor`
 
 ---
 

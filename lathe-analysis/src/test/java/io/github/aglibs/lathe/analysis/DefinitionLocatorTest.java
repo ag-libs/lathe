@@ -132,55 +132,94 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
-  @Test
-  void definition_varKeywordAndConstructorReference_reachTypeAndConstructor() {
-    final String source =
-        """
-        import java.util.function.Supplier;
-        class Test {
-          static class Box {
-            Box() {}
-          }
-          void use() {
-            var box = new Box();
-            var count = 1;
-            Supplier<Box> make = Box::new;
-          }
+  private static final String VAR_SOURCE =
+      """
+      import java.util.function.Supplier;
+      class Test {
+        static class Box {
+          Box() {}
         }
-        """;
+        void use() {
+          var box = new Box();
+          var count = 1;
+          final Box var = new Box();
+          @SuppressWarnings("var") Box tagged = new Box();
+          var list = new java.util.ArrayList<String>();
+          Supplier<Box> make = Box::new;
+        }
+      }
+      """;
+
+  @Test
+  void definition_varKeyword_reachesInferredType() {
+    assertThat(varDefinitionAt("var box", "var"))
+        .singleElement()
+        .satisfies(
+            location ->
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(posOf(VAR_SOURCE, "static class Box", "Box")));
+  }
+
+  @Test
+  void definition_varWithoutTypeSource_staysOnVariable() {
+    // A primitive has no declaration, and the JDK's ArrayList no source here: the variable's own.
+    assertThat(varDefinitionAt("var count", "var"))
+        .singleElement()
+        .satisfies(
+            location ->
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(posOf(VAR_SOURCE, "var count", "count")));
+    assertThat(varDefinitionAt("var list", "var"))
+        .singleElement()
+        .satisfies(
+            location ->
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(posOf(VAR_SOURCE, "var list", "list")));
+  }
+
+  @Test
+  void definition_wordVarThatIsNoKeyword_isNotTheType() {
+    // A variable named `var`, and `var` in an annotation's string, are not the keyword.
+    assertThat(varDefinitionAt("final Box var", "var"))
+        .singleElement()
+        .satisfies(
+            location ->
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(posOf(VAR_SOURCE, "final Box var", "var")));
+    assertThat(varDefinitionAt("@SuppressWarnings(\"var\")", "var")).isEmpty();
+  }
+
+  @Test
+  void definition_constructorReferenceNew_reachesConstructor() {
+    assertThat(varDefinitionAt("Box::new", "new"))
+        .singleElement()
+        .satisfies(
+            location ->
+                assertThat(location.getRange().getStart())
+                    .isEqualTo(posOf(VAR_SOURCE, "Box() {}", "Box")));
+  }
+
+  @Test
+  void onName_varKeyword_isNoName() {
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
-      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final Function<Position, SourceFeatureRequest> at =
-          pos ->
-              new SourceFeatureRequest(
-                  TempSourceCompiler.TEST_URI, source, 1, pos, List.of(), LibrarySources.none());
-
-      final var onVar = at.apply(posOf(source, "var box", "var"));
-      assertThat(session.navigation().definition(onVar))
-          .singleElement()
-          .satisfies(
-              location ->
-                  assertThat(location.getRange().getStart())
-                      .isEqualTo(posOf(source, "static class Box", "Box")));
-      assertThat(session.navigation().onName(onVar)).isTrue();
-
-      final var onPrimitiveVar = at.apply(posOf(source, "var count", "var"));
-      // A primitive has no declaration: `var` keeps the variable's own, as before.
-      assertThat(session.navigation().definition(onPrimitiveVar))
-          .singleElement()
-          .satisfies(
-              location ->
-                  assertThat(location.getRange().getStart())
-                      .isEqualTo(posOf(source, "var count", "count")));
-      assertThat(session.navigation().onName(onPrimitiveVar)).isFalse();
-
-      assertThat(session.navigation().definition(at.apply(posOf(source, "Box::new", "new"))))
-          .singleElement()
-          .satisfies(
-              location ->
-                  assertThat(location.getRange().getStart())
-                      .isEqualTo(posOf(source, "Box() {}", "Box")));
+      session.compile(TempSourceCompiler.TEST_URI, VAR_SOURCE, 1, CompileMode.OPEN);
+      assertThat(session.navigation().onName(varRequest(posOf(VAR_SOURCE, "var box", "var"))))
+          .isFalse();
+      assertThat(session.navigation().onName(varRequest(posOf(VAR_SOURCE, "var box", "box"))))
+          .isTrue();
     }
+  }
+
+  private static List<Location> varDefinitionAt(final String context, final String token) {
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, VAR_SOURCE, 1, CompileMode.OPEN);
+      return session.navigation().definition(varRequest(posOf(VAR_SOURCE, context, token)));
+    }
+  }
+
+  private static SourceFeatureRequest varRequest(final Position pos) {
+    return new SourceFeatureRequest(
+        TempSourceCompiler.TEST_URI, VAR_SOURCE, 1, pos, List.of(), LibrarySources.none());
   }
 
   @ParameterizedTest
