@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis.refactor;
 
+import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.ImportAnalyzer;
@@ -7,14 +8,18 @@ import io.github.aglibs.lathe.analysis.ImportLayout;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.StaticImportCandidates;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Stream;
+import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -24,16 +29,60 @@ public final class ImportQuickFixProvider {
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
-    return importActions(
-        request,
-        analysis,
-        alreadyImported ->
-            ImportCandidates.resolve(
-                request.payload().name(),
-                request.diag().getRange().getStart(),
-                analysis,
-                typeIndex,
-                alreadyImported));
+    final Scope scope = ImportCandidates.scopeAt(request.diag().getRange().getStart(), analysis);
+    final List<Either<Command, CodeAction>> imports =
+        importActions(
+            request,
+            analysis,
+            alreadyImported ->
+                ImportCandidates.resolve(
+                    request.payload().name(), scope, analysis, typeIndex, alreadyImported));
+    return Stream.concat(
+            imports.stream(), qualifyActions(request, analysis, typeIndex, scope).stream())
+        .toList();
+  }
+
+  // A nested type is written qualified from a type the code can name (Map.Entry), whose import is
+  // added if it needs one, rather than imported itself.
+  private static List<Either<Command, CodeAction>> qualifyActions(
+      final CodeActionRequest request,
+      final AttributedFileAnalysis analysis,
+      final WorkspaceTypeIndex typeIndex,
+      final Scope scope) {
+    final List<TypeElement> nested =
+        ImportCandidates.nestedTypes(request.payload().name(), scope, analysis, typeIndex);
+    if (nested.isEmpty()) {
+      return List.of();
+    }
+
+    final var names =
+        new SourceTypeNames(analysis, scope == null ? null : scope.getEnclosingClass());
+    return nested.stream()
+        .map(type -> Either.<Command, CodeAction>forRight(qualifyAction(request, names, type)))
+        .toList();
+  }
+
+  private static CodeAction qualifyAction(
+      final CodeActionRequest request, final SourceTypeNames names, final TypeElement type) {
+    final String written = names.sourceName(type);
+    final String qualifiedName = type.getQualifiedName().toString();
+    final var action = new CodeAction();
+    action.setTitle(
+        written.equals(qualifiedName)
+            ? "Qualify as '%s'".formatted(written)
+            : "Qualify as '%s' (%s)".formatted(written, qualifiedName));
+    action.setKind(CodeActionKind.QuickFix);
+    action.setDiagnostics(List.of(request.diag()));
+
+    final List<TextEdit> edits =
+        Stream.concat(
+                names.importEditsFor(Stream.of(type.asType())).stream(),
+                Stream.of(new TextEdit(request.diag().getRange(), written)))
+            .toList();
+    final var edit = new WorkspaceEdit();
+    edit.setChanges(Map.of(request.uri(), edits));
+    action.setEdit(edit);
+    return action;
   }
 
   // An unresolved member the file's scope statically imports elsewhere: one action per owner.

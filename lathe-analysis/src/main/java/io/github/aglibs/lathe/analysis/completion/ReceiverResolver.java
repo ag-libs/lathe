@@ -15,6 +15,7 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -115,6 +116,12 @@ final class ReceiverResolver {
     }
 
     return null;
+  }
+
+  // How code at the scope names a type: written into its enclosing class, or none outside every
+  // class (an import, a header).
+  static SourceTypeNames typeNames(final AttributedFileAnalysis analysis, final Scope scope) {
+    return new SourceTypeNames(analysis, scope == null ? null : scope.getEnclosingClass());
   }
 
   static Scope resolveScope(final AttributedFileAnalysis snapshot, final int cursorOffset) {

@@ -3,13 +3,16 @@ package io.github.aglibs.lathe.analysis;
 import static io.github.aglibs.lathe.analysis.Positions.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.refactor.ImportCandidates;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -136,9 +139,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(result.items())
         .containsExactlyInAnyOrder(
             new MissingImportsResult.MissingImport(
-                "requireNonNull", List.of("static java.util.Objects.requireNonNull")),
+                "requireNonNull", List.of("static java.util.Objects.requireNonNull"), List.of()),
             new MissingImportsResult.MissingImport(
-                "emptyList", List.of("static java.util.Collections.emptyList")));
+                "emptyList", List.of("static java.util.Collections.emptyList"), List.of()));
   }
 
   // Qualifiers: an unresolved X in X.member may be a type or a statically imported field.
@@ -579,6 +582,204 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
 
     assertThat(codeActions(actions)).hasSize(1);
     assertThat(codeActions(actions).get(0).getTitle()).isEqualTo("Import 'com.other.PublicClass'");
+  }
+
+  // A nested type is never imported itself, not even statically when the workspace imports it so:
+  // the quick fix writes it from its top-level type and imports that, fully qualified when the file
+  // gives the top-level name another type. Missing imports name it as a hint, not a candidate, so a
+  // top-level type of the same name stays the one unambiguous candidate, and a qualifier only a
+  // nested type matches keeps its hint. An inaccessible one is not offered.
+  @Test
+  void codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported() throws IOException {
+    final var classDir = tmp.resolve("classes");
+    final var outerFile = tmp.resolve("A.java");
+    Files.writeString(
+        outerFile,
+        """
+        package com.other;
+        public class A {
+          public static class Item {}
+          public static class Tool {
+            public static void run() {}
+          }
+          private static class Hidden {}
+        }
+        """);
+    final var itemFile = tmp.resolve("Item.java");
+    Files.writeString(
+        itemFile,
+        """
+        package com.example.items;
+        public class Item {}
+        """);
+    TestJavac.compileToDir(classDir, outerFile, itemFile);
+    session.close();
+    session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
+    final WorkspaceTypeIndex nestedIndex =
+        TempSourceCompiler.typeIndex(
+            tmp.resolve("nested_index.json"),
+            new TypeIndexEntry(
+                "Entry", "java.util.Map$Entry", "java.util", TypeKind.INTERFACE, true, List.of()),
+            new TypeIndexEntry(
+                "Item", "com.other.A$Item", "com.other", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "Item",
+                "com.example.items.Item",
+                "com.example.items",
+                TypeKind.CLASS,
+                true,
+                List.of()),
+            new TypeIndexEntry(
+                "Tool", "com.other.A$Tool", "com.other", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "Hidden", "com.other.A$Hidden", "com.other", TypeKind.CLASS, true, List.of()));
+    final var learned =
+        new LearnedStaticImports(Map.of("java.util.Map.Entry", 3, "com.other.A.*", 1));
+    final var source =
+        """
+        package com.example;
+        class Test {
+          Entry<String, String> entry;
+          Item item;
+          Hidden hidden;
+          void m() {
+            Tool.run();
+          }
+        }
+        """;
+
+    final List<CodeAction> actions = codeActions(nestedActions(source, nestedIndex, learned));
+
+    assertThat(actions)
+        .extracting(CodeAction::getTitle)
+        .containsExactly(
+            "Qualify as 'Map.Entry' (java.util.Map.Entry)",
+            "Import 'com.example.items.Item'",
+            "Qualify as 'A.Item' (com.other.A.Item)",
+            "Qualify as 'A.Tool' (com.other.A.Tool)");
+    assertThat(applyEdits(source, editsOf(actions.get(0))))
+        .contains("import java.util.Map;")
+        .contains("  Map.Entry<String, String> entry;")
+        .doesNotContain("import java.util.Map.Entry;");
+    assertThat(
+            session
+                .files()
+                .missingImports(TempSourceCompiler.TEST_URI, source, 1, nestedIndex, learned)
+                .items())
+        .containsExactlyInAnyOrder(
+            new MissingImportsResult.MissingImport(
+                "Entry", List.of(), List.of("java.util.Map.Entry")),
+            new MissingImportsResult.MissingImport(
+                "Item", List.of("com.example.items.Item"), List.of("com.other.A.Item")),
+            new MissingImportsResult.MissingImport("Hidden", List.of(), List.of()),
+            new MissingImportsResult.MissingImport("Tool", List.of(), List.of("com.other.A.Tool")));
+
+    final AttributedFileAnalysis analysis =
+        session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {});
+    assertThat(ImportCandidates.nestedTypes("Item", null, analysis, nestedIndex))
+        .as("without a scope only a type public all the way out")
+        .extracting(type -> type.getQualifiedName().toString())
+        .containsExactly("com.other.A.Item");
+    assertThat(ImportCandidates.nestedTypes("Hidden", null, analysis, nestedIndex)).isEmpty();
+
+    final var clashing =
+        """
+        package com.example;
+        class Test {
+          static class Map {}
+          Entry<String, String> entry;
+        }
+        """;
+    final List<CodeAction> qualified =
+        codeActions(nestedActions(clashing, nestedIndex, LearnedStaticImports.empty()));
+
+    assertThat(qualified)
+        .singleElement()
+        .satisfies(
+            action -> {
+              assertThat(action.getTitle()).isEqualTo("Qualify as 'java.util.Map.Entry'");
+              assertThat(applyEdits(clashing, editsOf(action)))
+                  .contains("  java.util.Map.Entry<String, String> entry;")
+                  .doesNotContain("import");
+            });
+  }
+
+  // A name in a class header gets the fix too; a common name nested in many types offers only the
+  // first few.
+  @Test
+  void codeAction_nestedType_inAHeaderAndNestedInManyTypes_qualifiedAtMostTenWays()
+      throws IOException {
+    final var classDir = tmp.resolve("classes");
+    final List<Path> outers =
+        IntStream.range(0, 12)
+            .mapToObj(
+                i ->
+                    IOUtil.unchecked(
+                        () ->
+                            Files.writeString(
+                                tmp.resolve("O%d.java".formatted(i)),
+                                "package com.other; public class O%d { public static class Part {} }"
+                                    .formatted(i))))
+            .toList();
+    TestJavac.compileToDir(classDir, outers.toArray(Path[]::new));
+    session.close();
+    session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
+    final WorkspaceTypeIndex partIndex =
+        TempSourceCompiler.typeIndex(
+            tmp.resolve("part_index.json"),
+            Stream.concat(
+                    IntStream.range(0, 12)
+                        .mapToObj(
+                            i ->
+                                new TypeIndexEntry(
+                                    "Part",
+                                    "com.other.O%d$Part".formatted(i),
+                                    "com.other",
+                                    TypeKind.CLASS,
+                                    true,
+                                    List.of())),
+                    Stream.of(
+                        new TypeIndexEntry(
+                            "Entry",
+                            "java.util.Map$Entry",
+                            "java.util",
+                            TypeKind.INTERFACE,
+                            true,
+                            List.of())))
+                .toArray(TypeIndexEntry[]::new));
+
+    assertThat(
+            codeActions(
+                nestedActions(
+                    "package com.example;\nclass Test {\n  Part part;\n}\n",
+                    partIndex,
+                    LearnedStaticImports.empty())))
+        .hasSize(10)
+        .allMatch(action -> action.getTitle().startsWith("Qualify as 'O"));
+    assertThat(
+            codeActions(
+                nestedActions(
+                    "package com.example;\nabstract class Header implements Entry<String, String> {}\n",
+                    partIndex,
+                    LearnedStaticImports.empty())))
+        .extracting(CodeAction::getTitle)
+        .containsExactly("Qualify as 'Map.Entry' (java.util.Map.Entry)");
+  }
+
+  private List<Either<Command, CodeAction>> nestedActions(
+      final String source, final WorkspaceTypeIndex index, final LearnedStaticImports learned) {
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    return session
+        .files()
+        .codeAction(
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            index,
+            learned);
   }
 
   @Test

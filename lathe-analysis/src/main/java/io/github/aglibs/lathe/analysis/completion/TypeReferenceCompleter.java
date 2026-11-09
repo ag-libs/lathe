@@ -5,9 +5,9 @@ import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
-import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.ArrayList;
@@ -193,13 +193,15 @@ final class TypeReferenceCompleter {
     final var scope =
         analysis != null ? ReceiverResolver.resolveScope(analysis, req.cursorOffset()) : null;
     final var validator = new TypeIndexValidator(analysis, scope);
+    final SourceTypeNames names =
+        analysis != null ? ReceiverResolver.typeNames(analysis, scope) : null;
     final List<CompletionCandidate> typeCandidates =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix(), req.typeIndex()))
             .filter(validator::isResolvable)
             .filter(entry -> typeIndexRoleAllows(entry, analysis, scope, role))
             .limit(TYPE_INDEX_RESULT_LIMIT)
-            .map(CandidateFactory::typeIndexCandidate)
+            .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, names))
             .toList();
     final List<CompletionItem> items =
         typeCandidates.stream().map(CompletionItemPresenter::present).toList();
@@ -411,17 +413,16 @@ final class TypeReferenceCompleter {
     }
 
     final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
+    final SourceTypeNames names = ReceiverResolver.typeNames(analysis, scope);
     final List<CompletionCandidate> subtypeCandidates =
-        instantiableSubtypeCandidates(prefix, expectedEl, analysis, typeIndex, scope);
+        instantiableSubtypeCandidates(prefix, expectedEl, analysis, typeIndex, scope, names);
     if (!(expectedEl.getSimpleName().toString().startsWith(prefix)
         && constructibleType(expectedEl, analysis, null))) {
       return subtypeCandidates;
     }
 
     return Stream.concat(
-            Stream.of(
-                CandidateFactory.typeElementCandidate(
-                    expectedEl, importEdit(expectedEl, analysis))),
+            Stream.of(CandidateFactory.typeElementCandidate(expectedEl, names)),
             subtypeCandidates.stream())
         .toList();
   }
@@ -431,7 +432,8 @@ final class TypeReferenceCompleter {
       final TypeElement expectedEl,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex,
-      final Scope scope) {
+      final Scope scope,
+      final SourceTypeNames names) {
     if (typeIndex == null) {
       return List.of();
     }
@@ -443,7 +445,7 @@ final class TypeReferenceCompleter {
         .sorted(typeCandidateComparator(prefix, typeIndex))
         .limit(TYPE_INDEX_RESULT_LIMIT)
         .filter(entry -> resolvesToInstantiableSubtype(entry, expectedEl, analysis, scope))
-        .map(CandidateFactory::typeIndexCandidate)
+        .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, names))
         .toList();
   }
 
@@ -474,14 +476,6 @@ final class TypeReferenceCompleter {
     return injected.prefix().isEmpty()
         ? new CompletionOutcome(base.items(), base.freshAnalysis(), true)
         : base;
-  }
-
-  private static ImportEdit importEdit(
-      final TypeElement typeElement, final AttributedFileAnalysis analysis) {
-    final String qualifiedName = typeElement.getQualifiedName().toString();
-    return new ImportAnalyzer(analysis).needsImport(qualifiedName)
-        ? new ImportEdit(qualifiedName, false)
-        : null;
   }
 
   private static boolean indexKindAllows(final TypeKind kind, final TypeReferenceRole role) {

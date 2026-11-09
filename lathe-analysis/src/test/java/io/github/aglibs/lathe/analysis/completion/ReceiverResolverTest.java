@@ -65,6 +65,7 @@ class ReceiverResolverTest {
             injected,
             SentinelContext.MEMBER_ACCESS,
             -1,
+            -1,
             "Test",
             "m",
             -1,

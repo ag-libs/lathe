@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.api.condition.JRE;
@@ -606,8 +607,11 @@ class CompletionArgumentTest extends CompletionTestSupport {
         .isEqualTo("Dialect.OAUTH");
   }
 
+  // A nested enum the file does not name is written from its top-level type, which is imported; the
+  // nested enum itself never is.
   @Test
-  void argumentPosition_externalEnumParam_offersConstantsWithImport() throws IOException {
+  void argumentPosition_externalNestedEnumParam_offersConstantsQualifiedFromTopLevelType()
+      throws IOException {
     localFixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
@@ -623,9 +627,10 @@ class CompletionArgumentTest extends CompletionTestSupport {
                     httpVersion(§);
                 }
             }""");
-    assertThat(labels(items)).contains("Version.HTTP_2");
-    final var http2 = itemLabeled(items, "Version.HTTP_2").orElseThrow();
-    assertThat(http2.getAdditionalTextEdits().get(0).getNewText())
-        .isEqualTo("import java.net.http.HttpClient.Version;\n");
+    assertThat(labels(items)).contains("HttpClient.Version.HTTP_2");
+    final var http2 = itemLabeled(items, "HttpClient.Version.HTTP_2").orElseThrow();
+    assertThat(http2.getAdditionalTextEdits())
+        .extracting(TextEdit::getNewText)
+        .containsExactly("import java.net.http.HttpClient;\n");
   }
 }

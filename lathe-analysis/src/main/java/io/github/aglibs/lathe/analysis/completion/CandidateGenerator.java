@@ -7,6 +7,7 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.DefinitionLocator;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -139,16 +140,22 @@ final class CandidateGenerator {
       final TypeElement enumType, final String prefix, final int cursorOffset) {
     final var cursorPath = CursorElements.pathAt(snapshot.trees(), snapshot.tree(), cursorOffset);
     // A class-qualified reference resolves only if its top-level type is reachable by simple name;
-    // otherwise refer to the enum by its own name and import its canonical (dotted) name.
+    // otherwise the enum is written as code there names it (a nested one from its top-level type,
+    // never imported itself), with the import that name needs.
     final TypeElement topLevel = DefinitionLocator.topLevelClass(enumType);
     final boolean reachable = topLevel != null && isInScope(topLevel, cursorPath);
-    final String qualifier =
-        reachable
-            ? classQualifiedName(enumType, cursorOffset)
-            : enumType.getSimpleName().toString();
-    final ImportEdit importEdit =
-        reachable ? null : new ImportEdit(enumType.getQualifiedName().toString(), false);
-    return proposeEnumConstantCandidates(enumType, prefix, qualifier, importEdit);
+    if (reachable) {
+      return proposeEnumConstantCandidates(
+          enumType, prefix, classQualifiedName(enumType, cursorOffset), null);
+    }
+
+    final SourceTypeNames names =
+        ReceiverResolver.typeNames(snapshot, ReceiverResolver.resolveScope(snapshot, cursorOffset));
+    return proposeEnumConstantCandidates(
+        enumType,
+        prefix,
+        names.sourceName(enumType),
+        CandidateFactory.importEditFor(names, enumType));
   }
 
   List<CompletionCandidate> proposeUnqualifiedEnumConstantCandidates(

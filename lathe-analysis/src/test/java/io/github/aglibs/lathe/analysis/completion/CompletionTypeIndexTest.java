@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeIndexTest extends CompletionTestSupport {
@@ -91,22 +94,98 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
     assertThat(items.get(0).getLabel()).isEqualTo("ArrayDeque");
   }
 
+  // A nested type completes by its simple name and is written as code there names it: from its
+  // top-level type, which is imported, never the nested type itself; by its simple name where the
+  // file already sees it (an import of it, an inherited member type); fully qualified where the
+  // file gives the top-level name another type. The type after `new` and an unimported receiver
+  // are written the same way.
   @Test
-  void typeIndex_nestedType_completesBySimpleNameAndImportsCanonicalName() throws IOException {
+  void typeIndex_nestedType_writtenAsTheFileNamesItNeverImported() throws IOException {
     localFixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
                 tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Entry", "java.util.Map$Entry", TypeKind.INTERFACE),
                 CompletionFixture.typeEntry(
-                    "Version", "java.net.http.HttpClient$Version", TypeKind.ENUM)));
+                    "SimpleEntry", "java.util.AbstractMap$SimpleEntry", TypeKind.CLASS)));
 
-    final var items = localFixture.complete("class Test { Vers§ field; }");
+    assertWritten("class Test { Entr§ field; }", "Entry", "Map.Entry", "import java.util.Map;\n");
+    assertWritten("import java.util.Map.Entry; class Test { Entr§ field; }", "Entry", "Entry");
+    assertWritten(
+        "abstract class Test implements java.util.Map<String, String> { Entr§ field; }",
+        "Entry",
+        "Entry");
+    assertWritten(
+        "class Test { static class Map {} Entr§ field; }", "Entry", "java.util.Map.Entry");
+    assertWritten(
+        "class Test { java.util.AbstractMap.SimpleEntry<String, String> e = new SimpleE§ }",
+        "SimpleEntry",
+        "AbstractMap.SimpleEntry",
+        "import java.util.AbstractMap;\n");
 
-    assertThat(labels(items)).contains("Version");
-    final var item = itemLabeled(items, "Version").orElseThrow();
-    assertThat(item.getDetail()).isEqualTo("java.net.http.HttpClient.Version");
-    assertThat(item.getAdditionalTextEdits().get(0).getNewText())
-        .isEqualTo("import java.net.http.HttpClient.Version;\n");
+    final String receiver = "class Test { void m() { Entry.comp§ } }";
+    final var member =
+        localFixture.complete(receiver).stream()
+            .filter(item -> item.getLabel().startsWith("comparingByKey"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(member.getAdditionalTextEdits())
+        .extracting(TextEdit::getNewText)
+        .containsExactlyInAnyOrder("import java.util.Map;\n", "Map.Entry");
+    assertThat(member.getAdditionalTextEdits())
+        .filteredOn(edit -> edit.getNewText().equals("Map.Entry"))
+        .singleElement()
+        .satisfies(
+            edit ->
+                assertThat(edit.getRange())
+                    .isEqualTo(
+                        new Range(
+                            new Position(0, receiver.indexOf("Entry.")),
+                            new Position(0, receiver.indexOf(".comp")))));
+  }
+
+  // A call chain's receiver is rewritten at its leading name. Before the file has an analysis there
+  // is nothing to look at, so a nested type is written from its top-level type; no import is added
+  // then, for any type, as the import's place comes from the analysis.
+  @Test
+  void typeIndex_nestedType_callChainReceiverAndNoAnalysisYet_writtenFromTopLevelType()
+      throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Entry", "java.util.Map$Entry", TypeKind.INTERFACE)));
+
+    final String chain = "class Test { void m() { Entry.comparingByKey().§ } }";
+    assertThat(localFixture.complete(chain))
+        .isNotEmpty()
+        .allSatisfy(
+            item ->
+                assertThat(item.getAdditionalTextEdits())
+                    .contains(
+                        new TextEdit(
+                            new Range(
+                                new Position(0, chain.indexOf("Entry.")),
+                                new Position(0, chain.indexOf(".comparingByKey"))),
+                            "Map.Entry")));
+
+    final var cold =
+        itemLabeled(localFixture.completeWithoutCache("class Test { Entr§ field; }"), "Entry");
+    assertThat(cold)
+        .hasValueSatisfying(
+            item -> assertThat(item.getTextEdit().getLeft().getNewText()).isEqualTo("Map.Entry"));
+  }
+
+  private void assertWritten(
+      final String source, final String label, final String written, final String... imports) {
+    final var item = itemLabeled(localFixture.complete(source), label).orElseThrow();
+    assertThat(item.getTextEdit().getLeft().getNewText()).as(source).isEqualTo(written);
+    assertThat(
+            item.getAdditionalTextEdits() == null
+                ? List.<String>of()
+                : item.getAdditionalTextEdits().stream().map(TextEdit::getNewText).toList())
+        .as(source)
+        .containsExactly(imports);
   }
 
   @Test

@@ -1,7 +1,10 @@
 package io.github.aglibs.lathe.analysis.completion;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.List;
@@ -31,13 +34,43 @@ final class CandidateFactory {
     this.typeDisplayFormatter = new TypeDisplayFormatter(types);
   }
 
-  static CompletionCandidate typeIndexCandidate(final TypeIndexEntry entry) {
-    final var importEdit =
-        "java.lang".equals(entry.packageName())
-            ? null
-            : new ImportEdit(entry.qualifiedName(), false);
+  // A type from the index, written as code at the cursor names it (see SourceTypeNames): a nested
+  // type from a type the code can name (Map.Entry), whose import it adds, never imported itself.
+  // Without an analysis yet (no `names`), or for a reactor type with no class file yet, there is no
+  // element to look at: the type is written from its top-level type.
+  static CompletionCandidate typeIndexCandidate(
+      final TypeIndexEntry entry,
+      final AttributedFileAnalysis analysis,
+      final SourceTypeNames names) {
+    final TypeElement type =
+        names == null ? null : analysis.elements().getTypeElement(entry.qualifiedName());
+    if (type != null) {
+      return typeCandidate(
+          entry.simpleName(),
+          names.sourceName(type),
+          entry.qualifiedName(),
+          kindFor(entry.kind()),
+          null,
+          importEditFor(names, type));
+    }
+
+    final int nested = entry.binaryName().indexOf('$');
+    final String topLevel =
+        nested < 0 ? entry.binaryName() : entry.binaryName().substring(0, nested);
     return typeCandidate(
-        entry.simpleName(), entry.qualifiedName(), kindFor(entry.kind()), null, importEdit);
+        entry.simpleName(),
+        entry.className().replace('$', '.'),
+        entry.qualifiedName(),
+        kindFor(entry.kind()),
+        null,
+        new ImportAnalyzer(analysis).needsImport(topLevel)
+            ? new ImportEdit(topLevel, false)
+            : null);
+  }
+
+  // The import the code naming `type` needs, if the file has no line for it yet.
+  static ImportEdit importEditFor(final SourceTypeNames names, final TypeElement type) {
+    return names.importFor(type).map(name -> new ImportEdit(name, false)).orElse(null);
   }
 
   private static CandidateKind kindFor(final TypeKind typeKind) {
@@ -49,18 +82,26 @@ final class CandidateFactory {
   }
 
   static CompletionCandidate typeElementCandidate(final TypeElement el) {
-    return typeElementCandidate(el, null);
-  }
-
-  static CompletionCandidate typeElementCandidate(
-      final TypeElement el, final ImportEdit importEdit) {
     final var simpleName = el.getSimpleName().toString();
     return typeCandidate(
+        simpleName,
         simpleName,
         el.getQualifiedName().toString(),
         kindForElement(el.getKind()),
         el.asType(),
-        importEdit);
+        null);
+  }
+
+  // A type written as code at the cursor names it, with the import that name needs.
+  static CompletionCandidate typeElementCandidate(
+      final TypeElement el, final SourceTypeNames names) {
+    return typeCandidate(
+        el.getSimpleName().toString(),
+        names.sourceName(el),
+        el.getQualifiedName().toString(),
+        kindForElement(el.getKind()),
+        el.asType(),
+        importEditFor(names, el));
   }
 
   private static CandidateKind kindForElement(final ElementKind kind) {
@@ -73,6 +114,7 @@ final class CandidateFactory {
 
   private static CompletionCandidate typeCandidate(
       final String simpleName,
+      final String insertText,
       final String qualifiedName,
       final CandidateKind kind,
       final TypeMirror valueType,
@@ -83,7 +125,7 @@ final class CandidateFactory {
         simpleName,
         kind,
         qualifiedName,
-        simpleName,
+        insertText,
         false,
         null,
         null,

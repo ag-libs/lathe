@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.refactor.AddConstructorParameterProvider;
 import io.github.aglibs.lathe.analysis.refactor.AddThrowsProvider;
@@ -303,19 +304,30 @@ public final class FileFeatures {
             .distinct()
             .map(
                 name -> {
-                  final List<String> types =
-                      typeNames.containsKey(name)
-                          ? ImportCandidates.resolve(
-                              name, typeNames.get(name), analysis, typeIndex, alreadyImported)
-                          : List.of();
                   final List<String> statics =
                       memberNames.containsKey(name)
                           ? StaticImportCandidates.importSpellings(staticImports, analysis, name)
                           : List.of();
+                  final Position typeAt = typeNames.get(name);
+                  if (typeAt == null) {
+                    return new MissingImportsResult.MissingImport(name, statics, List.of());
+                  }
+
+                  final Scope scope = ImportCandidates.scopeAt(typeAt, analysis);
+                  final List<String> types =
+                      ImportCandidates.resolve(name, scope, analysis, typeIndex, alreadyImported);
+                  final List<String> nested =
+                      ImportCandidates.nestedTypes(name, scope, analysis, typeIndex).stream()
+                          .map(type -> type.getQualifiedName().toString())
+                          .toList();
                   return new MissingImportsResult.MissingImport(
-                      name, Stream.concat(types.stream(), statics.stream()).toList());
+                      name, Stream.concat(types.stream(), statics.stream()).toList(), nested);
                 })
-            .filter(item -> !item.candidates().isEmpty() || plainTypeNames.contains(item.name()))
+            .filter(
+                item ->
+                    !item.candidates().isEmpty()
+                        || !item.nested().isEmpty()
+                        || plainTypeNames.contains(item.name()))
             .toList();
 
     LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));

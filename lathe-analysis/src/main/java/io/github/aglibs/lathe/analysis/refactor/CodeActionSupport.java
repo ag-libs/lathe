@@ -2,29 +2,24 @@ package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreeScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.DeclarationNames;
-import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
-import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -96,134 +91,8 @@ public final class CodeActionSupport {
   static SourceType sourceType(
       final AttributedFileAnalysis analysis, final TreePath path, final TypeMirror type) {
     final var target = (TypeElement) analysis.trees().getElement(TreePaths.enclosingClass(path));
-    return new SourceType(
-        sourceTypeFormatter(analysis, target).format(type),
-        importEditsFor(analysis, target, Stream.of(type)));
-  }
-
-  // Import edits for every type the given types mention, each needed import once.
-  // The imports code written into `target` needs for these types: the top-level type each written
-  // name starts from (see sourceTypeFormatter).
-  static List<TextEdit> importEditsFor(
-      final AttributedFileAnalysis analysis,
-      final TypeElement target,
-      final Stream<? extends TypeMirror> types) {
-    final var importAnalyzer = new ImportAnalyzer(analysis);
-    return types
-        .flatMap(CodeActionSupport::typesIn)
-        .filter(DeclaredType.class::isInstance)
-        .map(type -> ((DeclaredType) type).asElement())
-        .filter(TypeElement.class::isInstance)
-        .map(type -> nameRoot(analysis, target, (TypeElement) type))
-        .filter(root -> root.getNestingKind() != NestingKind.MEMBER)
-        .distinct()
-        .filter(type -> !declaredIn(analysis, type) && !clashes(analysis, type))
-        .map(type -> type.getQualifiedName().toString())
-        .map(importAnalyzer::importEdit)
-        .filter(Objects::nonNull)
-        .toList();
-  }
-
-  // For code written into `target`, a class of the file: a nested type `target` cannot see by its
-  // simple name is written from the nearest enclosing type it can (`ClassModel.Builder`, as Java
-  // code usually does; a bare `Module` could be java.lang's, two `Builder`s would clash); the name
-  // it starts from is written qualified when the file already gives that simple name another type
-  // (by an import, a declaration or its package), else simply.
-  static TypeDisplayFormatter sourceTypeFormatter(
-      final AttributedFileAnalysis analysis, final TypeElement target) {
-    return new TypeDisplayFormatter(analysis.types(), type -> sourceName(analysis, target, type));
-  }
-
-  private static String sourceName(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    final TypeElement root = nameRoot(analysis, target, type);
-    final String rootName =
-        (clashes(analysis, root) ? root.getQualifiedName() : root.getSimpleName()).toString();
-    return rootName
-        + type.getQualifiedName().toString().substring(root.getQualifiedName().length());
-  }
-
-  // The type a written name starts from: the type itself, or for a nested type `target` cannot see
-  // by its simple name (as a member, or through an import of it), the nearest enclosing type it can
-  // (or the top-level type).
-  private static TypeElement nameRoot(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    return type.getNestingKind() == NestingKind.MEMBER
-            && !memberTypeInScope(analysis, target, type)
-            && !importedNames(analysis).contains(type.getQualifiedName().toString())
-        ? nameRoot(analysis, target, (TypeElement) type.getEnclosingElement())
-        : type;
-  }
-
-  // A member type `target` sees by its simple name: one of its own or an enclosing class's members,
-  // declared or inherited.
-  private static boolean memberTypeInScope(
-      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    return Stream.iterate(
-            target,
-            Objects::nonNull,
-            c -> c.getEnclosingElement() instanceof final TypeElement outer ? outer : null)
-        .anyMatch(c -> analysis.elements().getAllMembers(c).contains(type));
-  }
-
-  private static boolean clashes(final AttributedFileAnalysis analysis, final TypeElement type) {
-    final String simpleName = type.getSimpleName().toString();
-    final String qualifiedName = type.getQualifiedName().toString();
-    return importedNames(analysis).stream()
-            .anyMatch(
-                imported -> !imported.equals(qualifiedName) && imported.endsWith("." + simpleName))
-        || declaredTypeNames(analysis).contains(simpleName) && !declaredIn(analysis, type)
-        || inOwnPackage(analysis, simpleName).filter(sibling -> !sibling.equals(type)).isPresent();
-  }
-
-  private static Set<String> importedNames(final AttributedFileAnalysis analysis) {
-    return new ImportAnalyzer(analysis).importedQualifiedNames();
-  }
-
-  // The type of the file's own package with this simple name: it is in scope there without an
-  // import, and an import of another one would shadow it for the whole file.
-  private static Optional<TypeElement> inOwnPackage(
-      final AttributedFileAnalysis analysis, final String simpleName) {
-    final ExpressionTree packageName = analysis.tree().getPackageName();
-    final String name =
-        packageName == null ? simpleName : "%s.%s".formatted(packageName, simpleName);
-    return Optional.ofNullable(analysis.elements().getTypeElement(name));
-  }
-
-  private static Set<String> declaredTypeNames(final AttributedFileAnalysis analysis) {
-    final Set<String> names = new HashSet<>();
-    new TreeScanner<Void, Void>() {
-      @Override
-      public Void visitClass(final ClassTree tree, final Void unused) {
-        names.add(tree.getSimpleName().toString());
-        return super.visitClass(tree, unused);
-      }
-    }.scan(analysis.tree(), null);
-    return names;
-  }
-
-  // A type of the file itself is in scope by its simple name, and importing a private one would
-  // not even compile.
-  private static boolean declaredIn(final AttributedFileAnalysis analysis, final TypeElement type) {
-    final TreePath path = analysis.trees().getPath(type);
-    return path != null && path.getCompilationUnit() == analysis.tree();
-  }
-
-  // A type and every type in it: generic arguments, array components, wildcard bounds.
-  static Stream<TypeMirror> typesIn(final TypeMirror type) {
-    final Stream<? extends TypeMirror> nested;
-    if (type instanceof final DeclaredType declared) {
-      nested = declared.getTypeArguments().stream();
-    } else if (type instanceof final ArrayType array) {
-      nested = Stream.of(array.getComponentType());
-    } else if (type instanceof final WildcardType wildcard) {
-      nested =
-          Stream.of(wildcard.getExtendsBound(), wildcard.getSuperBound()).filter(Objects::nonNull);
-    } else {
-      nested = Stream.empty();
-    }
-
-    return Stream.concat(Stream.of(type), nested.flatMap(CodeActionSupport::typesIn));
+    final var names = new SourceTypeNames(analysis, target);
+    return new SourceType(names.formatter().format(type), names.importEditsFor(Stream.of(type)));
   }
 
   // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local.

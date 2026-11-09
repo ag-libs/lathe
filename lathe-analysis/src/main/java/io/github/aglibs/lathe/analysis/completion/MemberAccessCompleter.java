@@ -3,11 +3,13 @@ package io.github.aglibs.lathe.analysis.completion;
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
-import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
@@ -19,6 +21,8 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
 
 final class MemberAccessCompleter {
 
@@ -335,6 +339,7 @@ final class MemberAccessCompleter {
     }
 
     final var scope = ReceiverResolver.resolveScope(snapshot, cursorOffset);
+    final SourceTypeNames names = ReceiverResolver.typeNames(snapshot, scope);
 
     // An unimported simple name may match several classpath types (e.g. two `Objects`).
     // Offer members from every candidate, each carrying its own import edit, rather than returning
@@ -371,7 +376,7 @@ final class MemberAccessCompleter {
         continue;
       }
 
-      applyTypeImportEdit(items, candidate.qualifiedName(), snapshot);
+      applyTypeNameEdits(items, typeEl, lookupName, parsed, injected, names);
       aggregated.addAll(items);
     }
 
@@ -407,16 +412,44 @@ final class MemberAccessCompleter {
     return nameStr;
   }
 
-  private static void applyTypeImportEdit(
+  // The members of a type the file does not name yet: the receiver's leading name is written as
+  // code there names the type (a nested one from a type it can name, Map.Entry, never imported
+  // itself), with the import that name needs.
+  private static void applyTypeNameEdits(
       final List<CompletionItem> items,
-      final String qualifiedName,
-      final AttributedFileAnalysis analysis) {
-    final var edit = new ImportAnalyzer(analysis).importEdit(qualifiedName);
-    if (edit == null) {
-      return;
+      final TypeElement type,
+      final String typedName,
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final SourceTypeNames names) {
+    final List<TextEdit> edits =
+        Stream.concat(
+                names.importEditsFor(Stream.of(type.asType())).stream(),
+                receiverRewrite(names.sourceName(type), typedName, parsed, injected).stream())
+            .toList();
+    items.forEach(
+        item -> edits.forEach(edit -> CompletionItemPresenter.addAdditionalTextEdit(item, edit)));
+  }
+
+  // The receiver starts where javac's tree starts it, with the typed name (`Entry` in `Entry` or in
+  // `Entry.comparingByKey()`); anything else there is left alone.
+  private static Optional<TextEdit> receiverRewrite(
+      final String written,
+      final String typedName,
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected) {
+    final int start = parsed.receiverStartOffset();
+    final String content = injected.injectedContent();
+    if (written.equals(typedName) || start < 0 || !content.startsWith(typedName, start)) {
+      return Optional.empty();
     }
 
-    items.forEach(item -> CompletionItemPresenter.addAdditionalTextEdit(item, edit));
+    return Optional.of(
+        new TextEdit(
+            new Range(
+                Positions.offsetToPosition(content, start),
+                Positions.offsetToPosition(content, start + typedName.length())),
+            written));
   }
 
   private static SemanticCompletionContext memberAccessSemanticContext(

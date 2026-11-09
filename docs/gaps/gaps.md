@@ -1257,31 +1257,6 @@ None yet.
 
 ---
 
-## CA-19 — Import fixes ignore nested types
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `fix_imports`, and the editor's missing-import fixes if they share the candidates.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-`fix_imports` says "No import found for: Entry" although `java.util.Map.Entry` is available.
-
-### Fix direction
-
-Offer nested types whose simple name matches (importing the nested type, or the outer type and
-qualifying), ranked after top-level types.
-
-### Regression targets
-
-None yet.
-
----
-
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the

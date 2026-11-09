@@ -92,6 +92,63 @@ Most of the remainder is the deeper nesting google-java-format gives arguments o
 
 ---
 
+## CA-19 — Import fixes ignore nested types — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `fix_imports`, and the editor's missing-import fixes if they share the candidates.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`fix_imports` says "No import found for: Entry" although `java.util.Map.Entry` is available.
+
+### Fix direction
+
+Offer nested types whose simple name matches (importing the nested type, or the outer type and
+qualifying), ranked after top-level types.
+
+### Fix
+
+The type index already held nested types (`java.util.Map$Entry`, simple name `Entry`), but `ImportCandidates` named
+a candidate by its package and simple name, `java.util.Entry`, which javac could not find, so it was dropped.
+A nested type is now never imported itself, by a plain or a static import: it is written as code there names it,
+from a type the code can name, whose import is added.
+`internal.SourceTypeNames` (moved from `CodeActionSupport`, CA-17's helpers) decides how a type is written and what it
+imports, for the refactors, the import fixes and completion alike: `Map.Entry` with `import java.util.Map;`, plain
+`Entry` where the file already sees it (an import of it, an inherited member type), and `java.util.Map.Entry` with no
+import where the file gives `Map` another type.
+
+- The quick fix "Qualify as 'Map.Entry' (java.util.Map.Entry)" replaces the name and adds the import; a name
+  nested in many types (`Builder`) offers the ten most used.
+- Completion writes a type that way wherever it adds an import: a type-index type, the type after `new`, an enum
+  constant of a type the file does not name, and an unimported receiver (`Entry.` and `Entry.comparingByKey().`
+  are rewritten at their leading name to `Map.Entry`). `SourceTypeNames` is made once per request, reading the
+  file's imports and declared types once rather than for every candidate.
+- "Add missing imports" and MCP `fix_imports` keep only top-level candidates, so a name with one top-level type is
+  still added automatically; `MissingImport.nested` names the nested types as a hint, which `fix_imports` reports
+  for an unresolved or ambiguous name, a qualifier (`Tool.run()`) included.
+- Learned static imports were already limited to methods and fields, so they never offered a nested type.
+
+Known limit: a reactor nested type with no class file yet (created, not compiled) has no element to check, so
+completion writes it from its top-level type by name, without the clash check; when the file gives that top-level name
+another type, the result does not compile until the type is built and completion is repeated.
+
+### Regression targets
+
+`QuickFixCodeActionTest.codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported`,
+`QuickFixCodeActionTest.codeAction_nestedType_inAHeaderAndNestedInManyTypes_qualifiedAtMostTenWays`,
+`CompletionTypeIndexTest.typeIndex_nestedType_writtenAsTheFileNamesItNeverImported`,
+`CompletionTypeIndexTest.typeIndex_nestedType_callChainReceiverAndNoAnalysisYet_writtenFromTopLevelType`,
+`CompletionArgumentTest.argumentPosition_externalNestedEnumParam_offersConstantsQualifiedFromTopLevelType`,
+`LatheEngineEditTest.fixImports_nestedTypes_neverImportedButNamedForAQualifiedName`,
+`McpTextTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`.
+
+---
+
 ## EG-096 — Definition on a constructor call goes to the class — done
 
 **Status: done.**
@@ -3570,7 +3627,7 @@ JDK, and reactor shards, so they complete by simple name and auto-import correct
 ### Current verification
 
 `CompletionTypeIndexTest.typeIndex_nestedType_completesBySimpleNameAndImportsCanonicalName` covers nested-type completion and its import edit.
-The separate missing-import quick fix remains CA-19; this closure does not cover that provider.
+The separate missing-import quick fix was CA-19, since done; this closure did not cover that provider.
 
 ---
 

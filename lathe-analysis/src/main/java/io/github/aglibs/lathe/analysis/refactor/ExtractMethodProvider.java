@@ -20,6 +20,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import io.github.aglibs.lathe.analysis.refactor.ExtractionSupport.Site;
 import io.github.aglibs.lathe.core.CollectionUtil;
@@ -138,7 +139,7 @@ public final class ExtractMethodProvider {
             .flatMap(types -> types)
             .toList();
     final List<TypeMirror> writtenTypes =
-        signatureTypes.stream().flatMap(CodeActionSupport::typesIn).toList();
+        signatureTypes.stream().flatMap(SourceTypeNames::typesIn).toList();
     final List<String> refusals =
         Stream.of(
                 flow.refusals().stream(),
@@ -189,7 +190,8 @@ public final class ExtractMethodProvider {
             flow.assigned(),
             flow.returnsValue(),
             thrown,
-            signatureTypes);
+            signatureTypes,
+            new SourceTypeNames(analysis, (TypeElement) trees.getElement(member.getParentPath())));
     // A static method cannot use the class's type variables.
     final boolean classTypeVariables =
         typeVariables.stream()
@@ -236,7 +238,8 @@ public final class ExtractMethodProvider {
     return actions;
   }
 
-  // The new method, and the edits that call it from sites: the region itself, or its copies.
+  // The new method, and the edits that call it from sites: the region itself, or its copies; types
+  // are written as the class the new method joins names them.
   private record Extraction(
       AttributedFileAnalysis analysis,
       String source,
@@ -251,7 +254,8 @@ public final class ExtractMethodProvider {
       Set<VariableElement> assigned,
       boolean returnsValue,
       List<TypeMirror> thrown,
-      List<TypeMirror> signatureTypes) {
+      List<TypeMirror> signatureTypes,
+      SourceTypeNames typeNames) {
 
     Extraction {
       ValidCheck.check()
@@ -268,6 +272,7 @@ public final class ExtractMethodProvider {
           .notNull(assigned, "assigned")
           .notNull(thrown, "thrown")
           .notNull(signatureTypes, "signatureTypes")
+          .notNull(typeNames, "typeNames")
           .validate();
       region = List.copyOf(region);
       typeParameters = List.copyOf(typeParameters);
@@ -302,8 +307,7 @@ public final class ExtractMethodProvider {
                               start(site.run().get(0)),
                               end(CollectionUtil.last(site.run())),
                               call(site))),
-              CodeActionSupport.importEditsFor(analysis, targetClass(), signatureTypes.stream())
-                  .stream())
+              typeNames.importEditsFor(signatureTypes.stream()).stream())
           .flatMap(edits -> edits)
           .toList();
     }
@@ -461,12 +465,7 @@ public final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return CodeActionSupport.sourceTypeFormatter(analysis, targetClass()).format(type);
-    }
-
-    // The class the new method joins.
-    private TypeElement targetClass() {
-      return (TypeElement) analysis.trees().getElement(member.getParentPath());
+      return typeNames.formatter().format(type);
     }
 
     private String sourceOf(final TreePath first, final TreePath last) {
@@ -698,7 +697,7 @@ public final class ExtractMethodProvider {
   }
 
   private static Stream<TypeParameterElement> typeVariablesIn(final TypeMirror type) {
-    return CodeActionSupport.typesIn(type)
+    return SourceTypeNames.typesIn(type)
         .filter(TypeVariable.class::isInstance)
         .map(variable -> (TypeParameterElement) ((TypeVariable) variable).asElement());
   }
