@@ -3,6 +3,7 @@
 This is the single active gap registry for Lathe.
 Every open gap, across all areas, lives here, follows the shared [gap lifecycle](gap-process.md) (a `Status`), and is discovered and triaged through the [gap workflow](gap-workflow.md).
 Resolved (`done` / `non-goal`) gaps move to [gaps-archive.md](gaps-archive.md).
+The [2026-11-09 closure audit](audit-2026-11-09.md) records the evidence and corrections through merged PR #145.
 
 ## Areas
 
@@ -116,6 +117,115 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ---
 
+## EG-020 — Info-file structural features shipped, but package Javadoc folding remains missing
+
+**Status: documented (symbols, semantic tokens and module-body folding shipped; package-Javadoc folding remains).**
+
+### Delivered
+
+`DocumentSymbolScanner` emits module and package symbols.
+`TokenScannerModuleInfoTest` and `TokenScannerPackageInfoTest` cover their namespace tokens.
+`FoldingRangeScannerTest.scan_moduleInfo_returnsModuleBodyRegion` covers the module body.
+The finer outline of module directives remains EG-083.
+
+### Remaining — package Javadoc folding
+
+Reopened by the 2026-11-08 closure audit: the earlier archived entry promised a fold for the leading package Javadoc, but cited `FoldingRangeTest.foldingRange_packageInfo_returnsJavadocRange`, a proposed test that does not exist.
+`FoldingRangeScanner` adds Javadoc folds only when visiting classes, methods and variables; it never visits a package declaration for this purpose.
+A probe through `SourceAnalysisSession.files().foldingRange` on the current build confirms that this source returns `[]`:
+
+```java
+/**
+ * Package documentation.
+ */
+package com.example;
+```
+
+The module-body control returns a region fold.
+The original proposal also mentioned folding leading module/package annotation groups and module-directive groups; those refinements have no dedicated handling or regression coverage and remain unverified, rather than being claimed delivered.
+Package hover/definition from the original observation was never part of the verified closure.
+
+### Regression targets
+
+Delivered: `DocumentSymbolScannerTest.scan_moduleInfo_noDirectives_returnsModuleSymbol`,
+`DocumentSymbolScannerTest.scan_packageInfo_returnsPackageSymbol`,
+`FoldingRangeScannerTest.scan_moduleInfo_returnsModuleBodyRegion`,
+`TokenScannerModuleInfoTest.semanticTokens_moduleInfo_requiresModuleName_isNamespace`,
+`TokenScannerPackageInfoTest.semanticTokens_packageInfo_packageName_isNamespace`.
+Package-Javadoc folding: no regression test yet; the probe above reproduces the remainder.
+
+---
+
+## EG-030 — Neovim indentation fixes shipped, but resumed chains and continuation edge cases remain
+
+**Status: deferred (core fixtures shipped; resumed-chain and continuation sub-cases remain).**
+
+### Delivered
+
+The current indenter lives in `lathe-neovim/runtime/lua/lathe/indent.lua`, not the old Maven-plugin resource path.
+Its text heuristic handles wrapped arguments, record components, lambda bodies, statement-end dedenting, and basic selector chains; Tree-sitter is used only for block-closer matching.
+All 29 current `lathe-neovim/test/indent_spec.lua` fixtures pass headlessly.
+
+### Remaining — a selector resuming after wrapped arguments
+
+The archived entry explicitly deferred this sub-case without leaving active tracking.
+The 2026-11-09 closure audit reproduced it through `lathe.indent.compute` with the same clean/no-parser setup as the headless specs:
+
+```java
+return source.of(req)
+    .request(Type.class)
+    .recover(
+        e -> {
+          log(e);
+          return fallback();
+        })
+    .get();
+```
+
+For `.get()`, the current result is 12 spaces rather than the four-space chain anchor shown above.
+The heuristic anchors a selector to the previous closing line; it does not walk back to the chain's receiver.
+The original leading-binary-operator and lone wrap-closer sub-cases were also deferred and have no dedicated fixtures; this audit does not claim they were fixed.
+Formatting on save can correct the file, but it does not close the interactive-indentation remainder.
+
+### Regression targets
+
+Delivered cases: `lathe-neovim/test/indent_spec.lua` (29 passing fixtures).
+The resumed-chain shape above is not in that suite; it was probed separately and remains a regression-test target when implemented.
+
+---
+
+## EG-031 — JDK home fallback works, but missing JDK sources still have no actionable explanation
+
+**Status: documented (JDK-home fallback shipped; missing-source explanation remains).**
+
+### Delivered
+
+`JdkSourceResolver.resolve` falls back from an unset `JAVA_HOME` to the running JVM's `java.home` and resolves symlinks.
+The following tests exist, are enabled, and pass:
+
+- `JdkSourceResolverTest.resolve_javaHomeUnset_fallsBackToRunningJavaHome`
+- `JdkSourceResolverTest.resolve_symlinkedHome_resolvesToRealPath`
+- `JdkSourceResolverTest.resolve_noSrcZip_returnsMissingWithHome`
+
+### Remaining — actionable missing-source diagnostics
+
+The 2026-11-08 closure audit found that the archived entry also promised distinct cause/path/remedy messages, but that part never shipped.
+`JdkSourceSync.extract` still logs only `[sync] jdk sources missing` when `JdkSource.isPresent()` is false.
+The missing-source model retains the JDK home, but no diagnostic reason, and the log names neither the inspected `lib/src.zip` nor how to install JDK sources.
+The old proposed warning test never existed; `JdkSourceSyncTest` now covers extraction locking, not missing-source reporting.
+
+### Fix direction
+
+Name the missing source archive and give an actionable remedy when a JDK home is known; explain an unresolved home separately.
+The working JDK-home fallback needs no further implementation.
+
+### Regression targets
+
+The resolver tests above cover the delivered behavior.
+Missing-source warning: no regression test yet; verified outstanding by `JdkSourceSync.extract`'s missing-source branch.
+
+---
+
 ## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only
 
 **Status: deferred**
@@ -128,7 +238,7 @@ not-yet-updated call sites are exactly where one wants to jump to the new declar
 Re-probed 2026-10-31 through MCP `get_definition`, wrong argument **types** to a method with a single declaration
 (`ofSourceTree(42)` where `ofSourceTree(String)`): `{"targets":[]}`.
 
-Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback this gap first described was removed with archived EG-049, go-to-definition):
+Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback this gap first described was removed with archived EG-100, go-to-definition):
 
 | Call | Result |
 |---|---|
@@ -146,8 +256,8 @@ python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # cursor on `foo` in
 
 ### Root cause
 
-A call whose arguments match no overload is erroneous, so javac attributes no method element and `SourceLocator.elementAt` finds nothing to resolve.
-The pipeline also returns at most one location: `SourceAnalysisSession.definition` returns an `Optional<Location>` and `WorkspaceSession.definitionFuture` maps it to a 0-or-1 list,
+A call whose arguments match no overload is erroneous, so javac attributes no method element and `CursorElements.elementAt` finds nothing to resolve.
+The pipeline also returns at most one location: `NavigationFeatures.definition` returns an `Optional<Location>` and `DocumentFeatures.definitionFuture` maps it to a 0-or-1 list,
 so overloads cannot be offered even though the LSP result type (`Either<List<Location>, …>`) allows many.
 
 ### Proposed direction
@@ -1158,6 +1268,35 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
+## CQ-0041 — Module directives complete, but annotation arguments on a module descriptor do not
+
+**Status: documented (module-directive completion shipped; module-annotation arguments remain).**
+
+### Delivered
+
+`CompletionModuleInfoTest.complete_requiresDirective_offersModuleNames` and
+`CompletionModuleInfoTest.complete_exportsDirective_offersPackageSegments` cover the delivered module-directive completions.
+
+### Remaining — module annotation arguments
+
+Reopened by the 2026-11-08 closure audit: the archived entry listed a proposed module-annotation regression as though it existed, but it was never added.
+A probe through the current `SourceAnalysisSession.complete` reproduces the remainder:
+
+```java
+@Deprecated(s§) module example.app {}
+```
+
+At `§`, the result is `[requires, exports, opens, uses, provides]`, not the annotation element `since`.
+The control `@Deprecated(s§) class Test {}` returns `[since]` through the same API and compiler.
+The module-descriptor completion branch is being chosen inside the annotation argument.
+
+### Regression targets
+
+The directive tests above cover the delivered behavior.
+Module-annotation argument completion has no regression test yet; the paired probe above reproduces it.
+
+---
+
 ## CQ-0062 — A member overriding one with a type-use-annotated parameter may be listed twice
 
 **Status: documented**
@@ -1267,38 +1406,6 @@ Stamp what javac compiled (its read content or fingerprint), not the disk at mir
 ### Regression targets
 
 None yet.
-
----
-
-## WS-23 — A killed build's locks make `verify_change` defer for about two minutes
-
-**Status: in-progress**
-
-**Value: high — Size: S–M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
-
-### Observed behaviour
-
-After `kill -9` of a Maven sync, the `lathe.lock`/`module.lock` it held stay, and `verify_change` answers
-"Verification deferred: a build is in progress" for 100–120 s, until the locks count as stale.
-The next good sync clears them.
-
-### Fix direction
-
-The implementation records the PID and process start instant in both reactor and module locks.
-Ignore fresh locks immediately when the owner has exited or the PID has been reused, without deleting the marker.
-Retain the two-minute mtime fallback for empty markers, malformed metadata and unavailable process information.
-
-### Regression targets
-
-`LatheLockTest.isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks` (checks fresh markers naming a JVM that has exited),
-`LatheLockTest.isBuilding_reusedPid_ignoresFreshLock`,
-`LatheLockTest.isBuilding_incompleteOrMalformedOwner_usesMtimeExpiry`,
-`LatheLockTest.isBuilding_invalidUtf8Owner_usesMtimeExpiry`,
-`LatheLockTest.isBuilding_staleLiveOwner_usesMtimeExpiry`.
 
 ---
 
@@ -2005,9 +2112,9 @@ None yet.
 
 ---
 
-## MC-52 — Every result repeats a full `file://` URI
+## MC-52 — External locations still repeat full URIs, with no dependency/JDK path shorthand
 
-**Status: documented**
+**Status: documented (workspace-relative result paths shipped; external-path shorthand remains).**
 
 **Value: medium — Size: S**
 
@@ -2015,20 +2122,29 @@ None yet.
 
 Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
-### Observed behaviour
+### Delivered — workspace-relative result paths
+
+MC-18 already changed reactor and generated locations to workspace-relative paths.
+`LatheEngine.displayPath` and the shared `McpText.position` renderer apply this to symbols, references, definitions and call hierarchies.
+The original blanket claim that every result repeats a URI is obsolete.
+
+### Remaining — external paths and round-trip shorthand
+
+The original report was:
 
 Each line of `search_symbols` and `call_hierarchy` carries `file:///home/<user>/<workspace>/…`,
 the same long prefix repeated, about 30–40% of the tokens of those answers by the agent's estimate.
 
 ### Fix direction
 
-Paths relative to the workspace root, and short prefixes for files outside it (`~deps/…`, `~jdk/…`),
+Keep the delivered workspace-relative results, and add short prefixes for files outside it (`~deps/…`, `~jdk/…`),
 with the expansion stated once in the tool description or `workspace_summary`.
 The tools that take a `file` must accept the same short forms back.
 
 ### Regression targets
 
-None yet.
+Delivered path rendering: `McpTextTest.locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor`.
+External shorthand: no regression test yet.
 
 ---
 
@@ -2384,9 +2500,9 @@ None yet.
 
 ---
 
-## MC-68 — `analyze_change` output has no limit
+## MC-68 — `analyze_change` has no caller-selected output limit or exact capped counts
 
-**Status: documented**
+**Status: documented (a fixed internal cap exists; caller-selected limiting remains).**
 
 **Value: low — Size: S**
 
@@ -2398,6 +2514,12 @@ Found by an agent's review of the MCP tools on Helidon (2026-11-01).
 
 On `Handler.handle` it printed all 225 implementations in its override family,
 while the other tools take `maxResults`.
+
+### Current behavior
+
+`LatheEngine.IMPACT_MAX_RESULTS` already caps references and implementations at 1,000 each.
+`McpText.analyzeResult` marks truncated references, but the tool has no `maxResults` argument, the override-family truncation is not exposed, and the displayed counts are derived from capped references.
+The original claim of no limit at all is inaccurate; the user-controlled limit and exact counts remain open.
 
 ### Fix direction
 
@@ -2508,7 +2630,7 @@ Found watching an MCP session log on Dropwizard (2026-11-01).
 ### Observed behaviour
 
 Every tool call reads the file from disk and passes it to the analysis as a new document
-(`LatheEngine.compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
+(`LatheEngine.fileWork`, formerly `compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
 Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
 three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
 more on very large files.

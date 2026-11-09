@@ -180,7 +180,7 @@ run `log 30`.
 7. Record the exact command,
 the expected behavior,
 the actual top items,
-and any relevant log line in `gap-log.md`.
+and any relevant log line in the entry in `gaps.md`.
 8. Classify the tier,
 failure mode,
 and likely owner component.
@@ -357,9 +357,8 @@ CompletionStaleSnapshotTest
 CompletionTypeIndexTest
 ```
 
-The current implementation still uses a large `CompletionEngineTest`.
-Splitting it is an organizational follow-up,
-not a prerequisite for adding coverage.
+Completion tests are split by behavior under `lathe-analysis/src/test/java/io/github/aglibs/lathe/analysis/completion/`.
+Read the nearest existing classes and reuse their `CompletionTestSupport` / `CompletionFixture` patterns instead of referring to the retired `CompletionEngineTest`.
 
 ## Corpus Replay Direction
 

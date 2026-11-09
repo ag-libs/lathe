@@ -303,7 +303,7 @@ finds the symbol at a position resolve the constant, as for a constant without a
 ### Regression targets
 
 `SourceLocatorTest.elementAt_nameOfEnumConstantWithBody_isTheConstant`,
-`LatheEngineTest.describeAndDefinition_enumConstantWithBody_resolveTheConstant`.
+`LatheEngineNavigationTest.describeAndDefinition_enumConstantWithBody_resolveTheConstant`.
 
 ---
 
@@ -338,7 +338,7 @@ MC-67); MC-67's upward half and MC-69 remain open.
 ### Regression targets
 
 `MethodImplementationTest.methodImplementations_anonymousClassAndEnumConstantBody_foundUnrelatedNot`,
-`LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
+`LatheEngineNavigationTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
 
 ---
 
@@ -371,7 +371,7 @@ lambdas attributed; a failure there still leaves the named subtypes.
 
 `MethodImplementationTest.typeImplementations_functionalInterface_anonymousClassesLambdasAndMethodReferences`,
 `MethodImplementationTest.typeImplementations_subInterface_ownLambdasAndLocalClassNotParentOrSiblingLambdas`,
-`LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
+`LatheEngineNavigationTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
 
 ---
 
@@ -487,9 +487,9 @@ import); Lathe matched it until this check.
 
 ### Regression targets
 
-`LatheEngineTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
-`LatheEngineTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`,
-`LatheEngineTest.rename_typeCapturingAnImportedName_refusesAndOtherwiseRenamesAndMoves`,
+`LatheEngineRenameTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
+`LatheEngineRenameTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`,
+`LatheEngineRenameTest.rename_typeCapturingAnImportedName_refusesAndOtherwiseRenamesAndMoves`,
 `ModuleSourceCompilerTest.detached_otherText_cachedTreeKeepsItsOwnText`.
 
 ---
@@ -520,8 +520,8 @@ naming the call.
 
 ### Regression targets
 
-`LatheEngineTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
-`LatheEngineTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`.
+`LatheEngineRenameTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
+`LatheEngineRenameTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`.
 
 ---
 
@@ -555,7 +555,7 @@ It costs one attribution per implementing file that is not open.
 
 ### Regression targets
 
-`LatheEngineTest.rename_methodImplementedThroughASuperclassOutsideTheFamily_refusesNamingTheSubtype`.
+`LatheEngineRenameTest.rename_methodImplementedThroughASuperclassOutsideTheFamily_refusesNamingTheSubtype`.
 
 ---
 
@@ -775,8 +775,8 @@ Extract constant takes the same path, but only ever writes a primitive or `Strin
 
 ### Regression targets
 
-`CodeActionTest.codeAction_typeWritingRefactors_typeNamedLikeAnotherInTheFile_writtenQualified`,
-`CodeActionTest.codeAction_extractVariable_typeOnlyNamedQualified_importsItAndItsArguments`.
+`ExtractCodeActionTest.codeAction_typeWritingRefactors_typeNamedLikeAnotherInTheFile_writtenQualified`,
+`ExtractCodeActionTest.codeAction_extractVariable_typeOnlyNamedQualified_importsItAndItsArguments`.
 
 ---
 
@@ -825,7 +825,7 @@ Not done: `fix_imports` still lists a name with several matches as ambiguous, no
 ### Regression targets
 
 - `WorkspaceTypeIndexTest.searchAndSearchExact_usageThenOrigin_referencedTypeFirstElsePlatformType`: completion and import candidates rank alike; cold, `java.util.List` leads `java.awt.List`; usage outranks origin.
-- `CodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: with usage counts, the referenced `javax.xml.datatype.Duration` leads the alphabetically-earlier `java.time.Duration`.
+- `QuickFixCodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: with usage counts, the referenced `javax.xml.datatype.Duration` leads the alphabetically-earlier `java.time.Duration`.
 
 ---
 
@@ -970,9 +970,9 @@ adding the blank line would need a guess about what follows, and the formatter n
 
 ### Regression targets
 
-- `CodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`: both chains get the payload, an import of a missing package does not.
-- `CodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports` and `missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: both chains are offered their import.
-- `CodeActionTest.missingImports_chosenImports_insertInPlaceAndCompile`: the two chains' imports make their file compile,
+- `QuickFixCodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`: both chains get the payload, an import of a missing package does not.
+- `QuickFixCodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports` and `missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: both chains are offered their import.
+- `QuickFixCodeActionTest.missingImports_chosenImports_insertInPlaceAndCompile`: the two chains' imports make their file compile,
   and so does an import added before an import on the package's line, behind an import on the class's line, and behind a package on the class's line.
 - `ImportAnalyzerTest`: the exact anchors and text for each group and for a file without imports.
 
@@ -1011,7 +1011,7 @@ A variable or field can take any of them, so renaming one to `record` is still a
 
 - `RenameProviderTest.renameConflict_eachKind_refusesAClashButNotANearMiss`: `var` and `record` refused for a type and a type parameter,
   `yield` for a method; `record` allowed for a method, a field, and `var` for a local.
-- `LatheEngineTest.rename_toATakenOrInvalidName_refusesWithTheReasonAndEditsNothing`: `a.b` refused with the reason, nothing edited.
+- `LatheEngineRenameTest.rename_toATakenOrInvalidName_refusesWithTheReasonAndEditsNothing`: `a.b` refused with the reason, nothing edited.
 - `LatheMcpToolsTest.renameSymbol_invalidIdentifier_returnsTheReasonAsAnError`: the agent gets the server's reason.
 
 ---
@@ -1222,7 +1222,7 @@ Known limits:
 
 ### Regression targets
 
-- Part 1: `FileUtilTest.classBinaryName_classFilesBelowRoot_dottedWithNestedAndDefaultPackage` and
+- Part 1: `ServerFilesTest.classBinaryName_classFilesBelowRoot_dottedWithNestedAndDefaultPackage` and
   `ModuleSourceCompilerTest.compileBatch_workspaceBehindSymlink_reportsBinaryNames`.
 - Part 2: `ModuleSourceCompilerTest.compile_lombokOnTheProcessorPath_analysisSeesGeneratedMembersUnlessProcNone`
   and `LombokAnalysisTest.compile_lombokClass_noFalseErrorsAndNoFalseUnusedHints`.
@@ -1338,18 +1338,18 @@ It was proposed in [Basic Refactorings](../potential/lathe-basic-refactorings.md
 4. Extract method: selected statements become a method, captured locals its parameters, a value used after the selection
    its return value (refused when more than one); needs javac flow analysis, and rule 1 for its selections.
 
-The test helper `CodeActionTest.applyEdits` garbled two edits that start at the same offset; fixed in 06bcde58.
+The test helper `CodeActionTestBase.applyEdits` garbled two edits that start at the same offset; fixed in 06bcde58.
 
 ### Regression targets
 
-For sections 1–3, in `CodeActionTest`, each offered edit applied and compiled:
+For sections 1–3, in `ExtractCodeActionTest`, each offered edit applied and compiled:
 `codeAction_extraction_lineWiseSelection_findsTheExpression`,
 `codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing`,
 `codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode`,
 `codeAction_extractVariable_outsideABlock_declaresWhereItFits`,
 `codeAction_extractVariable_bodyWithoutRoom_becomesABlock`,
 `codeAction_extractVariable_atStatementStart_rewritesToCompilingCode`.
-Section 4, in `CodeActionTest`:
+Section 4, in `ExtractMethodCodeActionTest`:
 `codeAction_extractMethod_expression_becomesPrivateMethodAfterItsMember`,
 `codeAction_extractMethod_contexts_rewriteToCompilingCode`,
 `codeAction_extractMethod_notMovableOrPointless_offersNothing`,
@@ -1362,7 +1362,7 @@ Section 4, in `CodeActionTest`:
 `codeAction_extractMethod_statementCopies_calledWithTheirOwnLocals`,
 `codeAction_extractMethod_statementLookalikes_notReplaced`;
 the compile check, in `CompileCheckedActionsTest`; the check's compile leaving the document's cached tree alone,
-`ModuleSourceCompilerTest.compileDetached_otherText_cachedTreeKeepsItsOwnText`.
+`ModuleSourceCompilerTest.detached_otherText_cachedTreeKeepsItsOwnText`.
 
 ---
 
@@ -1425,7 +1425,7 @@ each had a copy of.
 
 ### Regression targets
 
-- `CodeActionTest.codeAction_annotatedDeclarations_insertInsideTheBody`: an annotated class and a record with
+- `ExtractCodeActionTest.codeAction_annotatedDeclarations_insertInsideTheBody`: an annotated class and a record with
   an annotated component (extract constant), and an annotated class with an annotated empty constructor
   (add-constructor-parameter), each rewritten and compiled.
 
@@ -1471,9 +1471,9 @@ with candidates of both kinds; a name with none is still listed only as a plain 
 
 ### Regression targets
 
-- `CodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`
-- `CodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports`
-- `CodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`
+- `QuickFixCodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`
+- `QuickFixCodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports`
+- `QuickFixCodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`
 - `ImportAnalyzerTest.layout_noImports_placesBelowThePackageAfterABlankLineOrAtTheStart`
 
 ---
@@ -1501,7 +1501,7 @@ A diamond whose every parent is in the family (`Impl implements Plan, Phase`, `P
 still renames.
 
 Regression:
-`LatheEngineTest.rename_overrideAlsoOverridingAnUnrelatedSupertype_refusesButAFamilyDiamondRenames`.
+`LatheEngineRenameTest.rename_overrideAlsoOverridingAnUnrelatedSupertype_refusesButAFamilyDiamondRenames`.
 
 ## EG-062 — Find-references and rename find nothing for a non-private nested type — done
 
@@ -1526,9 +1526,9 @@ as source does (`$` → `.`) and adds each enclosing type, so `import com.exampl
 of `Outer.Inner`. The canonical-name lookup EG-059 had added for nested types is gone; every target
 resolves to its file the same way.
 
-Regression: `LatheEngineTest.references_nestedType_findsUsesInItsPackageAndInAPackageImportingTheOuterType`,
-`LatheEngineTest.rename_nestedType_renamesTheDeclarationAndEveryUse`,
-`LatheEngineTest.findImplementations_nestedInterface_findsTheImplementingClass`.
+Regression: `LatheEngineNavigationTest.references_nestedType_findsUsesInItsPackageAndInAPackageImportingTheOuterType`,
+`LatheEngineRenameTest.rename_nestedType_renamesTheDeclarationAndEveryUse`,
+`LatheEngineNavigationTest.findImplementations_nestedInterface_findsTheImplementingClass`.
 
 ## EG-060 — Javadoc rendering joins the first sentence to the body and splits inline code across lines — done
 
@@ -1590,10 +1590,10 @@ project.
 An override in the renamed family that also overrides an unrelated method is refused since
 [EG-061](#eg-061--renaming-a-method-also-renames-an-override-that-implements-a-second-unrelated-method--done).
 
-Regression: `LatheEngineTest.rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing`
+Regression: `LatheEngineRenameTest.rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing`
 (JDK type, JDK method, `toString` override),
-`LatheEngineTest.rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing`,
-`LatheEngineTest.rename_memberOfASecondaryTopLevelType_renamesItAndStillRefusesAJdkOverride`,
+`LatheEngineRenameTest.rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing`,
+`LatheEngineRenameTest.rename_memberOfASecondaryTopLevelType_renamesItAndStillRefusesAJdkOverride`,
 `LatheTextDocumentServiceTest.prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason`.
 
 ## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped — done
@@ -1832,14 +1832,18 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ### Regression targets
 
-- `DocumentHighlightTest.documentHighlight_localVariable_highlightsReadAndWriteOccurrences`
-- `DocumentHighlightTest.documentHighlight_methodName_highlightsSameFileCalls`
+- `ReferenceMatchTest.toHighlight_everyRole_mapsReadWriteDistinctlyAndRestToText`
+- `ReferenceLocatorTest.role_fieldRead_isRead`
+- `ReferenceLocatorTest.role_fieldWrite_isWrite`
+- `ReferenceLocatorTest.role_methodInvocation_isInvocation`
+
+The formerly proposed `DocumentHighlightTest` methods were not added under those names; the current tests cover the shared reference roles and highlight conversion.
 
 ---
 
 ## CA-6 — Extract variable: `var` variant follow-up
 
-**Status: resolved (superseded) — Target: n/a.**
+**Status: non-goal (superseded) — Target: n/a.**
 
 The `var` variant is retired rather than built: Extract Variable emits the explicit type, and a
 standalone `type → var` conversion (`ConvertToVarProvider`) now flips a local declaration to `var` in
@@ -1857,7 +1861,9 @@ See [extract-variable](../done/lathe-extract-variable.md).
 
 ---
 
-## EG-052 — Go-to-definition on a generated type landed on the stale Maven `target/` copy after an in-editor edit — done
+## EG-099 — Go-to-definition on a generated type landed on the stale Maven `target/` copy after an in-editor edit — done
+
+Registry correction (2026-11-08): formerly `EG-052`, also assigned to a different gap; `EG-099` uniquely identifies this historical entry.
 
 **Status: done — Target: next.**
 
@@ -1889,14 +1895,16 @@ Regression targets:
   `searchRoots_noGeneratedSources_returnsSourceRootsOnly`.
 - `WorkspaceModuleRegistryTest.allSourceRoots_withGeneratedSources_includesLatheMirrorNotMavenTarget` /
   `moduleSourceFor_fileInLatheGeneratedSources_returnsModule`.
-- `WorkspaceSessionTest.isInPackageScope_generatedSourcesCandidate_reactorScope_inScope` (the `.lathe`
+- `ReferenceSearchTest.isInPackageScope_generatedSourcesCandidate_reactorScope_inScope` (the `.lathe`
   candidate is in scope, the `target/` candidate is not).
 - `ReferenceCandidatePlannerTest.planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile`,
   `ReferenceCandidateIndexTest.build_includesGeneratedSourcesDir_whenPresent`,
   `ModuleSourceCompilerTest.compile_openMode_fileUnderGeneratedSourcesRoot_compilesInsteadOfThrowing`
   (all now exercise the `.lathe` mirror).
 
-## EG-051 — Unnamed variable `_` (JEP 456) was reported as an unused declaration with an empty name
+## EG-098 — Unnamed variable `_` (JEP 456) was reported as an unused declaration with an empty name
+
+Registry correction (2026-11-08): formerly `EG-051`, also assigned to a different gap; `EG-098` uniquely identifies this historical entry.
 
 **Status: done — Target: next.**
 
@@ -1919,7 +1927,9 @@ local is still reported). The test compiler passes no `--release`, so it default
 
 ---
 
-## EG-050 — Requests on a non-`file` document URI crash the request with an `InternalError`
+## EG-097 — Requests on a non-`file` document URI crash the request with an `InternalError`
+
+Registry correction (2026-11-08): formerly `EG-050`, also assigned to a different gap; `EG-097` uniquely identifies this historical entry.
 
 **Status: done — Target: M2.**
 
@@ -2017,7 +2027,7 @@ Regression targets:
 **Status: done — Target: M2.**
 
 `textDocument/definition` on a record-accessor use (e.g. `config.bucket()`) or on the synthetic
-accessor itself resolved to nothing (originally the file top `0:0`; after EG-049, no result) instead
+accessor itself resolved to nothing (originally the file top `0:0`; after EG-100, no result) instead
 of the component in the record header. A record accessor is synthetic — `Trees.getPath` is null and
 no declaration site is found — so the normal resolution is empty.
 
@@ -2036,7 +2046,9 @@ resolves to its own declaration, not the header).
 
 ---
 
-## EG-049 — Go-to-definition falls back to the file top on unresolved targets
+## EG-100 — Go-to-definition falls back to the file top on unresolved targets
+
+Registry correction (2026-11-08): formerly `EG-049`, also assigned to a different gap; `EG-100` uniquely identifies this historical entry.
 
 **Status: done — Target: M2.**
 
@@ -2294,10 +2306,12 @@ printf 'impl 52:14\nimpl 64:18\nimpl 45:11\nimpl 77:10\nquit\n' \
 
 ### Regression targets
 
-- `DeclarationTest.declaration_overridingMethodDeclaration_returnsInterfaceMethod`
-- `DeclarationTest.declaration_overridingMethodDeclaration_returnsSuperclassMethod`
-- `DeclarationTest.declaration_nonOverridingMethod_fallsBackToDefinition`
-- `DeclarationTest.declaration_callSiteWithConcreteType_fallsBackToDefinition`
+- `DeclarationLocatorTest.findContract_implementsInterface_returnsInterfaceMethod`
+- `DeclarationLocatorTest.findContract_extendsAbstractClass_returnsAbstractMethod`
+- `DeclarationLocatorTest.findContract_nonOverriddenMethod_returnsEmpty`
+
+The former `DeclarationTest` names were proposals, not current tests.
+Call-site fallback is implemented by `NavigationFeatures.declaration`; the locator tests above cover the contract lookup, not a separate LSP call-site regression.
 
 ---
 
@@ -2321,8 +2335,8 @@ The implementation reuses javac attribution and override checks rather than text
 Regression coverage:
 
 - `ReferenceLocatorTest.method_override_findsCallThroughInterfaceType`
-- `ReferenceLocatorTest.method_interfaceDeclaration_findsOverridingDeclarationAndCallThroughImplementingType`
-- `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingPublicOverride`
+- `ReferenceLocatorTest.method_interfaceDeclaration_includeDeclarationAddsOverrideDeclaration`
+- `ReferenceLocatorTest.method_interfaceDeclaration_findsCallThroughImplementingType`
 - `LspSmokeTest.references_fromOverrideMethod_findsSupertypeTypedCallSite`
 
 ---
@@ -2512,7 +2526,8 @@ the constructor's invocation sites. `SourceLocator.elementAt` walks the `TreePat
 the first non-package element, so the type-name identifier resolved to the type element before the
 walk reached the enclosing `NewClassTree` (whose element is the constructor).
 
-Fixed (references only — go-to-definition still lands on the type, deliberately deferred):
+The original fix was references-only; constructor definition subsequently shipped as EG-096 in PR #145.
+The original references implementation was:
 - `SourceLocator.constructorAtNewClassType(trees, path)` (package-private) walks up from the cursor
   path and, when it reaches a `NewClassTree` whose `getIdentifier()` subtree the cursor sits in
   (simple, qualified `new a.b.X()`, or parameterized `new X<T>()`), returns the invoked `CONSTRUCTOR`
@@ -2639,13 +2654,13 @@ supertype-self-call coverage; the regression test was renamed accordingly.
 
 Regression coverage:
 
-- `ReferenceCandidatePlannerTest.planCandidates_overriddenMethod_includesOverrideFamilyFiles`
+- `ReferenceCandidatePlannerTest.planCandidates_instanceMethod_defersNothing`
 
 ---
 
 ## FR-009 — Member-reference search compiles every token-matching file (no hierarchy narrowing)
 
-**Status: done — Target: M2.**
+**Status: done (historical mitigation; current performance remainder tracked as FR-029).**
 Discovered against an `@Builder`-heavy reactor; confirmed on `sample-workspace`
 (`AppServerConfig`).
 
@@ -2660,7 +2675,7 @@ the O(1) token lookup, dominated the wall-clock. The `FIELD` branch narrowed onl
 type's simple name, which also *missed* a protected field read through a subtype-typed receiver in a
 file that never spelled the declaring type.
 
-### Resolution
+### Historical resolution (subsequently superseded)
 
 `planCandidates` now bounds method and field searches to the member's **override family** instead of
 the raw simple-name set (`files(memberName) ∩ ⋃ candidateUris(familySimpleName) ∪ static-import
@@ -2684,7 +2699,7 @@ Accepted trade-off (as designed): a reference whose owner/receiver type is never
 its file is missed — the same surface the `FIELD` branch already accepted, now consistent across
 kinds.
 
-### Measured (sample-workspace)
+### Historical measurements (sample-workspace)
 
 | Search | Before | After |
 |---|---|---|
@@ -2705,12 +2720,17 @@ printf 'refs <line>:<col>\n' \
 
 ### Regression targets
 
-- `ReferenceCandidatePlannerTest.planCandidates_recordAccessorNoInterface_limitsToDeclaringTypeFiles`
-- `ReferenceCandidatePlannerTest.planCandidates_overriddenMethod_includesOverrideFamilyFiles`
-- `ReferenceCandidatePlannerTest.planCandidates_overridesObjectMethod_fallsBackToBroad`
-- `ReferenceCandidatePlannerTest.planCandidates_overridesExternalInterface_narrowsByDeclarerName`
+The initial hard family narrowing described above was superseded after FR-011 exposed missed chained/inferred receivers.
+Current instance-method searches do not defer candidates; static class methods may search family files first and defer the rest, while fields and enum constants search every file spelling the name in one phase.
+These current tests replace the obsolete proposed narrowing tests:
+
+- `ReferenceCandidatePlannerTest.planCandidates_methodInvokedOnUnspelledReceiver_includesCallSite`
+- `ReferenceCandidatePlannerTest.planCandidates_instanceMethod_defersNothing`
+- `ReferenceCandidatePlannerTest.planCandidates_staticMethod_searchesTheFamilyFirstAndDefersTheRest`
+- `ReferenceCandidatePlannerTest.planCandidates_fieldOrEnumConstant_searchesEveryFileSpellingItsNameInOnePhase`
 - `ReferenceCandidatePlannerTest.planCandidates_protectedFieldInheritedInSubclass_includesSubclassFiles`
-- `ReferenceCandidatePlannerTest.planCandidates_fieldNoSubtypes_limitsToDeclaringTypeFiles`
+
+See active FR-029 for the remaining latency issue; this archive does not claim those performance limits are solved.
 
 ---
 
@@ -2773,7 +2793,7 @@ printf 'hover "bucket,"\n' | python3 dev/explore.py /path/to/workspace/.../Confi
 
 - `HoverTest.hover_recordComponentInCompactConstructor_resolvesComponentNotCalleeParameter`
   (positive — the failing case)
-- `HoverTest.hover_ordinaryMethodArgument_resolvesArgumentNotCalleeParameter`
+- `HoverTest.hover_insideMethodRefArgument_showsOwnSymbol_plainArgumentShowsParameter`
   (boundary — ordinary arguments must keep resolving to the argument, not the callee's parameter)
 
 ---
@@ -2860,8 +2880,8 @@ printf 'hover "<arg-token>"\nsig after "requireNonNullElse("\n' \
 - `HoverTest.hover_classFileDependencyArgument_showsSourceParameterName`
   (positive — argument hover shows the resolved source name, mirroring
   `signatureHelp_classFileDependency_showsSourceParameterNames`)
-- `HoverTest.hover_classFileArgumentNoSource_fallsBackToTypeOnly`
-  (boundary — when no source is resolvable, suppress `argN` and show type-only, never the placeholder)
+The originally proposed no-source fallback test is not in the current suite.
+`HoverFormatter.formatParam` suppresses synthetic names in its fallback, but the positive source-name test above must not be described as direct no-source regression coverage.
 
 ---
 
@@ -3325,7 +3345,7 @@ under two URIs.
 - `ReferenceCandidateIndexTest.syncFromDisk_unchangedMtimeOrGeneratedSource_leavesTokensAlone`
 - `WritePassTest.reconcileNow_callersChangedExternally_referencesFollowDisk` (fails without the fix:
   the caller added in another package is missing)
-- `LatheEngineTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller` (fails without
+- `LatheEngineRenameTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller` (fails without
   the fix: the rename back edits only the declaration)
 
 Verified on Dropwizard with the fixed build: references on the new name right after the MCP rename
@@ -3392,83 +3412,30 @@ bare name as `CompletionItemKind.Reference` (no auto-parens). Layer 2 adds SAM-a
 
 Regression: `CompletionMethodReferenceTest`.
 
-## CQ-0002 — Method-reference completion returns no candidates
+## CQ-0002 — Method-reference completion returns no candidates — done (duplicate of CQ-0060)
 
-ID: CQ-0002
-Status: accepted
-Target: backlog
-Tier: assistive
-Failure mode: missing-candidate
-Owner component: SentinelInjector / SentinelParser
+**Status: done (duplicate of CQ-0060).**
 
-Project/file:
-`/home/ag-libs/git/helidon/dbclient/tracing/src/main/java/io/helidon/dbclient/tracing/DbClientTracingProvider.java`
+The original report proposed a future method-reference completion implementation and was archived with an incorrect `accepted` status.
+The implementation shipped under CQ-0060: type receivers offer static and instance methods plus constructor references, expression receivers offer instance methods, and accepted items insert bare names without parentheses.
+SAM arity affects ranking; this closure does not claim full generic functional-interface compatibility filtering or array-constructor completion.
+See [Method Reference Completion](../done/lathe-method-reference-completion.md).
 
-Probe command:
-```bash
-printf 'complete after "List::" expect of min 1\nlog 30\n' \
-  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/tracing/src/main/java/io/helidon/dbclient/tracing/DbClientTracingProvider.java
-```
+### Regression targets
 
-Related project/file:
-`/home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClientBuilder.java`
-
-Related probe:
-```bash
-printf 'complete after "this::" expect url username password min 1\nlog 30\n' \
-  | python3 dev/explore.py /home/ag-libs/git/helidon/dbclient/mongodb/src/main/java/io/helidon/dbclient/mongodb/MongoDbClientBuilder.java
-```
-
-Cursor context:
-```java
-config.asNodeList().orElseGet(List::of)
-connConfig.get("url").asString().ifPresent(this::url)
-```
-
-IntelliJ or JDT behavior:
-Expected IDE behavior is method-reference completion after `Type::` and `this::`.
-
-Lathe behavior:
-No completions are returned.
-The log shows `parsed valid=false sentinelCtx=null` after `List::` and after `this::`.
-
-Expected Lathe behavior:
-Eventually,
-method-reference completion should offer compatible methods for the receiver and target functional interface.
-
-Accepted edit, if relevant:
-Accepting `of` after `List::` should produce `List::of`.
-Accepting `url` after `this::` should produce `this::url`.
-
-Future design:
-Method-reference completion is deferred until after M2.
-The first implementation slice should be basic receiver-member listing,
-not full smart compatibility filtering.
-Add a `METHOD_REFERENCE` sentinel site,
-detect `::`,
-capture receiver text similarly to member access,
-and route simple cases through member candidate generation.
-`TypeName::` should offer static methods such as `List::of`;
-`this::` should offer visible instance methods such as `this::url`;
-ordinary expression receivers such as `service::` should offer instance methods.
-Expected functional-interface filtering should be a later slice,
-because robust compatibility needs the target type from contexts such as `orElseGet`,
-`ifPresent`,
-and `stream.map`.
-Constructor references such as `TypeName::new` and array constructor references are also later slices.
-
-Regression target:
-Future method-reference completion test class or `CompletionEngineTest` method-reference section.
-
-Notes:
-This matches the existing deferred method-reference gap in the historical completion docs.
+- `CompletionMethodReferenceTest.methodReference_typeReceiver_offersStaticAndInstanceMethodsButNoFields`
+- `CompletionMethodReferenceTest.methodReference_instanceReceiver_offersInstanceMethodsOnly`
+- `CompletionMethodReferenceTest.methodReference_thisReceiver_offersEnclosingInstanceMethodsOnly`
+- `CompletionMethodReferenceTest.methodReference_typeReceiver_offersNewConstructorReference`
+- `CompletionMethodReferenceTest.methodReference_argumentSlot_ranksArityCompatibleAboveIncompatible`
+- `CompletionMethodReferenceTest.methodReference_accepted_insertsBareNameWithoutParens`
 
 ---
 
 ## CQ-0057 — Nested types are missing from type completion and auto-import
 
 ID: CQ-0057
-Status: **done** — the class-file scanner now marks nested public types as name candidates
+Status: done — the class-file scanner now marks nested public types as name candidates
 (`ClassFileTypeScanner.toEntry`), guarding out only synthetic anonymous/local classes (simple name
 starting with a digit). They flow through every shard, so `Map.Entry` / `HttpClient.Version` complete
 by simple name and auto-import via their canonical dotted name. Shard `SCHEMA_VERSION` bumped to force
@@ -3515,12 +3482,17 @@ Expected Lathe behavior:
 Nested types are indexed (as `Outer.Inner`, displayed with the enclosing type) across the dependency,
 JDK, and reactor shards, so they complete by simple name and auto-import correctly.
 
+### Current verification
+
+`CompletionTypeIndexTest.typeIndex_nestedType_completesBySimpleNameAndImportsCanonicalName` covers nested-type completion and its import edit.
+The separate missing-import quick fix remains CA-19; this closure does not cover that provider.
+
 ---
 
 ## CQ-0058 — Argument completion does not offer the expected type's constants
 
 ID: CQ-0058
-Status: **done** — any value slot whose expected type is an enum (argument, assignment, return,
+Status: done — any value slot whose expected type is an enum (argument, assignment, return,
 equality) now proposes that enum's constants (`enumValueSlotCandidates` in CompletionEngine, was
 equality-only). Matching keys on the enum name or the bare constant, and an unreachable enum is
 auto-imported by its canonical dotted name.
@@ -3555,13 +3527,19 @@ Expected Lathe behavior:
 When the expected parameter type is an enum (or has public constants/static factories), propose those
 constants at the slot, and rank type-matching locals first.
 
+### Current verification
+
+`CompletionArgumentTest.argumentPosition_enumParam_offersQualifiedConstantsByNameOrValue` and
+`CompletionArgumentTest.argumentPosition_externalEnumParam_offersConstantsWithImport` cover the delivered enum constants.
+The broader non-enum static-factory proposal in the original observation is not claimed by this enum-only closure.
+
 ---
 
 ## CQ-0055 — `:LatheNew` — scaffold a new type through the server
 
 ID: CQ-0055
-Status: **done** — v3 shipped. A single `:LatheNew` with all Java/Maven semantics in the LSP server
-(`lathe.createType` + the `lathe.modules` / `lathe.packages` / `lathe.resolveContext` discovery queries);
+Status: done — v3 shipped. A single `:LatheNew` with all Java/Maven semantics in the LSP server
+(`lathe.types.create` + the `lathe.workspace.modules` / `lathe.workspace.packages` / `lathe.workspace.context` discovery queries);
 the Neovim client is a thin picker shell (Kind → module → package/`＋ New package…` → name) that writes
 the server-rendered file. Works anchored (current package preselected) and cold-start (module → package);
 main/test comes from the chosen package. The v1/v2 client-side `:LatheNewClass`/`Interface`/`Record`/`Enum`
@@ -3963,7 +3941,7 @@ Regression coverage:
 ## CQ-0036 — Empty constructor completion returns a complete narrow list
 
 ID: CQ-0036
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: missing-candidate-after-client-filtering
 Owner component: CompletionEngine / TypeIndexCandidateProvider
@@ -4081,8 +4059,8 @@ The prefixed `Connection` item has a correct replacement range and import edit:
 ```
 
 Regression target:
-`CompletionTypeIndexTest.constructorCall_emptyPrefix_returnsIncomplete`
-`CompletionTypeIndexTest.constructorCall_prefixAfterEmptyPrefix_canDiscoverIndexedTypes`
+`CompletionTypeIndexTest.constructorCall_emptyPrefixWithoutExpectedType_returnsIncomplete`
+`CompletionTypeIndexTest.typeIndex_suggestsIndexedTypeInCodeStatements`
 `CompletionTypeIndexTest.constructorCall_emptyPrefixExpectedType_ranksExpectedTypeFirst`
 
 Notes:
@@ -4094,7 +4072,7 @@ expected type for constructor-call type completion before falling back to broad 
 ## CQ-0039 — RejectedExecutionException logged as SEVERE at shutdown
 
 ID: CQ-0039
-Status: fixed
+Status: done
 Tier: lifecycle
 Discovery: 2026-06-17
 
@@ -4156,15 +4134,18 @@ Two complementary hardening points:
    This prevents the exception from surfacing to LSP4J as an unhandled SEVERE error
    even if the idempotent guard is the primary fix.
 
-### Regression target
+### Regression targets
 
-Lifecycle test: `LatheTextDocumentServiceTest.close_calledTwice_doesNotThrow`
-Lifecycle test: `LatheTextDocumentServiceTest.close_afterWorkerShutdown_doesNotThrow`
+`SessionHost.close` now owns the idempotent close guard, and `ServerEventLoop.close` owns shutdown delivery.
+`ServerEventLoopTest.close_runsLastOnTheLoop_droppingQueuedTasksButCompletingQueuedResults` covers the current shutdown behavior.
+The originally proposed duplicate-close methods on `LatheTextDocumentServiceTest` do not exist; they are not evidence of a separately tested service-close case.
+
+---
 
 ## CQ-0038 — Private methods falsely marked unused when declared after their callers
 
 ID: CQ-0038
-Status: fixed
+Status: done
 Tier: Basic
 Discovery: 2026-06-17
 
@@ -4202,7 +4183,7 @@ All declarations are known before any reference is checked, making the scan orde
 ## CQ-0037 — Primitive types not suggested in variable type position
 
 ID: CQ-0037
-Status: fixed
+Status: done
 Tier: Basic
 Discovery: 2026-06-17
 
@@ -4256,14 +4237,14 @@ The change is entirely inside `KeywordProvider`; no other completion component i
 
 ### Regression target
 
-`KeywordProviderTest.typeReference_inMethodBody_includesPrimitives`
-`KeywordProviderTest.variableDeclaration_typeSlot_includesPrimitives`
-`KeywordProviderTest.classBody_returnType_includesPrimitives`
+`CompletionKeywordAndNoSlotTest.typeReference_inMethodBody_includesPrimitives`
+`CompletionKeywordAndNoSlotTest.variableDeclaration_typeSlot_includesPrimitives`
+`CompletionKeywordAndNoSlotTest.classBody_returnType_includesPrimitives`
 
 ## CQ-0034 — Lambda-scope locals leak into simple-name candidates after their enclosing block closes
 
 ID: CQ-0034
-Status: fixed
+Status: done
 Tier: Basic
 Discovery: 2025-07-25, AppServer.java constructor (sample-workspace)
 
@@ -4328,7 +4309,7 @@ Regression target:
 ## CQ-0032 — Member-access returns 0 items when stale snapshot holds an error type for the receiver
 
 ID: CQ-0032
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: missing-candidate
 Owner component: CompletionEngine / TypeResolver
@@ -4380,7 +4361,7 @@ Accepted edit, if relevant:
 Not probed — the gap is in candidate discovery, not insertion.
 
 Regression target:
-`CompletionMemberAccessTest.memberAccess_receiverResolvedToErrorType_triggersReattribution`
+`CompletionMemberAccessTest.memberAccess_staleCacheNewLine_typeResolved`
 
 Notes:
 The gap is intermittent because it depends on the debounce compile racing the user's typing speed.
@@ -4399,7 +4380,7 @@ which resolves a field whose attributed type in the error-recovery snapshot is g
 ## CQ-0033 — Uppercase prefix in statement position floods results with unrelated type-index classes
 
 ID: CQ-0033
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: wrong-candidate-set
 Owner component: CompletionEngine / TypeIndexValidator
@@ -4466,7 +4447,7 @@ behavior per JDT/NetBeans and does not require a fix.
 ## CQ-0022 — String switch `case §` offers type-index classes
 
 ID: CQ-0022
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: wrong-candidate-set
 Owner component: CompletionEngine / TypeResolver
@@ -4530,7 +4511,7 @@ and `String` selectors should not fall through to broad type-index completion.
 ## CQ-0023 — Member-access in-token method completion still duplicates existing calls
 
 ID: CQ-0023
-Status: fixed
+Status: done
 Tier: presentation
 Failure mode: bad-replacement-range
 Owner component: CompletionSite / CompletionItemPresenter
@@ -4594,7 +4575,7 @@ The accepted edit must not produce `Duration.seconds()(60)`,
 or `json()("{}")`.
 
 Regression target:
-`CompletionPresentationTest.memberAccess_inTokenExistingCall_replacesSuffixWithoutDuplicatingCall`
+`CompletionAcceptanceTest.accept_inTokenExistingNoArgCall_reusesExistingCall`
 
 Notes:
 `CQ-0003` fixed a similar in-token suffix problem for another member-access probe,
@@ -4607,7 +4588,7 @@ remain intact.
 ## CQ-0025 — Nested type completion after unimported outer type lacks an import edit
 
 ID: CQ-0025
-Status: fixed
+Status: done
 Tier: presentation
 Failure mode: bad-import-edit
 Owner component: CompletionEngine / CompletionItemPresenter
@@ -4678,7 +4659,7 @@ and adds an import edit for the outer type.
 ## CQ-0024 — Enum type completion ranks nested type before enum constants
 
 ID: CQ-0024
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: poor-ranking
 Owner component: CandidateGenerator / CompletionCandidateRanker
@@ -4734,7 +4715,7 @@ so enum constants and regular members no longer sort behind null sort text.
 ## CQ-0026 — Class-body completion after modifiers offers invalid modifier keywords
 
 ID: CQ-0026
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: wrong-candidate-set
 Owner component: KeywordCompletion / SentinelParser
@@ -4823,7 +4804,7 @@ the gap is the modifier-sensitive filtering after the user has already committed
 ## CQ-0027 — `Collectors.` inside return-stream `collect` is not ranked by result type
 
 ID: CQ-0027
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: poor-ranking
 Owner component: TypeResolver / CompletionCandidateRanker
@@ -4935,13 +4916,13 @@ and `CompletionCandidateRanker` ranks candidates through that context without ha
 
 This remains related to `CQ-0020`,
 but it was found through return statements rather than assignment initializers.
-The same exploration also reconfirmed deferred `CQ-0002`:
-method-reference completion such as `Map.Entry::getV§` and `Object::to§` still returns no candidates.
+That historical exploration also reconfirmed the then-open CQ-0002 method-reference case.
+Method-reference completion subsequently shipped as CQ-0060; CQ-0002 is its completed duplicate.
 
 ## CQ-0028 — Fresh local declaration and assignment sites borrow enclosing return type
 
 ID: CQ-0028
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: poor-ranking
 Owner component: TypeResolver
@@ -5026,7 +5007,7 @@ which is already covered by `CQ-0023`.
 ## CQ-0004 — Dotted member access can fall back to simple-name completion in incomplete assignments
 
 ID: CQ-0004
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: SentinelParser / CompletionEngine
@@ -5089,7 +5070,7 @@ simple-name recovery path.
 ## CQ-0005 — Type-dot completion misses the `class` literal
 
 ID: CQ-0005
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: missing-candidate
 Owner component: CompletionEngine
@@ -5143,7 +5124,7 @@ type-like receiver.
 ## CQ-0006 — Enum switch case labels do not use the selector enum type
 
 ID: CQ-0006
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: SentinelParser / CompletionEngine
@@ -5197,7 +5178,7 @@ and should not require a qualified enum receiver.
 ## CQ-0007 — Qualified enum type-dot completion labels and filters incorrectly
 
 ID: CQ-0007
-Status: fixed
+Status: done
 Tier: presentation
 Failure mode: bad-label-or-filter
 Owner component: CompletionEngine / CompletionItemPresenter
@@ -5254,7 +5235,7 @@ simple-name recovery.
 ## CQ-0008 — Enum comparison RHS does not use the expected enum type
 
 ID: CQ-0008
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: missing-candidate
 Owner component: CompletionEngine
@@ -5300,10 +5281,17 @@ Notes:
 This is similar in spirit to annotation enum expected-type completion,
 but the expected type comes from a binary comparison instead of an annotation element.
 
+### Current verification
+
+`CompletionSimpleNameTest.equalityComparison_enumLhs_suggestsEnumConstants` and
+`CompletionSimpleNameTest.equalityComparison_methodCallLhs_suggestsEnumConstants` cover the comparison cases.
+
+---
+
 ## CQ-0009 — Uppercase simple-name completion hides visible static fields in method bodies
 
 ID: CQ-0009
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
@@ -5361,7 +5349,7 @@ because recovery can borrow a following assignment's expected type and incorrect
 ## CQ-0010 — Method label details can render without a separator before the return type
 
 ID: CQ-0010
-Status: closed (editor capability)
+Status: non-goal (editor capability)
 Tier: presentation
 Failure mode: bad-label-details
 Owner component: CandidateFactory / CompletionItemPresenter
@@ -5437,7 +5425,7 @@ not by changing Lathe's server-side LSP data away from the JDT LS shape.
 ## CQ-0012 — Member completion after assignment can be misclassified as a type reference
 
 ID: CQ-0012
-Status: fixed
+Status: done
 Tier: semantic
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
@@ -5511,7 +5499,7 @@ Fixed in two parts:
 ## CQ-0013 — Simple-name method completion drops overloads with the same name
 
 ID: CQ-0013
-Status: fixed
+Status: done
 Tier: semantic
 Failure mode: missing-candidate
 Owner component: SimpleNameProvider
@@ -5613,7 +5601,7 @@ so the first method overload suppresses later overloads before presentation.
 ## CQ-0014 — Nested classes are missing from simple-name and type-dot suggestions
 
 ID: CQ-0014
-Status: fixed
+Status: done
 Tier: semantic
 Failure mode: missing-candidate
 Owner component: CompletionEngine / CandidateGenerator / SimpleNameProvider
@@ -5695,7 +5683,7 @@ but not nested types.
 ## CQ-0015 — Member-access completion does not rank candidates by assignment expected type
 
 ID: CQ-0015
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: poor-ranking
 Owner component: CompletionEngine / CompletionCandidateRanker / SemanticCompletionContext
@@ -5774,7 +5762,7 @@ only ranking was missing expected-type awareness.
 ## CQ-0016 — No-arg method accepted in assignment initializer does not insert a semicolon
 
 ID: CQ-0016
-Status: fixed
+Status: done
 Tier: presentation
 Failure mode: bad-accepted-edit
 Owner component: CompletionItemPresenter / CompletionSite / SemanticCompletionContext
@@ -5856,7 +5844,7 @@ or assignment context.
 ## CQ-0017 — Argument expected-type filtering hides useful chain receiver locals
 
 ID: CQ-0017
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: missing-candidate
 Owner component: CompletionCandidateRanker / SemanticCompletionContext
@@ -5954,7 +5942,7 @@ because references can become receivers for chained expression construction.
 ## CQ-0001 — Annotation enum value completion routes to element-name completion
 
 ID: CQ-0001
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: missing-candidate
 Owner component: SentinelParser / CompletionEngine
@@ -6025,7 +6013,7 @@ and unnamed enum-array `value()` elements.
 ## CQ-0003 — In-token method completion does not replace the suffix
 
 ID: CQ-0003
-Status: fixed
+Status: done
 Tier: presentation
 Failure mode: bad-replacement-range
 Owner component: CompletionSite / CompletionItemPresenter
@@ -6081,7 +6069,7 @@ new entries should come only from Dropwizard or Helidon explorer probes.
 ## CQ-0018 — Expected return type inside lambda bodies is not resolved
 
 ID: CQ-0018
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: TypeResolver
@@ -6115,7 +6103,7 @@ This helps prioritize correct return values inside lambda bodies (e.g. map, filt
 ## CQ-0019 — Throwables not ranked higher/filtered in throw statements
 
 ID: CQ-0019
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: TypeResolver / CompletionEngine
@@ -6150,7 +6138,7 @@ Requires overriding visitThrow in TypeResolver's scanners.
 ## CQ-0020 — Static member access inside argument not ranked by expected type
 
 ID: CQ-0020
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: poor-ranking
 Owner component: TypeResolver / CompletionEngine
@@ -6209,7 +6197,7 @@ but that fix addressed only the direct-assignment context, not the nested-argume
 ## CQ-0021 — Type-pattern switch `case §` (no prefix) returns simple-name candidates instead of types
 
 ID: CQ-0021
-Status: fixed
+Status: done
 Tier: typed
 Failure mode: wrong-candidate-set
 Owner component: CompletionEngine / CandidateGenerator
@@ -6271,7 +6259,7 @@ Subtype filtering (only `SocketAddress` subtypes) would be ideal but is not requ
 ## CQ-0031 — Statement member access can hide `equals` after parser recovery
 
 ID: CQ-0031
-Status: fixed
+Status: done
 Tier: basic
 Failure mode: missing-candidate
 Owner component: SemanticCompletionContext / CompletionCandidateRanker
@@ -6437,8 +6425,8 @@ code-action gap CA-1 should be applied alongside it.
 
 ### Regression targets
 
-`CodeActionTest.codeAction_unreportedException_methodBody_offersBothWrapAndThrows`
-`CodeActionTest.codeAction_unreportedException_lambdaBody_offersOnlyWrap`
+`QuickFixCodeActionTest.codeAction_unreportedException_methodBody_offersBothWrapAndThrows`
+`QuickFixCodeActionTest.codeAction_unreportedException_lambdaBody_offersOnlyWrap`
 
 ---
 
@@ -6872,8 +6860,10 @@ python3 dev/explore.py \
 
 ### Regression targets
 
-- `ReferenceCandidateIndexTest.build_includesGeneratedSourcesDir_whenPresent`
-- `ReferenceServiceTest.references_recordComponent_findsGeneratedBuilderUsage`
+- `ReferenceLocatorTest.recordComponent_accessorInvocation_reportedThroughAccessor`
+- `ReferenceCandidatePlannerTest.planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile`
+
+The originally listed `ReferenceServiceTest` method is not present; current coverage separates component matching from generated-source candidate discovery.
 
 ---
 
@@ -7023,8 +7013,8 @@ python3 dev/explore.py \
 
 ### Regression targets
 
-- `CompletionAnnotationTest.completion_insideAnnotationArgs_offersElementNames`
-- `CompletionAnnotationTest.completion_enumValuedElement_offersConstants`
+- `CompletionAnnotationTest.annotationArgument_emptyList_suggestsElementNames`
+- `CompletionAnnotationTest.annotationArgumentValue_enumElement_offersEnumConstants`
 
 ---
 
@@ -7071,126 +7061,8 @@ python3 dev/lsp.py \
 
 ### Regression targets
 
-- `UnusedDiagnosticTest.unused_localVariable_messageNamesVariableAndKind`
-- `UnusedDiagnosticTest.unused_diagnostic_setsStableCode`
-
----
-
-## EG-020 — `module-info.java` and `package-info.java` return no document symbols, folding ranges, or semantic tokens
-
-**Status: done**
-
-### Observed behaviour
-
-`textDocument/documentSymbol`,
-`textDocument/foldingRange`,
-and `textDocument/semanticTokens/full` return no useful structural results for Java info files,
-even when those files have meaningful structure and declarations worth highlighting.
-
-Helidon `module-info.java`:
-
-```bash
-printf 'symbols min 1\nfolds min 1\n' \
-  | python3 dev/explore.py \
-      /home/ag-libs/git/helidon/health/health/src/main/java/module-info.java
-```
-
-Observed:
-
-```text
-(no document symbols returned)
-[FAIL]
-  ✗  expected ≥1 items, got 0
-(no folding ranges returned)
-[FAIL]
-  ✗  expected ≥1 items, got 0
-```
-
-Helidon `package-info.java`:
-
-```bash
-printf 'symbols min 1\nfolds min 1\n' \
-  | python3 dev/explore.py \
-      /home/ag-libs/git/helidon/health/health/src/main/java/io/helidon/health/package-info.java
-```
-
-Observed:
-
-```text
-(no document symbols returned)
-[FAIL]
-  ✗  expected ≥1 items, got 0
-(no folding ranges returned)
-[FAIL]
-  ✗  expected ≥1 items, got 0
-```
-
-Controls in the same probing session showed ordinary Java files work:
-Helidon `HealthCheck.java` returned 5 document symbols and 4 folding ranges,
-and Dropwizard `PersonResourceTest.java` returned 18 document symbols and 15 folding ranges.
-
-Direct semantic-token probes show the same special-file gap:
-
-```bash
-python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,"dev"); from lsp import LatheClient, find_workspace_root; files=[Path("../helidon/health/health/src/main/java/module-info.java"), Path("../helidon/health/health/src/main/java/io/helidon/health/package-info.java"), Path("../dropwizard/dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/PersonResourceTest.java")];
-for f in files:
-    with LatheClient.start(find_workspace_root(f), debug=False) as c:
-        d=c.open(f); r=c.request("textDocument/semanticTokens/full", {"textDocument":{"uri":f.resolve().as_uri()}}); print(f.name, "diag", len(d), "tokens", 0 if not r else len(r.get("data",[]))//5)'
-```
-
-Observed:
-
-```text
-module-info.java diag 0 tokens 0
-package-info.java diag 0 tokens 0
-PersonResourceTest.java diag 0 tokens 50
-```
-
-An extracted dependency-source control also returned semantic tokens:
-cached Dropwizard Metrics `MetricRegistry.java` returned 120 tokens.
-
-### Expected behaviour
-
-`module-info.java` should expose at least a module document symbol and folding ranges for the module
-body and directive groups where source ranges are available.
-Annotated module descriptors should also make the leading annotation block foldable.
-Semantic tokens should highlight module annotations,
-directive keywords,
-module names,
-exported package names,
-and service/provider type names where the LSP token legend has a suitable token type.
-
-`package-info.java` should expose at least a package document symbol.
-Its package Javadoc should be foldable,
-and any package annotations should participate in the fold range when present.
-Semantic tokens should highlight package annotations and the package declaration at minimum.
-
-### Related navigation observation
-
-Package declarations are also weak in hover/definition:
-hover on package-name segments reports only the package name,
-and definition returns no target for both ordinary package declarations and `package-info.java`.
-That is not split out as a separate open gap here to avoid duplicating package-info handling work.
-
-### Proposed fix
-
-Extend the document-symbol,
-folding-range,
-and semantic-token providers to handle compilation units whose primary top-level declaration is a
-module declaration or package declaration rather than a class,
-interface,
-enum,
-record,
-or annotation type.
-
-### Regression targets
-
-- `DocumentSymbolTest.documentSymbol_moduleInfo_returnsModuleSymbol`
-- `DocumentSymbolTest.documentSymbol_packageInfo_returnsPackageSymbol`
-- `FoldingRangeTest.foldingRange_moduleInfo_returnsModuleBodyRange`
-- `FoldingRangeTest.foldingRange_packageInfo_returnsJavadocRange`
-- `SemanticTokensTest.semanticTokens_moduleInfo_returnsModuleDescriptorTokens`
-- `SemanticTokensTest.semanticTokens_packageInfo_returnsPackageDeclarationTokens`
+- `UnusedDeclarationScannerTest.unused_localVariable_messageNamesVariableAndKind`
+- `UnusedDeclarationScannerTest.unused_diagnostic_setsStableCode`
 
 ---
 
@@ -7373,7 +7245,7 @@ python3 dev/explore.py /path/to/Scratch.java inject "this."
 
 ### Regression targets
 
-- `CompletionThisTest.completion_thisReceiver_suppressesObjectInternalMethods`
+- `CompletionThisTest.completion_thisReceiver_suppressesObjectSyncMethods`
 
 ---
 
@@ -7454,8 +7326,8 @@ python3 dev/explore.py /path/to/Scratch.java inject "Object o = new Oper"
 
 ### Regression targets
 
-- `CompletionTypeFilterTest.completion_modularSource_excludesUnreadableModuleTypes`
-- `CompletionTypeFilterTest.completion_modularSource_keepsRequiredModuleTypes`
+- `CompletionTypeIndexTest.typeIndex_jpmsObservableButUnreadableModule_doesNotSuggestIndexedType`
+- `CompletionTypeIndexTest.typeIndex_jpmsReadablePackage_suggestsIndexedType`
 
 ---
 
@@ -7626,9 +7498,9 @@ so sibling test classes are consistently available when the current source has t
 
 ### Regression targets
 
-- `WorkspaceSymbolTest.workspaceSymbol_testClass_returnsResult`
 - `WorkspaceSymbolTest.workspaceSymbol_mainClass_andTestClass_sameWorkspace_bothVisible`
-- `CompletionSimpleNameTest.completion_testSource_offersSiblingTestClass`
+- `WorkspaceSymbolTest.workspaceSymbol_mainClass_andTestClass_sameWorkspace_bothVisible`
+- `WorkspaceSymbolTest.workspaceSymbol_mainClass_andTestClass_sameWorkspace_bothVisible` (current test-source visibility coverage; the originally proposed sibling-completion test is not present)
 
 ---
 
@@ -7695,172 +7567,9 @@ Returning `OptionalInt.empty()` or a sentinel failure result is preferable to ca
 ### Regression targets
 
 - `ReferenceLocatorTest.references_outOfRangePosition_returnsEmpty`
-- `ImplementationTest.implementation_outOfRangePosition_returnsEmpty`
-- `CallHierarchyTest.prepareCallHierarchy_outOfRangePosition_returnsEmpty`
+- `MethodImplementationTest.implementation_outOfRangePosition_returnsEmpty`
+- `CallHierarchyPrepareTest.prepareCallHierarchy_outOfRangePosition_returnsEmpty`
 - `TypeHierarchyTest.prepareTypeHierarchy_outOfRangePosition_returnsEmpty`
-
----
-
-## EG-030 — Neovim indenter Google-Java-Format continuation handling
-
-**Status: done — Target: M2 (regression). One sub-case deferred (see below).**
-
-### Observed behaviour (before)
-
-The Neovim `indentexpr` (`lathe-maven-plugin/src/main/neovim/lua/lathe/indent.lua`) used a
-`tree_indent` block-depth model that could not reproduce Google Java Format's mixed
-selector/continuation/lambda indentation, and a previous-line continuation rule that stair-stepped
-list items deeper on every line. Pressing Enter in wrapped GJF structures left the cursor in the
-wrong column: record components, wrapped arguments, blank lines inside calls and lambda bodies, and
-the line after a completed multi-line statement were all mis-indented.
-
-### Fix
-
-Made the text heuristic authoritative and used tree-sitter only for closer-to-block matching:
-
-- Split list separators (align) from binary operators (one continuation level), and recognise
-  trailing `(`/`[` openers — fixes stair-stepping and wrapped-argument / record-component indent.
-- Added `statement_start_indent` so the line after a completed multi-line statement dedents to the
-  statement base.
-- Guarded the blank-line selector rule so a blank line inside a `selector(`-opened call indents into
-  the call rather than aligning to the selector.
-- Removed the unreliable `tree_indent`/`CONTINUATION_NODES` path; the indent value is now purely
-  text-derived, so behaviour is identical whether or not the buffer parses (the common mid-edit
-  case).
-
-### Regression targets
-
-- `lathe-maven-plugin/src/test/neovim/indent_spec.lua` — 19 project-neutral fixtures covering record
-  components, wrapped arguments, assignment-RHS continuation, block bodies/closers, statement-end
-  dedent, blank lines inside calls and lambda bodies, nested wrapped calls, and selector chains.
-- Run during the `test` phase via `exec:exec@neovim-indent-spec`, which hard-fails under CI when
-  `nvim` is absent and degrades gracefully on local machines without it. The fixtures are
-  editor-neutral so they also serve as the acceptance spec for the future VS Code indentation rules.
-
-### Deferred sub-case
-
-A method-chain selector that **resumes after a multi-line wrapped argument** still anchors to the
-closing line rather than the chain:
-
-```java
-return source.of(req)
-    .request(Type.class)
-    .recover(
-        e -> {
-          log(e);
-          return fallback();
-        })
-    .get();        // indenter yields closer-indent + 4; GJF puts this at the chain column (probe: 16 vs 8)
-```
-
-`selector_indent` anchors a `.`-led line to the previous line; when that line is the `})` closing a
-multi-line argument, it indents one level past the closer instead of back to the chain's first
-selector. Resolving the chain anchor across an intervening multi-line lambda needs tree-sitter
-structure (walk to the outermost `method_invocation`/`field_access` receiver), which the text
-heuristic cannot do. Two minor relatives are also deferred: a continuation line that *starts* with a
-binary operator (Google breaks before `&&`/`+`) gets no extra level, and a lone `)`/`]` wrap-closer
-aligns to the block rather than the wrap opener.
-
-Deferred, not fixed, because `format_on_save` (full-document GJF, on by default in the Neovim plugin)
-corrects the file on every save; the only impact is a transient cursor column on a rare shape. If
-revisited, add the tree-sitter chain-anchor rule and a fixture for the `.get()`-after-`})` tail.
-
----
-
-## EG-031 — JDK source resolution depends solely on `JAVA_HOME`, and its absence is silent and undiagnosable
-
-**Status: done — Target: M2**
-
-Implemented in `7fe3e4b` (`JdkSourceResolver` falls back to the running JVM's `java.home` and
-canonicalizes via `toRealPath()`). Regression: `JdkSourceResolverTest.resolve_javaHomeUnset_fallsBackToRunningJavaHome`,
-`JdkSourceResolverTest.resolve_symlinkedHome_resolvesToRealPath`.
-
-### Observed behaviour
-
-`JdkSourceResolver` locates `src.zip` only through the `JAVA_HOME` environment variable.
-When `JAVA_HOME` is not set, `lathe:sync` produces no JDK source cache and the only trace is a single
-unexplained INFO line:
-
-```
-[sync] jdk sources missing
-```
-
-Two distinct, unrelated situations produce that same line:
-
-1. `JAVA_HOME` is unset — even when the build is genuinely running on a full JDK. This includes the
-   common setup where the `java` launcher on `PATH` is a symlink into a valid JDK directory (so the
-   running JVM has a real JDK home and a `lib/src.zip`), but `JAVA_HOME` was never exported.
-2. `JAVA_HOME` is set, but the JDK ships no `lib/src.zip` (a JRE, or a JDK installed without sources).
-
-The two causes are indistinguishable from the log, and neither tells the user that setting
-`JAVA_HOME` (or installing a full JDK) would enable JDK source navigation, hover, and the JDK type
-index.
-Case 1 is the surprising one: the JDK home is knowable from the running JVM, yet lathe reports the
-sources as missing purely because one env var is absent.
-
-Downstream, definition and hover into JDK types silently fall back to class-only behaviour because
-`JdkSourceData.status` is `MISSING` with no recorded reason.
-
-### Root cause
-
-`JdkSourceResolver.resolve(env)` reads `home` exclusively from `env.get("JAVA_HOME")` and never
-consults the running JVM's authoritative `java.home` system property (`System.getProperty("java.home")`
-is used nowhere in the codebase).
-It then collapses two distinct conditions into one `SourceStatus.MISSING`:
-
-```java
-final String javaHome = env.get("JAVA_HOME");
-if (javaHome == null) {
-  return JdkSource.missing(vendor, version, cacheKey(null, vendor, version), null); // home == null
-}
-...
-if (Files.exists(sourceZip)) {
-  return JdkSource.present(...);
-}
-return JdkSource.missing(vendor, version, key, home);                                // home != null
-```
-
-`JdkSource.missing` records `SourceStatus.MISSING` and drops the reason.
-The `home` field is the only surviving signal (`null` ⇒ `JAVA_HOME` unset, non-`null` ⇒ `src.zip`
-absent), and it is never surfaced.
-`JdkSourceSync.extract` then logs the bare `"[sync] jdk sources missing"` for both cases, with no
-reason, no inspected path, and no remediation — and the message does not follow the project's
-`[operation] target detail outcome` log convention.
-
-### Proposed fix
-
-Two independent improvements:
-
-1. **Resolve the JDK home robustly, not from `JAVA_HOME` alone.** When `JAVA_HOME` is unset, fall back
-   to the running JVM's `java.home` (with symlinks resolved via `toRealPath()`), which is the JDK that
-   actually compiles the workspace and carries the matching `lib/src.zip`. This covers the
-   symlinked-launcher case and any environment that omits `JAVA_HOME`. `JAVA_HOME`, when present, may
-   still take precedence so a user can point lathe at a different JDK's sources.
-2. **Diagnose the remaining genuine-missing cases actionably**, distinguishing them:
-   - no JDK home resolvable at all → a WARNING naming the cause and the remedy, e.g.
-     `[sync] jdk-sources unresolved no-jdk-home set JAVA_HOME or run the build on a JDK to enable JDK source navigation`.
-   - JDK home resolved but `lib/src.zip` absent → a WARNING naming the inspected path, e.g.
-     `[sync] jdk-sources missing <home>/lib/src.zip not-found install a full JDK with sources`.
-
-Optionally carry the reason on the model (a `MISSING` sub-reason on `JdkSource`/`JdkSourceData`, or a
-distinct status) so the server can explain JDK-source absence on a definition or hover into a JDK
-type rather than silently degrading.
-
-### Probe commands
-
-```bash
-# JAVA_HOME unset while running on a real JDK (e.g. a symlinked launcher on PATH):
-env -u JAVA_HOME mvn -q -pl lathe-maven-plugin -Dinvoker.test=<jdk-source-project> verify
-# observe the single "[sync] jdk sources missing" line; confirm no cause/remedy is reported and that
-# no JDK source cache was produced even though the build ran on a JDK with lib/src.zip
-```
-
-### Regression targets
-
-- `JdkSourceResolverTest.resolve_javaHomeUnset_fallsBackToRunningJavaHome` (added, `@Disabled`)
-- `JdkSourceResolverTest.resolve_symlinkedHome_resolvesToRealPath` (added, `@Disabled`)
-- `JdkSourceResolverTest.resolve_srcZipAbsent_recordsAbsentReason` (proposed; needs a `MISSING` sub-reason on the model)
-- `JdkSourceSyncTest.extract_noJdkHome_logsActionableWarning` (proposed; no `JdkSourceSyncTest` exists yet)
 
 ---
 
@@ -7905,8 +7614,8 @@ to `FILE_START` rather than dropping the symbol.
 
 ### Regression targets
 
-- `WorkspaceSymbolResolverTest.resolve_typeBelowHeader_locationPointsAtDeclaration` (proposed)
-- `WorkspaceSymbolResolverTest.resolve_positionUnresolvable_fallsBackToFileStart` (proposed, guard)
+- `WorkspaceSymbolTest.resolve_class_rangePointsToDeclaration` (proposed)
+- `WorkspaceSymbolTest.resolve_class_fallsBackToFileStartWhenNoSource` (proposed, guard)
 
 ---
 
@@ -8411,8 +8120,8 @@ entirely.
 ### Regression targets
 
 - `WorkspaceTypeIndexTest.searchExact_manyPrefixSiblings_returnsAllExactMatchesUnaffectedByLimit`
-- `WorkspaceTypeIndexTest.search_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName`
-- `CodeActionTest.codeAction_typeRef_manyPrefixSiblingsInIndex_stillOffersExactImport`
+- `WorkspaceTypeIndexTest.searchAndSearchExact_usageThenOrigin_referencedTypeFirstElsePlatformType`
+- `QuickFixCodeActionTest.codeAction_typeRef_manyPrefixSiblingsInIndex_stillOffersExactImport`
 
 ---
 
@@ -8499,6 +8208,14 @@ new `TryCatchWrapProvider.java`, dispatcher in `SourceAnalysisSession.codeAction
 
 This is the M1 gap also referenced by EG-002.
 
+### Current verification
+
+`QuickFixCodeActionTest.codeAction_unreportedException_lambdaBody_offersOnlyWrap` and
+`QuickFixCodeActionTest.codeAction_unreportedException_methodBody_offersBothWrapAndThrows` cover the delivered distinction.
+The provider descriptions above describe the original proposal, not missing current classes.
+
+---
+
 ## CA-2 — `VARIABLE_REF` has no action
 
 **Status: done — Target: M1.**
@@ -8525,6 +8242,14 @@ infer the RHS type via `trees().getTypeMirror(rhsPath)`,
 emit `TypeName varName = …` (with import if needed) or `var varName = …` as a fallback.
 
 **Files to change**: new `DeclareVariableProvider.java`, dispatcher in `SourceAnalysisSession`.
+
+### Current verification
+
+`DeclareVariableProvider` is dispatched by `FileFeatures`; the original missing-provider description is historical.
+`ConvertCodeActionTest.codeAction_variableRef_intAssignment_declaresLocalVariable` covers assignment-site declaration.
+`ConvertCodeActionTest.codeAction_variableRef_rhsOfLocalDecl_returnsEmpty` explicitly refuses an unresolved RHS use; this closure does not claim arbitrary use-site declaration inference.
+
+---
 
 ## CA-3 — `MISSING_METHOD_IMPL` is never classified
 
@@ -8565,6 +8290,13 @@ and add any needed imports.
 
 **Files to change**: `SourceAnalysisSession.enrichWithContext()` (classification),
 new `MissingMethodImplProvider.java`, dispatcher in `SourceAnalysisSession`.
+
+### Current verification
+
+`QuickFixCodeActionTest.compile_doesNotOverrideAbstract_setsMissingMethodImplPayload` and
+`QuickFixCodeActionTest.codeAction_missingMethodImpl_singleAbstractMethod_generatesStub` cover the implemented classifier and provider.
+
+---
 
 ## CA-4 — `TYPE_REF` in a `throws` declaration with no index match produces no action
 
@@ -8619,6 +8351,11 @@ residual case — types created or renamed in a **closed** file, discoverable to
 Maven sync — is folded into the broader source/branch-switch staleness gap WS-1 (see
 [gaps.md](gaps.md)) rather than tracked as a code-action bug.
 
+### Current verification
+
+`QuickFixCodeActionTest.codeAction_typeRef_reactorEntryNotOnClasspath_offersImport` covers the reactor entry.
+The later WS-1 write pass also handles closed-file additions; the resolution's closed-file freshness remainder is historical, not a requirement to run Maven today.
+
 ---
 
 ## CA-5 — No code action to replace `var` with the inferred type
@@ -8647,115 +8384,6 @@ Regression targets in `CodeActionTest`:
 `codeAction_varUpwardProjectedType_replacesWithProjectedType` (`Number`),
 `codeAction_varAnonymousClass_offersNoReplace`, and
 `codeAction_explicitTypedLocal_offersNoReplace`.
-
----
-
-## CQ-0041 — `module-info.java` directive slots return no completion candidates
-
-ID: CQ-0041
-Status: done
-Target: M1
-Tier: basic
-Failure mode: missing-candidate
-Owner component: SentinelParser / CompletionEngine
-Discovery: 2026-06-28, Helidon `module-info.java` live probes
-Resolved: 2026-06-28, module-name completion uses `ModuleFinder.ofSystem()` plus the current
-module path.
-
-Project/file:
-`/home/ag-libs/git/helidon/health/health/src/main/java/module-info.java`
-
-Probe command:
-```bash
-printf 'complete after "module io.helidon." min 1\ncomplete after "requires " min 1\ncomplete after "requires transitive " min 1\ncomplete after "requires transitive io.helidon." min 1\ncomplete after "exports " min 1\ncomplete after "exports io.helidon." min 1\n' \
-  | python3 dev/explore.py \
-      /home/ag-libs/git/helidon/health/health/src/main/java/module-info.java
-```
-
-Related annotation-context probes:
-```bash
-printf 'complete after "@Features."\ncomplete after "@Features.Aot("\ncomplete after "HelidonFlavor."\n' \
-  | python3 dev/explore.py \
-      /home/ag-libs/git/helidon/dbclient/jdbc/src/main/java/module-info.java
-```
-
-Cursor context:
-```java
-module io.helidon.health {
-
-    requires transitive io.helidon.common;
-    requires transitive io.helidon.config;
-
-    exports io.helidon.health;
-    exports io.helidon.health.spi;
-}
-```
-
-IntelliJ or JDT behavior:
-Expected IDE behavior is context-specific completion inside module descriptors:
-module-name candidates after `module`,
-reachable module-name candidates after `requires` and `requires transitive`,
-package-name candidates after `exports` and `opens`,
-service types after `uses`,
-and provider types after `provides ... with`.
-
-Lathe behavior:
-All probed directive slots return 0 items.
-The failure reproduces both at bare directive positions and after typed prefixes:
-`module io.helidon.`,
-`requires `,
-`requires transitive io.helidon.`,
-`exports `,
-and `exports io.helidon.`.
-
-`module-info.java` annotation contexts are also incomplete.
-Basic annotation type completion can work in some injected positions,
-such as `@Dep` before `module`,
-but annotation member completion and annotation-value member access return no useful candidates:
-`@Features.`,
-`@Features.Aot(`,
-and `HelidonFlavor.` all return 0 items in real Helidon module descriptors.
-
-Expected Lathe behavior:
-Completion should provide legal directive-specific candidates in `module-info.java`.
-For M1,
-the required slice is basic candidate discovery and insertion for:
-
-- module names after `module`, `requires`, and `requires transitive`;
-- package names after `exports` and `opens`;
-- type names after `uses`;
-- provider type names after `provides ... with`;
-- directive keywords where the cursor is inside the module body and no directive prefix has been typed.
-
-Annotation completion inside module descriptors should behave like annotation completion before a
-`package-info.java` package declaration:
-annotation type names,
-annotation element names,
-and basic typed values such as booleans and enum constants should be available.
-
-Accepted edit, if relevant:
-Accepting a module candidate after `requires transitive io.helidon.` should complete only the
-remaining module-name segment and preserve the trailing semicolon if present.
-Accepting a package candidate after `exports io.helidon.` should complete only the remaining
-package segment and preserve the trailing semicolon if present.
-
-Root cause:
-`SentinelParser` recognises module descriptor positions as `MODULE_DIRECTIVE`.
-`CompletionEngine` has no handler for that context,
-so it falls through to an empty `CompletionOutcome`.
-
-Regression targets:
-
-- `CompletionModuleInfoTest.completion_requiresDirective_offersReachableModules`
-- `CompletionModuleInfoTest.completion_exportsDirective_offersModulePackages`
-- `CompletionModuleInfoTest.completion_moduleAnnotation_offersAnnotationMembers`
-
-Notes:
-Dropwizard has no source `module-info.java` or `package-info.java`,
-but a Dropwizard control probe confirmed normal member completion is live in that workspace:
-`inject "String.valueOf(1)."` returned 73 `String` members.
-This gap is therefore specific to module descriptor contexts,
-not a dead LSP session.
 
 ---
 
@@ -9427,7 +9055,7 @@ parsing.
 Regression targets:
 - `CompletionArgumentTest.constructorArgument_memberAccess_booleanReturn_offeredAtBooleanSlot` (added, `@Disabled`)
 - `CompletionArgumentTest.constructorArgument_booleanPrefix_popupNotEmpty` (added, `@Disabled`)
-- `TypeResolverTest.resolveExpectedValue_constructorArgumentByPosition_resolvesParamType` (proposed; no `TypeResolverTest` exists yet)
+- `CompletionArgumentTest.constructorArgument_memberAccess_booleanReturn_offeredAtBooleanSlot` (proposed; no `TypeResolverTest` exists yet)
 
 Notes:
 This is the real-workspace reproduction of CQ-0043: the user's symptom (an empty popup after
@@ -9759,7 +9387,9 @@ is the planned first-class way; `JAVA_TOOL_OPTIONS=-Xmx…` works today).
 
 ---
 
-## FR-011 — `builder()` reference search surfaces test hits — verified correct, not a defect
+## FR-033 — `builder()` reference search surfaces test hits — verified correct, not a defect
+
+Registry correction (2026-11-08): formerly `FR-011`, also assigned to a different gap; `FR-033` uniquely identifies this historical entry.
 
 **Status: non-goal — verified correct behaviour; breadth cost tracked by FR-009**
 
@@ -9873,6 +9503,41 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-23 — A killed build's locks make `verify_change` defer for about two minutes — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+After `kill -9` of a Maven sync, the `lathe.lock`/`module.lock` it held stay, and `verify_change` answers
+"Verification deferred: a build is in progress" for 100–120 s, until the locks count as stale.
+The next good sync clears them.
+
+### Resolution
+
+Merged in [PR #143](https://github.com/ag-libs/lathe/pull/143) on 2026-11-08.
+`LatheLock` records the PID and process start instant in both reactor and module locks.
+Readers ignore fresh locks immediately when the owner has exited or the PID has been reused, without deleting the marker.
+The two-minute mtime fallback remains for empty markers, malformed metadata and unavailable process information.
+
+Verified with the full core suite on JDK 17, targeted Maven lifecycle and server write-pass tests on JDK 26, and Spotless.
+
+### Regression targets
+
+`LatheLockTest.isBuilding_terminatedOwner_ignoresFreshReactorAndModuleLocks` (checks fresh markers naming a JVM that has exited),
+`LatheLockTest.isBuilding_reusedPid_ignoresFreshLock`,
+`LatheLockTest.isBuilding_incompleteOrMalformedOwner_usesMtimeExpiry`,
+`LatheLockTest.isBuilding_invalidUtf8Owner_usesMtimeExpiry`,
+`LatheLockTest.isBuilding_staleLiveOwner_usesMtimeExpiry`.
+
+---
+
 ## WS-33 — Gradle source sets beyond `main` and `test` get no editor features — done
 
 **Status: done.**
@@ -9910,7 +9575,7 @@ an `integrationTest` file using a `test` class gets the error Gradle's compile r
 
 `LatheSyncTaskFunctionalTest.sync_sourceSetsBeyondMainAndTest_eachCapturedAsATreeOfItsOwn`,
 `WorkspaceModuleRegistryTest.scan_sourceSetTrees_lookupPrefersTheAskingTreeAndOwnershipIsStable`,
-`SourceSetScopeTest.uncapturedReason_classOnlyInASourceSetTree_namesTheSourceSet`,
+`SourceSetScopeTest.treeOf_classOnlyInASourceSetTree_namesThatTree`,
 `ModuleConfigDataTest.constructor_testCodeGivenOrAbsent_givenWinsAbsentFollowsTestClasses`,
 `CapturePrunerTest.prune_removedModuleAndTree_deletesOnlyThoseCaptures`.
 
@@ -10259,7 +9924,7 @@ On the Helidon race (two MCP servers, the N1 edit, both queried at once),
 
 ### Regression targets
 
-- `WritePassTest.reconcileNow_anotherServerHoldsTheWriteLock_waitsForItThenWrites`: a pass does not
+- `WritePassTest.reconcile_anotherServerHoldsTheWriteLock_passWaitsThenWrites_queryStopsWaiting`: a pass does not
   write while another holder has the lock, and writes once it is released.
 - `LatheLockTest.tryExclusive_heldOrReleased_emptyUntilTheHolderCloses`.
 
@@ -10349,7 +10014,7 @@ save of the blueprint (`didChange`, the file written, `didSave`): the mirror's `
 never gained the option, and an open dependent calling it kept `cannot find symbol`.
 So this is not only an external-change gap; editing a Helidon blueprint in the editor never updates
 its builder without a sync.
-[EG-052](gaps-archive.md) is a different question (which generated copy navigation resolves to) and
+[EG-099](gaps-archive.md) is a different question (which generated copy navigation resolves to) and
 still holds.
 
 ### Cause
@@ -10382,7 +10047,7 @@ Limit: it needs the extension; a manual POM setup still lacks such files.
 ### Regression targets
 
 - `LatheLifecycleParticipantTest.mirrorLateOutputs_fileAddedAfterCompile_copiedIntoTheMirror_classesAndUnmirroredLeftAlone`
-- `LatheLifecycleParticipantTest.mirrorLateOutputs_noManifest_doesNothing`
+- `LatheLifecycleParticipantTest.mirrorLateOutputs_noOrUnreadableManifest_doesNothingAndNeverThrows`
 - `FileUtilTest.copyMissing_keptFilesDestLacks_copiedExistingAndFilteredLeftAlone`
 
 ---
@@ -10480,8 +10145,8 @@ touch watch, startup included (newer than `workspace.json`).
 - `WorkspaceWatcherTest.poll_contentWatchedBuildFileNewerThanManifestAtStartup_reportedOnlyIfContentDiffers`
 - `WorkspaceWatcherTest.poll_buildFileEditedBeforeStartup_reportedOnFirstPollOnlyWhenNewerThanManifest`
   (touch-watched)
-- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
-- `LatheEngineTest.notes_buildFileChangedBeforeTheSessionStarted_syncRequiredOnlyIfItsContentDiffers`
+- `LatheEngineNotesTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
+- `LatheEngineNotesTest.notes_buildFileChangedBeforeTheSessionStarted_syncRequiredOnlyIfItsContentDiffers`
 
 ---
 
@@ -10737,7 +10402,7 @@ answering the prompt (either option) and observing it return after ~2s.
 ### Regression targets
 
 Loop fix (server):
-- `WorkspaceWatcherTest.acknowledgePoms_afterPomChange_stopsReprompting`
+- `WorkspaceWatcherTest.poll_afterChange_secondPollReturnsNoChange`
   (positive — a changed POM reports on every poll until `acknowledgePoms()`, then goes quiet)
 
 Actionable prompt (end-to-end):
@@ -10757,7 +10422,7 @@ against the shared-server prompt state.
 
 ## WS-4 — `workspace/symbol` misses newly added reactor types after an incremental `mvn process-test-classes` (no clean)
 
-**Status: rejected — not an issue**
+**Status: non-goal — not an issue**
 
 ### Observed behaviour
 
@@ -10864,86 +10529,30 @@ negative and a fabricated-`.class` "new external type appears" positive at the i
 
 ---
 
-## WS-5 — External on-disk edits to sources/resources are not picked up without a Maven build
+## WS-5 — External on-disk edits to sources/resources are not picked up without a Maven build — done
 
-**Status: done — Target: M2 (detect → prompt, not in-process recompile)**
+**Status: done.**
 
-**Resolved.** Implemented as **server-side detection → the shipped sync prompt**: a source-root scan
-compares each *closed* source to its compiled `.class` in `.lathe/` (stale when the `.class` is missing
-or older; open files and the annotation-processor root are skipped) and, if any is stale, raises the
-WS-3 Maven sync prompt. External **resource** changes auto-copy into `.lathe/` via `refreshResource`
-(a copy is not compilation). Both run at startup and on the `WorkspaceWatcher` tick, suppressed while a
-module is mid-build (`LatheLock.isBuilding`); Lathe never runs Maven automatically. Verified end-to-end
-via the dev probe against the SNAPSHOT server — a stale source fires the prompt, a new resource is
-copied into `.lathe/`.
+### Historical observation
 
-Commits: `feat(freshness): detect externally-changed sources and prompt to sync (WS-5)` and
-`feat(freshness): auto-copy externally changed resources into .lathe/ (WS-5)`; e2e coverage in
-`LatheTextDocumentServiceTest`. Design:
-[External-Change Detection → Sync Prompt](../done/lathe-external-change-detection.md) (WS-1
-option 1). The in-process recompile originally proposed was **not pursued** — correct only for a
-single-module change set, else it re-implements Maven's ordered reactor build — and is parked in
-[In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md).
+External source/resource edits stayed invisible until a build refreshed `.lathe/`.
+The first fix detected changed sources and prompted for sync, while copying resources automatically.
+That implementation was later superseded by the in-process write pass (WS-1); the old client watched-file handlers and debounce/prompt tests are not the current pipeline.
 
-**Deferred follow-ups (not blocking):** deletion detection (an orphan `.class` for a source removed
-while Lathe was down needs a source-*set* baseline, not just newest-mtime) and the "Sync + capture"
-heuristic for a new test module / test source.
+### Current resolution
 
-### Observed behaviour
-
-A Java source or resource changed **on disk from outside the editor** — a branch switch, a `git pull`,
-or an AI agent editing files directly — is invisible to Lathe until the next `mvn process-test-classes`.
-Navigation, completion, `workspace/symbol`, replay resources, and dependents' diagnostics all reflect
-the previous state, even though the change is fully on disk.
-
-### Root cause
-
-The server watches nothing at the source level. `LatheWorkspaceService.didChangeWatchedFiles` acts
-**only** on `FileChangeType.Deleted`; `Created`/`Changed` events are dropped
-(`LatheWorkspaceService.java:47-49`). Resource edits reach `.lathe/` only through the editor
-`BufWritePost` → `lathe.resource.refresh` autocmd, so an external resource change is never copied. No
-server-side compile is triggered for a non-open source file, and the reactor mirror/type index are not
-invalidated by filesystem source changes (also see WS-1 root cause).
-
-### Proposed fix
-
-Per the design doc: extend `workspace/didChangeWatchedFiles` to `Created`/`Changed`, register
-`**/*.java` and resource-root watchers, and react by reusing existing machinery —
-
-- `.java` (not open) → `WorkspaceSession.onExternalChange(uri)`: a `FULL` compile from disk (runs
-  annotation processors, writes `.lathe/<module>/classes`) then `refreshReactorShard`, i.e. the
-  `onSave` path;
-- resource under a tracked root → the existing `refreshResource(uri)` copy;
-- `pom.xml`/structural → unchanged (heavy path → the Maven sync prompt, WS-3);
-
-with per-module debounce and open-file precedence. A **bulk cutoff** guards the storm case: above a
-threshold of changed files in a window — or when the batch also carries a `pom.xml` change — the light
-regime defers to the heavy-path prompt (WS-3) rather than per-file recompiling, so WS-5 owns *small*
-source/resource change sets while a bulk `git pull`/branch switch goes to the prompt (picked up by
-WS-4). Cross-module dependents stay Maven-bounded (see
-[Sibling Recompilation](../done/lathe-sibling-recompilation.md)).
-
-### Probe commands
-
-Reproduced (and verified for the fix) against the `multi-module` invoker workspace: edit a **closed**
-`.java` on disk, deliver a `didChangeWatchedFiles`, then query `sym`/`refs`; repeat for a resource.
-The same `sym`/`diag`/`sym` harness used for the save path applies.
+`WritePass` detects and recompiles external source changes in dependency order, refreshes affected open dependents, and mirrors changed/deleted resources.
+A build-file change still asks for sync.
+Source deletion is handled by the current write pass, rather than remaining the deferred follow-up the historical entry described.
+See [One Write Pass](../done/lathe-recompile-simplification.md) and [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md).
 
 ### Regression targets
 
-**Superseded** — the targets below (and the probe above) were written for the parked in-process
-recompile (`didChangeWatchedFiles`/`onExternalChange`), which no longer exists. New targets for the
-server-side detection scan → sync prompt will be defined when it is implemented, per
-[external-change detection](../done/lathe-external-change-detection.md). Retained for history:
-
-- `LatheWorkspaceServiceTest.didChangeWatchedFiles_javaCreatedOrChanged_routesToExternalChange`
-- `LatheWorkspaceServiceTest.didChangeWatchedFiles_resourceChanged_routesToRefreshResource`
-- `WorkspaceSessionTest.onExternalChange_closedFile_updatesMirrorAndSymbolIndex`
-  (positive — incl. an `@Builder` generated type appearing via the FULL compile)
-- `WorkspaceSessionTest.onExternalChange_openFile_isIgnored` (negative — editor buffer wins)
-- `WorkspaceSessionTest.onExternalChange_burst_debouncesPerModule`
-- `WorkspaceSessionTest.onExternalChange_bulkChangeSet_defersToHeavyPathPrompt`
-  (negative — above the threshold, defer to WS-3 instead of per-file recompiling)
+- `WritePassTest.reconcileNow_closedSourceChangedExternally_recompilesInProcessWithoutPrompting`
+- `WritePassTest.initialize_moreExternalChangesThanTheOldBulkThreshold_compiledInProcessWithoutNotice`
+- `WritePassTest.reconcileNow_deletedDependency_republishesOpenDependentWithError`
+- `WritePassTest.initialize_copiesOnlyStaleResourcesIntoLathe`
+- `WritePassTest.reconcile_resourceDeletedOnDisk_removesItsCopy_keepsOtherFilesInTheMirror`
 
 ---
 
@@ -11080,8 +10689,8 @@ profile-activated `<modules>` in an ancestor are invisible to a raw read.
 
 ### Regression targets
 
-- `ReactorProjectsTest.isMultiModuleRootBuild_submoduleListedByAncestorPom_returnsFalse`
-- `ReactorProjectsTest.isMultiModuleRootBuild_genuineSingleModuleRoot_returnsTrue`
+- `ReactorProjectsTest.isReactorRoot_ancestorAggregatesViaModules_false`
+- `ReactorProjectsTest.isReactorRoot_noAncestorAggregatesItExactly_true`
 - A new invoker fixture **without** a root `.mvn/`: build a submodule from its own directory and assert
   no `.lathe/` is created in the submodule (the `-pl`-from-root and root-build cases stay covered by
   `multi-module`).
@@ -11163,7 +10772,7 @@ Depends on WS-7 (the `-pl`/submodule `.lathe` behaviour must be sound first).
 
 ## WS-2 — No re-sync prompt after a source-only branch switch
 
-**Status: resolved (superseded) — Target: n/a.**
+**Status: non-goal (superseded) — Target: n/a.**
 
 **Resolved by in-process workspace sync** ([design](../done/lathe-in-process-workspace-sync.md)): a
 source-only change made outside the editor is now recompiled into the `.lathe/` mirror on the idle tick
@@ -11720,7 +11329,7 @@ structured content). On the Dropwizard file it now answers `PASS — 5 passed` a
 
 ### Regression targets
 
-- `LatheEngineTest.selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndOneMethod`.
+- `LatheEngineRunTest.selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndOneMethod`.
 - The `multi-module` fixture's `McpSmokeTest.runTest_reactorTestClass_replaysAndPasses` checks the `Ran:`
   line.
 
@@ -11776,7 +11385,7 @@ consumers zero inherited compile dependencies). No automated regression test was
 
 ## TE-5 — JPMS test module reflective access under replay — could not reproduce
 
-**Status: closed (could not reproduce) — Target: M2.**
+**Status: non-goal (could not reproduce) — Target: M2.**
 
 Reported: a JPMS module's tests failed under neotest replay with
 `java.lang.reflect.InaccessibleObjectException` — JUnit, loaded in the unnamed module, could not
@@ -11854,6 +11463,12 @@ cursor into `.lathe/run.json`, and `:LatheRunOutput` reopens the run console. De
 ### Regression targets
 
 None yet — to be defined when the fix is scheduled.
+
+### Current verification
+
+`RunConfigReaderTest.read_namedConfig_composesOverMatchingBaseline` and
+`RunConfigReaderTest.read_namedTestConfig_parsesSelectors` cover the named configuration model.
+The editor selection UI is separate client behavior; these Java tests do not exercise it.
 
 ---
 
@@ -12091,6 +11706,11 @@ debugging a local; with the fix, a normal on-save workflow exposes locals in eve
 
 None yet — to be defined when scheduled.
 
+### Current verification
+
+The FULL-mode option preparation in `ModuleSourceCompiler` adds `-g` when no debug option was captured.
+The standalone compiler-option test named by a future reader should not be assumed to exist: this record's evidence is the implemented option branch and its historical debug validation, not a dedicated local-variable-table assertion.
+
 ---
 
 ## DB-6 — Variable inspection throws `InvalidStackFrameException` after an invocation-resume — done
@@ -12277,6 +11897,11 @@ lists `cmd = "LatheStart"`, so lazy.nvim loads the plugin (running `setup()`, wh
 real command) when `:LatheStart` is first invoked. No plugin code change — `M.start` is already
 covered by `lathestart_spec`; the lazy-loading trigger is user config, not plugin behaviour.
 
+### Current verification
+
+The current client regression is `lathe-neovim/test/lathestart_spec.lua`.
+It passed separately during this audit; the Java verification run does not execute Lua tests.
+
 ---
 
 ## NV-2 — A neotest test run gives no completion notification, only a "Running" start toast — done
@@ -12396,7 +12021,7 @@ Shape 1 (candidate 1 above). Test-debug now runs through neotest's `dap` strateg
 `dap.run` when neotest is absent, and a `main` uses `dap.run`.
 `neotest_spec.lua` — `build_spec` with `strategy == "dap"` returns a `spec.strategy` carrying the run
 token and fires no `lathe.run.test` replay.
-`WorkspaceSessionTest.finishedOutcome_completedOutcome_returnedAsIs` /
+`RunCoordinatorTest.finishedOutcome_completedOutcome_returnedAsIs` /
 `finishedOutcome_nullOutcome_returnsBlockedNamingTheFailure` — the session-end outcome is published
 (the real outcome, or a blocked one when none was produced).
 
@@ -12600,7 +12225,7 @@ Dropwizard, `toSeconds(int scale)`: 5 errors on the first check, the second and 
 
 ### Regression targets
 
-`LatheEngineTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted`
+`LatheEngineVerifyTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted`
 
 ---
 
@@ -12628,7 +12253,7 @@ the build. Dropwizard: the deletion now reports 1 error (none before), and remov
 
 ### Regression targets
 
-`LatheEngineTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted` (the same mechanism).
+`LatheEngineVerifyTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted` (the same mechanism).
 
 ---
 
@@ -12668,6 +12293,11 @@ The snippet also mentions `symbol` addressing.
 
 None in the build: the hook was checked by hand against synthetic transcripts (an edit with and
 without a later check, a rename after a check, a non-Java edit, a second stop).
+
+### Current verification
+
+The delivered artifacts are `examples/agents/lathe-mcp.md` and `examples/agents/verify-before-stop.py`, linked by the agent guide.
+This is workflow guidance and an optional hook, not a server guarantee that every agent invokes verification.
 
 ---
 
@@ -12718,7 +12348,7 @@ Verified end to end on Dropwizard: renaming `DefaultHealthFactory` lists the
 
 - `TextMentionsTest.inStringLiterals_literalNamingIt_notCodeProseOrALongerWord`
 - `TextMentionsTest.inResources_qualifiedNameOrServiceFile_notAnUnqualifiedWord`
-- `LatheEngineTest.rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText`
+- `LatheEngineRenameTest.rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText`
 
 ---
 
@@ -12767,9 +12397,9 @@ same file with a syntax error is refused with the error.
 
 ### Regression targets
 
-- `LatheEngineTest.latheTestRun_completedOutcome_mapsCountsAndFailureWithItsOutput`
-- `LatheEngineTest.latheTestRun_blockedOrNothingRan_carriesTheReasonOrTheLastOutput`
-- `LatheEngineTest.runTest_fileWithNoTestOrNotCompiling_saysWhy`
+- `LatheEngineRunTest.latheTestRun_completedOutcome_mapsCountsAndFailureWithItsOutput`
+- `LatheEngineRunTest.latheTestRun_blockedOrNothingRan_carriesTheReasonOrTheLastOutput`
+- `LatheEngineRunTest.runTest_fileWithNoTestOrNotCompiling_saysWhy`
 
 ---
 
@@ -12826,8 +12456,8 @@ Verified end to end on EqualsVerifier (2026-11-01): `warning` lists the two reac
 
 ### Regression targets
 
-- `LatheEngineTest.searchSymbols_byName_findsReactorType` (glob, reactor scope).
-- `LatheEngineTest.jdkInternal_containers_onlyTheJdksUnexportedPackages`
+- `LatheEngineNavigationTest.searchSymbols_byName_findsReactorType` (glob, reactor scope).
+- `LatheEngineNavigationTest.jdkInternal_containers_onlyTheJdksUnexportedPackages`
 
 ---
 
@@ -12868,7 +12498,7 @@ the JDK, points at `scope=all`.
 ### Regression targets
 
 - `LatheMcpToolsTest.callHierarchy_invalidDirectionOrScope_returnsError`
-- `LatheEngineTest.callHierarchy_findsIncomingCallerAndOutgoingCallee` (reactor scope keeps the reactor callee).
+- `LatheEngineNavigationTest.callHierarchy_findsIncomingCallerAndOutgoingCallee` (reactor scope keeps the reactor callee).
 
 ---
 
@@ -12926,7 +12556,7 @@ symbol without a column, and a name whose first occurrence on the line is in a s
 ### Regression targets
 
 - `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound`
-- `LatheMcpToolsTest.outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations`
+- `McpTextTest.outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations`
 
 ---
 
@@ -12963,7 +12593,7 @@ Verified end to end on Dropwizard (2026-11-01): outgoing calls of `RoutingHandle
 
 ### Regression targets
 
-- `LatheEngineTest.callHierarchy_findsIncomingCallerAndOutgoingCallee` (the outgoing call is at its
+- `LatheEngineNavigationTest.callHierarchy_findsIncomingCallerAndOutgoingCallee` (the outgoing call is at its
   site in `Caller.java`, not the callee's declaration).
 
 ---
@@ -13040,7 +12670,7 @@ the old settings; the next check sees the new ones.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_lombokConfigEdited_checksTheSourcesBelowIt` (fails without the change).
+- `LatheEngineVerifyTest.verifyChange_lombokConfigEdited_checksTheSourcesBelowIt` (fails without the change).
 
 ---
 
@@ -13092,7 +12722,7 @@ dependents; an edit to `Duration` still names its dependents and the sync.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_twoOfSixModulesUseTheChange_suggestsTheScopedSyncOfThoseDependents`
+- `LatheEngineVerifyTest.verifyChange_twoOfSixModulesUseTheChange_suggestsTheScopedSyncOfThoseDependents`
   (a dependent that never names the type is left out).
 
 ---
@@ -13215,9 +12845,9 @@ has no sources) and `run_test` on `Duration.java` (names `DurationTest.java`); H
 
 ### Regression targets
 
-- `LatheEngineTest.format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync`
-- `LatheEngineTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
-- `LatheEngineTest.runTest_fileWithNoTestOrNotCompiling_saysWhy`
+- `LatheEngineEditTest.format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync`
+- `LatheEngineNotesTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
+- `LatheEngineRunTest.runTest_fileWithNoTestOrNotCompiling_saysWhy`
 
 ---
 
@@ -13256,9 +12886,9 @@ POM edit makes `workspace_summary` end with `Sync required: build files changed 
 
 ### Regression targets
 
-- `LatheEngineTest.rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass`
+- `LatheEngineRenameTest.rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass`
   (the moved file's new path, and no not-checked note for the touched files).
-- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
+- `LatheEngineNotesTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
   for the pending-sync note `workspace_summary` now carries.
 
 ---
@@ -13297,7 +12927,7 @@ the editor's warning adds it where it shows the message.
 
 - `LatheMcpToolsTest.workspaceSummary_latheFromAnotherVersion_notesTheSyncWithoutAPrefix`
 - `LatheTextDocumentServiceTest.initialize_latheFromAnotherVersion_warnsWithThePrefixedRemedy` (the editor keeps the prefix)
-- `LatheEngineTest.notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand`
+- `LatheEngineNotesTest.notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand`
 
 ---
 
@@ -13416,7 +13046,7 @@ Neovim client's `SETUP_HINT`, when it ships.
 
 ### Regression targets
 
-`LatheMcpToolsTest.all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup`.
+`LatheMcpToolsTest.all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup_untilABuildCreatesIt`.
 
 ---
 
@@ -13497,8 +13127,8 @@ string spelling the field's name instead of the field.
 
 - `SourceLocatorTest.onName_namesInCode_accepted_wordsInCommentsAndLiterals_rejected`
 - `SourceLocatorTest.declarationNameOffset_nameRepeatedBeforeIt_findsTheDeclaredName`
-- `LatheEngineTest.onName_wordsInCommentsAndStrings_falseButTrueOnANameAndAJavadocLink`
-- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine` (the 1-based answer)
+- `LatheEngineNavigationTest.onName_wordsInCommentsAndStrings_falseButTrueOnANameAndAJavadocLink`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound` (the 1-based answer)
 
 ---
 
@@ -13533,9 +13163,9 @@ from POMs.
 ### Regression targets
 
 - `WorkspaceModuleGraphTest.upstreamModuleDirs_chain_theModulesOnItsClasspath`
-- `WorkspaceSessionTest.moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists`
-- `LatheEngineTest.modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture`
-- `LatheMcpToolsTest.modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut`
+- `ChangeVerifierTest.moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists`
+- `LatheEngineVerifyTest.modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture`
+- `McpTextTest.modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut`
 - `LatheMcpToolsTest.workspaceSummary_emptyWorkspace_answersNoModulesNotAnError`
 
 ---
@@ -13566,8 +13196,8 @@ Lathe answers `textDocument/documentSymbol` in the LSP but has no MCP tool for i
 
 ### Regression targets
 
-- `LatheEngineTest.outline_typeWithNestedType_listsEveryDeclarationAtItsDepthWithItsLine`
-- `LatheMcpToolsTest.outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations`
+- `LatheEngineNavigationTest.outline_typeWithNestedType_listsEveryDeclarationAtItsDepthWithItsLine`
+- `McpTextTest.outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations`
 
 ---
 
@@ -13603,9 +13233,9 @@ re-check ([gopls MCP instructions](https://github.com/golang/tools/blob/master/g
 
 ### Regression targets
 
-- `LatheEngineTest.fixImports_mixedNames_addsTheUnambiguousOnes_leavesTheRestToTheAgent`
-- `LatheEngineTest.fixImports_nothingMissing_writesNothing`
-- `LatheMcpToolsTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`
+- `LatheEngineEditTest.fixImports_mixedNames_addsTheUnambiguousOnes_leavesTheRestToTheAgent`
+- `LatheEngineEditTest.fixImports_nothingMissing_writesNothing`
+- `McpTextTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`
 
 ---
 
@@ -13640,10 +13270,10 @@ IntelliJ's MCP server has `reformat_file`
 
 ### Regression targets
 
-- `LatheEngineTest.format_pinnedFormatter_rewritesTheChangedLinesOnce_thenAlreadyFormatted`
-- `LatheEngineTest.format_fileThatDoesNotParse_refusesWithTheReasonAndLeavesItAlone`
-- `LatheEngineTest.format_noFormatterPinned_refusesWithTheSyncRemedy`
-- `LatheMcpToolsTest.formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy`
+- `LatheEngineEditTest.format_pinnedFormatter_rewritesTheChangedLinesOnce_thenAlreadyFormatted`
+- `LatheEngineEditTest.format_fileThatDoesNotParse_refusesWithTheReasonAndLeavesItAlone`
+- `LatheEngineEditTest.format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync`
+- `LatheMcpToolsTest.formatFile_noFormatterPinned_returnsErrorWithTheRemedy`
 
 ---
 
@@ -13714,7 +13344,7 @@ A request for per-server logs is open upstream and marked "not planned"
 
 ### Regression targets
 
-- `FileUtilTest.deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone`
+- `LatheMcpServerTest.deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone`
 - `LatheMcpServerTest.isOrphanLock_sessionLocks_trueOnlyForALockWhoseLogIsGone`
 - `LatheLoggingTest.logFormat_record_isoTimestampWithTheZoneOffset`
 - `LatheLoggingTest.initFile_missingParentDir_createsItAndWritesRecord`
@@ -13740,8 +13370,8 @@ The structured result keeps `perModule` and gives each diagnostic its `path`.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_externalEditBreaksSibling_reportsDiagnostic` (the caller's path)
-- `LatheMcpToolsTest.locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn`
+- `LatheEngineVerifyTest.verifyChange_externalEditBreaksSibling_reportsDiagnostic` (the caller's path)
+- `McpTextTest.locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn`
 
 ---
 
@@ -13802,7 +13432,7 @@ API-stability annotation processor, which the analysis behind the headline does 
 
 ### Regression targets
 
-- `LatheEngineTest.notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules`
+- `LatheEngineNotesTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
 - `LatheMcpToolsTest.fileTools_notAnExistingJavaSource_returnError`
 - `LatheMcpToolsTest.getDiagnostics_fileNoModuleCompiles_saysItWasNotChecked`
 
@@ -13847,8 +13477,8 @@ the caret on its modifiers.
 
 ### Regression targets
 
-- `LatheEngineTest.onName_positionsAroundAMethod_trueOnlyOnANameNotAKeywordBlankOrPastTheEnd`
-- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine`
+- `LatheEngineNavigationTest.onName_positionsAroundAMethod_trueOnlyOnANameNotAKeywordBlankOrPastTheEnd`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound`
 
 ---
 
@@ -13906,8 +13536,8 @@ An agent that needs the surrounding code reads the file at that line.
 
 ### Regression targets
 
-- `LatheEngineTest.definition_crossFileInModule_resolvesTargetWithItsWorkspacePathAndLine`
-- `LatheMcpToolsTest.locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor`
+- `LatheEngineNavigationTest.definition_crossFileInModule_resolvesTargetWithItsWorkspacePathAndLine`
+- `McpTextTest.locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor`
 
 ---
 
@@ -13937,9 +13567,9 @@ compile." or "N error(s).", plus "M warning(s) in the changed files" when there 
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors`
+- `LatheEngineVerifyTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors`
   (fails without the filter or the ordering)
-- `LatheMcpToolsTest.verifyHeadline_errorsAndWarnings_leadsWithErrors`
+- `McpTextTest.verifyHeadline_errorsAndWarnings_leadsWithErrors`
 
 ---
 
@@ -13963,7 +13593,7 @@ A deferred check (a pending build-file sync, a running build) still asks for the
 
 ### Regression targets
 
-- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
+- `McpTextTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
 
 ---
 
@@ -14025,9 +13655,9 @@ a revert still reads as a change.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_changeFullyReverted_reportsNothingAndSuggestsNoSync` (fails without
+- `LatheEngineVerifyTest.verifyChange_changeFullyReverted_reportsNothingAndSuggestsNoSync` (fails without
   the filter)
-- `CompiledStampsTest.writeAllThenLoad_roundTripsAndRecordUpdatesOneMtimeButKeepsWhatTheBuildCompiled`
+- `CompiledStampsTest.writeAllThenLoad_roundTripsAndRecordUpdatesStampsButKeepsWhatTheBuildCompiled`
 
 ---
 
@@ -14072,9 +13702,9 @@ in `equalsverifier-test`.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
+- `LatheEngineVerifyTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
   (fails with same-module callers only, and without the pass recording its writes)
-- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
+- `McpTextTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
 
 ---
 
@@ -14110,10 +13740,10 @@ module's upstream through task dependencies) gets the same behaviour.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
+- `LatheEngineVerifyTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
   (asserts `.lathe/lathe-sync.sh app` for a change in `api`)
-- `LatheEngineTest.verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents`
-- `LatheEngineTest.verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync`
+- `LatheEngineVerifyTest.verifyChange_twoOfSixModulesUseTheChange_suggestsTheScopedSyncOfThoseDependents`
+- `LatheEngineVerifyTest.verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync`
 
 ---
 
@@ -14164,7 +13794,7 @@ The editor keeps the non-blocking rebuild.
 
 Fails without the wait:
 
-- `LatheEngineTest.searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery`
+- `LatheEngineNavigationTest.searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery`
 
 ---
 
@@ -14208,7 +13838,7 @@ A build file changed before the session started is [WS-13](#ws-13--a-build-file-
 
 Fails with the old immediate `null` answer:
 
-- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredAtOnceAndUntilSynced_editsStillCompile`
+- `LatheEngineNotesTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
 
 ---
 
@@ -14311,7 +13941,7 @@ The set lives on `lathe-worker` like all session state.
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_noFilesAfterARenameThatBreaksAnUneditedSubclass_reportsIt` (fails
+- `LatheEngineVerifyTest.verifyChange_noFilesAfterARenameThatBreaksAnUneditedSubclass_reportsIt` (fails
   without the fix).
 
 ---
@@ -14341,9 +13971,9 @@ The same review capped the "N module(s) depend on your change" list in the text 
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors` (fails without the filter); the
+- `LatheEngineVerifyTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors` (fails without the filter); the
   error side stays covered by `verifyChange_externalEditBreaksSibling_reportsDiagnostic`.
-- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`.
+- `McpTextTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`.
 
 ---
 
@@ -14418,8 +14048,8 @@ Editor sessions never set the flag, so editor buffers are untouched.
 
 Both fail with the flag off:
 
-- `LatheEngineTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller`
-- `LatheEngineTest.references_queriedFileThenEditedOnDisk_findsTheNewUse`
+- `LatheEngineRenameTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller`
+- `LatheEngineNavigationTest.references_queriedFileThenEditedOnDisk_findsTheNewUse`
 
 ---
 
@@ -14507,5 +14137,5 @@ signature and Javadoc (was "No symbol information at that position.").
 
 ### Regression targets
 
-- `LatheEngineTest.describe_methodInADependencySource_returnsSignatureAndJavadoc` (fails without the
+- `LatheEngineNavigationTest.describe_methodInADependencySource_returnsSignatureAndJavadoc` (fails without the
   fix; also checks that the dependency reports no diagnostics).

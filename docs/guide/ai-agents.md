@@ -211,7 +211,8 @@ When the change reaches other modules, it names them (the first ten, then a coun
 With no errors their callers have already compiled, so it says that build is optional.
 If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
 it says so and gives that command instead.
-A build that was killed leaves its locks behind, and `verify_change` keeps deferring until they go stale, about two minutes later.
+Locks left by an exited build are ignored immediately when their recorded PID and process start time identify the departed owner.
+Empty markers, malformed ownership metadata, and unavailable process information retain the two-minute expiry fallback.
 
 To make an agent run it before reporting done, add [this snippet](../../examples/agents/lathe-mcp.md) to the project's `AGENTS.md` or `CLAUDE.md`.
 In Claude Code, the [verify-before-stop hook](../../examples/agents/verify-before-stop.py) enforces it:
