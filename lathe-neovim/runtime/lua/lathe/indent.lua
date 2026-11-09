@@ -114,6 +114,19 @@ local function previous_nonblank(lnum)
   return prev, line(prev)
 end
 
+-- The previous line that holds code, skipping blank and `//` comment lines: a comment inside a
+-- method chain or an operator chain does not break it.
+local function previous_code_line(lnum)
+  local prev = vim.fn.prevnonblank(lnum - 1)
+  while prev > 0 and trim(line(prev)):match("^//") do
+    prev = vim.fn.prevnonblank(prev - 1)
+  end
+  if prev <= 0 then
+    return nil, nil
+  end
+  return prev, line(prev)
+end
+
 local function next_nonblank(lnum)
   local next_line = vim.fn.nextnonblank(lnum + 1)
   if next_line <= 0 then
@@ -132,6 +145,39 @@ end
 
 local function starts_with_selector(text)
   return text:match("^%s*%.") ~= nil
+end
+
+-- A continuation line led by a binary operator, as Google Java Format breaks before one. A lone
+-- `* / < >` is left out: it also leads javadoc `*` lines, `/*` comments and `<T>` generic
+-- declarations; `++ -- -> ::` are not binary operators.
+local function starts_with_operator(text)
+  local stripped = trim(text)
+  if stripped:match("^instanceof%f[%W]") then
+    return true
+  end
+  if stripped:match("^%+%+") or stripped:match("^%-[%-%>]") or stripped:match("^::") then
+    return false
+  end
+  return stripped:match("^[-+&|^?:%%]") ~= nil
+    or stripped:match("^[=!<>]=") ~= nil
+    or stripped:match("^<<") ~= nil
+    or stripped:match("^>>") ~= nil
+end
+
+-- A line led by `*` or `/` as a binary operator. Only the statement walk asks, where the lines are
+-- code: as a chain anchor a `* ` line could be javadoc.
+local function starts_with_multiplicative(text)
+  local stripped = trim(text)
+  return stripped:match("^[%*/]%s") ~= nil
+end
+
+-- A declaration clause Google Java Format wraps onto its own continuation line.
+local function starts_with_clause(text)
+  local stripped = trim(text)
+  return stripped:match("^throws%f[%W]") ~= nil
+    or stripped:match("^extends%f[%W]") ~= nil
+    or stripped:match("^implements%f[%W]") ~= nil
+    or stripped:match("^permits%f[%W]") ~= nil
 end
 
 local function starts_with_block_comment_open(text)
@@ -163,12 +209,38 @@ local function ends_with_comma(text)
   return trim(text):match(",$") ~= nil
 end
 
+-- How far back a bracket match looks before giving up.
+local MAX_BALANCE_LINES = 200
+local BALANCE_CHUNK = 20
+
+-- The line's code with string/char literals and comments blanked, so brackets and operators
+-- inside them are not counted. Escapes go first so an escaped quote does not end a literal, and
+-- char literals (one character, or an escape) before strings so `'"'` does not open one. A `/*`
+-- left open runs to the line's end; a `*/` closing a comment opened above is kept for the caller.
+local function code_only(text)
+  if not text:find("[\"'/\\]") then
+    return text
+  end
+
+  local code = text:gsub("\\.", "__")
+  code = code:gsub("'[^']'", "''")
+  code = code:gsub("'__'", "''")
+  code = code:gsub('"[^"]*"', '""')
+  code = code:gsub("/%*.-%*/", " ")
+  code = code:gsub("//.*$", "")
+  code = code:gsub("/%*.*$", "")
+  return code
+end
+
+-- Whether the line's code ends with a binary operator, so the expression continues on the next
+-- line. A comment's last character is prose (`// see below:`), and an old-style `case A:` label
+-- ends a label, not an expression.
 local function ends_with_operator(text)
-  local stripped = trim(text)
-  if stripped == "" then
+  if is_block_comment_line(text) or ends_with_block_comment_close(text) then
     return false
   end
-  if is_block_comment_line(stripped) then
+  local stripped = trim(code_only(text))
+  if stripped == "" or (starts_with_switch_label(stripped) and stripped:match(":$")) then
     return false
   end
   if stripped:match("%-%>$") then
@@ -181,14 +253,204 @@ local function ends_statement(text)
   return trim(text):match("[;}]$") ~= nil
 end
 
-local function selector_indent(prev_lnum, prev)
+local function is_opener(char)
+  return char == "(" or char == "[" or char == "{"
+end
+
+local function is_closer(char)
+  return char == ")" or char == "]" or char == "}"
+end
+
+-- Walking up, the part of a line that is code. Seen from below, a text block or a block comment
+-- is closed first and opened further up, so `state` carries whether the walk is inside one.
+local function code_walking_up(text, state)
+  if state.text_block then
+    local open = text:find('"""', 1, true)
+    if not open then
+      return ""
+    end
+    state.text_block = false
+    text = text:sub(1, open - 1)
+  elseif state.comment then
+    local open = text:find("/*", 1, true)
+    if not open then
+      return ""
+    end
+    state.comment = false
+    text = text:sub(1, open - 1)
+  end
+
+  local _, delimiters = text:gsub('"""', "")
+  if delimiters % 2 == 1 then
+    state.text_block = true
+    text = text:sub(text:match('.*()"""') + 3)
+  end
+
+  local code = code_only(text)
+  -- A plain find first: the backtracking match for the last `*/` is costly on every walked line.
+  if code:find("*/", 1, true) then
+    state.comment = true
+    code = code:sub(code:match(".*()%*/") + 2)
+  end
+  return code
+end
+
+-- The line of the opener that `need` unmatched closers at the end of line `lnum - 1` and above
+-- reach, and that opener's character; nil when none is found within MAX_BALANCE_LINES.
+local function opener_above(lnum, need)
+  local limit = math.max(lnum - MAX_BALANCE_LINES, 1)
+  local state = { text_block = false, comment = false }
+  local last = lnum - 1
+  -- Lines are fetched a chunk at a time: most walks end within a few lines.
+  while last >= limit do
+    local first = math.max(last - BALANCE_CHUNK + 1, limit)
+    local lines = vim.api.nvim_buf_get_lines(0, first - 1, last, false)
+    for i = #lines, 1, -1 do
+      local code = code_walking_up(lines[i], state)
+      for c = #code, 1, -1 do
+        local char = code:sub(c, c)
+        if is_closer(char) then
+          need = need + 1
+        elseif is_opener(char) then
+          need = need - 1
+          if need == 0 then
+            return first + i - 1, char
+          end
+        end
+      end
+    end
+    last = first - 1
+  end
+  return nil
+end
+
+-- The line holding the opener that matches the closers `lnum` leaves unmatched, considering the
+-- line up to column `last_col` (the whole line when nil); `lnum` itself when it closes nothing
+-- opened above, nil when no match is found within MAX_BALANCE_LINES. This is a bracket count over
+-- text, not a parse: the indenter must work while the buffer is mid-edit and unparseable, and
+-- tree-sitter models only `{}` blocks for it. Brackets in literals and comments are skipped.
+local function balancing_line(lnum, last_col)
+  local code = code_only(line(lnum))
+  if last_col then
+    code = code:sub(1, last_col)
+  end
+
+  local open, need = 0, 0
+  for char in code:gmatch(".") do
+    if is_opener(char) then
+      open = open + 1
+    elseif is_closer(char) then
+      if open > 0 then
+        open = open - 1
+      else
+        need = need + 1
+      end
+    end
+  end
+  if need == 0 then
+    return lnum
+  end
+
+  return (opener_above(lnum, need))
+end
+
+-- The first line of the bracket groups `lnum` closes: a closer's opener line can itself close a
+-- group opened higher up (`}` matching `    int b) {` of a wrapped declaration).
+local function bracket_group_start(lnum)
+  local l = lnum
+  while true do
+    local opener = balancing_line(l)
+    if not opener or opener == l then
+      return l
+    end
+    l = opener
+  end
+end
+
+-- Whether a line ends where a new expression begins: an assignment or a lambda arrow.
+local function ends_with_expression_start(text)
+  local stripped = trim(text)
+  return stripped:match("%->$") ~= nil
+    or stripped == "="
+    or stripped:match("[^=!<>]=$") ~= nil
+    or stripped:match("[<>][<>]=$") ~= nil
+end
+
+-- The first line of the comma-wrapped list ending at `lnum` when that list is a declaration clause
+-- (`implements A,` / `B,`), else nil.
+local function clause_list_start(lnum)
+  local q = lnum
+  while true do
+    local p = vim.fn.prevnonblank(q - 1)
+    if p <= 0 or not ends_with_comma(line(p)) then
+      break
+    end
+    q = p
+  end
+  return starts_with_clause(line(q)) and q or nil
+end
+
+-- The indent of the line a block's braces belong to: the first line of the bracket groups its `{`
+-- line closes, climbing wrapped declaration lines (a return type, a `throws` clause). It stops
+-- where a new expression starts, as Google Java Format puts that block under its own line
+-- (`switch (x) {` after `var y =`, a lambda's `e -> {` after `(`).
+local function block_owner_indent(lnum)
+  local l = bracket_group_start(lnum)
+  while true do
+    local p = vim.fn.prevnonblank(l - 1)
+    if p <= 0 then
+      break
+    end
+    local above = line(p)
+    if ends_with_comma(above) then
+      -- A comma-wrapped `implements A,` / `B {` list belongs to its clause; any other comma ends
+      -- an argument or element, where the block's own line starts.
+      local q = clause_list_start(p)
+      if not q then
+        break
+      end
+      l = bracket_group_start(q)
+    elseif
+      starts_with_clause(line(l))
+      or (ends_with_operator(above) and not ends_with_expression_start(above))
+    then
+      l = bracket_group_start(p)
+    else
+      break
+    end
+  end
+  return vim.fn.indent(l)
+end
+
+-- A chain continuation (a `.selector` or a leading-operator line) aligns under a line of the same
+-- kind, otherwise one continuation past it. The anchor is the line that opened whatever the
+-- previous line closes, so a chain that resumes after wrapped arguments (`})` then `.get()`)
+-- returns to the chain rather than indenting past the closer.
+local function chain_indent(prev_lnum, same_kind)
   if not prev_lnum then
     return 0
   end
-  if starts_with_selector(prev) then
-    return vim.fn.indent(prev_lnum)
+  local anchor = balancing_line(prev_lnum) or prev_lnum
+  if same_kind(line(anchor)) then
+    return vim.fn.indent(anchor)
   end
-  return vim.fn.indent(prev_lnum) + continuation_width()
+  return vim.fn.indent(anchor) + continuation_width()
+end
+
+-- A leading operator continues the previous line's expression only when that line left the
+-- expression open without a marker of its own; after `{ ( [ , ;` or a trailing operator the line
+-- is an array element, an argument or a new statement (`-1,`), which the other rules own.
+local function continues_with_operator(current, prev)
+  if not starts_with_operator(current) or is_block_comment_line(prev) then
+    return false
+  end
+
+  local code = code_only(prev)
+  return not ends_with_block_opener(code)
+    and not ends_with_open_bracket(code)
+    and not ends_with_comma(code)
+    and not ends_with_operator(code)
+    and not trim(code):match(";$")
 end
 
 local function blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
@@ -210,30 +472,32 @@ local function blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
   return nil
 end
 
--- A line is continued by the next one when it ends with an open bracket, a
--- list separator, or a binary operator. Block openers ({) and statement
--- terminators (; }) start a new block/statement, so they do not continue.
-local function continues_into_next(text)
-  return ends_with_open_bracket(text) or ends_with_comma(text) or ends_with_operator(text)
-end
-
--- Indent of the first line of the statement that `lnum` belongs to, found by
--- walking back across continuation lines. Used to dedent the line that follows
--- a completed multi-line statement back to the statement's base column. A
--- selector line (`.foo()`) is a continuation of whatever precedes it even
--- when that earlier line does not itself end with a continuation character
--- (e.g. a closed call like `.builder()`), so the walk must also follow it.
+-- Indent of the first line of the statement that `lnum` belongs to, found by walking back across
+-- bracket groups and continuation lines. Used to dedent the line that follows a completed
+-- multi-line statement back to the statement's base column. A line led by a selector (`.foo()`),
+-- an operator or a `throws`-like clause continues whatever precedes it even when that earlier line
+-- does not itself end with a continuation character, so the walk follows it too.
 local function statement_start_indent(lnum)
-  local l = lnum
+  local l = bracket_group_start(lnum)
   while l > 1 do
     local p = vim.fn.prevnonblank(l - 1)
     if p <= 0 then
       break
     end
-    if not continues_into_next(line(p)) and not starts_with_selector(line(l)) then
+    local above = line(p)
+    local text = line(l)
+    if
+      not ends_with_open_bracket(above)
+      and not ends_with_comma(above)
+      and not ends_with_operator(above)
+      and not starts_with_selector(text)
+      and not starts_with_operator(text)
+      and not starts_with_multiplicative(text)
+      and not starts_with_clause(text)
+    then
       break
     end
-    l = p
+    l = bracket_group_start(p)
   end
   return vim.fn.indent(l)
 end
@@ -249,11 +513,10 @@ end
 local function continuation_indent(prev_lnum, prev)
   local prev_indent = vim.fn.indent(prev_lnum)
   if ends_with_block_opener(prev) then
-    -- A block opener at the end of a wrapped declaration/statement (e.g. a method whose parameters
-    -- wrapped onto the next line) sits at continuation depth, so the body must indent from the
-    -- statement's first line, not that deeper column. statement_start_indent equals prev_indent when
-    -- the opener is not itself a continuation, leaving the common single-line case unchanged.
-    return statement_start_indent(prev_lnum) + block_width()
+    -- A block opener at the end of a wrapped declaration (a method whose parameters wrapped onto
+    -- the next line) sits at continuation depth, so the body indents from the line the block
+    -- belongs to, not that deeper column; for a single-line opener that is the line itself.
+    return block_owner_indent(prev_lnum) + block_width()
   end
   if ends_with_open_bracket(prev) then
     return prev_indent + continuation_width()
@@ -308,6 +571,11 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
   end
   local prev_indent = vim.fn.indent(prev_lnum)
   if starts_with_closer(current) then
+    local opener = balancing_line(lnum, first_nonblank_col(current) + 1)
+    if opener and opener ~= lnum then
+      return block_owner_indent(opener)
+    end
+
     -- An empty block: the previous non-blank line is the opener itself, so the closer aligns with it
     -- rather than dedenting a level (which would assume a body line sat between them). This is the
     -- heuristic fallback for when tree-sitter cannot model the block -- invalid or mid-edit code.
@@ -317,8 +585,12 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
 
     return math.max(prev_indent - block_width(), 0)
   end
+  local code_lnum, code_prev = previous_code_line(lnum)
   if starts_with_selector(current) then
-    return selector_indent(prev_lnum, prev)
+    return chain_indent(code_lnum, starts_with_selector)
+  end
+  if code_lnum and continues_with_operator(current, code_prev) then
+    return chain_indent(code_lnum, starts_with_operator)
   end
   if starts_with_switch_label(current) then
     return prev_indent
@@ -379,6 +651,15 @@ function M.compute(lnum, bufnr)
     local selector = blank_selector_indent(prev_lnum, prev, next_lnum, next_line)
     if selector then
       return selector
+    end
+  end
+
+  -- A line led by `)` or `]` aligns with the line that opened it; tree-sitter's block model only
+  -- knows `{}`, so it would answer with the enclosing block's indent.
+  if current:match("^%s*[)%]]") then
+    local opener = balancing_line(lnum, first_nonblank_col(current) + 1)
+    if opener and opener ~= lnum then
+      return vim.fn.indent(opener)
     end
   end
 

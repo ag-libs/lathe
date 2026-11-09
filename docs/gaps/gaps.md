@@ -156,44 +156,6 @@ Package-Javadoc folding: no regression test yet; the probe above reproduces the 
 
 ---
 
-## EG-030 — Neovim indentation fixes shipped, but resumed chains and continuation edge cases remain
-
-**Status: deferred (core fixtures shipped; resumed-chain and continuation sub-cases remain).**
-
-### Delivered
-
-The current indenter lives in `lathe-neovim/runtime/lua/lathe/indent.lua`, not the old Maven-plugin resource path.
-Its text heuristic handles wrapped arguments, record components, lambda bodies, statement-end dedenting, and basic selector chains; Tree-sitter is used only for block-closer matching.
-All 29 current `lathe-neovim/test/indent_spec.lua` fixtures pass headlessly.
-
-### Remaining — a selector resuming after wrapped arguments
-
-The archived entry explicitly deferred this sub-case without leaving active tracking.
-The 2026-11-09 closure audit reproduced it through `lathe.indent.compute` with the same clean/no-parser setup as the headless specs:
-
-```java
-return source.of(req)
-    .request(Type.class)
-    .recover(
-        e -> {
-          log(e);
-          return fallback();
-        })
-    .get();
-```
-
-For `.get()`, the current result is 12 spaces rather than the four-space chain anchor shown above.
-The heuristic anchors a selector to the previous closing line; it does not walk back to the chain's receiver.
-The original leading-binary-operator and lone wrap-closer sub-cases were also deferred and have no dedicated fixtures; this audit does not claim they were fixed.
-Formatting on save can correct the file, but it does not close the interactive-indentation remainder.
-
-### Regression targets
-
-Delivered cases: `lathe-neovim/test/indent_spec.lua` (29 passing fixtures).
-The resumed-chain shape above is not in that suite; it was probed separately and remains a regression-test target when implemented.
-
----
-
 ## EG-031 — JDK home fallback works, but missing JDK sources still have no actionable explanation
 
 **Status: documented (JDK-home fallback shipped; missing-source explanation remains).**
