@@ -12,9 +12,11 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -54,12 +56,79 @@ class DefinitionLocatorTest extends SampleFixture {
               LibrarySources.none());
 
       assertThat(session.navigation().definition(request))
-          .hasValueSatisfying(
+          .singleElement()
+          .satisfies(
               location -> {
                 assertThat(location.getUri()).endsWith("/Test.java");
                 assertThat(location.getRange().getStart())
                     .isEqualTo(posOf(source, declaration, "Box"));
               });
+    }
+  }
+
+  private static final String MISMATCHED_CALL_SOURCE =
+      """
+      class Test {
+        static class Box {
+          Box(int value) {}
+          Box(String value) {}
+        }
+        static class Gen<T> {
+          Gen(T value) {}
+          Gen(int first, int second) {}
+        }
+        void solo(String text) {}
+        void greet(int count) {}
+        void greet(String text, int count) {}
+        void calls() {
+          solo(42);
+          greet();
+          this.greet(true);
+          greet(7);
+          missing(1);
+          Object box = new Box(true);
+          Object gen = new Gen<>("x") {};
+        }
+      }
+      """;
+
+  // A call whose arguments match no overload, as after a refactoring changed the parameters: javac
+  // resolves no method, so definition offers every method the call can name. A call that resolves,
+  // even through an anonymous class of a generic type, still leads to its one overload.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "solo(42) | solo | void solo(String text) | solo",
+        "greet(); | greet | void greet(int count),void greet(String text | greet",
+        "this.greet(true) | greet | void greet(int count),void greet(String text | greet",
+        "greet(7) | greet | void greet(int count) | greet",
+        "new Box(true) | Box | Box(int value),Box(String value) | Box",
+        "new Gen<>(\"x\") {} | Gen | Gen(T value) | Gen",
+        "missing(1) | missing | | ",
+      })
+  void definition_mismatchedArguments_returnsEveryNamedOverload(
+      final String call, final String token, final String declarations, final String name) {
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, MISMATCHED_CALL_SOURCE, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              MISMATCHED_CALL_SOURCE,
+              1,
+              posOf(MISMATCHED_CALL_SOURCE, call, token),
+              List.of(),
+              LibrarySources.none());
+      final List<Position> expected =
+          declarations == null
+              ? List.of()
+              : Stream.of(declarations.split(","))
+                  .map(declaration -> posOf(MISMATCHED_CALL_SOURCE, declaration, name))
+                  .toList();
+
+      assertThat(session.navigation().definition(request))
+          .extracting(location -> location.getRange().getStart())
+          .containsExactlyElementsOf(expected);
     }
   }
 
@@ -86,7 +155,8 @@ class DefinitionLocatorTest extends SampleFixture {
               LibrarySources.none());
 
       assertThat(session.navigation().definition(request))
-          .hasValueSatisfying(
+          .singleElement()
+          .satisfies(
               location ->
                   assertThat(location.getRange().getStart())
                       .isEqualTo(posOf(source, "class " + token, token)));

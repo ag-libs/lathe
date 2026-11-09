@@ -111,18 +111,22 @@ public final class CursorElements {
    * when the enclosing element is not a constructor.
    */
   static Element constructorAtNewClassType(final Trees trees, final TreePath path) {
-    final TreePath creationPath = TreePaths.nearest(path, NewClassTree.class);
+    final TreePath creationPath = newClassAtType(path);
     if (creationPath == null) {
-      return null;
-    }
-
-    final NewClassTree creation = (NewClassTree) creationPath.getLeaf();
-    if (path.getLeaf() != newClassType(creation)) {
       return null;
     }
 
     final Element element = newClassConstructor(trees, creationPath);
     return element != null && element.getKind() == ElementKind.CONSTRUCTOR ? element : null;
+  }
+
+  // The `new` expression whose created type the path is on.
+  static TreePath newClassAtType(final TreePath path) {
+    final TreePath creationPath = TreePaths.nearest(path, NewClassTree.class);
+    return creationPath != null
+            && path.getLeaf() == newClassType((NewClassTree) creationPath.getLeaf())
+        ? creationPath
+        : null;
   }
 
   static Tree newClassType(final NewClassTree creation) {
