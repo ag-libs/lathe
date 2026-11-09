@@ -228,12 +228,25 @@ Missing-source warning: no regression test yet; verified outstanding by `JdkSour
 
 ## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only
 
-**Status: accepted** (triaged 2026-11-09: editor-experience slice; first slice is the complete-call case)
+**Status: accepted** (triaged 2026-11-09; complete-call slice shipped, incomplete-call recovery remains)
 
 **Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
 not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump finds nothing.
 
-### Observed behaviour
+### Delivered — a complete call whose arguments match no overload
+
+With the cursor on the method name (or the type of `new T(…)`) of a call javac resolves to no overload, definition returns every accessible method or constructor that call can name:
+one jumps directly, several open the client's picker.
+The lookup is signature help's (`SignatureHelpResolver.unresolvedOverloads`), so access rules, `super`/`this` and anonymous classes behave the same in both features.
+`NavigationFeatures.definition`, `declaration` and `typeDefinition` now return a `List<Location>`; MCP `get_definition` already returned a list and needed no change.
+A call that resolves still yields its one overload.
+
+### Remaining — incomplete calls
+
+A call that does not parse as complete (`c.greet(` unclosed) still depends on javac's recovery, which may bind it to one overload.
+Recovering the call through the sentinel pipeline, as the proposed direction below describes, is not done.
+
+### Observed behaviour (before the first slice)
 
 Re-probed 2026-10-31 through MCP `get_definition`, wrong argument **types** to a method with a single declaration
 (`ofSourceTree(42)` where `ofSourceTree(String)`): `{"targets":[]}`.
@@ -280,7 +293,9 @@ share that lookup, jump when there is one candidate, and list them when there ar
 
 ### Regression targets
 
-None yet — re-triaged from backlog when scheduled.
+Delivered: `DefinitionLocatorTest.definition_mismatchedArguments_returnsEveryNamedOverload`,
+`LatheEngineNavigationTest.definition_callWithMismatchedArguments_returnsTheMethodInAnotherFile`.
+Incomplete calls: no regression test yet.
 
 ---
 

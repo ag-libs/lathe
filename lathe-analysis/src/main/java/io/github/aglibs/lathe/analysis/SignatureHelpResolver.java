@@ -63,10 +63,7 @@ final class SignatureHelpResolver {
       return null;
     }
 
-    final var target =
-        callPath.getLeaf() instanceof final MethodInvocationTree inv
-            ? invocationTarget(analysis, callPath, inv)
-            : constructionTarget(analysis, callPath, (NewClassTree) callPath.getLeaf());
+    final var target = callTarget(analysis, callPath);
     if (target == null || target.overloads().isEmpty()) {
       return null;
     }
@@ -88,6 +85,21 @@ final class SignatureHelpResolver {
             "[signatureHelp] sig=%s param=%d"
                 .formatted(signatures.get(activeSignature).getLabel(), activeParam));
     return new SignatureHelp(signatures, activeSignature, activeParam);
+  }
+
+  // The overloads a method call or `new` expression can name when its arguments match none of
+  // them; empty once javac resolves the call.
+  static List<ExecutableElement> unresolvedOverloads(
+      final AttributedFileAnalysis analysis, final TreePath callPath) {
+    final var target = callTarget(analysis, callPath);
+    return target == null || target.resolved() != null ? List.of() : target.overloads();
+  }
+
+  private static CallTarget callTarget(
+      final AttributedFileAnalysis analysis, final TreePath callPath) {
+    return callPath.getLeaf() instanceof final MethodInvocationTree inv
+        ? invocationTarget(analysis, callPath, inv)
+        : constructionTarget(analysis, callPath, (NewClassTree) callPath.getLeaf());
   }
 
   // Every accessible overload a call can name, whether or not it attributes yet: javac resolves

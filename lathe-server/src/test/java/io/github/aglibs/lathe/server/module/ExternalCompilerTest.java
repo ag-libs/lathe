@@ -69,9 +69,9 @@ class ExternalCompilerTest {
                       libraries));
 
       assertThat(diagnostics).isEmpty();
-      assertThat(definition).isPresent();
-      assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
-      assertThat(definition.get().getRange().getStart()).isEqualTo(new Position(0, 24));
+      assertThat(definition).hasSize(1);
+      assertThat(definition.get(0).getUri()).isEqualTo(helperSource.toUri().toString());
+      assertThat(definition.get(0).getRange().getStart()).isEqualTo(new Position(0, 24));
     }
   }
 
@@ -117,8 +117,8 @@ class ExternalCompilerTest {
                   new SourceFeatureRequest(
                       usesUri, usesContent, 0, helperPos, List.of(), libraries));
 
-      assertThat(definition).isPresent();
-      assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
+      assertThat(definition).hasSize(1);
+      assertThat(definition.get(0).getUri()).isEqualTo(helperSource.toUri().toString());
     }
   }
 

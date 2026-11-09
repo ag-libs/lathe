@@ -1373,7 +1373,8 @@ class ReferenceLocatorTest {
         final ReferenceTarget target = session.references().resolveTarget(request);
         assertThat(target).isEqualTo(expected);
         assertThat(session.navigation().definition(request))
-            .hasValueSatisfying(
+            .singleElement()
+            .satisfies(
                 location ->
                     assertThat(location.getRange().getStart())
                         .isEqualTo(posOf(CONSTRUCTOR_SOURCE, "Base(int n)", "Base")));

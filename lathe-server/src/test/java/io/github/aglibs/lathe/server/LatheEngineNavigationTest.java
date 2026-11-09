@@ -67,6 +67,37 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             });
   }
 
+  // After a refactoring changed resize's parameter, the call site not yet updated still leads to
+  // the method; an untouched call to another method still resolves to it alone.
+  @Test
+  void definition_callWithMismatchedArguments_returnsTheMethodInAnotherFile() throws Exception {
+    final String declaration =
+        """
+        package com.example;
+        class Widget {
+          void resize(String size) {}
+          void show() {}
+        }
+        """;
+    final String source =
+        "package com.example; class Caller { void run(Widget w) { w.resize(42); w.show(); } }";
+    final Path widget = TestCompiler.writeModuleSource(tmp, "com/example/Widget.java", declaration);
+    final Path caller = TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", source);
+    compileIntoMirror(widget);
+    engine = new LatheEngine(tmp);
+
+    for (final String call : List.of("resize", "show")) {
+      final var pos = positionOf(source, call);
+      assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value())
+          .singleElement()
+          .satisfies(
+              target -> {
+                assertThat(target.uri()).isEqualTo(widget.toUri().toString());
+                assertThat(target.snippet()).contains("void %s(".formatted(call));
+              });
+    }
+  }
+
   @Test
   void diagnostics_cleanSource_returnsNoDiagnostics() throws Exception {
     final Path source =

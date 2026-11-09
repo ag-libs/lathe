@@ -231,7 +231,7 @@ class LombokAnalysisTest {
               session
                   .navigation()
                   .definition(requestAt(source, position(source, "return getCount", "getCount")))
-                  .orElseThrow()
+                  .get(0)
                   .getRange()
                   .getStart())
           .isEqualTo(position(source, "private int fCount", "fCount"));
@@ -271,7 +271,7 @@ class LombokAnalysisTest {
     return session
         .navigation()
         .definition(requestAt(SOURCE, position(SOURCE, context, token)))
-        .orElseThrow()
+        .get(0)
         .getRange()
         .getStart();
   }

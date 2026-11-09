@@ -153,13 +153,13 @@ final class DocumentFeatures {
     return locationFuture("typeDefinition", uri, pos, NavigationFeatures::typeDefinition);
   }
 
-  // One location for the open document's position, found by the document's module worker.
+  // The locations for the open document's position, found by the document's module worker.
   private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       locationFuture(
           final String operation,
           final String uri,
           final Position pos,
-          final BiFunction<NavigationFeatures, SourceFeatureRequest, Optional<Location>> find) {
+          final BiFunction<NavigationFeatures, SourceFeatureRequest, List<Location>> find) {
     LOG.info(
         () ->
             "[%s] %s line=%d character=%d"
@@ -169,11 +169,9 @@ final class DocumentFeatures {
             operation,
             uri,
             pos,
-            Optional.<Location>empty(),
+            List.<Location>of(),
             (session, request) -> find.apply(session.navigation(), request))
-        .thenApply(
-            location ->
-                FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)));
+        .thenApply(FeatureAnswers::definitionResult);
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(

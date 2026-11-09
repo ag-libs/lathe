@@ -1,5 +1,8 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.NewClassTree;
+import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.nio.file.Path;
@@ -177,24 +180,34 @@ public final class NavigationFeatures {
     return result;
   }
 
-  public Optional<Location> definition(final SourceFeatureRequest request) {
+  // The declaration of the symbol at the cursor; on a call whose arguments match no overload,
+  // every method or constructor the call can name.
+  public List<Location> definition(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()) {
-      return Optional.empty();
+      return List.of();
     }
 
     final Cursor cur = at.get();
+    final List<Location> overloads =
+        unresolvedCallOverloads(cur).stream()
+            .flatMap(overload -> findDefinitionLocation(request, cur, overload).stream())
+            .toList();
     final var constructor =
         CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
     final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
-    final var result =
-        findDefinitionLocation(request, cur, element)
-            .or(
-                () ->
-                    constructor == null
-                        ? Optional.empty()
-                        : findDefinitionLocation(request, cur, cur.elementOrJavadocReference()));
+    final List<Location> result =
+        overloads.isEmpty()
+            ? findDefinitionLocation(request, cur, element)
+                .or(
+                    () ->
+                        constructor == null
+                            ? Optional.empty()
+                            : findDefinitionLocation(request, cur, cur.elementOrJavadocReference()))
+                .stream()
+                .toList()
+            : overloads;
 
     LOG.fine(
         () ->
@@ -202,19 +215,39 @@ public final class NavigationFeatures {
                 .formatted(
                     t.elapsedMs(),
                     element,
-                    result.map(NavigationFeatures::where).orElse("not found")));
+                    result.isEmpty()
+                        ? "not found"
+                        : result.stream().map(NavigationFeatures::where).toList()));
     return result;
+  }
+
+  // The overloads of the call whose method name or created type the cursor is on, when javac
+  // resolved the call to none of them.
+  private static List<ExecutableElement> unresolvedCallOverloads(final Cursor cur) {
+    final TreePath parent = cur.path().getParentPath();
+    if (parent != null
+        && parent.getLeaf() instanceof final MethodInvocationTree call
+        && call.getMethodSelect() == cur.path().getLeaf()) {
+      return SignatureHelpResolver.unresolvedOverloads(cur.analysis(), parent);
+    }
+
+    final TreePath creation = TreePaths.nearest(cur.path(), NewClassTree.class);
+    return creation != null
+            && CursorElements.newClassType((NewClassTree) creation.getLeaf())
+                == cur.path().getLeaf()
+        ? SignatureHelpResolver.unresolvedOverloads(cur.analysis(), creation)
+        : List.of();
   }
 
   // The declaration of the type of the symbol at the cursor: a variable's or field's type, a
   // method's return type, a constructor's class, a type itself; an array's element type, a
   // generic's
   // declared type. Nothing for a primitive or void.
-  public Optional<Location> typeDefinition(final SourceFeatureRequest request) {
+  public List<Location> typeDefinition(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()) {
-      return Optional.empty();
+      return List.of();
     }
 
     final Cursor cur = at.get();
@@ -229,7 +262,7 @@ public final class NavigationFeatures {
                     t.elapsedMs(),
                     element,
                     result.map(NavigationFeatures::where).orElse("not found")));
-    return result;
+    return result.stream().toList();
   }
 
   private static Optional<Element> typeOf(final Element element, final Types types) {
@@ -250,11 +283,11 @@ public final class NavigationFeatures {
     return Optional.ofNullable(types.asElement(type));
   }
 
-  public Optional<Location> declaration(final SourceFeatureRequest request) {
+  public List<Location> declaration(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()) {
-      return Optional.empty();
+      return List.of();
     }
 
     final Cursor cur = at.get();
@@ -275,7 +308,7 @@ public final class NavigationFeatures {
                         element,
                         contract,
                         result.map(NavigationFeatures::where).orElse("not found")));
-        return result;
+        return result.stream().toList();
       }
     }
 
@@ -288,7 +321,7 @@ public final class NavigationFeatures {
                     t.elapsedMs(),
                     element,
                     fallback.map(NavigationFeatures::where).orElse("not found")));
-    return fallback;
+    return fallback.stream().toList();
   }
 
   public List<Location> typeImplementations(
