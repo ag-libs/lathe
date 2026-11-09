@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -67,7 +68,7 @@ public final class MissingMethodImplProvider {
       return List.of();
     }
 
-    final var formatter = CodeActionSupport.sourceTypeFormatter(analysis, classElement);
+    final var formatter = SourceTypeNames.sourceTypeFormatter(analysis, classElement);
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 
@@ -78,7 +79,7 @@ public final class MissingMethodImplProvider {
             buildStubs(unimplemented, formatter, types, classType));
 
     final List<TextEdit> importEdits =
-        CodeActionSupport.importEditsFor(
+        SourceTypeNames.importEditsFor(
             analysis,
             classElement,
             unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));

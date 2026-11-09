@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.ImportLayout;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.StaticImportCandidates;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -57,7 +58,8 @@ public final class ImportQuickFixProvider {
     }
 
     final TypeElement target = scope.getEnclosingClass();
-    return ImportCandidates.nestedTypes(request.payload().name(), at, analysis, typeIndex).stream()
+    return ImportCandidates.nestedTypes(request.payload().name(), scope, analysis, typeIndex)
+        .stream()
         .map(
             type ->
                 Either.<Command, CodeAction>forRight(
@@ -70,7 +72,7 @@ public final class ImportQuickFixProvider {
       final AttributedFileAnalysis analysis,
       final TypeElement target,
       final TypeElement type) {
-    final String written = CodeActionSupport.sourceName(analysis, target, type);
+    final String written = SourceTypeNames.sourceName(analysis, target, type);
     final String qualifiedName = type.getQualifiedName().toString();
     final var action = new CodeAction();
     action.setTitle(
@@ -82,8 +84,7 @@ public final class ImportQuickFixProvider {
 
     final List<TextEdit> edits =
         Stream.concat(
-                CodeActionSupport.importEditsFor(analysis, target, Stream.of(type.asType()))
-                    .stream(),
+                SourceTypeNames.importEditsFor(analysis, target, Stream.of(type.asType())).stream(),
                 Stream.of(new TextEdit(request.diag().getRange(), written)))
             .toList();
     final var edit = new WorkspaceEdit();

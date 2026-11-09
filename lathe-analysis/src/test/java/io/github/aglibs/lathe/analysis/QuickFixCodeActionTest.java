@@ -584,8 +584,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   // A nested type is never imported itself, not even statically when the workspace imports it so:
   // the quick fix writes it from its top-level type and imports that, fully qualified when the file
   // gives the top-level name another type. Missing imports name it as a hint, not a candidate, so a
-  // top-level type of the same name stays the one unambiguous candidate. An inaccessible one is
-  // not offered.
+  // top-level type of the same name stays the one unambiguous candidate, and a qualifier only a
+  // nested type matches keeps its hint. An inaccessible one is not offered.
   @Test
   void codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported() throws IOException {
     final var classDir = tmp.resolve("classes");
@@ -596,6 +596,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         package com.other;
         public class A {
           public static class Item {}
+          public static class Tool {
+            public static void run() {}
+          }
           private static class Hidden {}
         }
         """);
@@ -624,6 +627,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                 true,
                 List.of()),
             new TypeIndexEntry(
+                "Tool", "com.other.A$Tool", "com.other", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
                 "Hidden", "com.other.A$Hidden", "com.other", TypeKind.CLASS, true, List.of()));
     final var learned =
         new LearnedStaticImports(Map.of("java.util.Map.Entry", 3, "com.other.A.*", 1));
@@ -634,6 +639,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
           Entry<String, String> entry;
           Item item;
           Hidden hidden;
+          void m() {
+            Tool.run();
+          }
         }
         """;
 
@@ -644,7 +652,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         .containsExactly(
             "Qualify as 'Map.Entry' (java.util.Map.Entry)",
             "Import 'com.example.items.Item'",
-            "Qualify as 'A.Item' (com.other.A.Item)");
+            "Qualify as 'A.Item' (com.other.A.Item)",
+            "Qualify as 'A.Tool' (com.other.A.Tool)");
     assertThat(applyEdits(source, editsOf(actions.get(0))))
         .contains("import java.util.Map;")
         .contains("  Map.Entry<String, String> entry;")
@@ -659,7 +668,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                 "Entry", List.of(), List.of("java.util.Map.Entry")),
             new MissingImportsResult.MissingImport(
                 "Item", List.of("com.example.items.Item"), List.of("com.other.A.Item")),
-            new MissingImportsResult.MissingImport("Hidden", List.of(), List.of()));
+            new MissingImportsResult.MissingImport("Hidden", List.of(), List.of()),
+            new MissingImportsResult.MissingImport("Tool", List.of(), List.of("com.other.A.Tool")));
 
     final var clashing =
         """

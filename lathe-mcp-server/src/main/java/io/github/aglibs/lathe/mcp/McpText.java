@@ -199,7 +199,7 @@ final class McpText {
     final List<String> unknown =
         imports.unresolved().stream()
             .filter(item -> item.candidates().isEmpty())
-            .map(McpText::unknownName)
+            .map(item -> item.name() + nestedHint(item))
             .toList();
     final String added =
         imports.added().isEmpty()
@@ -227,16 +227,17 @@ final class McpText {
     return result(text, notes);
   }
 
-  // A nested type is not imported itself, so it is named as the way to write the name instead.
-  private static String unknownName(final MissingImport item) {
-    return item.nested().isEmpty()
-        ? item.name()
-        : "%s (nested type %s: qualify it from its outer type)"
-            .formatted(item.name(), String.join(", ", item.nested()));
+  static String choiceLine(final MissingImport item) {
+    return "  %s: %s%s"
+        .formatted(item.name(), String.join(", ", item.candidates()), nestedHint(item));
   }
 
-  static String choiceLine(final MissingImport item) {
-    return "  %s: %s".formatted(item.name(), String.join(", ", item.candidates()));
+  // A nested type is not imported itself, so it is named as another way to write the name.
+  private static String nestedHint(final MissingImport item) {
+    return item.nested().isEmpty()
+        ? ""
+        : " (nested type %s: qualify it from its outer type)"
+            .formatted(String.join(", ", item.nested()));
   }
 
   static String lineSpan(final LatheFormat format) {

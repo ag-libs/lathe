@@ -20,6 +20,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import io.github.aglibs.lathe.analysis.refactor.ExtractionSupport.Site;
 import io.github.aglibs.lathe.core.CollectionUtil;
@@ -138,7 +139,7 @@ public final class ExtractMethodProvider {
             .flatMap(types -> types)
             .toList();
     final List<TypeMirror> writtenTypes =
-        signatureTypes.stream().flatMap(CodeActionSupport::typesIn).toList();
+        signatureTypes.stream().flatMap(SourceTypeNames::typesIn).toList();
     final List<String> refusals =
         Stream.of(
                 flow.refusals().stream(),
@@ -302,7 +303,7 @@ public final class ExtractMethodProvider {
                               start(site.run().get(0)),
                               end(CollectionUtil.last(site.run())),
                               call(site))),
-              CodeActionSupport.importEditsFor(analysis, targetClass(), signatureTypes.stream())
+              SourceTypeNames.importEditsFor(analysis, targetClass(), signatureTypes.stream())
                   .stream())
           .flatMap(edits -> edits)
           .toList();
@@ -461,7 +462,7 @@ public final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return CodeActionSupport.sourceTypeFormatter(analysis, targetClass()).format(type);
+      return SourceTypeNames.sourceTypeFormatter(analysis, targetClass()).format(type);
     }
 
     // The class the new method joins.
@@ -698,7 +699,7 @@ public final class ExtractMethodProvider {
   }
 
   private static Stream<TypeParameterElement> typeVariablesIn(final TypeMirror type) {
-    return CodeActionSupport.typesIn(type)
+    return SourceTypeNames.typesIn(type)
         .filter(TypeVariable.class::isInstance)
         .map(variable -> (TypeParameterElement) ((TypeVariable) variable).asElement());
   }

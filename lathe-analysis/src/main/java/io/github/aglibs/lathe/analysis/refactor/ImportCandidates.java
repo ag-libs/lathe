@@ -40,15 +40,13 @@ public final class ImportCandidates {
         .toList();
   }
 
-  // The nested types of this simple name accessible at the position, to write qualified
-  // (Map.Entry).
-  // A nested type without a class file yet has no element to write from, so it is left out.
+  // The nested types of this simple name accessible in the scope, to write qualified (Map.Entry);
+  // one without a class file yet has no element to write from, so it is left out.
   public static List<TypeElement> nestedTypes(
       final String simpleName,
-      final Position at,
+      final Scope scope,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
-    final Scope scope = scopeAt(at, analysis);
     return typeIndex.searchExact(simpleName).stream()
         .filter(entry -> entry.simpleName().equals(simpleName) && !entry.isTopLevel())
         .map(entry -> analysis.elements().getTypeElement(entry.qualifiedName()))
@@ -72,7 +70,7 @@ public final class ImportCandidates {
     return scope == null || analysis.trees().isAccessible(scope, typeEl);
   }
 
-  static Scope scopeAt(final Position at, final AttributedFileAnalysis analysis) {
+  public static Scope scopeAt(final Position at, final AttributedFileAnalysis analysis) {
     final long offset = Positions.toOffset(analysis.tree(), at.getLine(), at.getCharacter());
     final TreePath path = CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);
     return path != null ? analysis.trees().getScope(path) : null;

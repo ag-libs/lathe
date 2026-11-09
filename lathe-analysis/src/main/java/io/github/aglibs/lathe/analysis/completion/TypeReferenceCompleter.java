@@ -5,7 +5,6 @@ import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
-import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -199,7 +198,9 @@ final class TypeReferenceCompleter {
             .filter(validator::isResolvable)
             .filter(entry -> typeIndexRoleAllows(entry, analysis, scope, role))
             .limit(TYPE_INDEX_RESULT_LIMIT)
-            .map(CandidateFactory::typeIndexCandidate)
+            .map(
+                entry ->
+                    CandidateFactory.typeIndexCandidate(entry, analysis, enclosingClass(scope)))
             .toList();
     final List<CompletionItem> items =
         typeCandidates.stream().map(CompletionItemPresenter::present).toList();
@@ -420,8 +421,7 @@ final class TypeReferenceCompleter {
 
     return Stream.concat(
             Stream.of(
-                CandidateFactory.typeElementCandidate(
-                    expectedEl, importEdit(expectedEl, analysis))),
+                CandidateFactory.typeElementCandidate(expectedEl, analysis, enclosingClass(scope))),
             subtypeCandidates.stream())
         .toList();
   }
@@ -443,7 +443,7 @@ final class TypeReferenceCompleter {
         .sorted(typeCandidateComparator(prefix, typeIndex))
         .limit(TYPE_INDEX_RESULT_LIMIT)
         .filter(entry -> resolvesToInstantiableSubtype(entry, expectedEl, analysis, scope))
-        .map(CandidateFactory::typeIndexCandidate)
+        .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, enclosingClass(scope)))
         .toList();
   }
 
@@ -476,12 +476,9 @@ final class TypeReferenceCompleter {
         : base;
   }
 
-  private static ImportEdit importEdit(
-      final TypeElement typeElement, final AttributedFileAnalysis analysis) {
-    final String qualifiedName = typeElement.getQualifiedName().toString();
-    return new ImportAnalyzer(analysis).needsImport(qualifiedName)
-        ? new ImportEdit(qualifiedName, false)
-        : null;
+  // The class code at the cursor is written into; none outside every class (an import, a header).
+  private static TypeElement enclosingClass(final Scope scope) {
+    return scope == null ? null : scope.getEnclosingClass();
   }
 
   private static boolean indexKindAllows(final TypeKind kind, final TypeReferenceRole role) {

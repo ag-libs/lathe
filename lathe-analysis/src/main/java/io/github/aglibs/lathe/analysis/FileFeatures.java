@@ -315,7 +315,10 @@ public final class FileFeatures {
                   final List<String> nested =
                       typeNames.containsKey(name)
                           ? ImportCandidates.nestedTypes(
-                                  name, typeNames.get(name), analysis, typeIndex)
+                                  name,
+                                  ImportCandidates.scopeAt(typeNames.get(name), analysis),
+                                  analysis,
+                                  typeIndex)
                               .stream()
                               .map(type -> type.getQualifiedName().toString())
                               .toList()
@@ -323,7 +326,11 @@ public final class FileFeatures {
                   return new MissingImportsResult.MissingImport(
                       name, Stream.concat(types.stream(), statics.stream()).toList(), nested);
                 })
-            .filter(item -> !item.candidates().isEmpty() || plainTypeNames.contains(item.name()))
+            .filter(
+                item ->
+                    !item.candidates().isEmpty()
+                        || !item.nested().isEmpty()
+                        || plainTypeNames.contains(item.name()))
             .toList();
 
     LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));

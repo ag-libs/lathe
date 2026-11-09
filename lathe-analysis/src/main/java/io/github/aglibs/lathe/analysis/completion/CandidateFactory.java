@@ -1,7 +1,10 @@
 package io.github.aglibs.lathe.analysis.completion;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
+import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.List;
@@ -31,21 +34,43 @@ final class CandidateFactory {
     this.typeDisplayFormatter = new TypeDisplayFormatter(types);
   }
 
-  // A nested type is written from its top-level type (Map.Entry), whose import it adds; it is never
-  // imported itself.
-  static CompletionCandidate typeIndexCandidate(final TypeIndexEntry entry) {
+  // A type from the index, written as code in `target` names it (see SourceTypeNames): a nested
+  // type from a type the code can name (Map.Entry), whose import it adds, never imported itself. A
+  // reactor type with no class file yet has no element: it is written from its top-level type.
+  static CompletionCandidate typeIndexCandidate(
+      final TypeIndexEntry entry, final AttributedFileAnalysis analysis, final TypeElement target) {
+    final TypeElement type = analysis.elements().getTypeElement(entry.qualifiedName());
+    if (type != null) {
+      return typeCandidate(
+          entry.simpleName(),
+          SourceTypeNames.sourceName(analysis, target, type),
+          entry.qualifiedName(),
+          kindFor(entry.kind()),
+          null,
+          importEditFor(analysis, target, type));
+    }
+
     final int nested = entry.binaryName().indexOf('$');
     final String topLevel =
         nested < 0 ? entry.binaryName() : entry.binaryName().substring(0, nested);
-    final var importEdit =
-        "java.lang".equals(entry.packageName()) ? null : new ImportEdit(topLevel, false);
     return typeCandidate(
         entry.simpleName(),
         entry.className().replace('$', '.'),
         entry.qualifiedName(),
         kindFor(entry.kind()),
         null,
-        importEdit);
+        new ImportAnalyzer(analysis).needsImport(topLevel)
+            ? new ImportEdit(topLevel, false)
+            : null);
+  }
+
+  // The import code in `target` naming `type` needs, if the file has no line for it yet.
+  static ImportEdit importEditFor(
+      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
+    return SourceTypeNames.importFor(analysis, target, type)
+        .filter(new ImportAnalyzer(analysis)::needsImport)
+        .map(name -> new ImportEdit(name, false))
+        .orElse(null);
   }
 
   private static CandidateKind kindFor(final TypeKind typeKind) {
@@ -57,11 +82,6 @@ final class CandidateFactory {
   }
 
   static CompletionCandidate typeElementCandidate(final TypeElement el) {
-    return typeElementCandidate(el, null);
-  }
-
-  static CompletionCandidate typeElementCandidate(
-      final TypeElement el, final ImportEdit importEdit) {
     final var simpleName = el.getSimpleName().toString();
     return typeCandidate(
         simpleName,
@@ -69,7 +89,19 @@ final class CandidateFactory {
         el.getQualifiedName().toString(),
         kindForElement(el.getKind()),
         el.asType(),
-        importEdit);
+        null);
+  }
+
+  // A type written as code in `target` names it, with the import that name needs.
+  static CompletionCandidate typeElementCandidate(
+      final TypeElement el, final AttributedFileAnalysis analysis, final TypeElement target) {
+    return typeCandidate(
+        el.getSimpleName().toString(),
+        SourceTypeNames.sourceName(analysis, target, el),
+        el.getQualifiedName().toString(),
+        kindForElement(el.getKind()),
+        el.asType(),
+        importEditFor(analysis, target, el));
   }
 
   private static CandidateKind kindForElement(final ElementKind kind) {

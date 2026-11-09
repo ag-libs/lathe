@@ -115,20 +115,27 @@ qualifying), ranked after top-level types.
 
 The type index already held nested types (`java.util.Map$Entry`, simple name `Entry`), but `ImportCandidates` named
 a candidate by its package and simple name, `java.util.Entry`, which javac could not find, so it was dropped.
-A nested type is now never imported itself, by a plain or a static import: it is written qualified from its top-level type.
+A nested type is now never imported itself, by a plain or a static import: it is written as code there names it,
+from a type the code can name, whose import is added.
+`internal.SourceTypeNames` (moved from `CodeActionSupport`, CA-17's helpers) decides how a type is written and what it
+imports, for the refactors, the import fixes and completion alike: `Map.Entry` with `import java.util.Map;`, plain
+`Entry` where the file already sees it (an import of it, an inherited member type), and `java.util.Map.Entry` with no
+import where the file gives `Map` another type.
 
-- The quick fix "Qualify as 'Map.Entry' (java.util.Map.Entry)" replaces the name and imports `java.util.Map` through
-  `CodeActionSupport.sourceName` and `importEditsFor` (CA-17's helpers), so it writes `java.util.Map.Entry` with no
-  import when the file gives `Map` another type.
-- Completion of a bare `Entr` inserts `Map.Entry` and imports `java.util.Map`.
+- The quick fix "Qualify as 'Map.Entry' (java.util.Map.Entry)" replaces the name and adds the import.
+- Completion writes a type that way wherever it adds an import: a type-index type, the type after `new`, an enum
+  constant of a type the file does not name, and an unimported receiver (`Entry.` is rewritten to `Map.Entry.`;
+  on a call chain such a receiver is not offered, having no bare name to rewrite).
 - "Add missing imports" and MCP `fix_imports` keep only top-level candidates, so a name with one top-level type is
-  still added automatically; `MissingImport.nested` names the nested types as a hint, which `fix_imports` reports.
+  still added automatically; `MissingImport.nested` names the nested types as a hint, which `fix_imports` reports
+  for an unresolved or ambiguous name, a qualifier (`Tool.run()`) included.
 - Learned static imports were already limited to methods and fields, so they never offered a nested type.
 
 ### Regression targets
 
 `QuickFixCodeActionTest.codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported`,
-`CompletionTypeIndexTest.typeIndex_nestedType_insertsQualifiedNameAndImportsTopLevelType`,
+`CompletionTypeIndexTest.typeIndex_nestedType_writtenAsTheFileNamesItNeverImported`,
+`CompletionArgumentTest.argumentPosition_externalNestedEnumParam_offersConstantsQualifiedFromTopLevelType`,
 `LatheEngineEditTest.fixImports_nestedTypes_neverImportedButNamedForAQualifiedName`,
 `McpTextTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`.
 
