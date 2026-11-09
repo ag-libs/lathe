@@ -304,25 +304,22 @@ public final class FileFeatures {
             .distinct()
             .map(
                 name -> {
-                  final Scope scope =
-                      typeNames.containsKey(name)
-                          ? ImportCandidates.scopeAt(typeNames.get(name), analysis)
-                          : null;
-                  final List<String> types =
-                      typeNames.containsKey(name)
-                          ? ImportCandidates.resolve(
-                              name, scope, analysis, typeIndex, alreadyImported)
-                          : List.of();
                   final List<String> statics =
                       memberNames.containsKey(name)
                           ? StaticImportCandidates.importSpellings(staticImports, analysis, name)
                           : List.of();
+                  final Position typeAt = typeNames.get(name);
+                  if (typeAt == null) {
+                    return new MissingImportsResult.MissingImport(name, statics, List.of());
+                  }
+
+                  final Scope scope = ImportCandidates.scopeAt(typeAt, analysis);
+                  final List<String> types =
+                      ImportCandidates.resolve(name, scope, analysis, typeIndex, alreadyImported);
                   final List<String> nested =
-                      typeNames.containsKey(name)
-                          ? ImportCandidates.nestedTypes(name, scope, analysis, typeIndex).stream()
-                              .map(type -> type.getQualifiedName().toString())
-                              .toList()
-                          : List.of();
+                      ImportCandidates.nestedTypes(name, scope, analysis, typeIndex).stream()
+                          .map(type -> type.getQualifiedName().toString())
+                          .toList();
                   return new MissingImportsResult.MissingImport(
                       name, Stream.concat(types.stream(), statics.stream()).toList(), nested);
                 })

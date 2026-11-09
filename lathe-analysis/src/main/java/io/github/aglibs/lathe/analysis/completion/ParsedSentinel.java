@@ -6,6 +6,7 @@ record ParsedSentinel(
     boolean valid,
     String prefix,
     String receiverText,
+    int receiverStartOffset,
     int receiverEndOffset,
     SentinelContext sentinelContext,
     String enclosingClass,
@@ -50,6 +51,7 @@ record ParsedSentinel(
         prefix,
         receiverText,
         -1,
+        -1,
         null,
         null,
         null,
@@ -75,12 +77,14 @@ record ParsedSentinel(
   static ParsedSentinel valid(
       final SentinelInjectionResult injected,
       final SentinelContext context,
+      final int receiverStartOffset,
       final int receiverEndOffset,
       final ModuleDirectiveKind directiveKeyword,
       final int docVersion) {
     return valid(
         injected,
         context,
+        receiverStartOffset,
         receiverEndOffset,
         null,
         null,
@@ -106,6 +110,7 @@ record ParsedSentinel(
   static ParsedSentinel valid(
       final SentinelInjectionResult injected,
       final SentinelContext context,
+      final int receiverStartOffset,
       final int receiverEndOffset,
       final String enclosingClass,
       final String enclosingMethod,
@@ -130,6 +135,7 @@ record ParsedSentinel(
         true,
         injected.prefix(),
         injected.receiverText(),
+        receiverStartOffset,
         receiverEndOffset,
         context,
         enclosingClass,

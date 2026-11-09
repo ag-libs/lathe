@@ -133,6 +133,10 @@ import where the file gives `Map` another type.
   for an unresolved or ambiguous name, a qualifier (`Tool.run()`) included.
 - Learned static imports were already limited to methods and fields, so they never offered a nested type.
 
+Known limit: a reactor nested type with no class file yet (created, not compiled) has no element to check, so
+completion writes it from its top-level type by name, without the clash check; when the file gives that top-level name
+another type, the result does not compile until the type is built and completion is repeated.
+
 ### Regression targets
 
 `QuickFixCodeActionTest.codeAction_nestedType_qualifiedFromItsTopLevelTypeNeverImported`,

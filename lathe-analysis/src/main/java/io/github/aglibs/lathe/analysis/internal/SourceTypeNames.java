@@ -12,7 +12,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -33,6 +35,7 @@ public final class SourceTypeNames {
   private final ImportAnalyzer importAnalyzer;
   private final Set<String> importedNames;
   private final Set<String> declaredTypeNames;
+  private final Set<Element> memberTypesInScope;
 
   // `target` is the class the code is written into; none outside every class (a header, an import)
   // leaves only imports and the file's own types to see a name by.
@@ -42,6 +45,7 @@ public final class SourceTypeNames {
     this.importAnalyzer = new ImportAnalyzer(analysis);
     this.importedNames = importAnalyzer.importedQualifiedNames();
     this.declaredTypeNames = declaredTypeNames(analysis);
+    this.memberTypesInScope = memberTypesInScope(analysis, target);
   }
 
   // The imports the code needs for every type the given types mention, each once: the top-level
@@ -90,20 +94,23 @@ public final class SourceTypeNames {
   // (or the top-level type).
   private TypeElement nameRoot(final TypeElement type) {
     return type.getNestingKind() == NestingKind.MEMBER
-            && !memberTypeInScope(type)
+            && !memberTypesInScope.contains(type)
             && !importedNames.contains(type.getQualifiedName().toString())
         ? nameRoot((TypeElement) type.getEnclosingElement())
         : type;
   }
 
-  // A member type `target` sees by its simple name: one of its own or an enclosing class's members,
+  // The member types `target` sees by their simple names: its own and its enclosing classes',
   // declared or inherited.
-  private boolean memberTypeInScope(final TypeElement type) {
+  private static Set<Element> memberTypesInScope(
+      final AttributedFileAnalysis analysis, final TypeElement target) {
     return Stream.iterate(
             target,
             Objects::nonNull,
             c -> c.getEnclosingElement() instanceof final TypeElement outer ? outer : null)
-        .anyMatch(c -> analysis.elements().getAllMembers(c).contains(type));
+        .flatMap(c -> analysis.elements().getAllMembers(c).stream())
+        .filter(TypeElement.class::isInstance)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private boolean clashes(final TypeElement type) {

@@ -69,7 +69,7 @@ public final class MissingMethodImplProvider {
     }
 
     final var names = new SourceTypeNames(analysis, classElement);
-    final var formatter = names.formatter();
+    final TypeDisplayFormatter formatter = names.formatter();
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 

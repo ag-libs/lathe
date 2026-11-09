@@ -49,10 +49,15 @@ public final class ImportQuickFixProvider {
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex,
       final Scope scope) {
+    final List<TypeElement> nested =
+        ImportCandidates.nestedTypes(request.payload().name(), scope, analysis, typeIndex);
+    if (nested.isEmpty()) {
+      return List.of();
+    }
+
     final var names =
         new SourceTypeNames(analysis, scope == null ? null : scope.getEnclosingClass());
-    return ImportCandidates.nestedTypes(request.payload().name(), scope, analysis, typeIndex)
-        .stream()
+    return nested.stream()
         .map(type -> Either.<Command, CodeAction>forRight(qualifyAction(request, names, type)))
         .toList();
   }

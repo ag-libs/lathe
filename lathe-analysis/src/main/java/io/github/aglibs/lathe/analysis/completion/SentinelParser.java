@@ -47,23 +47,23 @@ final class SentinelParser {
       LOG.fine(() -> "[sentinel-parse] sentinel not found in parse tree");
       if (cu.getModule() != null) {
         return ParsedSentinel.valid(
-            injected, SentinelContext.MODULE_DIRECTIVE, -1, ModuleDirectiveKind.NONE, version);
+            injected, SentinelContext.MODULE_DIRECTIVE, -1, -1, ModuleDirectiveKind.NONE, version);
       }
 
       return ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version);
     }
 
     final var sourcePositions = trees.getSourcePositions();
-    final int receiverEndOffset;
-    if (sentinelPath.getLeaf() instanceof final MemberSelectTree memberSelect) {
-      final long pos = sourcePositions.getEndPosition(cu, memberSelect.getExpression());
-      receiverEndOffset = pos >= 0 ? (int) pos : -1;
-    } else if (sentinelPath.getLeaf() instanceof final MemberReferenceTree memberReference) {
-      final long pos = sourcePositions.getEndPosition(cu, memberReference.getQualifierExpression());
-      receiverEndOffset = pos >= 0 ? (int) pos : -1;
-    } else {
-      receiverEndOffset = -1;
-    }
+    final Tree receiver =
+        sentinelPath.getLeaf() instanceof final MemberSelectTree memberSelect
+            ? memberSelect.getExpression()
+            : sentinelPath.getLeaf() instanceof final MemberReferenceTree memberReference
+                ? memberReference.getQualifierExpression()
+                : null;
+    final int receiverStartOffset =
+        receiver == null ? -1 : (int) Math.max(-1, sourcePositions.getStartPosition(cu, receiver));
+    final int receiverEndOffset =
+        receiver == null ? -1 : (int) Math.max(-1, sourcePositions.getEndPosition(cu, receiver));
 
     final long startPos = sourcePositions.getEndPosition(cu, sentinelPath.getLeaf());
     final long javacLine = cu.getLineMap().getLineNumber(startPos);
@@ -89,6 +89,7 @@ final class SentinelParser {
           ParsedSentinel.valid(
               injected,
               importTree.isStatic() ? SentinelContext.STATIC_IMPORT : SentinelContext.IMPORT,
+              receiverStartOffset,
               receiverEndOffset,
               null,
               version);
@@ -145,7 +146,12 @@ final class SentinelParser {
       final var keyword = findDirectiveKeyword(cu.getModule());
       final var parsed =
           ParsedSentinel.valid(
-              injected, SentinelContext.MODULE_DIRECTIVE, receiverEndOffset, keyword, version);
+              injected,
+              SentinelContext.MODULE_DIRECTIVE,
+              receiverStartOffset,
+              receiverEndOffset,
+              keyword,
+              version);
       logValid(parsed);
       return parsed;
     }
@@ -169,6 +175,7 @@ final class SentinelParser {
         ParsedSentinel.valid(
             injected,
             cls.context(),
+            receiverStartOffset,
             receiverEndOffset,
             enclosingClass,
             enclosingMethod,

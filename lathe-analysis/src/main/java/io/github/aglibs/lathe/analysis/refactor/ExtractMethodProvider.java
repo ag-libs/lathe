@@ -190,7 +190,8 @@ public final class ExtractMethodProvider {
             flow.assigned(),
             flow.returnsValue(),
             thrown,
-            signatureTypes);
+            signatureTypes,
+            new SourceTypeNames(analysis, (TypeElement) trees.getElement(member.getParentPath())));
     // A static method cannot use the class's type variables.
     final boolean classTypeVariables =
         typeVariables.stream()
@@ -237,7 +238,8 @@ public final class ExtractMethodProvider {
     return actions;
   }
 
-  // The new method, and the edits that call it from sites: the region itself, or its copies.
+  // The new method, and the edits that call it from sites: the region itself, or its copies; types
+  // are written as the class the new method joins names them.
   private record Extraction(
       AttributedFileAnalysis analysis,
       String source,
@@ -252,7 +254,8 @@ public final class ExtractMethodProvider {
       Set<VariableElement> assigned,
       boolean returnsValue,
       List<TypeMirror> thrown,
-      List<TypeMirror> signatureTypes) {
+      List<TypeMirror> signatureTypes,
+      SourceTypeNames typeNames) {
 
     Extraction {
       ValidCheck.check()
@@ -269,6 +272,7 @@ public final class ExtractMethodProvider {
           .notNull(assigned, "assigned")
           .notNull(thrown, "thrown")
           .notNull(signatureTypes, "signatureTypes")
+          .notNull(typeNames, "typeNames")
           .validate();
       region = List.copyOf(region);
       typeParameters = List.copyOf(typeParameters);
@@ -303,7 +307,7 @@ public final class ExtractMethodProvider {
                               start(site.run().get(0)),
                               end(CollectionUtil.last(site.run())),
                               call(site))),
-              typeNames().importEditsFor(signatureTypes.stream()).stream())
+              typeNames.importEditsFor(signatureTypes.stream()).stream())
           .flatMap(edits -> edits)
           .toList();
     }
@@ -461,13 +465,7 @@ public final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return typeNames().formatter().format(type);
-    }
-
-    // How the class the new method joins names a type.
-    private SourceTypeNames typeNames() {
-      return new SourceTypeNames(
-          analysis, (TypeElement) analysis.trees().getElement(member.getParentPath()));
+      return typeNames.formatter().format(type);
     }
 
     private String sourceOf(final TreePath first, final TreePath last) {

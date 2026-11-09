@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis;
 import static io.github.aglibs.lathe.analysis.Positions.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.refactor.ImportCandidates;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.IOUtil;
@@ -672,6 +673,14 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                 "Item", List.of("com.example.items.Item"), List.of("com.other.A.Item")),
             new MissingImportsResult.MissingImport("Hidden", List.of(), List.of()),
             new MissingImportsResult.MissingImport("Tool", List.of(), List.of("com.other.A.Tool")));
+
+    final AttributedFileAnalysis analysis =
+        session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {});
+    assertThat(ImportCandidates.nestedTypes("Item", null, analysis, nestedIndex))
+        .as("without a scope only a type public all the way out")
+        .extracting(type -> type.getQualifiedName().toString())
+        .containsExactly("com.other.A.Item");
+    assertThat(ImportCandidates.nestedTypes("Hidden", null, analysis, nestedIndex)).isEmpty();
 
     final var clashing =
         """

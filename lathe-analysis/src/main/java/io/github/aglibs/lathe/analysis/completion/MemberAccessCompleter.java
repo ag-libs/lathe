@@ -431,21 +431,19 @@ final class MemberAccessCompleter {
         item -> edits.forEach(edit -> CompletionItemPresenter.addAdditionalTextEdit(item, edit)));
   }
 
-  // The receiver text is the source slice ending where javac's tree ends the receiver, so it starts
-  // its own length back from there, and it starts with the typed name (`Entry` in `Entry` or in
-  // `Entry.comparingByKey()`).
+  // The receiver starts where javac's tree starts it, with the typed name (`Entry` in `Entry` or in
+  // `Entry.comparingByKey()`); anything else there is left alone.
   private static Optional<TextEdit> receiverRewrite(
       final String written,
       final String typedName,
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected) {
-    final int end = parsed.receiverEndOffset();
-    if (written.equals(typedName) || end < 0 || !parsed.receiverText().startsWith(typedName)) {
+    final int start = parsed.receiverStartOffset();
+    final String content = injected.injectedContent();
+    if (written.equals(typedName) || start < 0 || !content.startsWith(typedName, start)) {
       return Optional.empty();
     }
 
-    final String content = injected.injectedContent();
-    final int start = end - parsed.receiverText().length();
     return Optional.of(
         new TextEdit(
             new Range(

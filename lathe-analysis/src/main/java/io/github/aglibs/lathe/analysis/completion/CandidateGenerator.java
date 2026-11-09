@@ -144,13 +144,18 @@ final class CandidateGenerator {
     // never imported itself), with the import that name needs.
     final TypeElement topLevel = DefinitionLocator.topLevelClass(enumType);
     final boolean reachable = topLevel != null && isInScope(topLevel, cursorPath);
+    if (reachable) {
+      return proposeEnumConstantCandidates(
+          enumType, prefix, classQualifiedName(enumType, cursorOffset), null);
+    }
+
     final SourceTypeNames names =
         ReceiverResolver.typeNames(snapshot, ReceiverResolver.resolveScope(snapshot, cursorOffset));
-    final String qualifier =
-        reachable ? classQualifiedName(enumType, cursorOffset) : names.sourceName(enumType);
-    final ImportEdit importEdit =
-        reachable ? null : CandidateFactory.importEditFor(names, enumType);
-    return proposeEnumConstantCandidates(enumType, prefix, qualifier, importEdit);
+    return proposeEnumConstantCandidates(
+        enumType,
+        prefix,
+        names.sourceName(enumType),
+        CandidateFactory.importEditFor(names, enumType));
   }
 
   List<CompletionCandidate> proposeUnqualifiedEnumConstantCandidates(

@@ -9,6 +9,8 @@ import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Position;
 
@@ -53,10 +55,20 @@ public final class ImportCandidates {
         .filter(entry -> entry.simpleName().equals(simpleName) && !entry.isTopLevel())
         .map(entry -> analysis.elements().getTypeElement(entry.qualifiedName()))
         .filter(Objects::nonNull)
-        .filter(type -> scope == null || analysis.trees().isAccessible(scope, type))
+        .filter(
+            type -> scope == null ? publicChain(type) : analysis.trees().isAccessible(scope, type))
         .distinct()
         .limit(NESTED_TYPE_LIMIT)
         .toList();
+  }
+
+  // Without a scope to check access from, only a type public all the way out is offered.
+  private static boolean publicChain(final TypeElement type) {
+    return Stream.iterate(
+            type,
+            Objects::nonNull,
+            t -> t.getEnclosingElement() instanceof final TypeElement outer ? outer : null)
+        .allMatch(t -> t.getModifiers().contains(Modifier.PUBLIC));
   }
 
   private static boolean isImportable(
