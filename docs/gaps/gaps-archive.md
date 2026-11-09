@@ -67,27 +67,28 @@ and a line after a `//` comment ending in punctuation (`// see below:`) took an 
 ### Resolution
 
 `balancing_line` finds the line holding the opener that matches the closers a line leaves unmatched,
-by a bracket count over text that skips string/char literals, `//` comments and text-block content.
+by a bracket count over text that skips string/char literals, line and block comments, and text-block content.
 It is a text count, not a parse, because the indenter must work mid-edit and tree-sitter models only `{}` blocks for it.
 
 - A selector or leading-operator line anchors to that line: it aligns under a line of the same kind, otherwise one continuation past it.
   A leading operator counts as a continuation only when the previous line's code left the expression open without a marker of its own (so `-1,` after `{` stays an element).
-- The statement-start walk crosses bracket groups, operator-led lines and wrapped `throws`/`extends` clauses, and stops at an argument's first line.
+- The statement-start walk crosses bracket groups, operator-led lines (`*` and `/` included) and wrapped `throws`/`extends` clauses.
 - A block's body and its `}` follow `block_owner_indent`: the first line of the bracket groups its `{` line closes,
-  climbing wrapped declaration lines but stopping where a new expression starts (after `=` or `->`).
+  climbing wrapped declaration lines and a comma-wrapped `implements`/`throws` list, but stopping where a new expression starts (after `=` or `->`).
 - A line led by `)` or `]` takes the indent of its opener's line; `}` without a parser takes its block owner's.
-- A line comment, or a `*/`, never reads as a trailing operator.
+- A comment's last character (a whole-line or trailing `//` comment, a `*/`) never reads as a trailing operator, nor does an old-style `case A:` label;
+  a `//` line inside a chain does not break its alignment.
 
 ### Verification against google-java-format
 
 Every `.java` file in this repository is formatted by google-java-format (Spotless), so the indenter was run over each code line of all 692 files (83,673 lines, comments and text blocks skipped),
 with the whole file in the buffer and no tree-sitter parser, and compared with the formatter's column:
-lines that differ went from 9,759 (11.66%) to 2,142 (2.56%); 7,622 lines were fixed and 5 regressed (a wrapped `permits` list, wrapped `case` labels, a `+ """` concatenation, a method name wrapped below its return type).
+lines that differ went from 9,759 (11.66%) to 2,135 (2.55%); 7,628 lines were fixed and 4 regressed (wrapped `case` labels, a `+ """` concatenation, a method name wrapped below its return type).
 Most of the remainder is the deeper nesting google-java-format gives arguments of chained calls (+8 rather than +4), which a previous-line model does not track.
 
 ### Regression targets
 
-`lathe-neovim/test/indent_spec.lua` (48 fixtures; the 19 added here are named `resumed chain:`, `leading operator:`, `closing bracket line:`, `lambda body:`, `block body:`, `block closer:` and `line comment:`).
+`lathe-neovim/test/indent_spec.lua` (57 fixtures; the 28 added here are named `resumed chain:`, `leading operator:`, `closing bracket line:`, `lambda body:`, `block body:`, `block closer:`, `statement end:` and `line comment:`).
 
 ---
 
