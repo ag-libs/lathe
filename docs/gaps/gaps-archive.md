@@ -92,6 +92,40 @@ Most of the remainder is the deeper nesting google-java-format gives arguments o
 
 ---
 
+## CA-19 — Import fixes ignore nested types — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `fix_imports`, and the editor's missing-import fixes if they share the candidates.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`fix_imports` says "No import found for: Entry" although `java.util.Map.Entry` is available.
+
+### Fix direction
+
+Offer nested types whose simple name matches (importing the nested type, or the outer type and
+qualifying), ranked after top-level types.
+
+### Fix
+
+The type index already held nested types (`java.util.Map$Entry`, simple name `Entry`), but `ImportCandidates` named
+a candidate by its package and simple name, `java.util.Entry`, which javac could not find, so it was dropped.
+It now names it by `TypeIndexEntry.qualifiedName` (`java.util.Map.Entry`) and imports the nested type itself, as
+completion already did, after the top-level types of that name.
+The single-name quick fix, "add missing imports" and MCP `fix_imports` share that lookup.
+
+### Regression targets
+
+`QuickFixCodeActionTest.codeAction_nestedType_offersCanonicalImportAfterTopLevelTypes`,
+`LatheEngineEditTest.fixImports_nestedType_addsItsCanonicalImport`.
+
+---
+
 ## EG-096 — Definition on a constructor call goes to the class — done
 
 **Status: done.**
@@ -3570,7 +3604,7 @@ JDK, and reactor shards, so they complete by simple name and auto-import correct
 ### Current verification
 
 `CompletionTypeIndexTest.typeIndex_nestedType_completesBySimpleNameAndImportsCanonicalName` covers nested-type completion and its import edit.
-The separate missing-import quick fix remains CA-19; this closure does not cover that provider.
+The separate missing-import quick fix was CA-19, since done; this closure did not cover that provider.
 
 ---
 

@@ -118,6 +118,25 @@ class LatheEngineEditTest extends LatheEngineTestBase {
     assertThat(again.unresolved()).extracting(MissingImport::name).contains("Widget", "Fooo");
   }
 
+  @Test
+  void fixImports_nestedType_addsItsCanonicalImport() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/util/Registry.java",
+        "package com.example.util; public class Registry { public static class Slot {} }");
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/app/App.java",
+            "package com.example.app;\nclass App {\n  Slot s;\n}\n");
+    engine = new LatheEngine(tmp);
+
+    final LatheImports imports = engine.fixImports(source);
+
+    assertThat(imports.added()).containsExactly("com.example.util.Registry.Slot");
+    assertThat(imports.unresolved()).isEmpty();
+  }
+
   // A call that another file of the same scope imports statically gets that static import, learned
   // from the workspace's own import lines with nothing configured.
   @Test

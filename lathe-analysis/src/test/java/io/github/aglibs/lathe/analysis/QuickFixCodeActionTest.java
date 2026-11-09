@@ -581,6 +581,82 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(codeActions(actions).get(0).getTitle()).isEqualTo("Import 'com.other.PublicClass'");
   }
 
+  // A nested type imports by its canonical name, after the top-level types of that name even when
+  // its name is shorter; one the file cannot access is not offered.
+  @Test
+  void codeAction_nestedType_offersCanonicalImportAfterTopLevelTypes() throws IOException {
+    final var classDir = tmp.resolve("classes");
+    final var outerFile = tmp.resolve("A.java");
+    Files.writeString(
+        outerFile,
+        """
+        package com.other;
+        public class A {
+          public static class Item {}
+          private static class Hidden {}
+        }
+        """);
+    final var itemFile = tmp.resolve("Item.java");
+    Files.writeString(
+        itemFile,
+        """
+        package com.example.items;
+        public class Item {}
+        """);
+    TestJavac.compileToDir(classDir, outerFile, itemFile);
+    session.close();
+    session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
+    final WorkspaceTypeIndex nestedIndex =
+        TempSourceCompiler.typeIndex(
+            tmp.resolve("nested_index.json"),
+            new TypeIndexEntry(
+                "Entry", "java.util.Map$Entry", "java.util", TypeKind.INTERFACE, true, List.of()),
+            new TypeIndexEntry(
+                "Item", "com.other.A$Item", "com.other", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "Item",
+                "com.example.items.Item",
+                "com.example.items",
+                TypeKind.CLASS,
+                true,
+                List.of()),
+            new TypeIndexEntry(
+                "Hidden", "com.other.A$Hidden", "com.other", TypeKind.CLASS, true, List.of()));
+    final var source =
+        """
+        package com.example;
+        class Test {
+          Entry<String, String> entry;
+          Item item;
+          Hidden hidden;
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var actions =
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                source,
+                1,
+                rangeAt(0, 0),
+                toRequests(diags),
+                nestedIndex,
+                LearnedStaticImports.empty());
+
+    assertThat(codeActions(actions))
+        .extracting(CodeAction::getTitle)
+        .containsExactly(
+            "Import 'java.util.Map.Entry'",
+            "Import 'com.example.items.Item'",
+            "Import 'com.other.A.Item'");
+    assertThat(editsOf(codeActions(actions).get(0)))
+        .extracting(TextEdit::getNewText)
+        .containsExactly("\n\nimport java.util.Map.Entry;");
+  }
+
   @Test
   void codeAction_typeRef_reactorEntryNotOnClasspath_offersImport() {
     // Reactor type is in the type index but has no class file on the compilation classpath.
