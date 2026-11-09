@@ -73,6 +73,10 @@ class DefinitionLocatorTest extends SampleFixture {
           Box(int value) {}
           Box(String value) {}
         }
+        static class Gen<T> {
+          Gen(T value) {}
+          Gen(int first, int second) {}
+        }
         void solo(String text) {}
         void greet(int count) {}
         void greet(String text, int count) {}
@@ -83,12 +87,14 @@ class DefinitionLocatorTest extends SampleFixture {
           greet(7);
           missing(1);
           Object box = new Box(true);
+          Object gen = new Gen<>("x") {};
         }
       }
       """;
 
   // A call whose arguments match no overload, as after a refactoring changed the parameters: javac
-  // resolves no method, so definition offers every method the call can name.
+  // resolves no method, so definition offers every method the call can name. A call that resolves,
+  // even through an anonymous class of a generic type, still leads to its one overload.
   @ParameterizedTest
   @CsvSource(
       delimiter = '|',
@@ -98,6 +104,7 @@ class DefinitionLocatorTest extends SampleFixture {
         "this.greet(true) | greet | void greet(int count),void greet(String text | greet",
         "greet(7) | greet | void greet(int count) | greet",
         "new Box(true) | Box | Box(int value),Box(String value) | Box",
+        "new Gen<>(\"x\") {} | Gen | Gen(T value) | Gen",
         "missing(1) | missing | | ",
       })
   void definition_mismatchedArguments_returnsEveryNamedOverload(

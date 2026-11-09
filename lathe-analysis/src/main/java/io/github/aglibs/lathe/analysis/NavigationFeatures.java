@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.MethodInvocationTree;
-import com.sun.source.tree.NewClassTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -190,13 +189,16 @@ public final class NavigationFeatures {
     }
 
     final Cursor cur = at.get();
-    final List<Location> overloads =
-        unresolvedCallOverloads(cur).stream()
-            .flatMap(overload -> findDefinitionLocation(request, cur, overload).stream())
-            .toList();
     final var constructor =
         CursorElements.constructorAtNewClassType(cur.analysis().trees(), cur.path());
     final Element element = constructor != null ? constructor : cur.elementOrJavadocReference();
+    final List<Location> overloads =
+        element instanceof ExecutableElement
+            ? List.of()
+            : unresolvedCallOverloads(cur).stream()
+                .flatMap(overload -> findDefinitionLocation(request, cur, overload).stream())
+                .distinct()
+                .toList();
     final List<Location> result =
         overloads.isEmpty()
             ? findDefinitionLocation(request, cur, element)
@@ -211,10 +213,11 @@ public final class NavigationFeatures {
 
     LOG.fine(
         () ->
-            "[definition] %dms element=%s → %s"
+            "[definition] %dms element=%s overloads=%d → %s"
                 .formatted(
                     t.elapsedMs(),
                     element,
+                    overloads.size(),
                     result.isEmpty()
                         ? "not found"
                         : result.stream().map(NavigationFeatures::where).toList()));
@@ -231,12 +234,10 @@ public final class NavigationFeatures {
       return SignatureHelpResolver.unresolvedOverloads(cur.analysis(), parent);
     }
 
-    final TreePath creation = TreePaths.nearest(cur.path(), NewClassTree.class);
-    return creation != null
-            && CursorElements.newClassType((NewClassTree) creation.getLeaf())
-                == cur.path().getLeaf()
-        ? SignatureHelpResolver.unresolvedOverloads(cur.analysis(), creation)
-        : List.of();
+    final TreePath creation = CursorElements.newClassAtType(cur.path());
+    return creation == null
+        ? List.of()
+        : SignatureHelpResolver.unresolvedOverloads(cur.analysis(), creation);
   }
 
   // The declaration of the type of the symbol at the cursor: a variable's or field's type, a
