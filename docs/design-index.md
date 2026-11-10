@@ -272,6 +272,10 @@ reused):
 
 ## Completed Designs
 
+- [Search Speed on Large Codebases](planned/lathe-search-speed.md) — **in progress (2026-11-10).** FR-029 and
+  FR-032 measured and profiled: class reading per javac task dominates and one module's worker carries a query.
+  Done: the startup regression (#157), batches of 32, batched implementations and incoming calls. Next: following
+  exposures transitively (narrowing common names), and per-module answer caching. Parallel compiles ruled out.
 - [Gradle Support](done/lathe-gradle-support.md) — **shipped (slices 0–4, 2026-10-25); Plugin Portal release wiring implemented.** A
   `lathe-gradle-plugin` (settings + project plugin) emitting the same `.lathe/` files, kept current by every build as on Maven:
   typed-API compiler capture finalizing `JavaCompile`, a workspace write after every test compile, in-fork test-launch capture

@@ -933,6 +933,28 @@ references to a method whose name many files spell are the slowest query Lathe a
 A name spelled in few files stays fast (Hibernate ORM's `registerKeyword`, 1,274 references: 0.37 s), which is the planner cost above.
 The queries and positions are `dev/lsp-bench/cases/hibernate_orm.py` and `fineract.py` ("references: common name", "references: one overload").
 
+### Progress (2026-11-10)
+
+The design is [Search Speed on Large Codebases](../planned/lathe-search-speed.md).
+Done so far: the startup regression that blocked every request for up to 280 s after a start (#157); a search batch
+of 32 files per javac task instead of 8; implementations and incoming calls batched the way references are, instead
+of one task per file. Parallel compiles within a module are ruled out (the file manager is not thread-safe).
+Measured with each project's synced `.lathe/`, one fresh server per query, warm median of 3, the same answers before
+and after (the machine was partly loaded, load average 3–15):
+
+| Query | Before: cold / warm | After: cold / warm |
+|---|---|---|
+| Hibernate ORM references `EntityAction.getId` | 38.3 / 31.5 s | 24.6 / 18.3 s |
+| Fineract references `Money.of(CurrencyData, …)` | 44.4 / 26.3 s | 37.3 / 22.9 s |
+| Fineract references `Money.of(MonetaryCurrency, …)` | 44.8 / 26.4 s | 36.9 / 21.3 s |
+| Fineract implementations `NewCommandSourceHandler.processCommand` | 9.5 / 5.2 s | 4.1 / 1.2 s |
+| Fineract incoming calls `DataValidatorBuilder.parameter` | 14.9 / 6.2 s | 11.2 / 3.6 s |
+| OpenMetadata incoming calls `Entity.getEntityRepository` | 21.5 / 15.3 s | 13.0 / 7.8 s |
+| Helidon incoming calls `WebClientMetrics.Builder.build()` | 13.9 / 6.3 s | 9.5 / 4.7 s |
+
+Remaining: following exposures transitively, so a common name compiles only the files that can reach the method
+(lever (b) of the design), and each module caching its answers until it changes (lever (c)).
+
 ### Fix direction
 
 1. **Narrow static methods to their family, exactly.**
@@ -978,6 +1000,28 @@ Found by the jdtls comparison's benchmark (2026-11-08), Lathe `0.3.99-c15d3a55`,
 
 Implementations of a class, and subtypes, answer from the type index in 14–121 ms on the same projects; implementations of a *method* compile the implementing files.
 Incoming calls cost about what references to the same method cost, and more: OpenMetadata's incoming calls of `Entity.getEntityRepository` took 13.5 s.
+
+### Progress (2026-11-10)
+
+The design is [Search Speed on Large Codebases](../planned/lathe-search-speed.md).
+Done so far: the startup regression that blocked every request for up to 280 s after a start (#157); a search batch
+of 32 files per javac task instead of 8; implementations and incoming calls batched the way references are, instead
+of one task per file. Parallel compiles within a module are ruled out (the file manager is not thread-safe).
+Measured with each project's synced `.lathe/`, one fresh server per query, warm median of 3, the same answers before
+and after (the machine was partly loaded, load average 3–15):
+
+| Query | Before: cold / warm | After: cold / warm |
+|---|---|---|
+| Hibernate ORM references `EntityAction.getId` | 38.3 / 31.5 s | 24.6 / 18.3 s |
+| Fineract references `Money.of(CurrencyData, …)` | 44.4 / 26.3 s | 37.3 / 22.9 s |
+| Fineract references `Money.of(MonetaryCurrency, …)` | 44.8 / 26.4 s | 36.9 / 21.3 s |
+| Fineract implementations `NewCommandSourceHandler.processCommand` | 9.5 / 5.2 s | 4.1 / 1.2 s |
+| Fineract incoming calls `DataValidatorBuilder.parameter` | 14.9 / 6.2 s | 11.2 / 3.6 s |
+| OpenMetadata incoming calls `Entity.getEntityRepository` | 21.5 / 15.3 s | 13.0 / 7.8 s |
+| Helidon incoming calls `WebClientMetrics.Builder.build()` | 13.9 / 6.3 s | 9.5 / 4.7 s |
+
+Remaining: following exposures transitively, so a common name compiles only the files that can reach the method
+(lever (b) of the design), and each module caching its answers until it changes (lever (c)).
 
 ### Fix direction
 
