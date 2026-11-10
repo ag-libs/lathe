@@ -194,21 +194,7 @@ final class RenameService {
             .isPresent();
     final CompletableFuture<List<String>> inheritedOutside =
         onInterface
-            ? FeatureAnswers.concatAll(
-                search
-                    .subtypeImplementationFiles(
-                        target, reactorIndex.current(), TypeSourceLocator::isNamedDeclaration)
-                    .filter(
-                        entry ->
-                            search.seesDeclaration(
-                                target, search.declaringConfigFor(target, asking), entry.getKey()))
-                    .map(
-                        entry ->
-                            search.fileQueryFuture(
-                                entry.getKey(),
-                                analysis ->
-                                    MethodImplementationLocator.inheritedOutsideFamily(
-                                        analysis, target, entry.getValue()))))
+            ? inheritedOutsideFamily(target, asking)
             : CompletableFuture.completedFuture(List.of());
     return inheritedOutside.thenApply(
         reasons -> {
@@ -219,6 +205,28 @@ final class RenameService {
 
   // A rename that would change what a name means, a use the new name captures or a renamed site
   // that would then mean something else, is refused: the edited text is attributed to check.
+  // The implementations the family inherits from outside it, the candidate files attributed in
+  // batches within their modules.
+  private CompletableFuture<List<String>> inheritedOutsideFamily(
+      final ReferenceTarget target, final ModuleSourceConfig asking) {
+    final Map<Path, Set<String>> candidates =
+        search
+            .subtypeImplementationFiles(
+                target, reactorIndex.current(), TypeSourceLocator::isNamedDeclaration)
+            .filter(
+                entry ->
+                    search.seesDeclaration(
+                        target, search.declaringConfigFor(target, asking), entry.getKey()))
+            .collect(
+                Collectors.toMap(
+                    Map.Entry::getKey, Map.Entry::getValue, ReferenceSearch::unionNames));
+    return search.filesQueryFuture(
+        candidates.keySet(),
+        (file, analysis) ->
+            MethodImplementationLocator.inheritedOutsideFamily(
+                analysis, target, candidates.get(file)));
+  }
+
   private CompletableFuture<Void> requireMeaningKept(
       final ReferenceTarget target,
       final List<ReferenceMatch> matches,

@@ -35,6 +35,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.Predicate;
@@ -61,9 +62,11 @@ final class ReferenceSearch {
 
   private static final Logger LOG = Logger.getLogger(ReferenceSearch.class.getName());
 
-  // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
-  // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
-  private static final int REFERENCE_BATCH_SIZE = 8;
+  // Files attributed in one javac task share its class reading, the largest cost of a search; a
+  // batch still bounds peak memory, cancellation latency, and analyze()-crash blast radius. 32 cut
+  // references to a common name by up to 43% against 8 at the same peak memory, and 64 added
+  // little.
+  private static final int SEARCH_BATCH_SIZE = 32;
 
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
@@ -476,7 +479,7 @@ final class ReferenceSearch {
                     searchOpenDocument(
                         worker, doc, target, includeDeclaration, family, cancelChecker, progress));
     final Stream<CompletableFuture<SearchHits<ReferenceMatch>>> diskSearches =
-        CollectionUtil.partition(inputs.diskCandidates(), REFERENCE_BATCH_SIZE).stream()
+        CollectionUtil.partition(inputs.diskCandidates(), SEARCH_BATCH_SIZE).stream()
             .map(
                 chunk ->
                     searchDiskChunk(
@@ -523,8 +526,7 @@ final class ReferenceSearch {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final List<TransientSource> sources =
-        chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
+    final List<TransientSource> sources = transientSources(chunk);
     return worker.submit(
         session ->
             searchBatch(
@@ -538,8 +540,7 @@ final class ReferenceSearch {
         cancelChecker);
   }
 
-  // Attributes the files together, then searches each, reporting each file's hit count; on the
-  // module's worker.
+  // A references search over files attributed together, as searchFiles runs one.
   static SearchHits<ReferenceMatch> searchBatch(
       final SourceAnalysisSession session,
       final List<TransientSource> sources,
@@ -548,16 +549,36 @@ final class ReferenceSearch {
       final Set<String> exposureFamily,
       final IntConsumer hitsPerFile,
       final CancelChecker cancelChecker) {
+    return searchFiles(
+        session,
+        sources,
+        (searching, analysis) ->
+            searching
+                .references()
+                .references(
+                    analysis.analysis(),
+                    analysis.uri(),
+                    target,
+                    includeDeclaration,
+                    exposureFamily),
+        hitsPerFile,
+        cancelChecker);
+  }
+
+  // Attributes the files together in one javac task, sharing its class reading, then searches
+  // each, reporting each file's hit count; on the module's worker.
+  private static <T> SearchHits<T> searchFiles(
+      final SourceAnalysisSession session,
+      final List<TransientSource> sources,
+      final BiFunction<SourceAnalysisSession, TransientAnalysis, SearchHits<T>> search,
+      final IntConsumer hitsPerFile,
+      final CancelChecker cancelChecker) {
     final List<TransientAnalysis> analyses = session.transientAnalyses(sources, cancelChecker);
     cancelChecker.checkCanceled();
-    final var results = new ArrayList<SearchHits<ReferenceMatch>>();
+    final var results = new ArrayList<SearchHits<T>>();
     for (final TransientAnalysis analysis : analyses) {
       cancelChecker.checkCanceled();
-      final SearchHits<ReferenceMatch> found =
-          session
-              .references()
-              .references(
-                  analysis.analysis(), analysis.uri(), target, includeDeclaration, exposureFamily);
+      final SearchHits<T> found = search.apply(session, analysis);
       results.add(found);
       hitsPerFile.accept(found.hits().size());
     }
@@ -928,18 +949,11 @@ final class ReferenceSearch {
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey, Map.Entry::getValue, ReferenceSearch::unionNames));
-    return FeatureAnswers.concatAll(
-        candidatesByFile.entrySet().stream()
-            .map(
-                entry ->
-                    fileQueryFuture(
-                        entry.getKey(),
-                        analysis ->
-                            MethodImplementationLocator.locate(
-                                analysis,
-                                target,
-                                entry.getValue(),
-                                LatheUri.fromPath(entry.getKey())))));
+    return filesQueryFuture(
+        candidatesByFile.keySet(),
+        (file, analysis) ->
+            MethodImplementationLocator.locate(
+                analysis, target, candidatesByFile.get(file), LatheUri.fromPath(file)));
   }
 
   boolean seesDeclaration(
@@ -1029,13 +1043,75 @@ final class ReferenceSearch {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  private static Set<String> unionNames(final Set<String> left, final Set<String> right) {
+  static Set<String> unionNames(final Set<String> left, final Set<String> right) {
     return Stream.concat(left.stream(), right.stream()).collect(Collectors.toUnmodifiableSet());
+  }
+
+  // A query over many source files, as fileQueryFuture runs it over one: an open document through
+  // its analysis, the files on disk read off the loop and attributed SEARCH_BATCH_SIZE per javac
+  // task in their own module, sharing the task's class reading.
+  <T> CompletableFuture<List<T>> filesQueryFuture(
+      final Set<Path> sourceFiles, final BiFunction<Path, AttributedFileAnalysis, List<T>> query) {
+    eventLoop.checkOnLoop();
+    final var open = new ArrayList<CompletableFuture<List<T>>>();
+    final var diskByWorker = new LinkedHashMap<CompilationWorker, List<Path>>();
+    for (final Path file : sourceFiles) {
+      if (docs.get(LatheUri.fromPath(file)) != null) {
+        open.add(fileQueryFuture(file, analysis -> query.apply(file, analysis)));
+      } else {
+        state
+            .registry()
+            .moduleWorkerFor(file)
+            .ifPresent(
+                worker -> diskByWorker.computeIfAbsent(worker, key -> new ArrayList<>()).add(file));
+      }
+    }
+
+    return FeatureAnswers.concatAll(
+        Stream.concat(
+            open.stream(),
+            diskByWorker.entrySet().stream()
+                .flatMap(
+                    entry ->
+                        CollectionUtil.partition(entry.getValue(), SEARCH_BATCH_SIZE).stream()
+                            .map(chunk -> diskBatchQuery(entry.getKey(), chunk, query)))));
+  }
+
+  private <T> CompletableFuture<List<T>> diskBatchQuery(
+      final CompilationWorker worker,
+      final List<Path> chunk,
+      final BiFunction<Path, AttributedFileAnalysis, List<T>> query) {
+    // A file listed twice under two spellings of its path is read once, under the first.
+    final Map<String, Path> byUri =
+        chunk.stream()
+            .collect(Collectors.toMap(LatheUri::fromPath, file -> file, (first, second) -> first));
+    return eventLoop
+        .rejoin(
+            CompletableFuture.supplyAsync(
+                () ->
+                    transientSources(
+                        byUri.keySet().stream()
+                            .flatMap(uri -> readDiskCandidate(uri).stream())
+                            .toList())))
+        .thenCompose(
+            sources ->
+                worker.submit(
+                    session ->
+                        searchFiles(
+                                session,
+                                sources,
+                                (searching, analysis) ->
+                                    new SearchHits<>(
+                                        query.apply(byUri.get(analysis.uri()), analysis.analysis()),
+                                        List.of()),
+                                hits -> {},
+                                () -> {})
+                            .hits()));
   }
 
   // A query over a source file's analysis in its own module: the open document's, or else the
   // file on disk, read off the loop and attributed once.
-  <T> CompletableFuture<List<T>> fileQueryFuture(
+  private <T> CompletableFuture<List<T>> fileQueryFuture(
       final Path sourceFile, final Function<AttributedFileAnalysis, List<T>> query) {
     final Optional<CompilationWorker> worker = state.registry().moduleWorkerFor(sourceFile);
     if (worker.isEmpty()) {
@@ -1166,6 +1242,12 @@ final class ReferenceSearch {
                     cancelChecker,
                     progress,
                     inputs -> {
+                      progress.begin(
+                          progressTitle,
+                          inputs.stream()
+                              .map(ModuleSearchInputs::inputs)
+                              .mapToInt(WorkspaceSearchInputs::size)
+                              .sum());
                       final List<CompletableFuture<SearchHits<CallHierarchyIncomingCall>>>
                           searches =
                               inputs.stream()
@@ -1174,7 +1256,6 @@ final class ReferenceSearch {
                                           incomingCallFutures(
                                               module, data, cancelChecker, progress))
                                   .toList();
-                      progress.begin(progressTitle, searches.size());
                       return joinSearchHits(searches, cancelChecker);
                     }))
         .thenApply(
@@ -1300,23 +1381,28 @@ final class ReferenceSearch {
                           cancelChecker)
                       .whenComplete(advancing(progress, false));
                 }),
-        inputs.diskCandidates().stream()
+        CollectionUtil.partition(inputs.diskCandidates(), SEARCH_BATCH_SIZE).stream()
             .map(
-                d -> {
+                chunk -> {
                   cancelChecker.checkCanceled();
-                  return worker
-                      .submit(
-                          session -> {
-                            final AttributedFileAnalysis analysis =
-                                session.transientAnalysis(d.uri(), d.content(), cancelChecker);
-                            cancelChecker.checkCanceled();
-                            return session
-                                .references()
-                                .incomingCalls(analysis, d.uri(), item, family);
-                          },
-                          cancelChecker)
-                      .whenComplete(advancing(progress, true));
+                  return worker.submit(
+                      session ->
+                          searchFiles(
+                              session,
+                              transientSources(chunk),
+                              (searching, analysis) ->
+                                  searching
+                                      .references()
+                                      .incomingCalls(
+                                          analysis.analysis(), analysis.uri(), item, family),
+                              hits -> progress.advance(true, hits),
+                              cancelChecker),
+                      cancelChecker);
                 }));
+  }
+
+  private static List<TransientSource> transientSources(final List<DiskCandidate> files) {
+    return files.stream().map(file -> new TransientSource(file.uri(), file.content())).toList();
   }
 
   CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
