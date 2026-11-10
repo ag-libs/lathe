@@ -187,6 +187,12 @@ method (not strictly comparable: another harness and a partly loaded machine), m
 | OpenMetadata references, widely used method | 2.2 s | 7.8 s | ~8 s |
 | Hibernate ORM implementations, interface method | 0.22 s | 0.73 s | not re-measured |
 
+The benchmark scored both OpenMetadata rows 0/3 for Lathe: its pinned build (`c15d3a55`) found 22 references, all in
+`Entity.java`, because `getEntityRepository(@NonNull String)`'s declaration kept the type-use annotation in its
+parameter descriptor and matched no call compiled against the class file.
+`53f07467` fixed that the day after; main now finds 982 references in the modules jdtls also covers (949 shared, 33
+calls jdtls misses) and 874 incoming callers, including every caller the benchmark expects.
+
 jdtls answers these first-time searches for common names from a prebuilt index; Lathe compiles the candidate files.
 Lathe is faster on field reads through a getter (milliseconds against 7–25 s), outgoing calls and subtype
 implementations, and on most of Helidon; jdtls does not import Fineract. The cache (c) would answer a repeated
