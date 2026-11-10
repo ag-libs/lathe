@@ -12610,6 +12610,29 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-76 — Two hits on one line show as duplicate rows without columns — done
+
+**Status: done.**
+
+**Affects: MCP tools that list locations.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+When a line held two results, the answer showed the same `file:line: snippet` row twice, with no column to tell them apart:
+the 2026-11-10 release check counted 11 such rows in 52 for one Dropwizard reference search.
+
+### Resolution
+
+Every located result now prints its column: `path:line:column: code`, as `grep -n --column` does (`McpText.position`).
+Two hits on one line are two rows that differ by column, and the column is the position the other tools take, as the outline and the diagnostics already printed it.
+The tool descriptions, the AI agents guide and the release battery's location parser (`dev/mcp_consistency.py`) follow the new form.
+
+### Regression targets
+
+- `McpTextTest.referencesResult_twoHitsOnOneLine_rowsDifferByColumn`
+- `McpTextTest.locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor`
+
+---
+
 ## MC-42 — An unparseable line on stdin leaves the MCP server running but deaf — done
 
 **Status: done.**

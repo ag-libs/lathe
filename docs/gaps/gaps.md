@@ -2474,33 +2474,6 @@ None yet.
 
 ---
 
-## MC-76 — Two hits on one line show as duplicate rows without columns
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP tools that list locations.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-When a line holds two results, the answer shows the same `file:line: snippet` row twice, with no column
-to tell them apart.
-
-### Fix direction
-
-Print the column (`file:line:column`), or merge the hits of one line into one row with both columns.
-
-Also (exploratory round, 2026-11-04): Dropwizard's `KIBIBYTES` gives 46 rows for 34 lines; Helidon's generated `ObserveServices__ServiceDescriptor.java` lines 64 and 66 twice.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-77 — `workspace_summary` gives no test status for some modules
 
 **Status: documented**

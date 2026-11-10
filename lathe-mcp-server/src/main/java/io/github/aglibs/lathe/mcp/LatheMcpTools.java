@@ -106,7 +106,7 @@ final class LatheMcpTools {
             """
                 Resolve the symbol at a position to its definition — across modules and into \
                 dependency, JDK, and generated sources — returning each target as \
-                `path:line: code`, its source line included.\
+                `path:line:column: code`, its source line included.\
                 """,
             LatheMcpTools::handleDefinition),
         tool(
@@ -122,7 +122,7 @@ final class LatheMcpTools {
             """
                 Find every real use of the symbol at a position across the whole reactor — \
                 javac-accurate, not text search: resolves overloads and inheritance, spans all \
-                modules, and returns each use as one `path:line: code` line. It finds uses a plain grep \
+                modules, and returns each use as one `path:line:column: code` line. It finds uses a plain grep \
                 misses or misattributes — a symbol reached through a variable, or one of several \
                 overloads that share a name — and excludes unrelated symbols that merely share the \
                 name, so you need not re-check with grep. Use before changing or removing a symbol, \
@@ -198,7 +198,7 @@ final class LatheMcpTools {
             """
                 Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
                 whole reactor — javac-accurate, following the real call graph (resolving overrides \
-                and cross-module edges), one `path:line: code` line per call site: for outgoing, \
+                and cross-module edges), one `path:line:column: code` line per call site: for outgoing, \
                 where the method makes each call, in source order. Use to scope the impact of a \
                 change; text search cannot follow calls.\
                 """,
@@ -230,7 +230,7 @@ final class LatheMcpTools {
             """
                 Find a type by name across the whole reactor, its dependencies, and the \
                 JDK (the reactor's first, never JDK internals no project code can use) — \
-                returning each with its kind, container, and `path:line`. Use to locate a type \
+                returning each with its kind, container, and `path:line:column`. Use to locate a type \
                 when you know its name but not its file.\
                 """,
             LatheMcpTools::handleSearchSymbols),
@@ -246,7 +246,7 @@ final class LatheMcpTools {
             READ_ONLY,
             """
                 Find the implementations of the interface — or the overrides of the method — at a \
-                position, across the whole reactor, javac-accurate, one `path:line: code` line each. This is \
+                position, across the whole reactor, javac-accurate, one `path:line:column: code` line each. This is \
                 the "who implements X / what overrides this" question text search cannot answer: it \
                 follows the type hierarchy across modules and includes anonymous and nested \
                 implementers a name grep cannot find.\

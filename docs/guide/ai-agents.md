@@ -99,7 +99,7 @@ the Claude Code setup above has been validated.
 
 ## The tools
 
-Every located result is one line, `path:line: code`, as grep prints it: the path is relative to the
+Every located result is one line, `path:line:column: code`, as `grep -n --column` prints it: the path is relative to the
 workspace, and a result outside the project is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
 its URI) or `[GENERATED]`.
 Answers are text only, with any notes after the result, so every MCP client shows the agent the same thing.
