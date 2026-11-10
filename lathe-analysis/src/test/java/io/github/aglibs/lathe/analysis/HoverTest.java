@@ -616,7 +616,7 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
-  void hover_partlyDocumentedOverride_inheritsWhatItLeavesOut_ownPartsWin() {
+  void hover_partlyDocumentedOverride_inheritsWhatItLeavesOut() {
     final var src =
         """
         import java.io.IOException;
@@ -656,6 +656,78 @@ class HoverTest extends SampleFixture {
         .doesNotContain("if the disk fails")
         .doesNotContain("IllegalStateException");
     assertThat(md.indexOf("@param** `data`")).isLessThan(md.indexOf("@return"));
+  }
+
+  private static final String PARTIAL_DOCS_SOURCE =
+      """
+      interface Store {
+        /**
+         * Writes a value.
+         *
+         * @param key where to write
+         * @param value what to write
+         * @return the previous value
+         */
+        String put(String key, String value);
+
+        /**
+         * Clears it.
+         *
+         * @return nothing, wrongly
+         */
+        void clear();
+      }
+
+      class Later implements Store {
+        /** @param data the payload */
+        @Override
+        public String put(String name, String data) { return null; }
+
+        /** Empties the store. */
+        @Override
+        public void clear() {}
+
+        void use() {
+          put("k", "v");
+          clear();
+        }
+      }
+
+      class Mixed implements Store {
+        /**
+         * @param name {@inheritDoc} for real
+         * @param data
+         */
+        @Override
+        public String put(String name, String data) { return null; }
+
+        void use() { put("k", "v"); }
+      }
+      """;
+
+  @Test
+  void hover_overrideDocumentingLaterParam_printsParamsInSignatureOrder() {
+    final String md = hoverText(PARTIAL_DOCS_SOURCE, "  put(\"k\"", "put");
+    assertThat(md)
+        .contains("**@param** `name` where to write")
+        .contains("**@param** `data` the payload");
+    assertThat(md.indexOf("`name`")).isLessThan(md.indexOf("`data`"));
+  }
+
+  @Test
+  void hover_voidOverride_inheritsNoReturn() {
+    assertThat(hoverText(PARTIAL_DOCS_SOURCE, "  clear();", "clear"))
+        .contains("Empties the store.")
+        .doesNotContain("@return");
+  }
+
+  @Test
+  void hover_inheritDocAndEmptyOwnParam_bothTakeTheParentsText() {
+    assertThat(hoverText(PARTIAL_DOCS_SOURCE, "void use() { put", "put"))
+        .contains("Writes a value.")
+        .contains("**@param** `name` where to write for real")
+        .contains("**@param** `data` what to write")
+        .contains("**@return** the previous value");
   }
 
   @Test

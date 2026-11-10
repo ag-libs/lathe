@@ -19,17 +19,21 @@ an override documented only with `/** @throws IllegalStateException if closed */
 
 ### Resolution
 
-As the javadoc tool does, what an override's doc leaves out comes from the nearest overridden method that has it:
-the main description, a `@param` (by position, shown under the override's own name), the `@return`,
-and the `@throws` of an exception the override's `throws` clause declares; what the override writes itself wins.
-Block tags print in javadoc's order, parameters by position, then the return value, exceptions and references,
-so an inherited part sits where it belongs; a doc already written in that order prints as before.
-`{@inheritDoc}` and this automatic inheritance find the overridden part through one helper (`nearest`).
+As the javadoc tool does, what an override's doc leaves out, or writes with no text, comes from the nearest overridden method that has it:
+the main description, a `@param` (by position, shown under the override's own name), the `@return` when the method returns a value,
+and the `@throws` of an exception the override's `throws` clause declares, matched by simple name; what the override writes itself wins.
+Block tags print in javadoc's order: each parameter in its signature position, then the return value, exceptions and references,
+so an inherited part sits where it belongs.
+A void override never looks for an `@return`, so a documented one reads no overridden doc for it.
+`{@inheritDoc}` and this automatic inheritance find the overridden part through one helper and the same tag-matching rules.
 Signature help gets the same inherited description and parameter docs.
 
 ### Regression targets
 
-- `HoverTest.hover_partlyDocumentedOverride_inheritsWhatItLeavesOut_ownPartsWin`
+- `HoverTest.hover_partlyDocumentedOverride_inheritsWhatItLeavesOut`
+- `HoverTest.hover_overrideDocumentingLaterParam_printsParamsInSignatureOrder`
+- `HoverTest.hover_voidOverride_inheritsNoReturn`
+- `HoverTest.hover_inheritDocAndEmptyOwnParam_bothTakeTheParentsText`
 - `SignatureHelpTest.signatureHelp_partlyDocumentedOverride_inheritsWhatItLeavesOut`
 
 ---
