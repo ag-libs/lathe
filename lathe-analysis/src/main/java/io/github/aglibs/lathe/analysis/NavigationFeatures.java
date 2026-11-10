@@ -264,6 +264,19 @@ public final class NavigationFeatures {
     return result;
   }
 
+  // Whether definition at the request names a JDK element while the workspace has no JDK sources,
+  // so that it finds no source to show.
+  public boolean definitionNeedsJdkSources(final SourceFeatureRequest request) {
+    return session
+        .cursor(request)
+        .map(
+            cur ->
+                request
+                    .libraries()
+                    .jdkElementWithoutSources(elementForNavigation(cur), compiler.fileManager()))
+        .orElse(false);
+  }
+
   // The call whose method name, or `new` type, the cursor is on.
   private static Optional<TreePath> callAtName(final Cursor cur) {
     final TreePath parent = cur.path().getParentPath();

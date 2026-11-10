@@ -51,7 +51,7 @@ public final class JdkSourceResolver {
 
   private static JdkSource resolve(final Path home, final String vendor, final String version) {
     final var key = cacheKey(home, vendor, version);
-    final var sourceZip = home.resolve("lib").resolve("src.zip");
+    final var sourceZip = home.resolve(LatheLayout.JDK_SOURCE_ZIP);
     final var sourceDir =
         LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_JDKS_DIR).resolve(key);
     if (Files.exists(sourceZip)) {

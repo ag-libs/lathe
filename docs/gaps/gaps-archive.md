@@ -7,6 +7,35 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-031 — JDK home fallback works, but missing JDK sources had no actionable explanation — done
+
+**Status: done.**
+
+**Affects: the build's sync and the editor's go-to-definition into the JDK.**
+
+`JdkSourceResolver.resolve` already fell back from an unset `JAVA_HOME` to the running JVM's `java.home` and resolved symlinks.
+What remained: when the JDK had no `lib/src.zip`, the sync logged only `[sync] jdk sources missing` at INFO,
+naming neither the archive looked for nor how to install it, and go-to-definition into the JDK found nothing in the editor without saying why.
+
+### Resolution
+
+`JdkSourceData.missingSourcesNote` (shared through `lathe-core`) names the cause and the remedy:
+the `<home>/lib/src.zip` that was not found, or that no JDK home was found, then how to install the sources
+(the `openjdk-<major>-source` package on Debian/Ubuntu, or the installer's source option) or point `JAVA_HOME` at a JDK that has them, and to sync again.
+The sync logs it as a warning; the server keeps it from the manifest, and the first definition in a session that names a JDK element and finds no source
+shows it to the user (`window/showMessage`), once. `LatheLayout.JDK_SOURCE_ZIP` names the archive for both.
+The troubleshooting guide has the matching entry.
+
+### Regression targets
+
+- `JdkSourceDataTest` (the note with a known home, with none, and empty when the sources are there)
+- `LibrarySourcesTest.jdkElementWithoutSources_jdkTypeWithoutJdkSources_isTrue`
+- `LibrarySourcesTest.jdkElementWithoutSources_jdkSourcesPresentOrWorkspaceType_isFalse`
+- `LatheTextDocumentServiceTest.definition_jdkTypeWithSourcesMissing_explainsOnceWhatToInstall`
+- `JdkSourceResolverTest` (the home fallback: unset `JAVA_HOME`, symlinked home, no `src.zip`)
+
+---
+
 ## EG-103 — A partly documented override does not inherit the parts it leaves out — done
 
 **Status: done.**

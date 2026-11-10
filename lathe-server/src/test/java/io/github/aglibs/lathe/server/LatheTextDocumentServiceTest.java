@@ -20,8 +20,10 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -44,6 +46,7 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -933,5 +936,62 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     }
 
     assertThat(actual).isEqualTo(expected);
+  }
+
+  @Test
+  void definition_jdkTypeWithSourcesMissing_explainsOnceWhatToInstall() throws Exception {
+    final String use =
+        """
+        package com.example;
+
+        class Use {
+          Foo foo;
+          String text = "x";
+          int size = text.length();
+        }
+        """;
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of(
+                "com/example/Use.java",
+                use,
+                "com/example/Foo.java",
+                "package com.example;\nclass Foo {}\n"),
+            List.of(),
+            1_000L);
+    final Path home = tmp.resolve("jdk");
+    TestCompiler.recordJdk(
+        tmp, new JdkSourceData("Vendor", "21.0.1", SourceStatus.MISSING, home, null, null, null));
+    final Path useFile =
+        files.stream().filter(file -> file.endsWith("Use.java")).findFirst().orElseThrow();
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(useFile, use);
+    awaitWorkerIdle();
+
+    assertThat(definitionAt(useFile, use, "Foo foo")).hasSize(1);
+    assertThat(definitionAt(useFile, use, "String text")).isEmpty();
+    assertThat(definitionAt(useFile, use, "length()")).isEmpty();
+    verify(client, timeout(2000).times(1))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage().startsWith("JDK sources are missing: ")
+                        && m.getMessage()
+                            .contains(home.resolve(LatheLayout.JDK_SOURCE_ZIP).toString())));
+  }
+
+  private List<? extends Location> definitionAt(
+      final Path file, final String content, final String token) throws Exception {
+    return service
+        .definition(
+            new DefinitionParams(
+                new TextDocumentIdentifier(file.toUri().toString()),
+                Positions.offsetToPosition(content, content.indexOf(token))))
+        .get(10, TimeUnit.SECONDS)
+        .getLeft();
   }
 }

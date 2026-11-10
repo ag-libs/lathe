@@ -52,6 +52,10 @@ public final class LatheLayout {
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
   public static final String JAVA_HOME_PROPERTY = "java.home";
+
+  // Where a JDK keeps its sources, relative to its home: the build extracts them, the server
+  // explains their absence.
+  public static final Path JDK_SOURCE_ZIP = Path.of("lib", "src.zip");
   public static final String NATIVE_ENCODING_PROPERTY = "native.encoding";
   public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";

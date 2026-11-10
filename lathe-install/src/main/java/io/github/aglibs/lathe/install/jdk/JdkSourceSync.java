@@ -18,7 +18,7 @@ public final class JdkSourceSync {
 
   public static void extract(final JdkSource source) {
     if (!source.isPresent()) {
-      LOG.info("[sync] jdk sources missing");
+      source.toData().missingSourcesNote().ifPresent(note -> LOG.warn("[sync] %s".formatted(note)));
       return;
     }
 

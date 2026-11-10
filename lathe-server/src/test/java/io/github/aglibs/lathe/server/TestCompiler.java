@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
@@ -262,7 +263,8 @@ public final class TestCompiler {
         workspaceRoot,
         existing ->
             Stream.concat(existing.outputs().stream(), targetOutputs(moduleName).stream()).toList(),
-        WorkspaceManifestData::buildFiles);
+        WorkspaceManifestData::buildFiles,
+        WorkspaceManifestData::jdk);
   }
 
   // Records the build files in workspace.json as a sync that just read them does, so a later edit
@@ -276,13 +278,28 @@ public final class TestCompiler {
               FileUtil.slashed(workspaceRoot.relativize(file)), FileUtil.fingerprint(file)));
     }
 
-    rewriteManifest(workspaceRoot, WorkspaceManifestData::outputs, existing -> synced);
+    rewriteManifest(
+        workspaceRoot,
+        WorkspaceManifestData::outputs,
+        existing -> synced,
+        WorkspaceManifestData::jdk);
+  }
+
+  // Records the JDK a front-end's sync found, its sources present or missing.
+  public static void recordJdk(final Path workspaceRoot, final JdkSourceData jdk)
+      throws IOException {
+    rewriteManifest(
+        workspaceRoot,
+        WorkspaceManifestData::outputs,
+        WorkspaceManifestData::buildFiles,
+        existing -> jdk);
   }
 
   private static void rewriteManifest(
       final Path workspaceRoot,
       final Function<WorkspaceManifestData, List<OutputData>> outputs,
-      final Function<WorkspaceManifestData, List<BuildFileData>> buildFiles)
+      final Function<WorkspaceManifestData, List<BuildFileData>> buildFiles,
+      final Function<WorkspaceManifestData, JdkSourceData> jdk)
       throws IOException {
     final Path manifestFile =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -307,7 +324,7 @@ public final class TestCompiler {
             existing.workspaceRoot(),
             existing.serverVersion(),
             existing.runnerClasspath(),
-            existing.jdk(),
+            jdk.apply(existing),
             existing.dependencySources(),
             buildFiles.apply(existing),
             existing.resourceRoots(),

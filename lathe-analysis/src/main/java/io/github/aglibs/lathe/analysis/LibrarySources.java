@@ -209,6 +209,25 @@ public record LibrarySources(
     }
   }
 
+  // Whether the element is the JDK's (a system module's) while the workspace has no JDK sources,
+  // so navigating to it can show none.
+  public boolean jdkElementWithoutSources(final Element element, final StandardJavaFileManager fm) {
+    final var entry = classify(element);
+    if (jdkSourceDir != null || entry == null || entry.moduleName() == null) {
+      return false;
+    }
+
+    try {
+      return fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, entry.moduleName()) != null;
+    } catch (final IOException e) {
+      LOG.log(
+          Level.FINE,
+          e,
+          () -> "[origin] module lookup failed for %s".formatted(entry.moduleName()));
+      return false;
+    }
+  }
+
   public Optional<Path> externalSourceRoot(
       final Element element, final StandardJavaFileManager fm) {
     final var entry = classify(element);

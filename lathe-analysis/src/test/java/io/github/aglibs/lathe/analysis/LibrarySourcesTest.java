@@ -26,6 +26,23 @@ class LibrarySourcesTest extends SampleFixture {
   }
 
   @Test
+  void jdkElementWithoutSources_jdkTypeWithoutJdkSources_isTrue() {
+    final var listType = compiled.task().getElements().getTypeElement("java.util.List");
+
+    assertThat(LibrarySources.none().jdkElementWithoutSources(listType, compiled.fm())).isTrue();
+  }
+
+  @Test
+  void jdkElementWithoutSources_jdkSourcesPresentOrWorkspaceType_isFalse() {
+    final var listType = compiled.task().getElements().getTypeElement("java.util.List");
+    final var withJdkSources = LibrarySources.from(List.of(), "21", Path.of("jdk-sources"));
+    final var sampleType = compiled.task().getElements().getTypeElement("Sample");
+
+    assertThat(withJdkSources.jdkElementWithoutSources(listType, compiled.fm())).isFalse();
+    assertThat(LibrarySources.none().jdkElementWithoutSources(sampleType, compiled.fm())).isFalse();
+  }
+
+  @Test
   void originLabel_reactorClass_returnsModuleName() throws Exception {
     final Path classDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("mymodule");
     Files.createDirectories(classDir);

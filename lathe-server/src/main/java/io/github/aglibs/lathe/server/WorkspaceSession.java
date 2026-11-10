@@ -108,7 +108,7 @@ final class WorkspaceSession {
     this.reactorIndex = new ReactorTypeIndex(eventLoop, state, this::openSourcePaths);
     this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex);
     this.router = new FeatureRouter(eventLoop, state, docs);
-    this.features = new DocumentFeatures(state, reactorIndex, router, docs);
+    this.features = new DocumentFeatures(state, reactorIndex, router, docs, client);
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
     this.search = new ReferenceSearch(eventLoop, state, reactorIndex, router, docs);
     this.resourceMirror = new ResourceMirror(state);
