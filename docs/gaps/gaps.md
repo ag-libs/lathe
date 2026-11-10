@@ -466,33 +466,6 @@ None yet.
 
 ---
 
-## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
-
-**Status: deferred** (triaged 2026-11-03: low severity for the editor)
-
-**Value: low — Size: S**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier and Dropwizard.
-
-### Observed behaviour
-
-- `[compile] dropped 10 forked-javac -J option(s) …` is logged at INFO for every module compiler created,
-  four times in one second on EqualsVerifier.
-- On JDK 25, Guava's `sun.misc.Unsafe` deprecation warning reaches the MCP server's stderr during in-process compiles.
-
-### Fix direction
-
-Log the dropped options once per workspace, or at FINE.
-Keep compile-time library warnings out of the server's stderr.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
 **Status: accepted (server and Neovim shipped; VS Code pending).**
