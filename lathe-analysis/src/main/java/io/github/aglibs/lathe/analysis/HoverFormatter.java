@@ -21,6 +21,10 @@ import javax.lang.model.util.Types;
 
 final class HoverFormatter {
 
+  private static final int MAX_CLAUSE_NAMES = 5;
+
+  private static final Set<String> NOT_FIELDS = Set.of("this", "super", "class");
+
   private HoverFormatter() {}
 
   public static Optional<String> format(
@@ -70,9 +74,14 @@ final class HoverFormatter {
     } else if (element instanceof final TypeElement te) {
       sig = typeDeclaration(te, fmt);
     } else if (element != null && type != null) {
-      // A field's modifiers (`public static final`) say how it is used; a local's add nothing.
-      final String fieldModifiers = element.getKind().isField() ? modifiers(element) : "";
-      sig = "%s%s %s".formatted(fieldModifiers, type, element.getSimpleName());
+      // A field's modifiers say how it is used; a local's add nothing. javac also models `this`,
+      // `super` and a class literal's `class` as fields, whose names no real field can have.
+      final boolean field =
+          element.getKind().isField() && !NOT_FIELDS.contains(element.getSimpleName().toString());
+      sig =
+          "%s%s %s"
+              .formatted(
+                  field ? modifiers(element) : "", display(type, fmt), element.getSimpleName());
     } else if (type != null) {
       sig = type.toString();
     } else {
@@ -92,15 +101,20 @@ final class HoverFormatter {
   // The declaration line of a type: its modifiers, and the supertypes it declares, leaving out
   // what its kind implies (`extends Object`, an enum's `Enum`, a record's `Record`).
   private static String typeDeclaration(final TypeElement te, final TypeDisplayFormatter fmt) {
-    final boolean isInterface = te.getKind().isInterface();
+    final List<String> interfaces =
+        te.getKind() == ElementKind.ANNOTATION_TYPE
+            ? List.of()
+            : te.getInterfaces().stream().map(type -> display(type, fmt)).toList();
+    // An enum whose constants have bodies is sealed, permitting their nameless classes.
+    final List<String> permitted =
+        te.getKind() == ElementKind.ENUM
+            ? List.of()
+            : te.getPermittedSubclasses().stream().map(HoverFormatter::rawName).toList();
     return Stream.of(
-            Optional.of("%s%s".formatted(typeModifiers(te), typeLine(te))),
-            clause("extends", superclass(te).stream().toList(), fmt),
-            clause(
-                isInterface ? "extends" : "implements",
-                te.getKind() == ElementKind.ANNOTATION_TYPE ? List.of() : te.getInterfaces(),
-                fmt),
-            clause("permits", te.getPermittedSubclasses(), fmt))
+            Optional.of("%s%s".formatted(modifiers(te), typeLine(te))),
+            clause("extends", superclass(te).map(type -> display(type, fmt)).stream().toList()),
+            clause(te.getKind().isInterface() ? "extends" : "implements", interfaces),
+            clause("permits", permitted))
         .flatMap(Optional::stream)
         .collect(Collectors.joining(" "));
   }
@@ -118,39 +132,65 @@ final class HoverFormatter {
     return Optional.of(superclass);
   }
 
-  private static Optional<String> clause(
-      final String keyword,
-      final List<? extends TypeMirror> types,
-      final TypeDisplayFormatter fmt) {
-    return types.isEmpty()
-        ? Optional.empty()
-        : Optional.of(
-            "%s %s"
-                .formatted(
-                    keyword,
-                    types.stream().map(t -> display(t, fmt)).collect(Collectors.joining(", "))));
+  // A `permits` clause names classes, without type arguments.
+  private static String rawName(final TypeMirror type) {
+    return type instanceof final DeclaredType declared
+        ? declared.asElement().getSimpleName().toString()
+        : type.toString();
   }
 
-  // An element's modifiers, as javac reports them (the implicit ones included), in the order the
-  // Java style guides write them, each followed by a space.
+  // A long list (a large sealed hierarchy) would make the line too wide to read: the first few,
+  // then how many more.
+  private static Optional<String> clause(final String keyword, final List<String> names) {
+    if (names.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final String shown =
+        String.join(", ", names.subList(0, Math.min(names.size(), MAX_CLAUSE_NAMES)));
+    return Optional.of(
+        names.size() > MAX_CLAUSE_NAMES
+            ? "%s %s, … (+%d)".formatted(keyword, shown, names.size() - MAX_CLAUSE_NAMES)
+            : "%s %s".formatted(keyword, shown));
+  }
+
+  // The modifiers the source would write, each followed by a space, in the order the Java style
+  // guides use: javac also reports those the declaration's kind or place implies, which are left
+  // out, so a hover shows what one reads in the file.
   private static String modifiers(final Element element) {
-    return modifierText(element.getModifiers().stream());
+    final Set<Modifier> implied = impliedModifiers(element);
+    return element.getModifiers().stream()
+        .filter(modifier -> !implied.contains(modifier))
+        .sorted()
+        .map(modifier -> "%s ".formatted(modifier))
+        .collect(Collectors.joining());
   }
 
-  // A type's modifiers without those its kind implies: an interface is abstract and, nested,
-  // static; an enum or record is final and, nested, static.
-  private static String typeModifiers(final TypeElement te) {
-    final Set<Modifier> implied =
-        switch (te.getKind()) {
+  // An interface member is public; its method abstract unless default, static or private; its
+  // field static and final, as is an enum constant; a type nested in an interface is static. An
+  // interface is abstract, an enum or record final, and a nested one static; an enum's
+  // constructor is private.
+  private static Set<Modifier> impliedModifiers(final Element element) {
+    final Element owner = element.getEnclosingElement();
+    final boolean inInterface = owner != null && owner.getKind().isInterface();
+    final Set<Modifier> byKind =
+        switch (element.getKind()) {
           case INTERFACE, ANNOTATION_TYPE -> Set.of(Modifier.ABSTRACT, Modifier.STATIC);
-          case ENUM, RECORD -> Set.of(Modifier.FINAL, Modifier.STATIC, Modifier.ABSTRACT);
+          case ENUM -> Set.of(Modifier.FINAL, Modifier.STATIC, Modifier.ABSTRACT, Modifier.SEALED);
+          case RECORD -> Set.of(Modifier.FINAL, Modifier.STATIC);
+          case ENUM_CONSTANT -> Set.of(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
+          case FIELD ->
+              inInterface ? Set.of(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL) : Set.of();
+          case METHOD -> inInterface ? Set.of(Modifier.PUBLIC, Modifier.ABSTRACT) : Set.of();
+          case CONSTRUCTOR ->
+              owner.getKind() == ElementKind.ENUM ? Set.of(Modifier.PRIVATE) : Set.of();
           default -> Set.of();
         };
-    return modifierText(te.getModifiers().stream().filter(m -> !implied.contains(m)));
-  }
-
-  private static String modifierText(final Stream<Modifier> modifiers) {
-    return modifiers.sorted().map(m -> "%s ".formatted(m)).collect(Collectors.joining());
+    final boolean nestedType = element.getKind().isClass() || element.getKind().isInterface();
+    return inInterface && nestedType
+        ? Stream.concat(byKind.stream(), Stream.of(Modifier.PUBLIC, Modifier.STATIC))
+            .collect(Collectors.toUnmodifiableSet())
+        : byKind;
   }
 
   private static String display(final TypeMirror type, final TypeDisplayFormatter fmt) {

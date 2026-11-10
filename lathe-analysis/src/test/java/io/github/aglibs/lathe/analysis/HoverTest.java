@@ -502,9 +502,34 @@ class HoverTest extends SampleFixture {
 
       enum Color { RED }
 
+      enum Op {
+        PLUS { int apply() { return 1; } },
+        MINUS;
+
+        int apply() { return 0; }
+      }
+
+      sealed interface Holder<T> permits Full {
+        class Nested {}
+      }
+
+      record Full<T>(T t) implements Holder<T> {}
+
+      sealed interface Many permits A, B, C, D, E, F, G {}
+
+      final class A implements Many {}
+      final class B implements Many {}
+      final class C implements Many {}
+      final class D implements Many {}
+      final class E implements Many {}
+      final class F implements Many {}
+      final class G implements Many {}
+
       @interface Marker {}
 
       class Plain {
+        private java.util.List<String> names;
+
         void use(Repo<String> repo) {
           Child.run(1);
           repo.save("x");
@@ -517,6 +542,11 @@ class HoverTest extends SampleFixture {
           Color color = Color.RED;
           Marker marker = null;
           Plain plain = this;
+          Op op = Op.PLUS;
+          Holder<String> holder = null;
+          Holder.Nested nested = null;
+          Many many = null;
+          names = null;
           int local = 0;
           local++;
         }
@@ -524,15 +554,20 @@ class HoverTest extends SampleFixture {
       """;
 
   @Test
-  void hover_members_showModifiersImplicitOnesIncluded() {
+  void hover_members_showModifiersTheSourceWouldWrite() {
     assertThat(hoverText(DECLARATIONS_SOURCE, "Child.run(1)", "run"))
         .contains("public static int run(int value)");
     assertThat(hoverText(DECLARATIONS_SOURCE, "repo.save", "save"))
-        .contains("public abstract void save(T item)");
+        .contains("```java\nvoid save(T item)");
     assertThat(hoverText(DECLARATIONS_SOURCE, "repo.log", "log"))
-        .contains("public default void log()");
+        .contains("```java\ndefault void log()");
     assertThat(hoverText(DECLARATIONS_SOURCE, "Repo.LIMIT", "LIMIT"))
-        .contains("public static final int LIMIT");
+        .contains("```java\nint LIMIT");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Color.RED", "RED")).contains("```java\nColor RED");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "names = null", "names"))
+        .contains("private List<String> names");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Plain plain = this", "this"))
+        .doesNotContain("final");
     assertThat(hoverText(DECLARATIONS_SOURCE, "local++", "local"))
         .contains("int local")
         .doesNotContain("final");
@@ -547,6 +582,20 @@ class HoverTest extends SampleFixture {
         .doesNotContain("abstract");
     assertThat(hoverText(DECLARATIONS_SOURCE, "Shape shape", "Shape"))
         .contains("sealed interface Shape permits Circle, Square");
+  }
+
+  @Test
+  void hover_types_leaveOutWhatTheirKindOrPlaceImplies() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Op op", "Op"))
+        .contains("```java\nenum Op\n")
+        .doesNotContain("sealed")
+        .doesNotContain("permits");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Holder.Nested nested", "Nested"))
+        .contains("```java\nclass Nested\n");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Holder<String> holder", "Holder"))
+        .contains("sealed interface Holder<T> permits Full\n");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Many many", "Many"))
+        .contains("sealed interface Many permits A, B, C, D, E, … (+2)");
   }
 
   @Test
