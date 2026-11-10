@@ -616,6 +616,49 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_partlyDocumentedOverride_inheritsWhatItLeavesOut_ownPartsWin() {
+    final var src =
+        """
+        import java.io.IOException;
+
+        interface Store {
+          /**
+           * Writes a value.
+           *
+           * @param key where to write
+           * @param value what to write
+           * @return the previous value
+           * @throws IOException if the disk fails
+           * @throws IllegalStateException if closed
+           */
+          String put(String key, String value) throws IOException;
+        }
+
+        class FileStore implements Store {
+          /**
+           * @param name the file name
+           * @throws IOException if the file is locked
+           */
+          @Override
+          public String put(String name, String data) throws IOException { return null; }
+
+          void use() throws IOException { put("k", "v"); }
+        }
+        """;
+    final String md = hoverText(src, "put(\"k\"", "put");
+    assertThat(md)
+        .contains("Writes a value.")
+        .contains("**@param** `name` the file name")
+        .contains("**@param** `data` what to write")
+        .contains("**@return** the previous value")
+        .contains("**@throws** `IOException` if the file is locked")
+        .doesNotContain("where to write")
+        .doesNotContain("if the disk fails")
+        .doesNotContain("IllegalStateException");
+    assertThat(md.indexOf("@param** `data`")).isLessThan(md.indexOf("@return"));
+  }
+
+  @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =
         """

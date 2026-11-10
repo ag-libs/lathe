@@ -381,7 +381,37 @@ class SignatureHelpTest {
         .isEqualTo("Sends a message. Child part.");
     assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
         .isEqualTo("the message");
-    assertThat(sig.getParameters().get(1).getDocumentation()).isNull();
+    // Left out of the override's doc, so inherited as the javadoc tool does (EG-103).
+    assertThat(sig.getParameters().get(1).getDocumentation().getRight().getValue())
+        .isEqualTo("how often to retry");
+  }
+
+  @Test
+  void signatureHelp_partlyDocumentedOverride_inheritsWhatItLeavesOut() {
+    final var source =
+        """
+        interface Sender {
+            /**
+             * Sends a message.
+             * @param msg the message
+             * @param retries how often to retry
+             */
+            void send(String msg, int retries);
+        }
+        class Impl implements Sender {
+            /** @param count retry budget */
+            @Override
+            public void send(String text, int count) {}
+            void caller() { send(§"hi", 1); }
+        }
+        """;
+    final var sig = signatureHelpAt(source).getSignatures().get(0);
+
+    assertThat(sig.getDocumentation().getRight().getValue()).isEqualTo("Sends a message.");
+    assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
+        .isEqualTo("the message");
+    assertThat(sig.getParameters().get(1).getDocumentation().getRight().getValue())
+        .isEqualTo("retry budget");
   }
 
   @Test

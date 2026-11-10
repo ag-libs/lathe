@@ -7,6 +7,33 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-103 — A partly documented override does not inherit the parts it leaves out — done
+
+**Status: done.**
+
+**Affects: the editor and MCP.**
+
+Found by the review of EG-068's fix (2026-11-09).
+Hover inherited javadoc only when an override had no comment at all, or where it wrote `{@inheritDoc}`:
+an override documented only with `/** @throws IllegalStateException if closed */` showed just that line.
+
+### Resolution
+
+As the javadoc tool does, what an override's doc leaves out comes from the nearest overridden method that has it:
+the main description, a `@param` (by position, shown under the override's own name), the `@return`,
+and the `@throws` of an exception the override's `throws` clause declares; what the override writes itself wins.
+Block tags print in javadoc's order, parameters by position, then the return value, exceptions and references,
+so an inherited part sits where it belongs; a doc already written in that order prints as before.
+`{@inheritDoc}` and this automatic inheritance find the overridden part through one helper (`nearest`).
+Signature help gets the same inherited description and parameter docs.
+
+### Regression targets
+
+- `HoverTest.hover_partlyDocumentedOverride_inheritsWhatItLeavesOut_ownPartsWin`
+- `SignatureHelpTest.signatureHelp_partlyDocumentedOverride_inheritsWhatItLeavesOut`
+
+---
+
 ## EG-101 — Hover and `describe_symbol` signatures leave out modifiers and supertypes — done
 
 **Status: done.**

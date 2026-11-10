@@ -17,6 +17,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 
 public final class JavadocLocator {
 
@@ -75,7 +76,8 @@ public final class JavadocLocator {
             : List.of();
     final Optional<MethodDoc> own = reader.doc(method);
     if (own.isPresent()) {
-      return Optional.of(new DocChain(own.get(), own.get().paramNames(), overridden));
+      return Optional.of(
+          new DocChain(own.get(), own.get().paramNames(), overridden, thrownNames(method)));
     }
 
     for (int i = 0; i < overridden.size(); i++) {
@@ -85,7 +87,8 @@ public final class JavadocLocator {
             new DocChain(
                 doc.get(),
                 sourceParamNames(method, reader.sourceRoots()),
-                overridden.subList(i + 1, overridden.size())));
+                overridden.subList(i + 1, overridden.size()),
+                thrownNames(method)));
       }
     }
 
@@ -95,6 +98,16 @@ public final class JavadocLocator {
   Optional<MethodDoc> methodDoc(
       final ExecutableElement method, final Trees trees, final List<Path> sourceRoots) {
     return readDeclaration(method, trees, sourceRoots, JavadocLocator::methodDoc);
+  }
+
+  private static List<String> thrownNames(final ExecutableElement method) {
+    return method.getThrownTypes().stream()
+        .map(
+            type ->
+                type instanceof final DeclaredType declared
+                    ? declared.asElement().getSimpleName().toString()
+                    : type.toString())
+        .toList();
   }
 
   private static Optional<String> nonBlank(final String markdown) {
