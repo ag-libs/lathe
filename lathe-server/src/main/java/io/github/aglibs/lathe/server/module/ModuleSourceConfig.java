@@ -61,6 +61,14 @@ public record ModuleSourceConfig(
         Objects.requireNonNullElse(testCode, LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
   }
 
+  // Hashed by what identifies a source tree, consistently with equals: the generated hash walks
+  // every classpath, module-path and source list, and the type index keys a map by config for each
+  // declaration it holds.
+  @Override
+  public int hashCode() {
+    return Objects.hash(moduleDir, sourceTree);
+  }
+
   public Path latheClassesDir() {
     return moduleDir.resolve(sourceTree);
   }

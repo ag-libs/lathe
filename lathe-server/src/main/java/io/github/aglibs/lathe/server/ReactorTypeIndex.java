@@ -38,8 +38,13 @@ final class ReactorTypeIndex {
   private final Supplier<Set<Path>> openSourcePaths;
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
-  private final Map<String, List<Declaration>> declarations = new HashMap<>();
-  private final Map<String, List<Declaration>> directSubtypeDeclarations = new HashMap<>();
+  // Each name's declarations, grouped by the source tree declaring them: replacing a shard drops
+  // its own in one step, and adding one never reads the rest (a common supertype gathers tens of
+  // thousands of subtypes).
+  private final Map<String, Map<ModuleSourceConfig, Set<Declaration>>> declarations =
+      new HashMap<>();
+  private final Map<String, Map<ModuleSourceConfig, Set<Declaration>>> directSubtypeDeclarations =
+      new HashMap<>();
   // MODULE_SYSTEM only: the bytecode base scanned once (modules/ changes just on make+sync), kept
   // apart from reactorShards so per-save delta refresh never rescans it. Empty for CLASSPATH.
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorBaseShards =
@@ -122,10 +127,7 @@ final class ReactorTypeIndex {
 
   List<ModuleSourceConfig> declaringConfigs(final String binaryName) {
     eventLoop.checkOnLoop();
-    return declarations.getOrDefault(binaryName, List.of()).stream()
-        .map(Declaration::owner)
-        .distinct()
-        .toList();
+    return List.copyOf(declarations.getOrDefault(binaryName, Map.of()).keySet());
   }
 
   boolean sameDeclaration(
@@ -140,7 +142,7 @@ final class ReactorTypeIndex {
   Set<String> duplicateNames() {
     eventLoop.checkOnLoop();
     return declarations.entrySet().stream()
-        .filter(entry -> entry.getValue().size() > 1)
+        .filter(entry -> declarationCount(entry.getValue()) > 1)
         .map(Map.Entry::getKey)
         .collect(Collectors.toUnmodifiableSet());
   }
@@ -189,8 +191,10 @@ final class ReactorTypeIndex {
     return declaringConfig(binaryName, asking)
         .flatMap(
             owner ->
-                declarations.getOrDefault(binaryName, List.of()).stream()
-                    .filter(declaration -> declaration.owner().equals(owner))
+                declarations
+                    .getOrDefault(binaryName, Map.of())
+                    .getOrDefault(owner, Set.of())
+                    .stream()
                     .map(Declaration::entry)
                     .findFirst());
   }
@@ -211,15 +215,16 @@ final class ReactorTypeIndex {
         pending.add(subtype.binaryName());
       }
 
-      for (final Declaration subtype : directSubtypeDeclarations.getOrDefault(name, List.of())) {
-        pending.add(subtype.entry().binaryName());
+      for (final Set<Declaration> byOwner :
+          directSubtypeDeclarations.getOrDefault(name, Map.of()).values()) {
+        for (final Declaration subtype : byOwner) {
+          pending.add(subtype.entry().binaryName());
+        }
       }
     }
 
     visited.remove(binaryName);
-    return visited.stream()
-        .flatMap(name -> declarations.getOrDefault(name, List.of()).stream())
-        .toList();
+    return visited.stream().flatMap(name -> declared(declarations, name)).toList();
   }
 
   Set<String> ambiguousHierarchyNames() {
@@ -247,32 +252,44 @@ final class ReactorTypeIndex {
 
     for (final TypeIndexEntry entry : entries) {
       final var declaration = new Declaration(config, entry);
-      declarations.merge(
-          entry.binaryName(), List.of(declaration), ReactorTypeIndex::mergeDeclarations);
+      addDeclaration(declarations, entry.binaryName(), declaration);
       for (final String parent : entry.directSupertypes()) {
-        directSubtypeDeclarations.merge(
-            parent, List.of(declaration), ReactorTypeIndex::mergeDeclarations);
+        addDeclaration(directSubtypeDeclarations, parent, declaration);
       }
     }
   }
 
-  private static List<Declaration> mergeDeclarations(
-      final List<Declaration> left, final List<Declaration> right) {
-    return Stream.concat(left.stream(), right.stream()).distinct().toList();
+  private static int declarationCount(final Map<ModuleSourceConfig, Set<Declaration>> byOwner) {
+    return byOwner.size() == 1 ? byOwner.values().iterator().next().size() : byOwner.size();
+  }
+
+  private static Stream<Declaration> declared(
+      final Map<String, Map<ModuleSourceConfig, Set<Declaration>>> index, final String name) {
+    return index.getOrDefault(name, Map.of()).values().stream().flatMap(Set::stream);
+  }
+
+  private static void addDeclaration(
+      final Map<String, Map<ModuleSourceConfig, Set<Declaration>>> index,
+      final String name,
+      final Declaration declaration) {
+    index
+        .computeIfAbsent(name, key -> new LinkedHashMap<>())
+        .computeIfAbsent(declaration.owner(), key -> new LinkedHashSet<>())
+        .add(declaration);
   }
 
   private static void removeDeclarations(
-      final Map<String, List<Declaration>> index,
+      final Map<String, Map<ModuleSourceConfig, Set<Declaration>>> index,
       final String name,
       final ModuleSourceConfig owner) {
-    final List<Declaration> remaining =
-        index.getOrDefault(name, List.of()).stream()
-            .filter(declaration -> !declaration.owner().equals(owner))
-            .toList();
-    if (remaining.isEmpty()) {
+    final Map<ModuleSourceConfig, Set<Declaration>> byOwner = index.get(name);
+    if (byOwner == null) {
+      return;
+    }
+
+    byOwner.remove(owner);
+    if (byOwner.isEmpty()) {
       index.remove(name);
-    } else {
-      index.put(name, remaining);
     }
   }
 
