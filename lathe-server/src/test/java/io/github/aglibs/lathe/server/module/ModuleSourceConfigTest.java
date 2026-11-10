@@ -83,6 +83,40 @@ class ModuleSourceConfigTest {
         LatheLayout.TEST_CLASSES_DIR);
   }
 
+  // The type index keys a map by config for every declaration it holds, so the hash must not walk
+  // the classpath; it stays consistent with equals, which still compares every field.
+  @Test
+  void hashCode_classpathNotHashed_equalConfigsHashAlike() {
+    final Path src = WORKSPACE.resolve("module/src/main/java");
+    final var config = config(null, src);
+    final var otherClasspath =
+        new ModuleSourceConfig(
+            config.moduleDir(),
+            config.sourceTree(),
+            config.outputDir(),
+            config.originalGenSourcesDir(),
+            config.sourceRoots(),
+            List.of(WORKSPACE.resolve("libs/vendor.jar")),
+            config.modulepath(),
+            config.processorPath(),
+            config.release(),
+            config.encoding(),
+            config.parameters(),
+            config.enablePreview(),
+            config.proc(),
+            config.compilerArgs(),
+            config.analysisMode(),
+            config.externalOutput(),
+            config.testCode(),
+            config.reactorRewrite());
+
+    assertThat(config(null, src)).isEqualTo(config).hasSameHashCodeAs(config);
+    assertThat(otherClasspath).isNotEqualTo(config).hasSameHashCodeAs(config);
+    assertThat(testConfig(null, src).hashCode())
+        .as("another source tree of the module")
+        .isNotEqualTo(config.hashCode());
+  }
+
   @Test
   void remappedPaths_listedOutputsMapToMirrorOthersPassThrough() {
     final Path sibling = WORKSPACE.resolve("platform/core/target/classes");
