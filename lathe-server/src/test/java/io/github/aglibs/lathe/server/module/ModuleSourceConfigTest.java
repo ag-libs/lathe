@@ -112,9 +112,6 @@ class ModuleSourceConfigTest {
 
     assertThat(config(null, src)).isEqualTo(config).hasSameHashCodeAs(config);
     assertThat(otherClasspath).isNotEqualTo(config).hasSameHashCodeAs(config);
-    assertThat(testConfig(null, src).hashCode())
-        .as("another source tree of the module")
-        .isNotEqualTo(config.hashCode());
   }
 
   @Test

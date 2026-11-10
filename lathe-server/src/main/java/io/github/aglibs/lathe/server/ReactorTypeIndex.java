@@ -141,8 +141,9 @@ final class ReactorTypeIndex {
 
   Set<String> duplicateNames() {
     eventLoop.checkOnLoop();
-    return declarations.keySet().stream()
-        .filter(name -> declared(declarations, name).count() > 1)
+    return declarations.entrySet().stream()
+        .filter(entry -> declarationCount(entry.getValue()) > 1)
+        .map(Map.Entry::getKey)
         .collect(Collectors.toUnmodifiableSet());
   }
 
@@ -214,8 +215,11 @@ final class ReactorTypeIndex {
         pending.add(subtype.binaryName());
       }
 
-      for (final Declaration subtype : declared(directSubtypeDeclarations, name).toList()) {
-        pending.add(subtype.entry().binaryName());
+      for (final Set<Declaration> byOwner :
+          directSubtypeDeclarations.getOrDefault(name, Map.of()).values()) {
+        for (final Declaration subtype : byOwner) {
+          pending.add(subtype.entry().binaryName());
+        }
       }
     }
 
@@ -253,6 +257,10 @@ final class ReactorTypeIndex {
         addDeclaration(directSubtypeDeclarations, parent, declaration);
       }
     }
+  }
+
+  private static int declarationCount(final Map<ModuleSourceConfig, Set<Declaration>> byOwner) {
+    return byOwner.size() == 1 ? byOwner.values().iterator().next().size() : byOwner.size();
   }
 
   private static Stream<Declaration> declared(
