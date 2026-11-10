@@ -20,6 +20,7 @@ import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
@@ -204,7 +205,7 @@ public final class LatheEngine {
    * Definition target(s) for the symbol at {@code line}/{@code column} (0-based), each enriched
    * with a source snippet and where it resolved.
    */
-  public Noted<List<LatheLocation>> definition(final Path file, final int line, final int column) {
+  public Noted<LatheDefinition> definition(final Path file, final int line, final int column) {
     return noted(
             List.of(file),
             positionWork(
@@ -212,14 +213,12 @@ public final class LatheEngine {
                 line,
                 column,
                 (session, uri, pos, cancel, progress) ->
-                    session.features().definitionFuture(uri, pos)))
-        .map(this::definitionLocations);
-  }
-
-  private List<LatheLocation> definitionLocations(
-      final Either<List<? extends Location>, List<? extends LocationLink>> either) {
-    final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
-    return locations.stream().map(this::toLatheLocation).toList();
+                    session.features().explainedDefinitionFuture(uri, pos)))
+        .map(
+            answer ->
+                new LatheDefinition(
+                    answer.locations().stream().map(this::toLatheLocation).toList(),
+                    answer.jdkSourcesNote().orElse(null)));
   }
 
   /**

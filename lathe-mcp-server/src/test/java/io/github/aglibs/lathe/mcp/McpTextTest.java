@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
@@ -39,6 +40,21 @@ import org.junit.jupiter.api.io.TempDir;
 class McpTextTest {
 
   @TempDir private Path tmp;
+
+  @Test
+  void definitionResult_emptyWithJdkSourcesNote_showsTheNote_otherwiseNoneFound() {
+    final var notes = LatheNotes.ofNotChecked(List.of());
+
+    assertThat(
+            McpFixtures.text(
+                McpText.definitionResult(
+                    new LatheDefinition(List.of(), "JDK sources are missing: install them"),
+                    notes)))
+        .isEqualTo("JDK sources are missing: install them");
+    assertThat(
+            McpFixtures.text(McpText.definitionResult(new LatheDefinition(List.of(), null), notes)))
+        .isEqualTo("No definition found.");
+  }
 
   @Test
   void locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn() {

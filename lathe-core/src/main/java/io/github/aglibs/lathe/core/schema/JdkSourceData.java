@@ -37,11 +37,18 @@ public record JdkSourceData(
         home == null
             ? "no JDK home was found (JAVA_HOME is unset and the JVM reports none)"
             : "%s was not found".formatted(home.resolve(LatheLayout.JDK_SOURCE_ZIP));
+    // A package name only when the version gives a real one; `unknown` (a JDK home without a
+    // `release` file) or a legacy `1.x` would name a package that does not exist.
+    final String major = version.split("[.+-]")[0];
+    final String sourcePackage =
+        major.matches("\\d+") && Integer.parseInt(major) >= 9
+            ? "the openjdk-%s-source package on Debian/Ubuntu".formatted(major)
+            : "the JDK's source package";
     return Optional.of(
-        "JDK sources are missing: %s, so go-to-definition into the JDK has no source. Install the JDK's sources (the openjdk-%s-source package on Debian/Ubuntu, or the source option of the JDK's installer) or point JAVA_HOME at a JDK with %s, then sync again (`%s`)."
+        "JDK sources are missing: %s, so go-to-definition into the JDK has no source. Install the JDK's sources (%s, or the source option of the JDK's installer) or build with a JDK that has %s (JAVA_HOME, or the Gradle toolchain), then sync again (`%s`)."
             .formatted(
                 cause,
-                version.split("[.+-]")[0],
+                sourcePackage,
                 FileUtil.slashed(LatheLayout.JDK_SOURCE_ZIP),
                 LatheLayout.SYNC_SCRIPT_COMMAND));
   }

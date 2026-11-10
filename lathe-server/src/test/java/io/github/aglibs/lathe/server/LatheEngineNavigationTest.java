@@ -9,11 +9,13 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
+import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
@@ -56,7 +58,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
     final var pos = positionOf(source, "Widget(");
 
-    assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value())
+    assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value().targets())
         .singleElement()
         .satisfies(
             target -> {
@@ -88,7 +90,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     for (final String call : List.of("resize", "show")) {
       final var pos = positionOf(source, call);
-      assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value())
+      assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value().targets())
           .singleElement()
           .satisfies(
               target -> {
@@ -132,7 +134,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.callerSource(), "greet()");
     final List<LatheLocation> targets =
-        engine.definition(fx.caller(), pos.getLine(), pos.getCharacter()).value();
+        engine.definition(fx.caller(), pos.getLine(), pos.getCharacter()).value().targets();
 
     assertThat(targets).hasSize(1);
     final LatheLocation target = targets.get(0);
@@ -348,7 +350,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
       assertThat(engine.describe(file, pos.getLine(), pos.getCharacter()).value())
           .as(name)
           .contains(name);
-      assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()).value())
+      assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()).value().targets())
           .as(name)
           .singleElement()
           .satisfies(location -> assertThat(location.line()).isEqualTo(pos.getLine()));
@@ -622,5 +624,29 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             item ->
                 assertThat(item.location().path())
                     .isEqualTo(FileUtil.slashed(tmp.relativize(source))));
+  }
+
+  @Test
+  void definition_jdkTypeWithSourcesMissing_explainsWithEveryAnswer() throws Exception {
+    final String source = "package com.example; class Caller { String text = \"x\"; }";
+    final Path caller = TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", source);
+    compileIntoMirror(caller);
+    final Path home = tmp.resolve("jdk");
+    TestCompiler.recordJdk(
+        tmp, new JdkSourceData("Vendor", "21.0.1", SourceStatus.MISSING, home, null, null, null));
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(source, "String text");
+
+    for (int ask = 0; ask < 2; ask++) {
+      final LatheDefinition answer =
+          engine.definition(caller, pos.getLine(), pos.getCharacter()).value();
+      assertThat(answer.targets()).isEmpty();
+      assertThat(answer.jdkSourcesNote())
+          .hasValueSatisfying(
+              note ->
+                  assertThat(note)
+                      .startsWith("JDK sources are missing: ")
+                      .contains(home.resolve(LatheLayout.JDK_SOURCE_ZIP).toString()));
+    }
   }
 }

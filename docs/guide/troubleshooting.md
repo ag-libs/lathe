@@ -19,11 +19,10 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
 - **The server runs on the wrong JDK** — the server's `[startup]` log line, the MCP server's, and on Maven the
   build's `[lathe]` lines name the JVM they run on (`java=… java.home=…`); compare it with the JDK your project
   targets, and see [choosing the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home).
-- **Go to definition into the JDK (`String`, `List`) finds nothing** — the JDK the build ran on has no
-  sources (`lib/src.zip` under its home). The build warns `[sync] JDK sources are missing: …`, and the editor
-  says so the first time a jump into the JDK finds nothing. Install the JDK's sources (on Debian/Ubuntu the
-  `openjdk-<version>-source` package; most other JDK installers include them or have a source option), or
-  point `JAVA_HOME` at a JDK that has `lib/src.zip`, then sync again.
+- **Go to definition into the JDK (`String`, `List`) finds nothing** — the JDK the build ran on has no sources (`lib/src.zip` under its home).
+  The build's sync logs `[sync] JDK sources are missing: …`, and the editor says so the first time a jump into the JDK finds nothing.
+  Install the JDK's sources (on Debian/Ubuntu the `openjdk-<version>-source` package; most other JDK installers include them or have a source option),
+  or build with a JDK that has `lib/src.zip` (`JAVA_HOME`, or the Gradle toolchain), then sync again.
 - **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
   its LSP log (Neovim: [cheatsheet](editors/neovim.md#verbose-logging)). An unexpected exit
   is also surfaced as an editor notification pointing at the log, and a server that fails at JVM

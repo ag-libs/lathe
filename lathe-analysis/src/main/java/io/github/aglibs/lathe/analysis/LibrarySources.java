@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -19,6 +20,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
+import javax.tools.JavaFileManager;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
@@ -210,22 +212,39 @@ public record LibrarySources(
   }
 
   // Whether the element is the JDK's (a system module's) while the workspace has no JDK sources,
-  // so navigating to it can show none.
+  // so navigating to it can show none. A project compiled for Java 8 (`--release 8`) sees the
+  // JDK's classes in no module, so those are looked up in the running JDK's modules instead.
   public boolean jdkElementWithoutSources(final Element element, final StandardJavaFileManager fm) {
     final var entry = classify(element);
-    if (jdkSourceDir != null || entry == null || entry.moduleName() == null) {
+    if (jdkSourceDir != null || entry == null) {
       return false;
     }
 
     try {
-      return fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, entry.moduleName()) != null;
+      return entry.moduleName() != null
+          ? fm.getLocationForModule(StandardLocation.SYSTEM_MODULES, entry.moduleName()) != null
+          : inSystemModules(entry.qualifiedName(), fm);
     } catch (final IOException e) {
       LOG.log(
           Level.FINE,
           e,
-          () -> "[origin] module lookup failed for %s".formatted(entry.moduleName()));
+          () -> "[origin] module lookup failed for %s".formatted(entry.qualifiedName()));
       return false;
     }
+  }
+
+  static boolean inSystemModules(final String qualifiedName, final StandardJavaFileManager fm)
+      throws IOException {
+    for (final Set<JavaFileManager.Location> modules :
+        fm.listLocationsForModules(StandardLocation.SYSTEM_MODULES)) {
+      for (final JavaFileManager.Location module : modules) {
+        if (fm.getJavaFileForInput(module, qualifiedName, JavaFileObject.Kind.CLASS) != null) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   public Optional<Path> externalSourceRoot(

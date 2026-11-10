@@ -11,27 +11,34 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 **Status: done.**
 
-**Affects: the build's sync and the editor's go-to-definition into the JDK.**
+**Affects: the build's sync, the editor's go-to-definition into the JDK, and MCP `get_definition`.**
 
 `JdkSourceResolver.resolve` already fell back from an unset `JAVA_HOME` to the running JVM's `java.home` and resolved symlinks.
-What remained: when the JDK had no `lib/src.zip`, the sync logged only `[sync] jdk sources missing` at INFO,
-naming neither the archive looked for nor how to install it, and go-to-definition into the JDK found nothing in the editor without saying why.
+What remained: when the JDK had no `lib/src.zip`, the sync logged only `[sync] jdk sources missing`, naming neither the archive looked for nor how to install it,
+and go-to-definition into the JDK found nothing without saying why.
 
 ### Resolution
 
 `JdkSourceData.missingSourcesNote` (shared through `lathe-core`) names the cause and the remedy:
-the `<home>/lib/src.zip` that was not found, or that no JDK home was found, then how to install the sources
-(the `openjdk-<major>-source` package on Debian/Ubuntu, or the installer's source option) or point `JAVA_HOME` at a JDK that has them, and to sync again.
-The sync logs it as a warning; the server keeps it from the manifest, and the first definition in a session that names a JDK element and finds no source
-shows it to the user (`window/showMessage`), once. `LatheLayout.JDK_SOURCE_ZIP` names the archive for both.
+the `<home>/lib/src.zip` that was not found, or that no JDK home was found;
+how to install the sources (the `openjdk-<major>-source` package on Debian/Ubuntu, named only when the version gives a real major, or the installer's source option);
+or to build with a JDK that has them (`JAVA_HOME`, or the Gradle toolchain), and to sync again.
+The sync logs it at INFO: a build on a JDK without sources (a CI image) is fine, and the editor says so itself.
+A definition that finds nothing reports, in the same pass, whether it named a JDK element while the workspace has no JDK sources (`NavigationFeatures.definitionResult`);
+a project compiled for Java 8 sees the JDK's classes in no module, so those are looked up in the running JDK's modules.
+The editor shows the note once per session (`window/showMessage`); MCP `get_definition` gives it in place of "No definition found." with every such answer (`LatheDefinition`).
+`LatheLayout.JDK_SOURCE_ZIP` names the archive for the resolver and the note.
 The troubleshooting guide has the matching entry.
 
 ### Regression targets
 
-- `JdkSourceDataTest` (the note with a known home, with none, and empty when the sources are there)
+- `JdkSourceDataTest` (the note with a known home, with none, without a real major version, and empty when the sources are there)
 - `LibrarySourcesTest.jdkElementWithoutSources_jdkTypeWithoutJdkSources_isTrue`
 - `LibrarySourcesTest.jdkElementWithoutSources_jdkSourcesPresentOrWorkspaceType_isFalse`
+- `LibrarySourcesTest.inSystemModules_jdkClassFound_projectClassNot`
 - `LatheTextDocumentServiceTest.definition_jdkTypeWithSourcesMissing_explainsOnceWhatToInstall`
+- `LatheEngineNavigationTest.definition_jdkTypeWithSourcesMissing_explainsWithEveryAnswer`
+- `McpTextTest.definitionResult_emptyWithJdkSourcesNote_showsTheNote_otherwiseNoneFound`
 - `JdkSourceResolverTest` (the home fallback: unset `JAVA_HOME`, symlinked home, no `src.zip`)
 
 ---

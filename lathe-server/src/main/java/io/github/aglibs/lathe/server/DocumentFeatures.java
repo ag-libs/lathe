@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
+import io.github.aglibs.lathe.analysis.DefinitionResult;
 import io.github.aglibs.lathe.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.analysis.HierarchyFeatures;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
@@ -19,7 +20,6 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.run.TestCounterparts;
-import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -65,6 +65,7 @@ final class DocumentFeatures {
   private final FeatureRouter router;
   private final DocumentRegistry docs;
   private final LatheLanguageClient client;
+  private final ServerEventLoop eventLoop;
   // Whether this session has told the user that JDK sources are missing: once is enough.
   private boolean jdkSourcesNoteShown;
 
@@ -73,12 +74,14 @@ final class DocumentFeatures {
       final ReactorTypeIndex reactorIndex,
       final FeatureRouter router,
       final DocumentRegistry docs,
-      final LatheLanguageClient client) {
+      final LatheLanguageClient client,
+      final ServerEventLoop eventLoop) {
     this.state = state;
     this.reactorIndex = reactorIndex;
     this.router = router;
     this.docs = docs;
     this.client = client;
+    this.eventLoop = eventLoop;
   }
 
   // The tests of the file's type, or from a test the type it tests.
@@ -148,50 +151,43 @@ final class DocumentFeatures {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
+    return explainedDefinitionFuture(uri, pos)
+        .thenApply(answer -> showJdkSourcesNoteOnce(uri, answer))
+        .thenApply(FeatureAnswers::definitionResult);
+  }
+
+  // A definition's locations, with the manifest's explanation when it found none because it named
+  // a JDK element while the workspace has no JDK sources. MCP shows the explanation with each
+  // empty answer; the editor shows it once.
+  CompletableFuture<ExplainedDefinition> explainedDefinitionFuture(
+      final String uri, final Position pos) {
     logPositionRequest("definition", uri, pos);
     return router
         .positionFeature(
             "definition",
             uri,
             pos,
-            DefinitionAnswer.NONE,
-            (session, request) -> DefinitionAnswer.of(session.navigation(), request))
-        .thenApply(this::noteMissingJdkSources)
-        .thenApply(FeatureAnswers::definitionResult);
+            new DefinitionResult(List.of(), false),
+            (session, request) -> session.navigation().definitionResult(request))
+        .thenApply(this::explain);
   }
 
-  // A definition's locations, and whether it found none because it names a JDK element while the
-  // workspace has no JDK sources.
-  private record DefinitionAnswer(List<Location> locations, boolean needsJdkSources) {
-
-    static final DefinitionAnswer NONE = new DefinitionAnswer(List.of(), false);
-
-    DefinitionAnswer {
-      ValidCheck.check().notNull(locations, "locations").validate();
-      locations = List.copyOf(locations);
-    }
-
-    static DefinitionAnswer of(
-        final NavigationFeatures navigation, final SourceFeatureRequest request) {
-      final List<Location> locations = navigation.definition(request);
-      return new DefinitionAnswer(
-          locations, locations.isEmpty() && navigation.definitionNeedsJdkSources(request));
-    }
+  private ExplainedDefinition explain(final DefinitionResult result) {
+    eventLoop.checkOnLoop();
+    return new ExplainedDefinition(
+        result.locations(),
+        result.needsJdkSources() ? state.manifest().jdkSourcesNote().orElse(null) : null);
   }
 
-  // An empty jump into the JDK looks like a Lathe failure; the first one in a session says why and
-  // how to fix it. Runs on the loop, where module workers deliver their results.
-  private List<Location> noteMissingJdkSources(final DefinitionAnswer answer) {
-    if (answer.needsJdkSources() && !jdkSourcesNoteShown) {
-      state
-          .manifest()
-          .jdkSourcesNote()
-          .ifPresent(
-              note -> {
-                jdkSourcesNoteShown = true;
-                LOG.info(() -> "[definition] jdk sources missing, told the user once");
-                client.showMessage(new MessageParams(MessageType.Warning, note));
-              });
+  // An empty jump into the JDK looks like a Lathe failure: a session's first one says why.
+  private List<Location> showJdkSourcesNoteOnce(
+      final String uri, final ExplainedDefinition answer) {
+    eventLoop.checkOnLoop();
+    if (!jdkSourcesNoteShown && answer.jdkSourcesNote().isPresent()) {
+      jdkSourcesNoteShown = true;
+      LOG.info(() -> "[definition] %s jdk sources missing, told the user".formatted(uri));
+      client.showMessage(
+          new MessageParams(MessageType.Warning, answer.jdkSourcesNote().orElseThrow()));
     }
 
     return answer.locations();
@@ -207,7 +203,6 @@ final class DocumentFeatures {
     return locationFuture("typeDefinition", uri, pos, NavigationFeatures::typeDefinition);
   }
 
-  // The locations for the open document's position, found by the document's module worker.
   private static void logPositionRequest(
       final String operation, final String uri, final Position pos) {
     LOG.info(
@@ -216,6 +211,7 @@ final class DocumentFeatures {
                 .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
   }
 
+  // The locations for the open document's position, found by the document's module worker.
   private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       locationFuture(
           final String operation,

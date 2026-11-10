@@ -212,10 +212,16 @@ public final class NavigationFeatures {
   // The declaration of the symbol at the cursor; on a call whose arguments match no overload, or
   // one still being typed (`c.greet(`), every method or constructor the call can name.
   public List<Location> definition(final SourceFeatureRequest request) {
+    return definitionResult(request).locations();
+  }
+
+  // The definition and, when it finds none, whether that is because it names a JDK element while
+  // the workspace has no JDK sources; one cursor and element lookup serves both.
+  public DefinitionResult definitionResult(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()) {
-      return List.of();
+      return new DefinitionResult(List.of(), false);
     }
 
     final Cursor cur = at.get();
@@ -261,20 +267,10 @@ public final class NavigationFeatures {
                     result.isEmpty()
                         ? "not found"
                         : result.stream().map(NavigationFeatures::where).toList()));
-    return result;
-  }
-
-  // Whether definition at the request names a JDK element while the workspace has no JDK sources,
-  // so that it finds no source to show.
-  public boolean definitionNeedsJdkSources(final SourceFeatureRequest request) {
-    return session
-        .cursor(request)
-        .map(
-            cur ->
-                request
-                    .libraries()
-                    .jdkElementWithoutSources(elementForNavigation(cur), compiler.fileManager()))
-        .orElse(false);
+    return new DefinitionResult(
+        result,
+        result.isEmpty()
+            && request.libraries().jdkElementWithoutSources(element, compiler.fileManager()));
   }
 
   // The call whose method name, or `new` type, the cursor is on.

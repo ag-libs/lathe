@@ -22,7 +22,8 @@ final class JdkSourceDataTest {
                     .startsWith("JDK sources are missing: ")
                     .contains(home.resolve(LatheLayout.JDK_SOURCE_ZIP) + " was not found")
                     .contains("openjdk-21-source")
-                    .contains("point JAVA_HOME at a JDK with lib/src.zip")
+                    .contains(
+                        "build with a JDK that has lib/src.zip (JAVA_HOME, or the Gradle toolchain)")
                     .contains(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
@@ -37,6 +38,18 @@ final class JdkSourceDataTest {
                 assertThat(note)
                     .contains("no JDK home was found")
                     .doesNotContain("was not found,"));
+  }
+
+  @Test
+  void missingSourcesNote_versionWithoutAMajor_namesNoPackage() {
+    final var data =
+        new JdkSourceData(
+            "Vendor", "unknown", SourceStatus.MISSING, Path.of("jdk"), null, null, null);
+
+    assertThat(data.missingSourcesNote())
+        .hasValueSatisfying(
+            note ->
+                assertThat(note).contains("the JDK's source package").doesNotContain("openjdk-"));
   }
 
   @Test

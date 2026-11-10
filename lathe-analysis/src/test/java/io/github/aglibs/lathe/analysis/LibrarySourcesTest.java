@@ -42,6 +42,14 @@ class LibrarySourcesTest extends SampleFixture {
     assertThat(LibrarySources.none().jdkElementWithoutSources(sampleType, compiled.fm())).isFalse();
   }
 
+  // A project compiled for Java 8 sees the JDK's classes in no module: they are found in the
+  // running JDK's modules instead.
+  @Test
+  void inSystemModules_jdkClassFound_projectClassNot() throws Exception {
+    assertThat(LibrarySources.inSystemModules("java.lang.String", compiled.fm())).isTrue();
+    assertThat(LibrarySources.inSystemModules("com.example.Missing", compiled.fm())).isFalse();
+  }
+
   @Test
   void originLabel_reactorClass_returnsModuleName() throws Exception {
     final Path classDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("mymodule");
