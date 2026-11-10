@@ -1225,8 +1225,14 @@ by A's write pass, then stopped waiting and answered from its own state, as a qu
 Only A and B ran on the workspace then.
 It did not reproduce in 9 runs of the scenario alone and 3 runs of the whole Helidon probe, all with `LATHE_DEBUG=1`.
 
+The pre-release check of 2026-11-10 (main at `3403329e`) shows the wait without the stale answer:
+on Dropwizard, B's I3 took 1.5–1.7 s in all 4 runs and I5 0.2–1.5 s, against 0.2 s on 2026-11-06; every answer was right.
+With `LATHE_DEBUG=1`, B logged nothing for about 1.2 s, then scanned and compiled in about 0.2 s:
+a pass that finds the write lock held retries on the next scan tick (`WritePass.runLocked`, 2 s), not when the lock is released.
+
 ### Fix direction
 
+Retry the lock as soon as the peer releases it, or at a shorter interval than the scan tick, so a query waits only as long as the peer's pass.
 Find what held the lock for about 4 s: A's write of the fix, perhaps followed by the immediate retry of the downstream
 file that failed before (the WS-20 change). Then either let a query wait out a short pass by its peer, or have the
 answer say it may be stale while another server writes (as "A build is running" does for a build).
