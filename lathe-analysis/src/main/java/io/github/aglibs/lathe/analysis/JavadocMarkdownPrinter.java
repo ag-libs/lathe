@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.lang.model.element.ExecutableElement;
@@ -42,17 +44,24 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   // doc or, when it has none, the nearest overridden method's; `inherited` the overridden methods
   // after it, nearest first, whose docs a DocReader reads on demand, so only the ones a lookup
   // reaches are parsed; `displayNames` the method's own parameter names, which @param tags show by
-  // position, so an inherited doc matches the signature it describes.
-  record DocChain(MethodDoc doc, List<String> displayNames, List<ExecutableElement> inherited) {
+  // position, so an inherited doc matches the signature it describes; `thrownNames` the simple
+  // names of the exceptions its `throws` clause declares, whose @throws it may inherit.
+  record DocChain(
+      MethodDoc doc,
+      List<String> displayNames,
+      List<ExecutableElement> inherited,
+      List<String> thrownNames) {
 
     DocChain {
       ValidCheck.check()
           .notNull(doc, "doc")
           .notNull(displayNames, "displayNames")
           .notNull(inherited, "inherited")
+          .notNull(thrownNames, "thrownNames")
           .validate();
       displayNames = List.copyOf(displayNames);
       inherited = List.copyOf(inherited);
+      thrownNames = List.copyOf(thrownNames);
     }
   }
 
@@ -80,6 +89,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   private List<String> displayNames = List.of();
   private List<String> paramNames = List.of();
   private List<ExecutableElement> inherited = List.of();
+  private List<String> thrownNames = List.of();
   private Function<ExecutableElement, Optional<MethodDoc>> docOf = method -> Optional.empty();
   private DocTree currentTag;
 
@@ -89,7 +99,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     return tree == null
         ? ""
         : formatMethod(
-            new DocChain(new MethodDoc(List.of(), tree), List.of(), List.of()),
+            new DocChain(new MethodDoc(List.of(), tree), List.of(), List.of(), List.of()),
             method -> Optional.empty());
   }
 
@@ -103,7 +113,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
         .map(DeprecatedTree.class::cast)
         .findFirst()
         .ifPresent(printer::printDeprecation);
-    printer.scan(tree.getFullBody(), null);
+    printer.printBody(tree);
     printer.formatBlockTags(tree.getBlockTags());
     printer.endLink();
     return printer.sb.toString().strip();
@@ -118,7 +128,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
   static SignatureDocs signatureDocs(
       final DocChain chain, final Function<ExecutableElement, Optional<MethodDoc>> docOf) {
     final var description = printing(chain, docOf);
-    description.scan(chain.doc().tree().getFullBody(), null);
+    description.printBody(chain.doc().tree());
     description.endLink();
     final Map<Integer, String> paramDocs = new HashMap<>();
     final List<String> names = chain.doc().paramNames();
@@ -135,6 +145,18 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
       final String doc = printParam(chain, docOf, param);
       if (!doc.isBlank()) {
         paramDocs.put(index, doc);
+      }
+    }
+
+    for (int index = 0; index < chain.displayNames().size(); index++) {
+      if (!paramDocs.containsKey(index)) {
+        final var printer = printing(chain, docOf);
+        printer.nearest(printer.paramAt(index)).ifPresent(printer::printFound);
+        printer.endLink();
+        final String doc = printer.sb.toString().strip();
+        if (!doc.isBlank()) {
+          paramDocs.put(index, doc);
+        }
       }
     }
 
@@ -157,30 +179,96 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     printer.displayNames = chain.displayNames();
     printer.paramNames = chain.doc().paramNames();
     printer.inherited = chain.inherited();
+    printer.thrownNames = chain.thrownNames();
     printer.docOf = docOf;
     return printer;
   }
 
+  // In javadoc's order: parameters by position, the return value, exceptions, then references. A
+  // part the doc leaves out comes from the nearest overridden doc that has it, as the javadoc tool
+  // fills it in: a parameter's description, the return value's, and that of an exception the
+  // method's `throws` clause declares.
   private void formatBlockTags(final List<? extends DocTree> tags) {
-    for (final DocTree tag : tags) {
-      if (tag instanceof final ParamTree p && !p.isTypeParameter()) {
-        paragraph();
-        append("**@param** `%s` ".formatted(displayName(p)));
-        scanTag(tag, p.getDescription());
-      } else if (tag instanceof final ReturnTree r) {
-        paragraph();
-        append("**@return** ");
-        scanTag(tag, r.getDescription());
-      } else if (tag instanceof final ThrowsTree t) {
-        paragraph();
-        append("**@throws** `%s` ".formatted(t.getExceptionName()));
-        scanTag(tag, t.getDescription());
-      } else if (tag instanceof final SeeTree s) {
-        paragraph();
-        append("**@see** ");
-        scan(s.getReference(), null);
+    final List<ParamTree> params =
+        tags.stream()
+            .filter(ParamTree.class::isInstance)
+            .map(ParamTree.class::cast)
+            .filter(param -> !param.isTypeParameter())
+            .toList();
+    params.forEach(
+        param ->
+            printTag(
+                "**@param** `%s` ".formatted(displayName(param)), param, param.getDescription()));
+    final Set<Integer> documented =
+        params.stream()
+            .map(param -> paramNames.indexOf(param.getName().toString()))
+            .collect(Collectors.toUnmodifiableSet());
+    for (int index = 0; index < displayNames.size(); index++) {
+      if (!documented.contains(index)) {
+        final String header = "**@param** `%s` ".formatted(displayNames.get(index));
+        nearest(paramAt(index)).ifPresent(found -> printInheritedTag(header, found));
       }
     }
+
+    final List<ReturnTree> returns =
+        tags.stream().filter(ReturnTree.class::isInstance).map(ReturnTree.class::cast).toList();
+    returns.forEach(tag -> printTag("**@return** ", tag, tag.getDescription()));
+    if (returns.isEmpty()) {
+      nearest((tag, doc) -> tag instanceof ReturnTree)
+          .ifPresent(found -> printInheritedTag("**@return** ", found));
+    }
+
+    final List<ThrowsTree> throwsTags =
+        tags.stream().filter(ThrowsTree.class::isInstance).map(ThrowsTree.class::cast).toList();
+    throwsTags.forEach(
+        tag ->
+            printTag(
+                "**@throws** `%s` ".formatted(tag.getExceptionName()), tag, tag.getDescription()));
+    final Set<String> thrownDocumented =
+        throwsTags.stream()
+            .map(tag -> simpleName(tag.getExceptionName()))
+            .collect(Collectors.toUnmodifiableSet());
+    thrownNames.stream()
+        .filter(name -> !thrownDocumented.contains(name))
+        .forEach(
+            name ->
+                nearest(
+                        (tag, doc) ->
+                            tag instanceof final ThrowsTree thrown
+                                && simpleName(thrown.getExceptionName()).equals(name))
+                    .ifPresent(
+                        found -> printInheritedTag("**@throws** `%s` ".formatted(name), found)));
+
+    tags.stream()
+        .filter(SeeTree.class::isInstance)
+        .map(SeeTree.class::cast)
+        .forEach(
+            see -> {
+              paragraph();
+              append("**@see** ");
+              scan(see.getReference(), null);
+            });
+  }
+
+  private void printTag(
+      final String header, final DocTree tag, final List<? extends DocTree> description) {
+    paragraph();
+    append(header);
+    scanTag(tag, description);
+  }
+
+  private void printInheritedTag(final String header, final Found found) {
+    paragraph();
+    append(header);
+    printFound(found);
+  }
+
+  // Picks an overridden doc's @param for the parameter at `index`: by position, as names vary.
+  private BiPredicate<DocTree, MethodDoc> paramAt(final int index) {
+    return (tag, doc) ->
+        tag instanceof final ParamTree param
+            && !param.isTypeParameter()
+            && doc.paramNames().indexOf(param.getName().toString()) == index;
   }
 
   private String displayName(final ParamTree param) {
@@ -261,26 +349,76 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   @Override
   public Void visitInheritDoc(final InheritDocTree node, final Void unused) {
+    if (currentTag == null) {
+      printInheritedBody();
+    } else {
+      nearest(this::matches).ifPresent(this::printFound);
+    }
+
+    return null;
+  }
+
+  // The doc's main description or, when it has none, the nearest overridden doc's.
+  private void printBody(final DocCommentTree tree) {
+    if (tree.getFullBody().isEmpty()) {
+      printInheritedBody();
+    } else {
+      scan(tree.getFullBody(), null);
+    }
+  }
+
+  private void printInheritedBody() {
+    for (int i = 0; i < inherited.size(); i++) {
+      final Optional<MethodDoc> ancestor = docOf.apply(inherited.get(i));
+      if (ancestor.isPresent() && !ancestor.get().tree().getFullBody().isEmpty()) {
+        scanInherited(
+            ancestor.get().tree().getFullBody(),
+            null,
+            ancestor.get(),
+            inherited.subList(i + 1, inherited.size()));
+        return;
+      }
+    }
+  }
+
+  // A block tag found in the nearest overridden doc that has it, and its place in the chain.
+  private record Found(int position, MethodDoc doc, DocTree tag) {
+
+    Found {
+      ValidCheck.check().notNull(doc, "doc").notNull(tag, "tag").validate();
+    }
+  }
+
+  // The first block tag `pick` accepts, with a description, in the nearest overridden doc that has
+  // one; the docs are read in order and only as far as needed.
+  private Optional<Found> nearest(final BiPredicate<DocTree, MethodDoc> pick) {
     for (int i = 0; i < inherited.size(); i++) {
       final Optional<MethodDoc> ancestor = docOf.apply(inherited.get(i));
       if (ancestor.isEmpty()) {
         continue;
       }
 
+      final MethodDoc doc = ancestor.get();
       final Optional<DocTree> tag =
-          currentTag == null ? Optional.empty() : matchingTag(ancestor.get());
-      final List<? extends DocTree> body =
-          currentTag == null
-              ? ancestor.get().tree().getFullBody()
-              : tag.map(JavadocMarkdownPrinter::description).orElse(List.of());
-      if (!body.isEmpty()) {
-        scanInherited(
-            body, tag.orElse(null), ancestor.get(), inherited.subList(i + 1, inherited.size()));
-        return null;
+          doc.tree().getBlockTags().stream()
+              .filter(candidate -> pick.test(candidate, doc))
+              .filter(candidate -> !description(candidate).isEmpty())
+              .map(DocTree.class::cast)
+              .findFirst();
+      if (tag.isPresent()) {
+        return Optional.of(new Found(i, doc, tag.get()));
       }
     }
 
-    return null;
+    return Optional.empty();
+  }
+
+  private void printFound(final Found found) {
+    scanInherited(
+        description(found.tag()),
+        found.tag(),
+        found.doc(),
+        inherited.subList(found.position() + 1, inherited.size()));
   }
 
   private void scanInherited(
@@ -298,13 +436,6 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     paramNames = ownNames;
     inherited = ownInherited;
     currentTag = ownTag;
-  }
-
-  private Optional<DocTree> matchingTag(final MethodDoc ancestor) {
-    return ancestor.tree().getBlockTags().stream()
-        .filter(tag -> matches(tag, ancestor))
-        .map(DocTree.class::cast)
-        .findFirst();
   }
 
   private boolean matches(final DocTree tag, final MethodDoc ancestor) {
