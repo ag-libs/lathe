@@ -1,6 +1,6 @@
 # Search Speed on Large Codebases
 
-**Status: IN PROGRESS — (0) fixed in #157; (e) and (d) in the PR adding this document; (b) and (c) next.**
+**Status: IN PROGRESS — (0) fixed in #157; (e) and (d) in #158; (b) tried and shelved (below); an exposure graph from class files and (c) are post-release candidates.**
 
 Gaps: FR-029 (references to a method whose name many files spell take 12–28 s),
 FR-032 (implementations of an interface method and incoming calls take seconds),
@@ -130,6 +130,22 @@ reaches a family value only through a member of an exposing type, so it names th
   Lombok's and records' generated members. A library type cannot expose a reactor type. Every phase's exposure
   check must keep that guarantee, and the existing exposure tests extend to the closure.
 
+**Outcome (2026-11-10): shelved.** A prototype checking, in each round, only the deferred files that spell the
+method's name gave identical answers on the benchmark's 18 method reference queries and cut Hibernate ORM's
+`EntityAction.getId` from 20.1 s to 1.7 s warm, Fineract's `Money.of` from about 24 s to 12.9 s and `parameter` from
+8.6 s to 4.1 s. But it is incomplete: a chain of exposures can pass through a file that never spells the name
+(`Outer` hands out the `Holder` that hands out the family), and a test of that shape found the call missed. The
+correct version checks every file naming an exposing type and took `getId` to 71.5 s, slower than main, as the
+exposing types are named in thousands of files. The work is kept on the unmerged branch `perf/exposure-closure`.
+
+**Post-release candidate: an exposure graph from class files.** Whether a type hands out a family value is visible in
+its class file (supertypes, non-private members' signatures, generated members included), and the type index already
+reads every reactor class file. Recording, per reactor type, the reactor types its non-private signatures mention
+would make the closure a graph walk that compiles nothing; only the files spelling the name and naming a type in the
+closure would be attributed. Drawbacks: class files lag edited sources (unsaved buffers, changes outside the editor,
+an unsynced project), so those files must always be searched; the exposure rule would exist twice (source model and
+class files) unless the graph replaces the source check; and `lathe-core`'s index entries and shard format change.
+
 ### (a) Compile a module's batches in parallel — rejected
 
 Ruled out (2026-11-10): the javac file manager a module's compiles share is not thread-safe, and the module
@@ -159,12 +175,36 @@ modules that changed.
 - Size: M. Risk: a missed invalidation event shows stale hits; each event above needs a test that a cached answer
   is replaced after it.
 
+## Standing against jdtls
+
+The benchmark (`dev/lsp-bench`, 2026-11-07/08, before #157 and #158) against today's numbers from this document's
+method (not strictly comparable: another harness and a partly loaded machine), median of the warm requests:
+
+| Query | jdtls 1.63 | Lathe 2026-11-08 | Lathe after #158 |
+|---|---|---|---|
+| Hibernate ORM references, common name (`getId`) | 4.3 s | 27.7 s | ~18 s |
+| OpenMetadata incoming calls (`getEntityRepository`) | 2.7 s | 13.2 s | ~7.8 s |
+| OpenMetadata references, widely used method | 2.2 s | 7.8 s | ~8 s |
+| Hibernate ORM implementations, interface method | 0.22 s | 0.73 s | not re-measured |
+
+The benchmark scored both OpenMetadata rows 0/3 for Lathe: its pinned build (`c15d3a55`) found 22 references, all in
+`Entity.java`, because `getEntityRepository(@NonNull String)`'s declaration kept the type-use annotation in its
+parameter descriptor and matched no call compiled against the class file.
+`53f07467` fixed that the day after; main now finds 982 references in the modules jdtls also covers (949 shared, 33
+calls jdtls misses) and 874 incoming callers, including every caller the benchmark expects.
+
+jdtls answers these first-time searches for common names from a prebuilt index; Lathe compiles the candidate files.
+Lathe is faster on field reads through a getter (milliseconds against 7–25 s), outgoing calls and subtype
+implementations, and on most of Helidon; jdtls does not import Fineract. The cache (c) would answer a repeated
+query from memory; a first query needs the exposure graph above.
+
 ## Proposed order
 
 0. (0): the startup regression — fixed in #157.
-1. (e) and (d): larger batches for references, and implementations and incoming calls batched the same way.
-2. (b): following exposures transitively, for instance methods and static methods alike.
-3. (c): each module caching its answers until it changes.
+1. (e) and (d): batches of 32, implementations and incoming calls batched — done in #158.
+2. (b): shelved (above).
+3. After the next release: (c), each module caching its answers until it changes; then the exposure graph from class
+   files, if first-time searches for common names still matter.
 
 ## Open questions
 
