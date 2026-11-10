@@ -465,6 +465,156 @@ class HoverTest extends SampleFixture {
         .contains("Makes an empty box.");
   }
 
+  private static final String DECLARATIONS_SOURCE =
+      """
+      import java.io.Closeable;
+      import java.util.AbstractList;
+
+      interface Crud<T> {}
+
+      interface Repo<T> extends Crud<T> {
+        int LIMIT = 10;
+
+        void save(T item);
+
+        default void log() {}
+      }
+
+      abstract class Base<T> extends AbstractList<T> {}
+
+      final class Child extends Base<String> implements Runnable, Closeable {
+        public static int run(int value) { return value; }
+
+        public void run() {}
+
+        public void close() {}
+
+        public String get(int index) { return ""; }
+
+        public int size() { return 0; }
+      }
+
+      sealed interface Shape permits Circle, Square {}
+
+      record Circle(int r) implements Shape {}
+
+      record Square(int side) implements Shape {}
+
+      enum Color { RED }
+
+      enum Op {
+        PLUS { int apply() { return 1; } },
+        MINUS;
+
+        int apply() { return 0; }
+      }
+
+      sealed interface Holder<T> permits Full {
+        class Nested {}
+      }
+
+      record Full<T>(T t) implements Holder<T> {}
+
+      sealed interface Many permits A, B, C, D, E, F, G {}
+
+      final class A implements Many {}
+      final class B implements Many {}
+      final class C implements Many {}
+      final class D implements Many {}
+      final class E implements Many {}
+      final class F implements Many {}
+      final class G implements Many {}
+
+      @interface Marker {}
+
+      class Plain {
+        private java.util.List<String> names;
+
+        void use(Repo<String> repo) {
+          Child.run(1);
+          repo.save("x");
+          repo.log();
+          int limit = Repo.LIMIT;
+          Child child = null;
+          Repo<String> other = repo;
+          Shape shape = null;
+          Circle circle = null;
+          Color color = Color.RED;
+          Marker marker = null;
+          Plain plain = this;
+          Op op = Op.PLUS;
+          Holder<String> holder = null;
+          Holder.Nested nested = null;
+          Many many = null;
+          names = null;
+          int local = 0;
+          local++;
+        }
+      }
+      """;
+
+  @Test
+  void hover_members_showModifiersTheSourceWouldWrite() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Child.run(1)", "run"))
+        .contains("public static int run(int value)");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "repo.save", "save"))
+        .contains("```java\nvoid save(T item)");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "repo.log", "log"))
+        .contains("```java\ndefault void log()");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Repo.LIMIT", "LIMIT"))
+        .contains("```java\nint LIMIT");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Color.RED", "RED")).contains("```java\nColor RED");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "names = null", "names"))
+        .contains("private List<String> names");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Plain plain = this", "this"))
+        .doesNotContain("final");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "local++", "local"))
+        .contains("int local")
+        .doesNotContain("final");
+  }
+
+  @Test
+  void hover_types_showModifiersAndDeclaredSupertypes() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Child child", "Child"))
+        .contains("final class Child extends Base<String> implements Runnable, Closeable");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Repo<String> other", "Repo"))
+        .contains("interface Repo<T> extends Crud<T>")
+        .doesNotContain("abstract");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Shape shape", "Shape"))
+        .contains("sealed interface Shape permits Circle, Square");
+  }
+
+  @Test
+  void hover_types_leaveOutWhatTheirKindOrPlaceImplies() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Op op", "Op"))
+        .contains("```java\nenum Op\n")
+        .doesNotContain("sealed")
+        .doesNotContain("permits");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Holder.Nested nested", "Nested"))
+        .contains("```java\nclass Nested\n");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Holder<String> holder", "Holder"))
+        .contains("sealed interface Holder<T> permits Full\n");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Many many", "Many"))
+        .contains("sealed interface Many permits A, B, C, D, E, … (+2)");
+  }
+
+  @Test
+  void hover_types_omitSupertypesTheirKindImplies() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Circle circle", "Circle"))
+        .contains("record Circle implements Shape")
+        .doesNotContain("Record")
+        .doesNotContain("final");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Color color", "Color"))
+        .contains("enum Color")
+        .doesNotContain("extends");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Marker marker", "Marker"))
+        .contains("@interface Marker")
+        .doesNotContain("Annotation");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Plain plain", "Plain"))
+        .contains("class Plain")
+        .doesNotContain("extends");
+  }
+
   @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =

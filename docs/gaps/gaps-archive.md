@@ -7,6 +7,38 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-101 — Hover and `describe_symbol` signatures leave out modifiers and supertypes — done
+
+**Status: done.**
+
+**Affects: the editor and MCP.**
+
+Split from EG-068 (an agent's review on Dropwizard, 2026-11-01).
+A hover signature showed a method as `int run(int value)` and a type as `class Child`:
+no modifiers and no `extends`/`implements` clause, so an agent could not tell a `default` interface method from an abstract one, or what a type extends, without opening the file.
+
+### Resolution
+
+`HoverFormatter` writes the modifiers the source would write, in the conventional order:
+javac also reports those a declaration's kind or place implies, which are left out everywhere, so a hover shows what one reads in the file.
+So an interface's methods read `void save(T item)` and `default void log()`, its constant `int LIMIT`, an enum constant `Color RED`, and a class nested in an interface `class Nested`;
+`public static int run(int value)` keeps what it declares.
+A type's line reads as its declaration: `final class Child extends Base<String> implements Runnable, Closeable`, `interface Repo<T> extends Crud<T>`, `sealed interface Shape permits Circle, Square`.
+Supertypes its kind implies are left out (`extends Object`, an enum's `Enum`, a record's `Record`, an annotation's `Annotation`), as are an enum's `sealed` and `permits` when its constants have bodies.
+A `permits` list names bare classes, and a long `implements` or `permits` list shows its first five, then how many more.
+A field's type reads as a method's does (`private List<String> names`); `this`, `super` and a class literal, which javac models as fields, get no modifiers.
+The class line above a constructor stays short, as context.
+Annotations are not shown; deprecation is a note since EG-093.
+
+### Regression targets
+
+- `HoverTest.hover_members_showModifiersTheSourceWouldWrite`
+- `HoverTest.hover_types_showModifiersAndDeclaredSupertypes`
+- `HoverTest.hover_types_leaveOutWhatTheirKindOrPlaceImplies`
+- `HoverTest.hover_types_omitSupertypesTheirKindImplies`
+
+---
+
 ## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only — done
 
 **Status: done.**

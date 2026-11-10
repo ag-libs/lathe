@@ -393,30 +393,6 @@ None yet.
 
 ---
 
-## EG-101 — Hover and `describe_symbol` signatures leave out modifiers and supertypes
-
-**Status: documented**
-
-**Affects: the editor and MCP.**
-
-Split from EG-068 (an agent's review on Dropwizard, 2026-11-01).
-
-### Observed behaviour
-
-A hover signature shows a method as `int run(int value)` and a type as `class Child`:
-no modifiers (`public`, `static`, `abstract`, `default`), and no `extends`/`implements` clause.
-An agent reading `describe_symbol` cannot tell an interface's default method from an abstract one, or what a type is a subtype of, without opening the file.
-
-### Fix direction
-
-Render the declaration's modifiers, and a type's direct supertypes, in the hover signature.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-103 — A partly documented override does not inherit the parts it leaves out
 
 **Status: documented**
