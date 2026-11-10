@@ -2,15 +2,18 @@ package io.github.aglibs.lathe.analysis;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
@@ -49,20 +52,27 @@ final class HoverFormatter {
         // its class's line for context. An anonymous class has no name for that line.
         final var owner = (TypeElement) exe.getEnclosingElement();
         final String constructor =
-            "%s%s(%s)".formatted(typePrefix, owner.getSimpleName(), paramStr);
+            "%s%s%s(%s)".formatted(modifiers(exe), typePrefix, owner.getSimpleName(), paramStr);
         sig =
             owner.getSimpleName().isEmpty()
                 ? constructor
                 : "%s\n%s".formatted(typeLine(owner), constructor);
       } else {
-        final String returnType =
-            fmt != null ? fmt.format(exe.getReturnType()) : exe.getReturnType().toString();
-        sig = "%s%s %s(%s)".formatted(typePrefix, returnType, exe.getSimpleName(), paramStr);
+        sig =
+            "%s%s%s %s(%s)"
+                .formatted(
+                    modifiers(exe),
+                    typePrefix,
+                    display(exe.getReturnType(), fmt),
+                    exe.getSimpleName(),
+                    paramStr);
       }
     } else if (element instanceof final TypeElement te) {
-      sig = typeLine(te);
+      sig = typeDeclaration(te, fmt);
     } else if (element != null && type != null) {
-      sig = "%s %s".formatted(type, element.getSimpleName());
+      // A field's modifiers (`public static final`) say how it is used; a local's add nothing.
+      final String fieldModifiers = element.getKind().isField() ? modifiers(element) : "";
+      sig = "%s%s %s".formatted(fieldModifiers, type, element.getSimpleName());
     } else if (type != null) {
       sig = type.toString();
     } else {
@@ -77,6 +87,74 @@ final class HoverFormatter {
       result = "%s\n\n*source: %s*".formatted(result, origin);
     }
     return Optional.of(result);
+  }
+
+  // The declaration line of a type: its modifiers, and the supertypes it declares, leaving out
+  // what its kind implies (`extends Object`, an enum's `Enum`, a record's `Record`).
+  private static String typeDeclaration(final TypeElement te, final TypeDisplayFormatter fmt) {
+    final boolean isInterface = te.getKind().isInterface();
+    return Stream.of(
+            Optional.of("%s%s".formatted(typeModifiers(te), typeLine(te))),
+            clause("extends", superclass(te).stream().toList(), fmt),
+            clause(
+                isInterface ? "extends" : "implements",
+                te.getKind() == ElementKind.ANNOTATION_TYPE ? List.of() : te.getInterfaces(),
+                fmt),
+            clause("permits", te.getPermittedSubclasses(), fmt))
+        .flatMap(Optional::stream)
+        .collect(Collectors.joining(" "));
+  }
+
+  // A class's superclass when it names one: never Object, nor an enum's or record's implied one.
+  private static Optional<TypeMirror> superclass(final TypeElement te) {
+    if (te.getKind() != ElementKind.CLASS
+        || !(te.getSuperclass() instanceof final DeclaredType superclass)
+        || ((TypeElement) superclass.asElement())
+            .getQualifiedName()
+            .contentEquals("java.lang.Object")) {
+      return Optional.empty();
+    }
+
+    return Optional.of(superclass);
+  }
+
+  private static Optional<String> clause(
+      final String keyword,
+      final List<? extends TypeMirror> types,
+      final TypeDisplayFormatter fmt) {
+    return types.isEmpty()
+        ? Optional.empty()
+        : Optional.of(
+            "%s %s"
+                .formatted(
+                    keyword,
+                    types.stream().map(t -> display(t, fmt)).collect(Collectors.joining(", "))));
+  }
+
+  // An element's modifiers, as javac reports them (the implicit ones included), in the order the
+  // Java style guides write them, each followed by a space.
+  private static String modifiers(final Element element) {
+    return modifierText(element.getModifiers().stream());
+  }
+
+  // A type's modifiers without those its kind implies: an interface is abstract and, nested,
+  // static; an enum or record is final and, nested, static.
+  private static String typeModifiers(final TypeElement te) {
+    final Set<Modifier> implied =
+        switch (te.getKind()) {
+          case INTERFACE, ANNOTATION_TYPE -> Set.of(Modifier.ABSTRACT, Modifier.STATIC);
+          case ENUM, RECORD -> Set.of(Modifier.FINAL, Modifier.STATIC, Modifier.ABSTRACT);
+          default -> Set.of();
+        };
+    return modifierText(te.getModifiers().stream().filter(m -> !implied.contains(m)));
+  }
+
+  private static String modifierText(final Stream<Modifier> modifiers) {
+    return modifiers.sorted().map(m -> "%s ".formatted(m)).collect(Collectors.joining());
+  }
+
+  private static String display(final TypeMirror type, final TypeDisplayFormatter fmt) {
+    return fmt != null ? fmt.format(type) : type.toString();
   }
 
   private static String typeLine(final TypeElement te) {
@@ -162,7 +240,7 @@ final class HoverFormatter {
       final List<String> sourceNames,
       final int index,
       final boolean vararg) {
-    final String rawType = fmt != null ? fmt.format(param.asType()) : param.asType().toString();
+    final String rawType = display(param.asType(), fmt);
     // A varargs parameter's declared type is an array; render it as T... rather than T[].
     final String typeName =
         vararg && rawType.endsWith("[]")

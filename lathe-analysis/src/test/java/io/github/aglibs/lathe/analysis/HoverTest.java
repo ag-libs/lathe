@@ -465,6 +465,107 @@ class HoverTest extends SampleFixture {
         .contains("Makes an empty box.");
   }
 
+  private static final String DECLARATIONS_SOURCE =
+      """
+      import java.io.Closeable;
+      import java.util.AbstractList;
+
+      interface Crud<T> {}
+
+      interface Repo<T> extends Crud<T> {
+        int LIMIT = 10;
+
+        void save(T item);
+
+        default void log() {}
+      }
+
+      abstract class Base<T> extends AbstractList<T> {}
+
+      final class Child extends Base<String> implements Runnable, Closeable {
+        public static int run(int value) { return value; }
+
+        public void run() {}
+
+        public void close() {}
+
+        public String get(int index) { return ""; }
+
+        public int size() { return 0; }
+      }
+
+      sealed interface Shape permits Circle, Square {}
+
+      record Circle(int r) implements Shape {}
+
+      record Square(int side) implements Shape {}
+
+      enum Color { RED }
+
+      @interface Marker {}
+
+      class Plain {
+        void use(Repo<String> repo) {
+          Child.run(1);
+          repo.save("x");
+          repo.log();
+          int limit = Repo.LIMIT;
+          Child child = null;
+          Repo<String> other = repo;
+          Shape shape = null;
+          Circle circle = null;
+          Color color = Color.RED;
+          Marker marker = null;
+          Plain plain = this;
+          int local = 0;
+          local++;
+        }
+      }
+      """;
+
+  @Test
+  void hover_members_showModifiersImplicitOnesIncluded() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Child.run(1)", "run"))
+        .contains("public static int run(int value)");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "repo.save", "save"))
+        .contains("public abstract void save(T item)");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "repo.log", "log"))
+        .contains("public default void log()");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Repo.LIMIT", "LIMIT"))
+        .contains("public static final int LIMIT");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "local++", "local"))
+        .contains("int local")
+        .doesNotContain("final");
+  }
+
+  @Test
+  void hover_types_showModifiersAndDeclaredSupertypes() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Child child", "Child"))
+        .contains("final class Child extends Base<String> implements Runnable, Closeable");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Repo<String> other", "Repo"))
+        .contains("interface Repo<T> extends Crud<T>")
+        .doesNotContain("abstract");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Shape shape", "Shape"))
+        .contains("sealed interface Shape permits Circle, Square");
+  }
+
+  @Test
+  void hover_types_omitSupertypesTheirKindImplies() {
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Circle circle", "Circle"))
+        .contains("record Circle implements Shape")
+        .doesNotContain("Record")
+        .doesNotContain("final");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Color color", "Color"))
+        .contains("enum Color")
+        .doesNotContain("extends");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Marker marker", "Marker"))
+        .contains("@interface Marker")
+        .doesNotContain("Annotation");
+    assertThat(hoverText(DECLARATIONS_SOURCE, "Plain plain", "Plain"))
+        .contains("class Plain")
+        .doesNotContain("extends");
+  }
+
   @Test
   void hover_genericMethod_rendersLeadingTypeParameter() {
     final var src =

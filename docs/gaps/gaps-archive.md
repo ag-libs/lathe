@@ -7,6 +7,33 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-101 — Hover and `describe_symbol` signatures leave out modifiers and supertypes — done
+
+**Status: done.**
+
+**Affects: the editor and MCP.**
+
+Split from EG-068 (an agent's review on Dropwizard, 2026-11-01).
+A hover signature showed a method as `int run(int value)` and a type as `class Child`:
+no modifiers and no `extends`/`implements` clause, so an agent could not tell a `default` interface method from an abstract one, or what a type extends, without opening the file.
+
+### Resolution
+
+`HoverFormatter` writes a member's modifiers as javac reports them, the implicit ones included
+(`public abstract void save(T item)` on an interface, `public static final int LIMIT`), in the conventional order; a local keeps its short form.
+A type's line reads as its declaration: `final class Child extends Base<String> implements Runnable, Closeable`, `interface Repo<T> extends Crud<T>`, `sealed interface Shape permits Circle, Square`.
+What a type's kind implies is left out: the modifiers (an interface's `abstract`, a record's or enum's `final`, a nested one's `static`)
+and the supertypes (`extends Object`, an enum's `Enum`, a record's `Record`, an annotation's `Annotation`).
+The class line above a constructor stays short, as context. Annotations are not shown; deprecation is a note since EG-093.
+
+### Regression targets
+
+- `HoverTest.hover_members_showModifiersImplicitOnesIncluded`
+- `HoverTest.hover_types_showModifiersAndDeclaredSupertypes`
+- `HoverTest.hover_types_omitSupertypesTheirKindImplies`
+
+---
+
 ## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only — done
 
 **Status: done.**
