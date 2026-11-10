@@ -18,6 +18,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 
 public final class JavadocLocator {
 
@@ -40,9 +41,9 @@ public final class JavadocLocator {
     return new DocReader(this, analysis, sourceRoots);
   }
 
-  // The element's javadoc as markdown, empty when it has none. A method with no comment takes the
-  // nearest overridden method's doc, and {@inheritDoc} the matching part of one; a comment that
-  // leaves a part out does not inherit it.
+  // The element's javadoc as markdown, empty when it has none. As the javadoc tool does, what a
+  // method's comment leaves out, the whole of it or a part, comes from the nearest overridden
+  // method that has it, and {@inheritDoc} takes the matching part of one.
   Optional<String> markdown(final Element element, final DocReader reader) {
     if (!(element instanceof final ExecutableElement method)) {
       return locate(element, reader.analysis().trees(), reader.sourceRoots())
@@ -77,7 +78,12 @@ public final class JavadocLocator {
     final Optional<MethodDoc> own = reader.doc(method);
     if (own.isPresent()) {
       return Optional.of(
-          new DocChain(own.get(), own.get().paramNames(), overridden, thrownNames(method)));
+          new DocChain(
+              own.get(),
+              own.get().paramNames(),
+              overridden,
+              thrownNames(method),
+              returnsValue(method)));
     }
 
     for (int i = 0; i < overridden.size(); i++) {
@@ -88,7 +94,8 @@ public final class JavadocLocator {
                 doc.get(),
                 sourceParamNames(method, reader.sourceRoots()),
                 overridden.subList(i + 1, overridden.size()),
-                thrownNames(method)));
+                thrownNames(method),
+                returnsValue(method)));
       }
     }
 
@@ -98,6 +105,10 @@ public final class JavadocLocator {
   Optional<MethodDoc> methodDoc(
       final ExecutableElement method, final Trees trees, final List<Path> sourceRoots) {
     return readDeclaration(method, trees, sourceRoots, JavadocLocator::methodDoc);
+  }
+
+  private static boolean returnsValue(final ExecutableElement method) {
+    return method.getReturnType().getKind() != TypeKind.VOID;
   }
 
   private static List<String> thrownNames(final ExecutableElement method) {

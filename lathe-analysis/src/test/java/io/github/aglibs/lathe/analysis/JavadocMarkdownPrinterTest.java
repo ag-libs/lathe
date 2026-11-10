@@ -374,7 +374,7 @@ class JavadocMarkdownPrinterTest {
   private static SignatureDocs signatureDocs(final DocCommentTree tree, final String... names) {
     final List<String> paramNames = List.of(names);
     return JavadocMarkdownPrinter.signatureDocs(
-        new DocChain(new MethodDoc(paramNames, tree), paramNames, List.of(), List.of()),
+        new DocChain(new MethodDoc(paramNames, tree), paramNames, List.of(), List.of(), true),
         method -> Optional.empty());
   }
 

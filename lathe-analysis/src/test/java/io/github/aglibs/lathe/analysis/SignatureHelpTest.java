@@ -381,7 +381,7 @@ class SignatureHelpTest {
         .isEqualTo("Sends a message. Child part.");
     assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
         .isEqualTo("the message");
-    // Left out of the override's doc, so inherited as the javadoc tool does (EG-103).
+    // Left out of the override's doc, so inherited as the javadoc tool does.
     assertThat(sig.getParameters().get(1).getDocumentation().getRight().getValue())
         .isEqualTo("how often to retry");
   }
@@ -399,7 +399,10 @@ class SignatureHelpTest {
             void send(String msg, int retries);
         }
         class Impl implements Sender {
-            /** @param count retry budget */
+            /**
+             * @param text
+             * @param count retry budget
+             */
             @Override
             public void send(String text, int count) {}
             void caller() { send(§"hi", 1); }
@@ -408,6 +411,7 @@ class SignatureHelpTest {
     final var sig = signatureHelpAt(source).getSignatures().get(0);
 
     assertThat(sig.getDocumentation().getRight().getValue()).isEqualTo("Sends a message.");
+    // An own @param with no text counts as left out, as in hover.
     assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
         .isEqualTo("the message");
     assertThat(sig.getParameters().get(1).getDocumentation().getRight().getValue())
