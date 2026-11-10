@@ -39,6 +39,9 @@ public final class WorkspaceManifest {
   private final String loadProblem;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
+  // Why go-to-definition into the JDK finds no source, when the build found no JDK sources; null
+  // when they are there.
+  private final String jdkSourcesNote;
 
   private WorkspaceManifest(
       final LibrarySources libraries,
@@ -50,7 +53,8 @@ public final class WorkspaceManifest {
       final ReactorRewrite reactorRewrite,
       final String loadProblem,
       final Path buildTool,
-      final List<Path> builtModuleDirs) {
+      final List<Path> builtModuleDirs,
+      final String jdkSourcesNote) {
     this.libraries = libraries;
     this.typeIndexShardPaths = typeIndexShardPaths;
     this.buildFiles = buildFiles;
@@ -61,6 +65,7 @@ public final class WorkspaceManifest {
     this.loadProblem = loadProblem;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
+    this.jdkSourcesNote = jdkSourcesNote;
   }
 
   public static WorkspaceManifest empty() {
@@ -78,7 +83,8 @@ public final class WorkspaceManifest {
         ReactorRewrite.none(),
         loadProblem,
         null,
-        List.of());
+        List.of(),
+        null);
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -144,7 +150,8 @@ public final class WorkspaceManifest {
           data.outputs().stream()
               .map(output -> workspaceRoot.resolve(output.module()).normalize())
               .distinct()
-              .toList());
+              .toList(),
+          jdk != null ? jdk.missingSourcesNote().orElse(null) : null);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       final Throwable cause = ExceptionUtil.rootCause(e);
@@ -170,6 +177,10 @@ public final class WorkspaceManifest {
     return builtModuleDirs.stream()
         .filter(normalized::startsWith)
         .max(Comparator.comparingInt(Path::getNameCount));
+  }
+
+  public Optional<String> jdkSourcesNote() {
+    return Optional.ofNullable(jdkSourcesNote);
   }
 
   public Optional<String> loadProblem() {

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
+import io.github.aglibs.lathe.analysis.DefinitionResult;
 import io.github.aglibs.lathe.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.analysis.HierarchyFeatures;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
@@ -36,6 +37,8 @@ import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
@@ -61,16 +64,24 @@ final class DocumentFeatures {
   private final ReactorTypeIndex reactorIndex;
   private final FeatureRouter router;
   private final DocumentRegistry docs;
+  private final LatheLanguageClient client;
+  private final ServerEventLoop eventLoop;
+  // Whether this session has told the user that JDK sources are missing: once is enough.
+  private boolean jdkSourcesNoteShown;
 
   DocumentFeatures(
       final WorkspaceState state,
       final ReactorTypeIndex reactorIndex,
       final FeatureRouter router,
-      final DocumentRegistry docs) {
+      final DocumentRegistry docs,
+      final LatheLanguageClient client,
+      final ServerEventLoop eventLoop) {
     this.state = state;
     this.reactorIndex = reactorIndex;
     this.router = router;
     this.docs = docs;
+    this.client = client;
+    this.eventLoop = eventLoop;
   }
 
   // The tests of the file's type, or from a test the type it tests.
@@ -140,7 +151,46 @@ final class DocumentFeatures {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    return locationFuture("definition", uri, pos, NavigationFeatures::definition);
+    return explainedDefinitionFuture(uri, pos)
+        .thenApply(answer -> showJdkSourcesNoteOnce(uri, answer))
+        .thenApply(FeatureAnswers::definitionResult);
+  }
+
+  // A definition's locations, with the manifest's explanation when it found none because it named
+  // a JDK element while the workspace has no JDK sources. MCP shows the explanation with each
+  // empty answer; the editor shows it once.
+  CompletableFuture<ExplainedDefinition> explainedDefinitionFuture(
+      final String uri, final Position pos) {
+    logPositionRequest("definition", uri, pos);
+    return router
+        .positionFeature(
+            "definition",
+            uri,
+            pos,
+            new DefinitionResult(List.of(), false),
+            (session, request) -> session.navigation().definitionResult(request))
+        .thenApply(this::explain);
+  }
+
+  private ExplainedDefinition explain(final DefinitionResult result) {
+    eventLoop.checkOnLoop();
+    return new ExplainedDefinition(
+        result.locations(),
+        result.needsJdkSources() ? state.manifest().jdkSourcesNote().orElse(null) : null);
+  }
+
+  // An empty jump into the JDK looks like a Lathe failure: a session's first one says why.
+  private List<Location> showJdkSourcesNoteOnce(
+      final String uri, final ExplainedDefinition answer) {
+    eventLoop.checkOnLoop();
+    if (!jdkSourcesNoteShown && answer.jdkSourcesNote().isPresent()) {
+      jdkSourcesNoteShown = true;
+      LOG.info(() -> "[definition] %s jdk sources missing, told the user".formatted(uri));
+      client.showMessage(
+          new MessageParams(MessageType.Warning, answer.jdkSourcesNote().orElseThrow()));
+    }
+
+    return answer.locations();
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -153,6 +203,14 @@ final class DocumentFeatures {
     return locationFuture("typeDefinition", uri, pos, NavigationFeatures::typeDefinition);
   }
 
+  private static void logPositionRequest(
+      final String operation, final String uri, final Position pos) {
+    LOG.info(
+        () ->
+            "[%s] %s line=%d character=%d"
+                .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
+  }
+
   // The locations for the open document's position, found by the document's module worker.
   private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       locationFuture(
@@ -160,10 +218,7 @@ final class DocumentFeatures {
           final String uri,
           final Position pos,
           final BiFunction<NavigationFeatures, SourceFeatureRequest, List<Location>> find) {
-    LOG.info(
-        () ->
-            "[%s] %s line=%d character=%d"
-                .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
+    logPositionRequest(operation, uri, pos);
     return router
         .positionFeature(
             operation,

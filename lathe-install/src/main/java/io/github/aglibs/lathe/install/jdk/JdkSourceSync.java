@@ -18,7 +18,9 @@ public final class JdkSourceSync {
 
   public static void extract(final JdkSource source) {
     if (!source.isPresent()) {
-      LOG.info("[sync] jdk sources missing");
+      // INFO, not WARN: a build on a JDK without sources (a CI image) is fine; only the editor's
+      // navigation into the JDK misses them, and the editor says so itself.
+      source.toData().missingSourcesNote().ifPresent(note -> LOG.info("[sync] %s".formatted(note)));
       return;
     }
 

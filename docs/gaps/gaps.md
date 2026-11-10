@@ -156,38 +156,6 @@ Package-Javadoc folding: no regression test yet; the probe above reproduces the 
 
 ---
 
-## EG-031 — JDK home fallback works, but missing JDK sources still have no actionable explanation
-
-**Status: documented (JDK-home fallback shipped; missing-source explanation remains).**
-
-### Delivered
-
-`JdkSourceResolver.resolve` falls back from an unset `JAVA_HOME` to the running JVM's `java.home` and resolves symlinks.
-The following tests exist, are enabled, and pass:
-
-- `JdkSourceResolverTest.resolve_javaHomeUnset_fallsBackToRunningJavaHome`
-- `JdkSourceResolverTest.resolve_symlinkedHome_resolvesToRealPath`
-- `JdkSourceResolverTest.resolve_noSrcZip_returnsMissingWithHome`
-
-### Remaining — actionable missing-source diagnostics
-
-The 2026-11-08 closure audit found that the archived entry also promised distinct cause/path/remedy messages, but that part never shipped.
-`JdkSourceSync.extract` still logs only `[sync] jdk sources missing` when `JdkSource.isPresent()` is false.
-The missing-source model retains the JDK home, but no diagnostic reason, and the log names neither the inspected `lib/src.zip` nor how to install JDK sources.
-The old proposed warning test never existed; `JdkSourceSyncTest` now covers extraction locking, not missing-source reporting.
-
-### Fix direction
-
-Name the missing source archive and give an actionable remedy when a JDK home is known; explain an unresolved home separately.
-The working JDK-home fallback needs no further implementation.
-
-### Regression targets
-
-The resolver tests above cover the delivered behavior.
-Missing-source warning: no regression test yet; verified outstanding by `JdkSourceSync.extract`'s missing-source branch.
-
----
-
 <!-- EG-049..EG-055 were discovered by differential testing against jdtls (dev/jdtls_diff.py; see
 docs/done/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
 where jdtls returns a result Lathe does not, or the two disagree substantively. -->

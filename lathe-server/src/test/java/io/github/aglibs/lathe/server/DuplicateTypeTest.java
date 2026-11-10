@@ -117,13 +117,13 @@ class DuplicateTypeTest extends LatheEngineTestBase {
     final Map<String, Path> files = duplicateTypes();
     final Path caller = files.get(owner + "Use");
     final var pos = positionOf(Files.readString(caller), "Shared field");
-    assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value())
+    assertThat(engine.definition(caller, pos.getLine(), pos.getCharacter()).value().targets())
         .singleElement()
         .satisfies(
             location -> assertThat(LatheUri.toPath(location.uri())).isEqualTo(files.get(owner)));
     final Path consumer = files.get("consumer");
     final var use = positionOf(Files.readString(consumer), "Shared field");
-    assertThat(engine.definition(consumer, use.getLine(), use.getCharacter()).value())
+    assertThat(engine.definition(consumer, use.getLine(), use.getCharacter()).value().targets())
         .singleElement()
         .satisfies(
             location ->

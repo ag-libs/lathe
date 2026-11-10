@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
@@ -487,9 +488,13 @@ final class McpText {
                 .collect(Collectors.joining(System.lineSeparator())));
   }
 
-  static CallToolResult definitionResult(
-      final List<LatheLocation> targets, final LatheNotes notes) {
-    return result(targets.isEmpty() ? "No definition found." : locationLines(targets), notes);
+  // An empty answer into the JDK says what to install, not just that nothing was found.
+  static CallToolResult definitionResult(final LatheDefinition definition, final LatheNotes notes) {
+    final String text =
+        definition.targets().isEmpty()
+            ? definition.jdkSourcesNote().orElse("No definition found.")
+            : locationLines(definition.targets());
+    return result(text, notes);
   }
 
   static String locationLines(final List<LatheLocation> locations) {
