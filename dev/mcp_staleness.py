@@ -67,7 +67,9 @@ CONFIGS = {
              "io.helidon.common.configurable.AllowListConfig")),
 }
 
-ERRORS = re.compile(r"\b(\d+) diagnostic\(s\)|cannot find symbol|error:", re.I)
+# verify_change's two answers: a clean check, and one that found errors ("N error(s)...").
+VERIFY_CLEAN = "No errors — "
+VERIFY_ERRORS = re.compile(r"\d+ error\(s\)")
 
 
 def text_of(result):
@@ -134,11 +136,15 @@ class Probe:
     def p(self, rel):
         return self.ws / rel
 
-    def record(self, passed, label, detail=""):
+    def record(self, passed, label, detail="", status=None):
         self.failures += 0 if passed else 1
-        line = "%s %-58s %s" % ("PASS" if passed else "FAIL", label, detail)
+        line = "%s %-58s %s" % (status or ("PASS" if passed else "FAIL"), label, detail)
         print(line, flush=True)
         self.log.append(line)
+
+    def skip(self, label, why):
+        """A scenario that did not run: neither a pass nor a failure."""
+        self.record(True, label, why, status="SKIP")
 
     def call(self, tool, args, client=None):
         t0 = time.monotonic()
@@ -150,7 +156,8 @@ class Probe:
 
     def check(self, label, tool, args, ok, client=None, show=False, settle=False):
         t, ms = self.call(tool, args, client)
-        passed = bool(ok(t))
+        # A hang or a protocol error answers nothing, so it must not pass a "no error" check.
+        passed = not t.startswith("EXC ") and bool(ok(t))
         head = " | ".join(x.strip() for x in t.strip().splitlines()[:2])[:150]
         note = ""
         if not passed and settle:
@@ -230,7 +237,7 @@ def s_add_use_delete(pr: Probe):
     pr.check("A6 downstream sees the upstream method rename as an error", "get_diagnostics", {"file": str(down)},
              lambda t: "cannot find symbol" in t)
     pr.check("A7 verify_change{} reports the broken downstream (MC-7)", "verify_change", {},
-             lambda t: "cannot find symbol" in t or "error" in t.lower(), show=True)
+             lambda t: VERIFY_ERRORS.match(t) is not None and "cannot find symbol" in t, show=True)
     down.write_text(down.read_text().replace("latheProbeValue()", "latheProbeValue2()"))
     pr.check("A8 downstream fixed externally compiles", "get_diagnostics", {"file": str(down)},
              lambda t: "cannot find symbol" not in t)
@@ -272,7 +279,7 @@ def s_add_use_delete(pr: Probe):
     pr.check("A13 restored downstream compiles cleanly", "get_diagnostics", {"file": str(down)},
              lambda t: "Error [" not in t and "Not compiled" not in t)
     pr.check("A14 verify_change{} after full revert: no stale advice (MC-13)", "verify_change", {},
-             lambda t: "lathe-sync" not in t and "cannot find" not in t, show=True)
+             lambda t: t.startswith(VERIFY_CLEAN) and "lathe-sync" not in t, show=True)
 
 
 def s_javadoc(pr: Probe):
@@ -453,7 +460,7 @@ def s_branch_switch(pr: Probe):
     """Check out an older revision of the Java sources only (no build files) and back."""
     ref = os.environ.get("LATHE_PROBE_OLD_REF")
     if not ref:
-        pr.record(True, "E  branch switch skipped (set LATHE_PROBE_OLD_REF)")
+        pr.skip("E  branch switch", "set LATHE_PROBE_OLD_REF to run it")
         return
     changed = [x for x in git(pr.ws, "diff", "--name-only", ref, "HEAD", "--", "*.java").split()]
     existing = [x for x in changed if git(pr.ws, "cat-file", "-t", "%s:%s" % (ref, x)).strip() == "blob"]
@@ -483,7 +490,7 @@ def s_branch_switch(pr: Probe):
     pr.record(not left, "E3 probe restored HEAD sources", str(left[:3]))
     t0 = time.monotonic()
     pr.check("E4 verify_change{} back on HEAD: no errors", "verify_change", {},
-             lambda t: "Error [" not in t and "Not compiled" not in t, show=True)
+             lambda t: t.startswith(VERIFY_CLEAN) and "Not compiled" not in t, show=True)
     pr.record(True, "E4 catch-up wall time", "%.1fs" % (time.monotonic() - t0))
     sample = [x for x in at_head if "/src/main/" in x][:4]
     for x in sample:
@@ -553,7 +560,7 @@ def s_build(pr: Probe):
 def s_generated(pr: Probe):
     """An external blueprint edit must regenerate the annotation-processor output downstream sees."""
     if "gen" not in pr.cfg:
-        pr.record(True, "N  generated-sources scenario not configured")
+        pr.skip("N  generated sources", "not configured for this workspace")
         return
     bp_rel, mod, gen_rel, down_rel, gen_fqn = pr.cfg["gen"]
     bp, down = pr.p(bp_rel), pr.p(down_rel)

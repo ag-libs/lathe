@@ -7,8 +7,8 @@ server's own health. Restores the files it touched; exits 1 if a check fails, 2 
 
 Each check prints one line: PASS, FAIL, SKIP (a prerequisite is missing), KNOWN (a wrong answer the
 gap log already describes) or NOW PASSES (a KNOWN one that is right now; drop its mark). A JSON
-report goes to dev/reports/battery/, and checks more than twice as slow as the previous version's
-report are listed as SLOWER.
+report goes to dev/reports/battery/, one per run, and checks more than twice as slow as in the
+workspace's previous report are listed as SLOWER.
 """
 import argparse
 import json
@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 DEV = Path(__file__).resolve().parent
@@ -371,9 +371,9 @@ def restore_java(ws, created=()):
 
 def write_report(cfg_name, version, head, results):
     REPORTS.mkdir(parents=True, exist_ok=True)
-    report = REPORTS / ("%s-%s.json" % (cfg_name, version))
-    previous = sorted((p for p in REPORTS.glob("%s-*.json" % cfg_name) if p != report),
-                      key=lambda p: p.stat().st_mtime)
+    # One file per run, not per version: a SNAPSHOT run would overwrite the run it compares with.
+    previous = sorted(REPORTS.glob("%s-*.json" % cfg_name), key=lambda p: p.stat().st_mtime)
+    report = REPORTS / ("%s-%s-%s.json" % (cfg_name, version, datetime.now().strftime("%Y%m%d-%H%M%S")))
     report.write_text(json.dumps(dict(workspace=cfg_name, version=version, head=head, date=str(date.today()),
                                       checks=results), indent=1), encoding="utf-8")
     if not previous:
@@ -383,7 +383,8 @@ def write_report(cfg_name, version, head, results):
     for check in results:
         was = times.get(check["label"])
         if was is not None and check["ms"] > 2 * was and check["ms"] - was > 500:
-            print("SLOWER      %-56s %6dms  was %dms in %s" % (check["label"], check["ms"], was, before["version"]))
+            print("SLOWER      %-56s %6dms  was %dms in %s on %s"
+                  % (check["label"], check["ms"], was, before["version"], before["date"]))
 
 
 def main():
