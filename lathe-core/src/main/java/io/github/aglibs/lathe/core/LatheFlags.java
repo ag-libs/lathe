@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class LatheFlags {
@@ -55,6 +56,9 @@ public final class LatheFlags {
   public static final String FORMATTER_NONE = "none";
   public static final String FORMATTER_COMMAND = "command";
   public static final String FORMATTER_COMMAND_FILE = "command-file";
+  // The formatters run in-process from jars a sync resolves, rather than an external command.
+  public static final Set<String> PINNED_FORMATTERS =
+      Set.of(FORMATTER_GOOGLE, FORMATTER_AOSP, FORMATTER_PALANTIR, FORMATTER_ECLIPSE);
   public static final String FORMAT_FILE_TOKEN = "%FILE%";
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
   public static final String FORMAT_MVN_TOKEN = "%MVN%";

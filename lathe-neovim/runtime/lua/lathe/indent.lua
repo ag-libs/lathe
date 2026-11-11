@@ -46,7 +46,11 @@ local function resolve(bufnr)
   local project = style and style.indent
   local block, continuation = widths(project)
   if block then
-    return block, continuation, project.profile == "google"
+    -- A project owns its widths when its style pins them: the google profile, or explicit widths.
+    local pinned = project.profile == "google"
+      or (project.block or 0) > 0
+      or (project.continuation or 0) > 0
+    return block, continuation, pinned
   end
 
   local fallback_block, fallback_continuation = widths(M.config)

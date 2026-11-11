@@ -84,6 +84,16 @@ class LatheEngineEditTest extends LatheEngineTestBase {
         .hasMessageStartingWith("Formatting is off for this workspace")
         .hasMessageNotContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
 
+    // A declared formatter that cannot run is not "none declared": say what is wrong with it.
+    engine.close();
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\": {\"engine\": \"goolge\"}}");
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.format(source))
+        .hasMessageContaining("cannot run")
+        .hasMessageContaining("goolge");
+
     engine.close();
     Files.writeString(
         tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\": {\"engine\": \"google\"}}");

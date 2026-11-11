@@ -7,7 +7,6 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngine;
-import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
 import java.nio.file.Path;
@@ -127,7 +126,7 @@ final class FormatService {
   // Only a pinned formatter whose jars are missing is one a sync can supply; "none" is the
   // project's own choice.
   private String unavailable() {
-    if (spec != null && FormatEngines.pinned(spec)) {
+    if (spec != null && LatheFlags.PINNED_FORMATTERS.contains(spec.engine())) {
       return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it), then restart Lathe."
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
     }
@@ -135,6 +134,11 @@ final class FormatService {
     if (spec != null && LatheFlags.FORMATTER_NONE.equals(spec.engine())) {
       return "Formatting is off for this workspace: %s declares the engine none."
           .formatted(LatheLayout.STYLE_SHARED_FILE);
+    }
+
+    if (spec != null) {
+      return "The formatter %s declares cannot run: engine %s is unknown, or a command engine has no command."
+          .formatted(LatheLayout.STYLE_SHARED_FILE, spec.engine());
     }
 
     return "No formatter for this workspace: the project declares none (no formatter in %s, and on Maven no Spotless Java step); declare one there to format here."

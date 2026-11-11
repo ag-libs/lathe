@@ -75,7 +75,7 @@ public final class FormatterSteps {
 
   // Whether the engine runs from the formatter's own jars, which a sync must resolve.
   public static boolean pinned(final String engine) {
-    return STEPS.containsKey(engine);
+    return LatheFlags.PINNED_FORMATTERS.contains(engine);
   }
 
   // The Spotless libraries Lathe pins, for a build without Spotless of its own: groupId:artifactId:

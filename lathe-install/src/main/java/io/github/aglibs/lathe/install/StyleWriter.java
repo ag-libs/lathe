@@ -48,32 +48,37 @@ public final class StyleWriter {
     }
 
     return Optional.of(
-        ("[sync] formatter %s %s needs Java %d, but the server runs on Java %d, the build's"
-                + " compiling JDK: declare a version that runs on Java %d in %s, or set %s to a"
-                + " JDK %d or later")
+        ("[sync] formatter %s %s needs Java %d, but the server runs on Java %d (the build's"
+                + " compiling JDK, unless %s names another): declare a version that runs on Java %d"
+                + " in %s, or set %s to a JDK %d or later")
             .formatted(
                 formatter.engine(),
                 formatter.version(),
                 needed.getAsInt(),
                 server.getAsInt(),
+                LauncherScript.JAVA_HOME_ENV,
                 server.getAsInt(),
                 LatheLayout.STYLE_SHARED_FILE,
                 LauncherScript.JAVA_HOME_ENV,
                 needed.getAsInt()));
   }
 
+  // The JDK the launcher starts the server on: LATHE_JAVA_HOME when the build sees it, else the
+  // build's compiling JDK.
   private static OptionalInt serverJava(final Path workspaceRoot) {
+    final String override = System.getenv(LauncherScript.JAVA_HOME_ENV);
     final Path javaHomeFile =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.JAVA_HOME_FILE);
-    if (!Files.isRegularFile(javaHomeFile)) {
+    if ((override == null || override.isBlank()) && !Files.isRegularFile(javaHomeFile)) {
       return OptionalInt.empty();
     }
 
     try {
-      final String version =
-          JdkSourceResolver.resolveAt(
-                  Path.of(Files.readString(javaHomeFile, StandardCharsets.UTF_8).trim()))
-              .version();
+      final Path home =
+          override != null && !override.isBlank()
+              ? Path.of(override)
+              : Path.of(Files.readString(javaHomeFile, StandardCharsets.UTF_8).trim());
+      final String version = JdkSourceResolver.resolveAt(home).version();
       return OptionalInt.of(Runtime.Version.parse(version).feature());
     } catch (final IOException | IllegalArgumentException e) {
       return OptionalInt.empty();

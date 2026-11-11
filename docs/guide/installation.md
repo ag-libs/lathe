@@ -214,10 +214,12 @@ a Gradle toolchain can make older.
 When the formatter needs a newer Java than that, the sync says so on every run, for example:
 
 ```text
-[sync] formatter google 1.36.1 needs Java 21, but the server runs on Java 17, the build's compiling JDK:
-declare a version that runs on Java 17 in lathe-style.json, or set LATHE_JAVA_HOME to a JDK 21 or later
+[sync] formatter google 1.36.1 needs Java 21, but the server runs on Java 17 (the build's compiling JDK, unless
+LATHE_JAVA_HOME names another): declare a version that runs on Java 17 in lathe-style.json, or set LATHE_JAVA_HOME
+to a JDK 21 or later
 ```
 
+The sync reads `LATHE_JAVA_HOME` when the build sees it, so setting it there also silences the warning.
 Declare a release that runs on that JDK, or run the server on a newer one with
 [`LATHE_JAVA_HOME`](#choosing-the-server-jdk-lathe_java_home); the second keeps the formatter your build runs.
 

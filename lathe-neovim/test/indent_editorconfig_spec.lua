@@ -71,6 +71,19 @@ spec.check("committed indent: block over .editorconfig", committed.shiftwidth, 4
 spec.check("committed indent: continuation", committed.continuation, 8)
 spec.check("committed indent: spaces", committed.expandtab, true)
 
+local widths_only = open(
+  project(
+    '{"indent":{"profile":"editorconfig","block":0,"continuation":0}}',
+    '{"indent":{"block":4,"continuation":8}}'
+  )
+)
+spec.check(
+  "committed widths without a profile: block over .editorconfig",
+  widths_only.shiftwidth,
+  4
+)
+spec.check("committed widths without a profile: spaces", widths_only.expandtab, true)
+
 local eclipse =
   open(project('{"indent":{"profile":"editorconfig","block":0,"continuation":0}}', nil))
 spec.check("editorconfig profile: .editorconfig's tabs", eclipse.expandtab, false)

@@ -33,19 +33,6 @@ public final class FormatEngines {
     }
   }
 
-  // Whether the spec names a formatter that runs from jars a sync resolves; "none" and the command
-  // engines run nothing a sync could supply.
-  public static boolean pinned(final FormatterSpec spec) {
-    return switch (spec.engine()) {
-      case LatheFlags.FORMATTER_GOOGLE,
-          LatheFlags.FORMATTER_AOSP,
-          LatheFlags.FORMATTER_PALANTIR,
-          LatheFlags.FORMATTER_ECLIPSE ->
-          true;
-      default -> false;
-    };
-  }
-
   public static FormatEngine forSpec(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
       case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
