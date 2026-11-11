@@ -21,6 +21,11 @@
     <!-- The fixtures' Lathe cache, under a path with a space, so the launchers and their argfiles
          are tested with one. -->
     <lathe.it.cache>${project.build.directory}/it home/.cache/lathe</lathe.it.cache>
+    <!-- The personal-activation fixture's -Dmaven.ext.class.path, as :LatheInit passes it: the
+         extension and its runtime dependencies, from the fixtures' local repository. Built here, as
+         the invoker interpolates project properties but not path.separator. -->
+    <lathe.it.repo>${project.build.directory}/local-repo</lathe.it.repo>
+    <lathe.it.extClassPath>${lathe.it.repo}/io/github/ag-libs/lathe-maven-extension/${project.version}/lathe-maven-extension-${project.version}.jar${path.separator}${lathe.it.repo}/io/github/ag-libs/lathe-core/${project.version}/lathe-core-${project.version}.jar${path.separator}${lathe.it.repo}/com/google/code/gson/gson/${gson.version}/gson-${gson.version}.jar${path.separator}${lathe.it.repo}/io/github/ag-libs/validcheck/validcheck/${validcheck.version}/validcheck-${validcheck.version}.jar</lathe.it.extClassPath>
   </properties>
 
   <dependencies>

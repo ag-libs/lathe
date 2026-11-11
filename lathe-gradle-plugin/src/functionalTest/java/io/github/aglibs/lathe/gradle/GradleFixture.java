@@ -91,8 +91,9 @@ final class GradleFixture {
     }
   }
 
-  // Registers Lathe the personal way, as a user's init script does: from a repository, applied
-  // only when the settings script has not applied it already.
+  // Registers Lathe the personal way, as :LatheInit's init script does: from a repository, applied
+  // only when the settings script has not applied it already, with compile errors kept from
+  // stopping the build before every project is captured.
   GradleFixture latheInitScript(final String relative) throws IOException {
     return file(
         relative,
@@ -110,6 +111,10 @@ final class GradleFixture {
           if (!pluginManager.hasPlugin("io.github.ag-libs.lathe")) {
             pluginManager.apply(io.github.aglibs.lathe.gradle.LatheSettingsPlugin::class.java)
           }
+        }
+
+        allprojects {
+          tasks.withType<JavaCompile>().configureEach { options.isFailOnError = false }
         }
         """
             .formatted(
