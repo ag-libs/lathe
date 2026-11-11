@@ -66,6 +66,8 @@ CONFIGS = {
         test=("common/media-type/src/test/java/io/helidon/common/media/type/MediaTypesTest.java", "testCustom",
               "MediaTypesTest"),
         probe=("common/media-type/src/main/java/io/helidon/common/media/type", "io.helidon.common.media.type"),
+        # MC-78: MediaType.text() is redeclared abstract in subinterfaces the family leaves out.
+        family_known="analyze_change's override family leaves out abstract redeclarations",
         module_info="common/media-type/src/main/java/module-info.java",
         # Implemented in many modules (about 50 implementations in 14), as the checks of a listing's
         # modules need: a method implemented in a few cannot show what they look for.
@@ -259,7 +261,7 @@ def consistency_checks(b, ws, cfg, f, pos):
                       grouped_known="locations come back in discovery order, modules mixed")
     mc.references_round_trip(b, ws, f, pos, cfg["symbol"].rstrip("()"), "references lead back to the declaration")
     mc.family_covers_definitions(b, ws, f, pos, cfg["symbol"].rstrip("()"), "override family covers what references reach",
-                                 known="analyze_change's override family leaves out abstract redeclarations")
+                                 known=cfg.get("family_known"))
     mc.outline_resolves(b, f)
     mc.diagnostics_agree_with_notes(b, f, "diagnostics agree with notes")
 

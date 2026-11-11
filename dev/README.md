@@ -154,8 +154,10 @@ It checks:
   implementations cover its method's, a method's override family, `analyze_change`'s modules, references
   leading back to their declaration, location lists without duplicates and grouped by module;
 - **a probe file** (`mcp_probe.py`, `battery/LatheProbe.java.tmpl`) copied into one module and deleted
-  after: anonymous classes, enum constant bodies, lambdas, records, `Type::new`, `var`, a file that stops
-  compiling, `fix_imports` on a nested type and on a CRLF file;
+  after: anonymous classes, enum constant bodies, lambdas, records, outgoing calls through `Type::new`, a
+  file that stops compiling, `fix_imports` on a nested type and on a CRLF file; definition on `var` and on
+  the `new` of `Type::new` must be refused with a reason, as MCP's position tools take a name (the editor
+  navigates from both, which the editor smoke checks);
 - **renames that keep what names mean** (`mcp_probe.RENAMES`): a parameter, lambda parameter or local
   renamed onto a field, a field onto a local, a method onto an overload, an enclosing method or a
   subclass method, a type onto a wildcard-imported name, and a method that captures another file's

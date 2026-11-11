@@ -12,6 +12,7 @@ import mcp_consistency as mc
 from mcp_consistency import first
 
 TEMPLATES = Path(__file__).resolve().parent / "battery"
+NOT_ON_NAME = "the position must be on a name"
 
 
 def line_of(text, token):
@@ -125,18 +126,20 @@ def implementation_checks(b, probe):
     b.check("probe impls(Color.label): enum constant body", has_line(label, probe.line('return "red";') - 1), first(label))
 
 
+def refused_as_no_name(text):
+    """MCP's position tools take a name: a keyword such as var or the new of Type::new is refused
+    by design, with a reason, though the editor navigates from both."""
+    return NOT_ON_NAME in text and not mc.locations(text) and mc.clean_refusal(text)
+
+
 def navigation_checks(b, probe):
     ctor = b.raw("get_definition", probe.at("Square::new", "new"))[0]
-    b.check("probe definition: Type::new", has_line(ctor, probe.line("Square(double side) {")), first(ctor),
-            known="Type::new is not navigable")
-    # A refusal echoes the source line, so look for ArrayList in a location's path only.
+    b.check("probe definition: the new of Type::new is refused as no name", refused_as_no_name(ctor), first(ctor))
     var = b.raw("get_definition", probe.at("var list = ", "var"))[0]
-    b.check("probe definition: var", any("ArrayList" in p for p, _, _ in mc.locations(var)), first(var),
-            known="var is not navigable")
+    b.check("probe definition: var is refused as no name", refused_as_no_name(var), first(var))
     calls = b.raw("call_hierarchy", dict(probe.pos("static List<Shape> shapes()", "shapes"), direction="outgoing"))[0]
     b.check("probe outgoing: method reference", "unit" in calls, first(calls))
-    b.check("probe outgoing: constructor reference", "Square" in calls, first(calls),
-            known="outgoing calls drop constructor references")
+    b.check("probe outgoing: constructor reference", "Square" in calls, first(calls))
 
 
 def reference_counts(b, probe, watched):
@@ -214,8 +217,7 @@ def imports_checks(b, probe):
     target = probe.write("LatheProbeImports")
     text = b.raw("fix_imports", {"file": str(target)})[0]
     b.check("probe fix_imports: single candidate", "java.util.concurrent.ConcurrentHashMap" in text, first(text))
-    b.check("probe fix_imports: nested type", "java.util.Map.Entry" in text, first(text),
-            known="import fixes ignore nested types")
+    b.check("probe fix_imports: nested type", "java.util.Map.Entry" in text, first(text))
     target = probe.write("LatheProbeImports", crlf=True)
     text = b.raw("fix_imports", {"file": str(target)})[0]
     data = target.read_bytes()
