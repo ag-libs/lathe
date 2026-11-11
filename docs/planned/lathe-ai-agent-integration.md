@@ -15,7 +15,7 @@ stdio, validated live against the private payment reactor.
 - Tools (11): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
   `call_hierarchy`, `describe_symbol`, `search_symbols`, `find_implementations`**, plus the paired
   **`analyze_change`** / **`verify_change`** ([Change Impact & Verification](../done/lathe-change-impact-and-verification.md)) — every located
-  result is one grep-style line, `path:line: code`, tagged with its `origin` when not REACTOR
+  result is one grep-style line, `path:line:column: code`, tagged with its `origin` when not REACTOR
   (GENERATED / EXTERNAL). The curated wedge is **feature-complete**.
 - `rename_symbol` applies javac-accurate edits to disk across modules, including a public type's file
   move, and refuses to touch a non-reactor file.
