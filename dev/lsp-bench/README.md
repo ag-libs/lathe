@@ -143,5 +143,10 @@ Then every row with its raw results and the command that reproduces it, the rows
        The time until the definition query is right, until the widely used method's reference count is that commit's, and until a changed open file's diagnostics match the build's at that commit; a deadline of 10 minutes.
        A server that never gets there is reported so, and measured again after wiping its state.
     7. **A build-file change**: a dependency already in the local repository added to the main module's build file, and a use of one of its classes in an open file; the time until that file has no error, each step a user takes counted and timed apart: for Lathe the sync its prompt offers, for jdtls the update its prompt offers (`java.configuration.updateBuildConfiguration`, by default asking), each answered as a user clicking "yes".
-    8. **Disk**: after the warm run, the size of jdtls's workspace data and configuration, and of the project's `.lathe/`; the servers' shared installs apart.
-    9. **Setup in Neovim**: what a user installs and configures for each server, in prose, not measured.
+    8. **Running one test from the editor**, what Lathe's test capture is for: a test class and one of its methods in the main module (the test class with the most test methods there), each run as the Neovim client of each server runs it.
+       For Lathe, `lathe.run.test`, as `lathe.nvim`'s test adapter calls it, replaying the launch the build captured.
+       For jdtls, nvim-jdtls's `test_class` and `test_nearest_method` path: the java-test bundle resolves the launch, and java-debug starts it, both bundles at pinned versions loaded into jdtls as `bundles`.
+       The time from the request to the last result, and whether each test's outcome matches the build's own run of it; the first run and the median of the repeats, with the test edited between repeats (a changed assertion), so each run sees the edit.
+       What each needs installed and configured goes into the Neovim setup below.
+    9. **Disk**: after the warm run, the size of jdtls's workspace data and configuration, and of the project's `.lathe/`; the servers' shared installs apart.
+    10. **Setup in Neovim**: what a user installs and configures for each server, test running included (for jdtls the two bundles, for Lathe the test capture), in prose, not measured.
