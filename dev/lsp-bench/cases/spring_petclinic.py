@@ -164,3 +164,20 @@ CASES += [
         "expect": {"completion": "getLastName"},
     },
 ]
+
+# Errors while typing (2026-11-11 amendment): a line that does not compile typed as the method's first
+# statement, then undone; the time until its error shows and until it is gone, without and with a save.
+TYPED_ERROR = "\t\tint latheBench = \"x\";"
+CASES += [
+    {
+        "name": "diagnostics: typing an error",
+        "method": "textDocument/publishDiagnostics",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, TYPED_ERROR),
+    },
+    {
+        "name": "diagnostics: typing an error, saved",
+        "method": "textDocument/publishDiagnostics",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, TYPED_ERROR),
+        "save": True,
+    },
+]

@@ -27,6 +27,8 @@ CAPABILITY = {
     "textDocument/documentSymbol": "documentSymbolProvider",
     "workspace/symbol": "workspaceSymbolProvider",
     "textDocument/completion": "completionProvider",
+    # Not a request: the diagnostics a server publishes after an edit, which every server does.
+    "textDocument/publishDiagnostics": None,
 }
 # A completion's expected item must rank within this many, in the order Neovim shows them.
 COMPLETION_TOP = 20
@@ -67,12 +69,18 @@ def edited_text(repo, case):
     return "\n".join(lines[:row] + [typed] + lines[row:]), {"line": row, "character": len(typed)}
 
 
-def change(client, repo, path, text):
-    """Sends the whole document, as one change, at its next version."""
+def change(client, repo, path, text, save=False):
+    """Sends the whole document, as one change, at its next version; saving writes it to disk first,
+    as an editor does, then sends didSave with its text. Returns the version."""
     versions = client.__dict__.setdefault("versions", {})
     versions[path] = versions.get(path, 1) + 1
+    if save:
+        (repo / path).write_text(text, encoding="utf-8")
     client.notify("textDocument/didChange", {
         "textDocument": {"uri": uri(repo, path), "version": versions[path]}, "contentChanges": [{"text": text}]})
+    if save:
+        client.notify("textDocument/didSave", {"textDocument": {"uri": uri(repo, path)}, "text": text})
+    return versions[path]
 
 
 def label_name(label):

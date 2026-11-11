@@ -87,8 +87,10 @@ class BenchClient(LspClient):
         super().__init__(proc, [])
         self.settings = settings
         self.status = StampedQueue()
+        self.diagnostics = StampedQueue()
         with self._notif_lock:
             self._notifications["language/status"] = self.status
+            self._notifications["textDocument/publishDiagnostics"] = self.diagnostics
 
     def _send(self, msg):
         # Content-Length counts bytes: an opened file with non-ASCII text must not break the framing.
@@ -134,6 +136,69 @@ def timed(client, repo, case, timeout):
     return (time.monotonic() - start) * 1000, result, error
 
 
+# How long the diagnostics must stay unchanged to count as settled, and the most a case waits for them.
+SETTLED_S = 2.0
+DIAGNOSTICS_TIMEOUT_S = 60
+
+
+def until_published(client, edit, target, ok, settled=False):
+    """Ms from an edit to the first publish for the edited version (any after the edit from a server
+    that sends no version) whose diagnostics satisfy ok; with settled, to the last publish before the
+    diagnostics stay unchanged for SETTLED_S, which must satisfy ok. None past the timeout."""
+    start = time.monotonic()
+    mark = len(client.diagnostics.times)
+    version = edit()
+    last = None
+    while time.monotonic() - start < DIAGNOSTICS_TIMEOUT_S:
+        for at, msg in client.diagnostics.times[mark:]:
+            params = msg.get("params", {})
+            if params.get("uri") == target and params.get("version") in (None, version):
+                if not settled and ok(params.get("diagnostics", [])):
+                    return (at - start) * 1000
+                last = (at, params.get("diagnostics", []))
+        mark = len(client.diagnostics.times)
+        if settled and last and time.monotonic() - last[0] >= SETTLED_S:
+            return (last[0] - start) * 1000 if ok(last[1]) else None
+        time.sleep(0.01)
+    return None
+
+
+def typed_error(client, repo, case):
+    """Types the case's line, which does not compile, then undoes it: ms until its error shows, and ms
+    until the diagnostics settle without it; saved after each change when the case says so."""
+    path = case["edit"][0]
+    text, pos = Q.edited_text(repo, case)
+    original = (repo / path).read_text(encoding="utf-8")
+    target = Q.uri(repo, path)
+    save = case.get("save", False)
+
+    def on_line(diagnostics):
+        return any(d.get("severity") == 1 and d["range"]["start"]["line"] == pos["line"] for d in diagnostics)
+
+    try:
+        shown = until_published(client, lambda: Q.change(client, repo, path, text, save), target, on_line)
+    finally:
+        gone = until_published(client, lambda: Q.change(client, repo, path, original, save), target,
+                               lambda diagnostics: not on_line(diagnostics), settled=True)
+    return shown, gone
+
+
+def typed_error_results(client, repo, case, reps):
+    """Two rows, as the amendment reports them: the error showing, and settled without it after the undo."""
+    runs = [typed_error(client, repo, case) for _ in range(1 + reps)]
+    rows = {}
+    for index, suffix in ((0, "shows"), (1, "settles without it")):
+        times = [r[index] for r in runs]
+        done = [t for t in times if t is not None]
+        rows["%s: %s" % (case["name"], suffix)] = {
+            "method": case["method"], "supported": True,
+            "first_ms": times[0], "median_ms": statistics.median(done[1:] or done) if done else None,
+            "p95_ms": p95(done[1:] or done) if done else None,
+            "error": None if len(done) == len(times) else "not within %ss" % DIAGNOSTICS_TIMEOUT_S,
+            "correct": len(done) == len(times), "answer": {"names": [], "locations": [], "text": ""}}
+    return rows
+
+
 def p95(values):
     ordered = sorted(values)
     return ordered[max(0, int(round(0.95 * len(ordered))) - 1)]
@@ -171,6 +236,9 @@ def thread_dumps(pids, out_dir, label):
 def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeout):
     results = {}
     for case in cases:
+        if case["method"] == "textDocument/publishDiagnostics":
+            results.update(typed_error_results(client, repo, case, reps))
+            continue
         if not capabilities.get(Q.CAPABILITY[case["method"]]):
             results[case["name"]] = {"method": case["method"], "supported": False}
             continue
@@ -323,9 +391,11 @@ def measured_run(server, name, project, cases, mode, args, out_dir, label):
     return result
 
 
-def summary_line(result, total):
+def summary_line(result):
     correct = sum(1 for c in result["cases"].values() if c.get("correct"))
     supported = sum(1 for c in result["cases"].values() if c.get("supported"))
+    # Rows, not cases: a typed-error case reports two.
+    total = len(result["cases"])
     return "build %s  ready %s  peak %4.0f MB  correct %d/%d (%d unsupported)  %s" % (
         "%6.1fs" % (result["build_ms"] / 1000) if result.get("build_ms") else "     -",
         "%6.1fs" % (result["ready_ms"] / 1000) if result.get("ready_ms") else "     -",
@@ -382,7 +452,7 @@ def main():
                 print("%-14s" % label, end="", flush=True)
                 result = measured_run(server, name, project, cases, mode, args, out_dir, label)
                 (out_dir / ("%s.json" % label)).write_text(json.dumps(result, indent=2))
-                print(summary_line(result, len(cases.CASES)), flush=True)
+                print(summary_line(result), flush=True)
     print("results in", out_dir)
     subprocess.run([sys.executable, str(BENCH / "report.py"), str(out_dir)], check=True)
 
