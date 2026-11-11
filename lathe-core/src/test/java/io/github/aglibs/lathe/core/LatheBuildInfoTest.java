@@ -14,4 +14,11 @@ class LatheBuildInfoTest {
             "java=%s".formatted(Runtime.version()),
             "java.home=%s".formatted(System.getProperty("java.home")));
   }
+
+  // Read from the jar's own manifest, so a class in a named module has it too.
+  @Test
+  void version_classInJarOrDirectory_manifestVersionOrEmpty() {
+    assertThat(LatheBuildInfo.version(Test.class)).get().asString().matches("\\d+\\.\\d+.*");
+    assertThat(LatheBuildInfo.version(LatheBuildInfoTest.class)).isEmpty();
+  }
 }
