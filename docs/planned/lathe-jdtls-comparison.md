@@ -107,8 +107,8 @@ Projects mixing in Kotlin or Groovy were left out, as neither server analyses th
 OpenJDK is reported as a project Lathe serves and jdtls does not: on a plain checkout jdtls reports `java.base`'s own packages as conflicting and navigates nowhere.
 Apache Fineract leaves the comparison: jdtls's failure to import it comes half from a Fineract plugin that breaks on Gradle 9 when its task is created, which a user can work around.
 
-Time: about 20 hours of an idle machine in all, estimated from the stage 1 runs and the release battery:
-the queries at the one heap about 6 h, the build row with test capture and its baseline about 1 h, the editing loop in every run about 4 h, the outside changes in sessions of their own (three per server and project) about 7–8 h, diagnostics against the build about 3 h.
+Time: about 18 hours of an idle machine in all, estimated from the stage 1 runs and the release battery:
+the queries at the one heap about 5 h, the build row with test capture and its baseline about 1 h, the editing loop in every run about 4 h, the outside changes in sessions of their own (three per server and project) about 7–8 h, diagnostics against the build about 3 h.
 So they are gathered in sessions, one project and one group at a time, as the amendment sets out; building the tooling first is the larger cost, about a week in several pull requests.
 
 Risks to settle while building it:
@@ -200,7 +200,6 @@ Each stage is its own pull request.
 
 ## Open questions
 
-1. Which public projects represent Lombok and MapStruct (or Immutables) users: an established open-source application rather than a sample, so the numbers mean something.
-   Also whether a third-party project beats record-companion and Helidon for JPMS with annotation processing.
+1. ~~Which public projects represent Lombok and annotation-processor users.~~ Settled 2026-11-11: OpenMetadata for Lombok, Helidon for annotation processing and JPMS; candidates that mix in Kotlin or Groovy (Micronaut Core, Spring Framework) were left out, and a MapStruct application (kafbat/kafka-ui) was set aside, as it needs Node to build and is less known.
 2. Whether java-index stays in the comparison beyond spring-petclinic, given it answers only navigation.
 3. Which jdtls version to pin, and how often to move the pin.
