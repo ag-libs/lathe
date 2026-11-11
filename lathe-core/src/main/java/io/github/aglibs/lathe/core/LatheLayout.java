@@ -160,6 +160,7 @@ public final class LatheLayout {
 
     public static final String LATHE_GROUP_ID = "io.github.ag-libs";
     public static final String OPENJDK_PLUGIN_ARTIFACT_ID = "lathe-openjdk-maven-plugin";
+    public static final String EXTENSION_ARTIFACT_ID = "lathe-maven-extension";
     public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
     public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
     public static final String SYNC_GOAL = "sync";

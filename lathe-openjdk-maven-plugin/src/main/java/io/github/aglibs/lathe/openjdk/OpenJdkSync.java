@@ -300,6 +300,7 @@ public final class OpenJdkSync {
     return new SyncScript(
         LatheLayout.Maven.runningTool(systemProperties, Platform.WINDOWS),
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
+        List.of(),
         List.of(
             LatheLayout.Maven.NO_TRANSFER_PROGRESS,
             "-D%s=%s".formatted(LatheFlags.BUILD_DIR, buildDir.toAbsolutePath())),

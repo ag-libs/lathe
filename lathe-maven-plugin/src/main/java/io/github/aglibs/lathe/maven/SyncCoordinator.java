@@ -97,7 +97,11 @@ final class SyncCoordinator {
               buildFiles,
               ModuleResourcesReader.read(workspaceRoot, projects),
               ReactorProjects.outputs(workspaceRoot, projects),
-              MavenSyncScript.of(session.getSystemProperties(), syncPhase)));
+              MavenSyncScript.of(
+                  session.getSystemProperties(),
+                  session.getUserProperties(),
+                  syncPhase,
+                  LatheRegistration.registersLathe(workspaceRoot, session.getTopLevelProject()))));
       // The whole reactor only: a forced sync under -pl sees part of it.
       if (!isPartialReactor()) {
         CapturePruner.prune(workspaceRoot, ReactorProjects.sourceTrees(workspaceRoot, projects));

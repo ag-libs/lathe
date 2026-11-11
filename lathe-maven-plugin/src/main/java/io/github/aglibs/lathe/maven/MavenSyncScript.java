@@ -5,9 +5,12 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
+import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 // Maven's .lathe/lathe-sync.sh, the one command clients, the server, and the MCP server run to
 // refresh .lathe/, so none of them compose a Maven command line. It runs the Maven and JDK that ran
@@ -34,6 +37,10 @@ final class MavenSyncScript {
   // Failsafe's own switch: a capture-only sync past the test phase captures Surefire's tests
   // only.
   private static final String SKIP_ITS_ARG = "-DskipITs";
+  // A personal activation: Lathe brought in from the command line, not by the project, with
+  // compile errors kept from stopping the build before lathe:sync.
+  static final String EXT_CLASS_PATH = "maven.ext.class.path";
+  static final String FAIL_ON_ERROR = "maven.compiler.failOnError";
 
   private MavenSyncScript() {}
 
@@ -64,13 +71,25 @@ final class MavenSyncScript {
   // -amd: Maven does not add the dependents' own upstream, so on a large reactor a dependent fails
   // to resolve a module outside the scope; callers that need dependents name them. The build cache
   // stays off, since a cache hit skips javac and the test fork, where Lathe captures.
-  static SyncScript of(final Properties systemProperties, final String phase) {
+  // A personal activation is replayed, its jars required, unless the project registers Lathe too.
+  static SyncScript of(
+      final Properties systemProperties,
+      final Properties userProperties,
+      final String phase,
+      final boolean projectRegistersLathe) {
     final int position = SYNC_PHASES.indexOf(phase);
     final int testPosition = SYNC_PHASES.indexOf(TEST_PHASE);
+    final List<Path> activation =
+        projectRegistersLathe ? List.of() : activationJars(userProperties);
     return new SyncScript(
         LatheLayout.Maven.runningTool(systemProperties, Platform.WINDOWS),
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
-        List.of(LatheLayout.Maven.NO_TRANSFER_PROGRESS, "-Dmaven.build.cache.enabled=false"),
+        activation,
+        Stream.concat(
+                Stream.of(
+                    LatheLayout.Maven.NO_TRANSFER_PROGRESS, "-Dmaven.build.cache.enabled=false"),
+                activationArgs(activation, userProperties))
+            .toList(),
         position >= testPosition ? List.of(phase, SKIP_TESTS_ARG) : List.of(phase),
         position > testPosition
             ? List.of(
@@ -78,5 +97,29 @@ final class MavenSyncScript {
             : List.of(TEST_PHASE, LatheLayout.Maven.CAPTURE_ONLY_ARG, "-DfailIfNoTests=false"),
         List.of("-pl", LatheFlags.SYNC_MODULE_TOKEN),
         List.of("-am"));
+  }
+
+  // Absolute, as the sync script runs from the workspace root, not where this build started.
+  private static List<Path> activationJars(final Properties userProperties) {
+    return Stream.of(userProperties.getProperty(EXT_CLASS_PATH, "").split(File.pathSeparator))
+        .filter(entry -> !entry.isBlank())
+        .map(entry -> Path.of(entry.trim()).toAbsolutePath())
+        .toList();
+  }
+
+  private static Stream<String> activationArgs(
+      final List<Path> activation, final Properties userProperties) {
+    if (activation.isEmpty()) {
+      return Stream.empty();
+    }
+
+    final String classPath =
+        activation.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator));
+    final String failOnError = userProperties.getProperty(FAIL_ON_ERROR);
+    return Stream.concat(
+        Stream.of("-D%s=%s".formatted(EXT_CLASS_PATH, classPath)),
+        failOnError == null
+            ? Stream.empty()
+            : Stream.of("-D%s=%s".formatted(FAIL_ON_ERROR, failOnError.trim())));
   }
 }
