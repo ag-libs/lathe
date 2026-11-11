@@ -2,9 +2,9 @@
 """Runs the pre-registered queries (README.md) against Lathe and jdtls on one project and records
 readiness, build or import time, memory, CPU, latency and correctness. Run ./setup.sh first.
 
-    python3 dev/lsp-bench/bench.py spring-petclinic                  # 3 cold + 3 warm runs per server
+    python3 dev/lsp-bench/bench.py spring-petclinic                  # 3 cold + 3 warm runs per server, -Xmx2G
     python3 dev/lsp-bench/bench.py spring-petclinic --runs 1 --servers lathe
-    python3 dev/lsp-bench/bench.py spring-petclinic --heap 2G        # the equal-heap run
+    python3 dev/lsp-bench/bench.py spring-petclinic --heap 4G        # both at another heap: a labelled variant
     python3 dev/lsp-bench/bench.py spring-petclinic --prime          # downloads, before measuring
 
 Results go to dev/lsp-bench/results/<time>-<project>/: a JSON file and the server's log per run,
@@ -327,13 +327,18 @@ def summary_line(result, total):
         result.get("error") or "")
 
 
+# Both servers at the heap vscode-java gives jdtls: the 2026-11-11 amendment.
+DEFAULT_HEAP = "2G"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("project", choices=sorted(P.PROJECTS))
     parser.add_argument("--servers", default="lathe,jdtls")
     parser.add_argument("--runs", type=int, default=3, help="cold runs and warm runs per server")
     parser.add_argument("--reps", type=int, default=10, help="timed repeats of each query")
-    parser.add_argument("--heap", help="the same -Xmx for every server, e.g. 2G")
+    parser.add_argument("--heap", default=DEFAULT_HEAP,
+                        help="the same -Xmx for every server (default %s, vscode-java's for jdtls)" % DEFAULT_HEAP)
     parser.add_argument("--ready-timeout", type=int, default=1800, help="seconds")
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
     parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
@@ -348,7 +353,7 @@ def main():
     if not S.repo_of(name).is_dir():
         raise SystemExit("no clone of %s: run setup.sh first" % name)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    suffix = "-prime" if args.prime else "-heap" + args.heap if args.heap else ""
+    suffix = "-prime" if args.prime else "-heap" + args.heap if args.heap != DEFAULT_HEAP else ""
     if args.jdtls_setting:
         suffix += "-variant"
     out_dir = RESULTS / ("%s-%s%s" % (stamp, name, suffix))

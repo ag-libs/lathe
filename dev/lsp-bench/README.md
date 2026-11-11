@@ -12,12 +12,12 @@ The rule from there: Lathe claims nothing over jdtls that these measurements do 
 
 | Server | Version | Runs on | Settings |
 |---|---|---|---|
-| Lathe | `main` at `c15d3a55` (2026-11-07), as no release carries its changes since 0.3.1 (the capture-only speed-up #124, Gradle source sets #127 and their test launches #131); built from a clean checkout with its version stamped `0.3.99-c15d3a55`, as the release workflow stamps one, its Gradle plugin from the same build (the Gradle Plugin Portal has not approved the plugin); measured again on the first release after it; the working tree for before-and-after runs of a fix | the JDK the project's build recorded (`.lathe/java-home`) | its launcher's defaults |
+| Lathe | `main` at `c15d3a55` (2026-11-07), as no release carries its changes since 0.3.1 (the capture-only speed-up #124, Gradle source sets #127 and their test launches #131); built from a clean checkout with its version stamped `0.3.99-c15d3a55`, as the release workflow stamps one, its Gradle plugin from the same build (the Gradle Plugin Portal has not approved the plugin); measured again on the first release after it; the working tree for before-and-after runs of a fix | the JDK the project's build recorded (`.lathe/java-home`) | its launcher's defaults, with `-Xmx2G` (`LATHE_JVM_OPTS`) from the 2026-11-11 amendment |
 | jdtls | 1.63.0 (`jdt-language-server-1.63.0-202610191322.tar.gz`) | Corretto 25 | VS Code's defaults (`vscode-java`'s VM arguments, `-Xmx2G`) |
 | java-index | 0.1.2, JVM relay | Corretto 21 | its own; spring-petclinic only |
 
-Each server runs as its users get it.
-One extra run per project gives Lathe and jdtls the same heap limit (`-Xmx2G`), so memory and speed can also be compared at equal footing.
+Each server runs as its users get it, except for the heap: from the 2026-11-11 amendment every run gives both servers `-Xmx2G`, the limit vscode-java gives jdtls, and another heap is a labelled variant (`--heap`).
+Before it, one extra run per project gave Lathe that limit, and the others ran Lathe with no limit.
 
 ## Projects
 
@@ -113,3 +113,29 @@ Then every row with its raw results and the command that reproduces it, the rows
   - Fineract's Gradle build leaves worker processes running after it ends, and the harness counted them as Lathe's: its first measured cold runs reported 10 processes and 9.9 to 14.7 GB. The harness now stops what a build leaves (new processes naming the clone or Gradle) and takes the server's baseline after the build; Fineract's Lathe runs were measured again. No other project's runs counted more than the server's own process.
   - A run during which the machine suspends is discarded and repeated, as one on a busy machine is: one Fineract run spanned a suspend (the lid closed), so a request seemed to take 101 minutes. The run was discarded.
   - A request that times out saves a thread dump of each of the server's JVMs beside the run's results.
+- **2026-11-11, before any run of what it adds:**
+  - **One heap for both.** Every run gives Lathe and jdtls `-Xmx2G` (Lathe through `LATHE_JVM_OPTS`, jdtls through vscode-java's arguments), the default of `bench.py --heap`; another heap is a labelled variant (`-heap<size>` in the results' name).
+    The 2026-11-08 equal-heap runs showed every Lathe answer the same at that limit, so the comparison no longer leans on a heap only one server gets.
+    Runs before this amendment are reported as they ran:
+    Lathe with no limit, except the `-heap2G` runs.
+  - **jdtls's setup.** jdtls keeps vscode-java's settings.
+    A Neovim user starts it through nvim-jdtls with settings of their own, often no heap limit and a Lombok agent added by hand; the published page names the setup measured and does not measure each nvim-jdtls configuration.
+  - **The editing loop and outside changes**, measured on every project both servers import, with positions fixed in each project's case file before its first measured run, by the rules below.
+    Latency is reported as for the queries: the first answer, then median and 95th percentile over the repeats.
+    1. **Completion**, four positions in the main module's file of the definition query: member access after `.` on a project-type receiver; the first three letters of a project type the file does not import; after `.` on a JDK class's static member access (`Math.`, `List.`); on a lambda parameter inside a lambda body.
+       Each expects a named item within the first 20; the time counts the request and the resolve of that item, which jdtls defers.
+       For the unimported type, the item must also add the import.
+    2. **Diagnostics while typing**: in that file, `int latheBench = "x";` inserted as a method's first statement; the time from the change to the first publish, for that document version, with an error on that line; then from the undo to the publish without it; then the same with a save after each change.
+    3. **An error in another module**: the widely used method of the queries gains a parameter, in the editor and on disk, saved; the time until an open file of another module that calls it shows the error at the call, then, after the revert, until the error is gone.
+    4. **Diagnostics against the build**: the build's own javac errors and warnings per file, from a clean build and from one with an error injected into each of a fixed list of files, against each server's diagnostics on those files, both ways: errors the build reports that a server misses, and errors a server reports that the build does not.
+       Errors are compared strictly; warnings only in the categories the build enables, as jdtls has its own lint set.
+       Targeted public fixtures (Lombok, annotation processors, `--release` below the JDK, JPMS, the Gradle source sets of the design) are named before their first run.
+    5. **Rename and imports**: renaming the widely used method, with the time and the edits (files and edits apart, as jdtls also renames accessors and files); the edit applied to a copy of the project, which must then compile with the build.
+       Removing an import a file uses: the time until the error, then until a code action to import it is offered, resolved and applied.
+    6. **A branch switch**:
+       `git checkout` of a fixed older commit per project (named in `projects.py` before its first run), build files included, while the server runs; the client then does what an editor does (`workspace/didChangeWatchedFiles` for the changed files, where the server registered for them, and the open buffers reloaded from disk).
+       The time until the definition query is right, until the widely used method's reference count is that commit's, and until a changed open file's diagnostics match the build's at that commit; a deadline of 10 minutes.
+       A server that never gets there is reported so, and measured again after wiping its state.
+    7. **A build-file change**: a dependency already in the local repository added to the main module's build file, and a use of one of its classes in an open file; the time until that file has no error, each step a user takes counted and timed apart: for Lathe the sync its prompt offers, for jdtls the update its prompt offers (`java.configuration.updateBuildConfiguration`, by default asking), each answered as a user clicking "yes".
+    8. **Disk**: after the warm run, the size of jdtls's workspace data and configuration, and of the project's `.lathe/`; the servers' shared installs apart.
+    9. **Setup in Neovim**: what a user installs and configures for each server, in prose, not measured.

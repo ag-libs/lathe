@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress.** Stage 0 done (the pre-registration, #134); stage 1 done (the harness and all six projects measured, #135, 2026-11-08); stages 2 and 3 next.
+**In progress.** Stage 0 done (the pre-registration, #134); stage 1 done (the harness and all six projects measured, #135, 2026-11-08); stage 1b (the editing loop and outside changes, pre-registered 2026-11-11), 2 and 3 next.
 This document is the plan for answering "why Lathe and not jdtls?" with evidence instead of assertion.
 The measured results stay out of the repository until stage 4, as pre-registered; what they found that is Lathe's own is in the gap log, listed under stage 3 below.
 
@@ -81,6 +81,32 @@ What running jdtls as its users get it took, each an amendment in the pre-regist
 - vscode-java starts jdtls with a Lombok agent, so the harness does too on the Lombok projects (Fineract, OpenMetadata).
 
 What the harness itself had to learn: a server that stops reading its input while it imports deadlocks a client that writes on the reading thread; a Gradle build leaves worker processes running that must not count as the server's; a run the machine suspends during is discarded; and a readiness probe must be a query whose answer no server disputes.
+
+## Stage 1b — What a Neovim user does all day
+
+Stage 1 measures navigation; a jdtls user in Neovim spends the day typing, completing, reading errors and switching branches, and wants to know whether the errors match the build.
+Pre-registered in the 2026-11-11 amendment of `dev/lsp-bench/README.md`, with both servers at `-Xmx2G` from then on (the default of `bench.py --heap`).
+How each item is built from what exists:
+
+| Item | Reuse | Add | Size |
+|---|---|---|---|
+| Completion: four positions, an expected item in the first 20, the resolve timed | the case and position mechanism and `run_cases`' timing (`bench.py`); `jdtls_diff.canon_completion`, which strips jdtls's `Label - package` | `textDocument/completion` in `queries.CAPABILITY` and the completion capability in `bench.CLIENT_CAPABILITIES`; an `edit` field on a case, applied by `didChange` before the request; a rank-within-N check, and the import edit for the unimported type | S–M |
+| Diagnostics while typing | `lsp.change`/`save`; `lsp_staleness.Probe.diags` and its error checks; the metric the editor smoke already defines (`driver.lua`: insert, error, undo, clean) | a monotonic timestamp on every `publishDiagnostics`, as `StampedQueue` does for `language/status`; a case kind timed from the change to the publish for that version | M |
+| An error in another module | `lsp_staleness.Probe.poll` and `restore` | a case naming the upstream edit and the open downstream file; both servers saved to disk, as jdtls builds on save | M |
+| Diagnostics against the build | `jdtls_diff.canon_diagnostics` (Lathe against jdtls only, today) | `stage2.py`: the build with warnings shown, javac's `/path:[line,col]` lines parsed per file, each server's publishes on those files compared both ways; public fixtures under `dev/lsp-bench/fixtures/` (the invoker fixtures test Lathe only) | L |
+| Rename and imports | `lsp.prepare_rename`/`rename`, `code_action`/`resolve_code_action`; `jdtls_diff.rename_edit_count` | the edit applied to a `git worktree` copy and compiled with the build; `BenchClient` answering `workspace/applyEdit`, through which jdtls may apply an action, and declaring `workspaceEdit.documentChanges` | M |
+| A branch switch | `mcp_staleness.s_branch_switch` (MCP only): checkout of an older ref and back, files added or deleted since | an LSP port: `didChangeWatchedFiles` for `git diff --name-status`, sent where the server registered for them (jdtls does; Lathe scans on its own 2 s tick and ignores them), open buffers reloaded; `wait_ready`'s polling for "until right" | M |
+| A build-file change | `lsp_staleness.s_pom` and `mcp_staleness.s_pom` (they check only that Lathe asks for a sync) | a dependency added from the local repository and a class of it used; `BenchClient` answering each server's prompt as a user clicking yes: Lathe's sync, jdtls's update (`java.configuration.updateBuildConfiguration` asks by default; to be confirmed in its source) | M |
+| Disk | `servers.jdtls_prepare`'s workspace and configuration directories | a `du` after the warm run: jdtls's `-data` and configuration, `.lathe/`; the shared installs apart; a report column | S |
+| Setup in Neovim | the editor guides | a short prose table | S |
+
+Risks to settle while building it:
+- jdtls may publish nothing for a clean file (`jdtls.JdtlsClient.open` gives up after 8 s), so "until clean" waits on the publish for the edited version or a quiet period, not on any publish.
+- Each server debounces edits its own way; the times are reported as they are, with the time until the error is gone as well as until it appears, as jdtls can publish an intermediate list.
+- jdtls's own lint set (unused imports, raw types) has no javac counterpart, so warnings are compared only in the categories the build enables; Error Prone and `-Werror` have none in ECJ.
+- The other dev scripts do not run the servers at one heap: `dev/jdtls.py` starts jdtls through its launcher's default, so `jdtls_diff.py` and `lsp_staleness.py` need `-Xmx2G` passed too before their numbers sit beside the benchmark's.
+
+Order: completion and diagnostics while typing first (they extend the harness the least and are what a user feels most), then the error in another module, rename and imports, disk; the branch switch and the build-file change next; diagnostics against the build (stage 2) alongside, as the largest.
 
 ## Stage 2 — Where each server disagrees with the build
 
