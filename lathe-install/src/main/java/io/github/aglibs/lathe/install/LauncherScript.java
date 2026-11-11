@@ -15,6 +15,9 @@ import io.github.aglibs.validcheck.ValidCheck;
 // LATHE_JVM_OPTS. The argfile comes last; it ends with the entry point.
 public record LauncherScript(String version, String argfile) {
 
+  // The variable that runs the server on another JDK than the build's.
+  static final String JAVA_HOME_ENV = "LATHE_JAVA_HOME";
+
   private static final String STDOUT_GUARD =
       "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr %s"
           .formatted(String.join(" ", LatheFlags.UTF8_OUTPUT_JVM_ARGS));

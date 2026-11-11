@@ -149,8 +149,10 @@ names each such test task.
   its formatter in a `lathe-style.json`, and `latheSync` resolves it through the build's repositories;
   a build that applies Spotless gets a warning until it does.
   Without a version there, the formatter is the default of the root project's Spotless, or of the
-  Spotless release Lathe pins; when only subprojects apply Spotless, declare the version.
-  See [Declaring the formatter](installation.md#declaring-it).
+  Spotless release Lathe pins, chosen for the daemon's JDK; when only subprojects apply Spotless, or a
+  toolchain compiles on an older JDK than the daemon runs, declare the version (the sync warns when the
+  server's JDK cannot run the formatter).
+  See [The formatter version](installation.md#the-formatter-version).
 - **Composite builds:** only the main build's projects are covered; an included build of Java projects the editor
   should see is not yet.
 

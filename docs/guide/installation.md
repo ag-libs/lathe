@@ -189,14 +189,37 @@ A `lathe-style.json` at the repo root names the formatter, for any build tool:
 ```
 
 - `engine`: `google`, `aosp`, `palantir`, `eclipse`, or one of the engines below that need no jars.
-- `version` (optional): the formatter's release, not Spotless's.
-  Left out, it is the default of the build's Spotless, or, in a build without Spotless, of the Spotless
-  release Lathe pins.
-  On Gradle, only a Spotless applied in the root project counts; when only subprojects apply it, declare
-  the version, and the sync warns until you do.
+- `version` (optional): the formatter's release, not Spotless's — see [The formatter version](#the-formatter-version).
 - `options` (optional): the Spotless step's options from the table above (`reorderImports`,
   `reflowLongStrings`, `formatJavadoc`, `style`, `groupArtifact`); for `eclipse`, `file` names the
   profile, relative to the repo root.
+
+#### The formatter version
+
+`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for
+palantir-java-format, `4.41` for Eclipse.
+It is what the jars are resolved at, so pin it when the editor must format exactly as your CI does.
+
+Left out, it is the default Spotless picks:
+
+- the default of the build's Spotless when the build has one (on Gradle, only a Spotless applied in the
+  root project is seen; when only subprojects apply it, declare the version, and the sync warns until
+  you do);
+- otherwise the default of the Spotless release Lathe pins.
+
+Spotless picks the newest release that runs on the JVM it runs on: the JVM that runs the build (on
+Gradle, the daemon's JDK, not a toolchain's).
+The language server runs the formatter on the build's compiling JDK instead (`.lathe/java-home`), which
+a Gradle toolchain can make older.
+When the formatter needs a newer Java than that, the sync says so on every run, for example:
+
+```text
+[sync] formatter google 1.36.1 needs Java 21, but the server runs on Java 17, the build's compiling JDK:
+declare a version that runs on Java 17 in lathe-style.json, or set LATHE_JAVA_HOME to a JDK 21 or later
+```
+
+Declare a release that runs on that JDK, or run the server on a newer one with
+[`LATHE_JAVA_HOME`](#choosing-the-server-jdk-lathe_java_home); the second keeps the formatter your build runs.
 
 Every sync resolves the declared formatter's jars through your build (its repositories, mirrors and
 credentials) and writes them to the generated `.lathe/style.json`, with the indentation the formatter

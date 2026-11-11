@@ -20,7 +20,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Properties;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 // The formatters Lathe runs in-process, completed and resolved as Spotless runs them: the version
 // and options a project leaves out are its Spotless step's own defaults, read from the step classes
@@ -38,7 +41,8 @@ public final class FormatterSteps {
           "com.diffplug.spotless.java.GoogleJavaFormatStep",
           "com.google.googlejavaformat:google-java-format",
           true,
-          "");
+          "",
+          "com/google/googlejavaformat/java/Formatter.class");
   private static final Map<String, Step> STEPS =
       Map.of(
           LatheFlags.FORMATTER_GOOGLE,
@@ -50,17 +54,22 @@ public final class FormatterSteps {
               "com.diffplug.spotless.java.PalantirJavaFormatStep",
               "com.palantir.javaformat:palantir-java-format",
               true,
-              ""),
+              "",
+              "com/palantir/javaformat/java/Formatter.class"),
           LatheFlags.FORMATTER_ECLIPSE,
           new Step(
               "com.diffplug.spotless.extra.java.EclipseJdtFormatterStep",
               "org.eclipse.jdt:org.eclipse.jdt.core",
               false,
-              "com/diffplug/spotless/extra/eclipse_jdt_formatter/v%s.lockfile"));
+              "com/diffplug/spotless/extra/eclipse_jdt_formatter/v%s.lockfile",
+              "org/eclipse/jdt/core/formatter/CodeFormatter.class"));
   private static final String INDENT_GOOGLE = "google";
   private static final IndentSpec EDITORCONFIG_INDENT = new IndentSpec("editorconfig", 0, 0);
   private static final String PINNED_SPOTLESS_RESOURCE = "spotless.properties";
   private static final String PINNED_SPOTLESS_KEY = "spotless-lib.version";
+  // A class file's major version is its Java release plus 44 (Java 17 is 61).
+  private static final int CLASS_MAJOR_OFFSET = 44;
+  private static final int CLASS_HEADER_BYTES = 8;
 
   private FormatterSteps() {}
 
@@ -198,6 +207,46 @@ public final class FormatterSteps {
         spec.engine(), spec.command(), spec.version(), spec.options(), classpath);
   }
 
+  // The Java release a resolved formatter needs: its main class's class-file version, read from the
+  // jar that holds it; empty when no jar on its classpath does, or it cannot be read.
+  public static OptionalInt requiredJava(final FormatterSpec resolved) {
+    final Step step = STEPS.get(resolved.engine());
+    if (step == null) {
+      return OptionalInt.empty();
+    }
+
+    for (final String jar : resolved.classpath()) {
+      final OptionalInt release = classRelease(Path.of(jar), step.mainClass());
+      if (release.isPresent()) {
+        return release;
+      }
+    }
+
+    return OptionalInt.empty();
+  }
+
+  private static OptionalInt classRelease(final Path jar, final String entry) {
+    try (var zip = new ZipFile(jar.toFile())) {
+      final ZipEntry found = zip.getEntry(entry);
+      if (found == null) {
+        return OptionalInt.empty();
+      }
+
+      try (InputStream in = zip.getInputStream(found)) {
+        // A class file starts with the magic number, then the minor and major versions.
+        final byte[] header = in.readNBytes(CLASS_HEADER_BYTES);
+        if (header.length < CLASS_HEADER_BYTES) {
+          return OptionalInt.empty();
+        }
+
+        final int major = ((header[6] & 0xff) << 8) | (header[7] & 0xff);
+        return OptionalInt.of(major - CLASS_MAJOR_OFFSET);
+      }
+    } catch (final IOException e) {
+      return OptionalInt.empty();
+    }
+  }
+
   public static List<String> javacGrants(final FormatterSpec spec) {
     final Step step = STEPS.get(spec.engine());
     return step != null && step.javacGrants() ? LatheFlags.FORMATTER_JAVAC_GRANTS : List.of();
@@ -279,16 +328,19 @@ public final class FormatterSteps {
   }
 
   // A Spotless step class (its defaults), the formatter's groupId:artifactId, whether the
-  // formatter reaches into javac internals and so needs FORMATTER_JAVAC_GRANTS, and the Spotless
+  // formatter reaches into javac internals and so needs FORMATTER_JAVAC_GRANTS, the Spotless
   // lockfile (a resource pattern taking the version) pinning its jars, or empty to resolve the
-  // artifact's runtime closure.
-  private record Step(String type, String groupArtifact, boolean javacGrants, String lockfile) {
+  // artifact's runtime closure, and a class every release of the formatter has, whose class-file
+  // version says the Java it needs.
+  private record Step(
+      String type, String groupArtifact, boolean javacGrants, String lockfile, String mainClass) {
 
     private Step {
       ValidCheck.check()
           .notBlank(type, "type")
           .notBlank(groupArtifact, "groupArtifact")
           .notNull(lockfile, "lockfile")
+          .notBlank(mainClass, "mainClass")
           .validate();
     }
   }

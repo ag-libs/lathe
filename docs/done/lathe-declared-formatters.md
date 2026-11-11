@@ -87,6 +87,15 @@ so the editor formats as `spotlessApply` would:
 The two can differ: Spotless's Gradle plugin 7.0.2 (spotless-lib 3.0.2) defaults google-java-format to 1.24.0,
 the pinned spotless-lib 4.10.4 to 1.36.1 (spike, 2026-11-11).
 
+Spotless's default is the newest release that runs on the JVM evaluating it: the build's (on Gradle, the daemon's).
+The server runs the formatter on the build's compiling JDK (`.lathe/java-home`), which a Gradle toolchain can make
+older, so a default can need a newer Java than the server has (spring-petclinic: the Gradle daemon on JDK 25 picks
+google-java-format 1.36.1, built for Java 21; the toolchain is Java 17).
+Lathe cannot ask Spotless for another JVM's default (it reads the running JVM's version once, and has no public
+lookup), and on Gradle the compiling JDK is known only after the jars are resolved.
+So the sync compares the formatter's class-file version with the server's JDK and warns, on every run, naming both
+remedies: declare a release that runs there, or run the server on a newer JDK with `LATHE_JAVA_HOME`.
+
 The Eclipse formatter's jars are the ones the Spotless lockfile for its release lists, each resolved without its
 dependencies; the other engines resolve the formatter's runtime closure.
 
