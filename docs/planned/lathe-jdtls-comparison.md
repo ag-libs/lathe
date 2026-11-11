@@ -99,7 +99,7 @@ How each item is built from what exists:
 | A branch switch | `mcp_staleness.s_branch_switch` (MCP only): checkout of an older ref and back, files added or deleted since | an LSP port acting as Neovim on the benchmark's machine: open buffers reloaded; on Linux no `didChangeWatchedFiles`, as Neovim 0.12 offers it only on macOS and Windows (there, sent for `git diff --name-status` where the server registered); `wait_ready`'s polling for "until right" | M |
 | A build-file change | `lsp_staleness.s_pom` and `mcp_staleness.s_pom` (they check only that Lathe asks for a sync) | a dependency added from the local repository and a class of it used; `BenchClient` answering each server's prompt as a user clicking yes: Lathe's sync, jdtls's update (`java.configuration.updateBuildConfiguration` asks by default; to be confirmed in its source) | M |
 | Running one test (a class and one method), Lathe's replay of the captured launch against nvim-jdtls's java-test and java-debug path | Lathe: `lathe.run.test` as `lathe.nvim`'s test adapter calls it, and the editor smoke's neotest run (`driver.lua`); `mcp_battery`'s `run_test` checks | jdtls: the java-test and java-debug bundles fetched at pinned versions and passed as `bundles`; the java-test command that resolves a test's launch, then a launch through java-debug's debug adapter, with the results read from its output; the build's own run of the test as the expected outcome | L |
-| Disk | `servers.jdtls_prepare`'s workspace and configuration directories | a `du` after the warm run: jdtls's `-data` and configuration, `.lathe/`; the shared installs apart; a report column | S |
+| Disk and the project tree | `servers.jdtls_prepare`'s workspace and configuration directories | a `du` after the warm run: jdtls's `-data` and configuration, `.lathe/`; the shared installs apart; `git status --ignored` for the files each server writes into the tree; a report column | S |
 | Setup in Neovim | the editor guides | a short prose table | S |
 
 Risks to settle while building it:
@@ -109,7 +109,7 @@ Risks to settle while building it:
 - jdtls's own lint set (unused imports, raw types) has no javac counterpart, so warnings are compared only in the categories the build enables; Error Prone and `-Werror` have none in ECJ.
 - The other dev scripts do not run the servers at one heap: `dev/jdtls.py` starts jdtls through its launcher's default, so `jdtls_diff.py` and `lsp_staleness.py` need `-Xmx2G` passed too before their numbers sit beside the benchmark's.
 
-Order: completion and diagnostics while typing first (they extend the harness the least and are what a user feels most), then the error in another module, rename and imports, disk; the branch switch and the build-file change next; diagnostics against the build (stage 2) alongside, as the largest.
+Order: Lathe's build row and completion and diagnostics while typing first (they extend the harness the least and are what a user feels most), then the error in another module, rename and imports, disk; the branch switch, the build-file change and running a test next; diagnostics against the build (stage 2) alongside, as the largest.
 
 ## Stage 2 — Where each server disagrees with the build
 
