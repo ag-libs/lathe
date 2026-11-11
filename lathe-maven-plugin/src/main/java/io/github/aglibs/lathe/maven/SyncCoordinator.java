@@ -34,6 +34,8 @@ final class SyncCoordinator {
   // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
   // daemon JVM), so this reads the same under mvn and mvnd.
   private static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
+  // The directory the build was started in, where Maven resolves relative ext class path entries.
+  private static final String USER_DIR_PROPERTY = "user.dir";
 
   private final RepositorySystem repositorySystem;
   private final MavenSession session;
@@ -184,19 +186,19 @@ final class SyncCoordinator {
 
   // Lathe brought in on -Dmaven.ext.class.path, which the sync script replays unless the project
   // registers Lathe too: the -D copy wins, so replaying it would override the project's pin. The
-  // registration is read only when there is an activation to replay.
+  // registration is read only when there is an activation to replay. Relative entries resolve as
+  // Maven resolves them, against user.dir, not the request's base directory, which is the -f
+  // POM's (mvnd loads no extension from relative entries at all).
   private List<Path> replayedActivation(final Path workspaceRoot) {
-    final var request = session.getRequest();
-    final String baseDirectory = request.getBaseDirectory();
+    final String startedIn = session.getSystemProperties().getProperty(USER_DIR_PROPERTY);
     final List<Path> activation =
         MavenSyncScript.activation(
-            session.getUserProperties(),
-            baseDirectory == null ? workspaceRoot : Path.of(baseDirectory));
+            session.getUserProperties(), startedIn == null ? workspaceRoot : Path.of(startedIn));
     if (activation.isEmpty()) {
       return List.of();
     }
 
-    final var multiModuleDir = request.getMultiModuleProjectDirectory();
+    final var multiModuleDir = session.getRequest().getMultiModuleProjectDirectory();
     final Path mavenProjectDir = multiModuleDir == null ? workspaceRoot : multiModuleDir.toPath();
     return LatheRegistration.registersLathe(mavenProjectDir, session.getTopLevelProject())
         ? List.of()
