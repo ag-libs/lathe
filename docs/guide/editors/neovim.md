@@ -64,7 +64,7 @@ require("lathe").setup()
 
 | Option | Default | Meaning |
 |---|---|---|
-| `style.formatter` | none | global-default formatter, used only when neither `lathe-style.json` nor `.lathe/style.json` defines one (sync writes `none` for a Spotless formatter Lathe cannot run, which also wins): `{ engine = "command", command = { … } }` or `{ engine = "command-file", command = { … } }` for an external tool (see below), or `{ engine = "none" }` |
+| `style.formatter` | none | global-default formatter, used only when neither `lathe-style.json` nor `.lathe/style.json` defines one (sync writes `none` for a Spotless formatter Lathe cannot run, which also wins): `{ engine = "command", command = { … } }` or `{ engine = "command-file", command = { … } }` for an external tool (see below), or `{ engine = "none" }`; the built-in engines (`google`, `aosp`, `palantir`, `eclipse`) need the jars sync resolves from the build's Spotless setup (see [overriding the formatter](../installation.md#overriding-it)) |
 | `style.indent` | `{ profile = "editorconfig" }` | global-default live-editing indent: `profile` `"editorconfig"` (follow `.editorconfig`, else a 4-space Java baseline) or `"google"` (2-space block, 4-space continuation); optional `block` / `continuation` widths override the profile |
 | `format_on_save` | `false` | wire format-on-save (takes effect whenever the server advertises a formatter) |
 | `pom` | `{ validate = true, format = false }` | client-side `pom.xml` validation and `gq` formatting via `xmllint`; see [pom.xml validation & formatting](#pomxml-validation--formatting) |
@@ -368,24 +368,26 @@ libxml2` otherwise). If it is missing, Lathe notifies once and does nothing furt
 a skeleton and drops the cursor in the body; it never overwrites — if the target exists it just opens it.
 The Lathe server must be attached, since creation is a Java operation.
 
-There are two ways in, split by whether you are adding to the current file's package or somewhere new:
+There are three ways in:
 
 - **In context (the common case):** `:LatheNew <kind>` takes the module, scope (`main`/`test`), and
   package from the current buffer, then prompts for the **name** (the prompt shows the destination). You
   just type the name.
-- **Explicit location:** `:LatheNew <kind> [module:][scope:]package` places it elsewhere. A typed
-  location resolves on its own — context never partial-fills it — and `main`/`test` pick the source root
-  (`:LatheNew class core:test:com.example.util`).
-- **Guided:** `:LatheNew` with no arguments runs a picker: kind → module (skipped when there's only one)
-  → an existing package or a new one → name.
+- **Typed package:** `:LatheNew <kind> <package>` places it in an existing package elsewhere.
+  A package in more than one module or scope goes to the one ranked first for the current buffer;
+  a package that matches none opens the destination pick instead
+  (`:LatheNew class com.example.util`).
+- **Guided:** `:LatheNew` with no arguments picks the kind, then the destination in one fuzzy **Where:**
+  pick over every `package (module · scope)` in the workspace, then the name.
 
-Two rules keep it safe: the **type name is always the final prompt** (never part of the argument, so
-there is no `package.Name` ambiguity), and the **package never defaults to the source root** — if it
-cannot be resolved, `:LatheNew` drops into the guided pick instead of creating a package-less file. You
-can still deliberately choose the default package by clearing the guided **New package** input.
+The name prompt is pre-filled with the chosen package (`com.example.app.▮`).
+Type the class name, or extend the package first (`jobs.Scheduler` creates it in a new `jobs`
+sub-package), or edit the prefix to retarget it; clearing the prefix deliberately chooses the default
+package.
+The **package never defaults to the source root**: if it cannot be resolved, `:LatheNew` drops into the
+destination pick instead of creating a package-less file.
 
-`<Tab>` completes at each position — the kind after `:LatheNew `, then `module:` / `main:` / `test:` and
-that module's packages after the kind.
+`<Tab>` completes the kind after `:LatheNew `, then fuzzy-completes a package name after the kind.
 
 `:LatheNew test` matches the current buffer: it seeds `<Name>Test` from the open file and drops a
 package-private JUnit 5 test class (`import org.junit.jupiter.api.Test;`, one empty `@Test` method) into
@@ -595,7 +597,7 @@ Each command takes a **single object** passed as the sole element of the request
 | `:LatheDebug` (a test) | `lathe.debug.test` | `{ moduleRel, selections, token }` |
 | run-config completion and picker | `lathe.runConfigs.list` | none |
 | `:LatheRunSave[!]` | `lathe.runConfigs.save` | `{ name?, moduleRel, kind, mainClass?, selectors?, overwrite? }` |
-| `:LatheNew` — module list / packages / current context | `lathe.workspace.modules` / `lathe.workspace.packages` / `lathe.workspace.context` | none / `{ moduleRel }` / `{ uri }` |
+| `:LatheNew` — module list / current context | `lathe.workspace.modules` / `lathe.workspace.context` | none / `{ uri }` |
 | `:LatheNew` — where a new type may go, ranked for the buffer | `lathe.types.destinations` | `{ uri?, kind, pkg? }` |
 | `:LatheNew` — write, compile and open the file | `lathe.types.create` | `{ moduleRel, kind, pkg, type, name }` (a module-info's `name` may be empty: the server names it) |
 | run output — the stack frames among its lines, resolved to their sources | `lathe.stack.resolve` | `{ lines }` |

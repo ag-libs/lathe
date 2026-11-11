@@ -1,6 +1,6 @@
 -- Lathe LSP plugin for Neovim (requires Neovim 0.12+).
 --
--- Installation: copy this file (or symlink it) into your Neovim config and call:
+-- Installation: install the ag-libs/lathe.nvim plugin and call:
 --   require('lathe').setup()
 --
 -- The launcher is read from <root>/.lathe/lathe-launcher.sh, which the build's Lathe sync writes
@@ -14,7 +14,8 @@
 --   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
 --   style               table; the global-default style, overridden per project by a workspace
 --                       lathe-style.json / .lathe/style.json. Same shape as that file:
---                         style.formatter { engine = "google"|"aosp"|"none"|"command", command = {..} }
+--                         style.formatter { engine = "google"|"aosp"|"palantir"|"eclipse"|"command"
+--                                         |"command-file"|"none", command = {..} }
 --                                         server-side save-formatter (default: none).
 --                         style.indent    { profile = "google"|"editorconfig", block, continuation }
 --                                         editorconfig follows Neovim's built-in EditorConfig
@@ -296,9 +297,9 @@ function M.setup(opts)
   -- code action. Suggested mapping: <leader>li.
   require("lathe.imports").setup()
 
-  -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
-  -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
-  -- changes. The server never runs Maven itself.
+  -- Sync surface: the server's lathe/sync notification and :LatheSync run .lathe/lathe-sync.sh to
+  -- refresh the .lathe/ mirror after build-file or structural changes. The server never runs the
+  -- build itself.
   require("lathe.sync").setup()
 
   -- pom.xml surface: client-side XSD validation (diagnostics on open/save) and optional formatting,
