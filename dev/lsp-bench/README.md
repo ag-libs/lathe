@@ -14,7 +14,7 @@ The rule from there: Lathe claims nothing over jdtls that these measurements do 
 |---|---|---|---|
 | Lathe | `main` at `c15d3a55` (2026-11-07), as no release carries its changes since 0.3.1 (the capture-only speed-up #124, Gradle source sets #127 and their test launches #131); built from a clean checkout with its version stamped `0.3.99-c15d3a55`, as the release workflow stamps one, its Gradle plugin from the same build (the Gradle Plugin Portal has not approved the plugin); measured again on the first release after it; the working tree for before-and-after runs of a fix | the JDK the project's build recorded (`.lathe/java-home`) | its launcher's defaults, with `-Xmx2G` (`LATHE_JVM_OPTS`) from the 2026-11-11 amendment |
 | jdtls | 1.63.0 (`jdt-language-server-1.63.0-202610191322.tar.gz`) | Corretto 25 | VS Code's defaults (`vscode-java`'s VM arguments, `-Xmx2G`) |
-| java-index | 0.1.2, JVM relay | Corretto 21 | its own; spring-petclinic only |
+| java-index | 0.1.2, JVM relay | Corretto 21 | its own; spring-petclinic only; left the comparison on 2026-11-11 (see the amendment) |
 
 Each server runs as its users get it, except for the heap: from the 2026-11-11 amendment every run gives both servers `-Xmx2G`, the limit vscode-java gives jdtls, and another heap is a labelled variant (`--heap`).
 Before it, one extra run per project gave Lathe that limit, and the others ran Lathe with no limit.
@@ -128,7 +128,8 @@ Then every row with its raw results and the command that reproduces it, the rows
     The heap applies to the servers only; the builds and the test JVMs run with their own defaults.
   - **Gathered in sessions, one at a time.** The measurements need about 18 hours of an idle machine, so they are gathered in sessions, each one project and one group of measurements (the queries; the editing loop; the outside changes; diagnostics against the build), in the order of the design's stage 1b.
     Within a session both servers are measured, alternating, as before; sessions may fall on different days, and each published value names its session (date, machine load, versions).
-    The new round measures the first Lathe release after 0.3.1 (0.4.0), as the Servers table plans, with jdtls 1.63 and the projects' commits as pinned; all three stay the same across its sessions, and a session on another version starts the round again.
+    The new round measures the first Lathe release after 0.3.1 (0.4.0), as the Servers table plans, and the newest jdtls release when the round starts (1.63.0 on 2026-11-11), each recorded by version before the round's first session, with the projects' commits as pinned; all three stay the same across its sessions, and a session on another version starts the round again.
+  - **java-index leaves the comparison.** It answers navigation only and ran on spring-petclinic only; spring-petclinic keeps java-index's 17 queries, so its numbers still compare with java-index's published ones.
     The outside changes (rename with its compile, the branch switch, the build-file change) run in sessions of their own, three times per server and project, not inside every cold and warm run.
   - **Apache Fineract leaves the comparison.** jdtls does not import it at the pinned commit (the 2026-11-07 amendment), but half the cause is Fineract's own build: its import creates every Gradle task, and Fineract's `org.barfuin.gradle.taskinfo` 3.0.2 plugin fails when its `tiOrder` task is created on Gradle 9, a task a normal build never creates; jdtls's annotation-processing init script also fails on Gradle 9.
     A user can work around the first, so "jdtls does not import it" would say more about this commit than about jdtls; its earlier results are kept, and published nowhere.

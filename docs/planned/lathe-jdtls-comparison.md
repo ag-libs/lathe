@@ -201,5 +201,5 @@ Each stage is its own pull request.
 ## Open questions
 
 1. ~~Which public projects represent Lombok and annotation-processor users.~~ Settled 2026-11-11: OpenMetadata for Lombok, Helidon for annotation processing and JPMS; candidates that mix in Kotlin or Groovy (Micronaut Core, Spring Framework) were left out, and a MapStruct application (kafbat/kafka-ui) was set aside, as it needs Node to build and is less known.
-2. Whether java-index stays in the comparison beyond spring-petclinic, given it answers only navigation.
-3. Which jdtls version to pin, and how often to move the pin.
+2. ~~Whether java-index stays in the comparison.~~ Settled 2026-11-11: it leaves, as it answers navigation only; spring-petclinic keeps its queries.
+3. ~~Which jdtls version to pin, and how often to move the pin.~~ Settled 2026-11-11: each round takes the newest jdtls release when it starts and keeps it throughout (1.63.0 on that date).
