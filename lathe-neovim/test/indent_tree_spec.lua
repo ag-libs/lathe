@@ -1,7 +1,8 @@
 -- The indenter's tree-sitter path: with a Java parser, a line led by `}` takes the indent of the
 -- block it closes from the parse tree. indent_spec.lua covers the text heuristic, which runs where
--- there is no parser (and mid-edit); this covers the parsed case, so it needs a Java parser. CI has
--- none and reports the spec skipped; a developer's Neovim usually has one under its data directory.
+-- there is no parser (and mid-edit); this covers the parsed case, so it needs a Java parser: CI
+-- builds one (.github/actions/neovim), and a developer's Neovim usually has one under its data
+-- directory; without one the spec reports itself skipped, except in CI, where it fails.
 --
 -- Run headless from the repo root:
 --   nvim --headless --clean -u NONE \
@@ -14,6 +15,13 @@ local spec = require("spec_helper").new()
 
 local parser = vim.fs.joinpath(vim.fn.stdpath("data"), "site", "parser", "java.so")
 if not vim.uv.fs_stat(parser) then
+  -- CI installs one (.github/actions/neovim), so there a missing parser is a broken setup, as
+  -- run-specs.sh treats a missing nvim.
+  if vim.env.GITHUB_ACTIONS == "true" then
+    spec.fail("no Java parser at " .. parser)
+    spec.finish()
+  end
+
   spec.pending("tree-sitter closers", "no Java parser at " .. parser)
   spec.finish("skipped")
 end
