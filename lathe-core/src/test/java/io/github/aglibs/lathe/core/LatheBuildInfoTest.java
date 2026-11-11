@@ -1,14 +1,15 @@
 package io.github.aglibs.lathe.core;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
-import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -31,23 +32,21 @@ class LatheBuildInfoTest {
   @Test
   void version_classInJar_itsManifestVersion_blankMissingOrDirectoryEmpty(@TempDir final Path tmp)
       throws Exception {
-    assertThat(versionFromJar(tmp.resolve("versioned.jar"), manifest("1.2.3"))).contains("1.2.3");
-    assertThat(versionFromJar(tmp.resolve("blank.jar"), manifest(" "))).isEmpty();
-    assertThat(versionFromJar(tmp.resolve("unversioned.jar"), new Manifest())).isEmpty();
+    assertThat(versionInJar(tmp, "Implementation-Version: 1.2.3")).contains("1.2.3");
+    assertThat(versionInJar(tmp, "Implementation-Version:  ")).isEmpty();
+    assertThat(versionInJar(tmp, "")).isEmpty();
     assertThat(LatheBuildInfo.version(LatheBuildInfoTest.class)).isEmpty();
   }
 
-  private static Manifest manifest(final String version) {
-    final var manifest = new Manifest();
-    manifest.getMainAttributes().put(Attributes.Name.IMPLEMENTATION_VERSION, version);
-    return manifest;
-  }
-
-  // Marker packed alone in a jar with this manifest and loaded from it, with no parent loader to
-  // find it on the test classpath first.
-  private static Optional<String> versionFromJar(final Path jar, final Manifest manifest)
+  // Marker packed alone in a jar with these manifest lines and loaded from it, with no parent
+  // loader to find it on the test classpath first.
+  private static Optional<String> versionInJar(final Path dir, final String manifestLines)
       throws IOException, ClassNotFoundException {
-    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+    final Path jar = Files.createTempFile(dir, "marker", ".jar");
+    final var manifest =
+        new Manifest(
+            new ByteArrayInputStream(
+                "Manifest-Version: 1.0\n%s\n".formatted(manifestLines).getBytes(UTF_8)));
     final String entry = "%s.class".formatted(Marker.class.getName().replace('.', '/'));
     try (final var out = new JarOutputStream(Files.newOutputStream(jar), manifest);
         final var in = LatheBuildInfoTest.class.getResourceAsStream("/%s".formatted(entry))) {
