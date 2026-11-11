@@ -74,6 +74,16 @@ class LatheEngineEditTest extends LatheEngineTestBase {
         .hasMessageContaining(LatheLayout.STYLE_SHARED_FILE)
         .hasMessageNotContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
 
+    // Declaring none turns formatting off: no sync would change that.
+    engine.close();
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\": {\"engine\": \"none\"}}");
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.format(source))
+        .hasMessageStartingWith("Formatting is off for this workspace")
+        .hasMessageNotContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+
     engine.close();
     Files.writeString(
         tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\": {\"engine\": \"google\"}}");

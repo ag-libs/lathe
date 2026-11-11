@@ -181,7 +181,7 @@ public final class LatheEngine {
     final FormatterSpec formatterSpec = FormatEngines.workspaceSpec(workspaceRoot);
     final FormatEngine formatter =
         formatterSpec == null ? null : FormatEngines.forSpec(formatterSpec, workspaceRoot);
-    host.execute(session -> session.formats().use(formatter, formatterSpec != null));
+    host.execute(session -> session.formats().use(formatter, formatterSpec));
     host.initialize(workspaceRoot);
   }
 
