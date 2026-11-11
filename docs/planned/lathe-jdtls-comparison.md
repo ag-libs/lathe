@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress.** Stage 0 done (the pre-registration, #134); stage 1 done (the harness and all six projects measured, #135, 2026-11-08); stages 2 and 3 next.
+**In progress.** Stage 0 done (the pre-registration, #134); stage 1 done (the harness and all six projects measured, #135, 2026-11-08); stage 1b (the editing loop and outside changes, pre-registered 2026-11-11), 2 and 3 next.
 This document is the plan for answering "why Lathe and not jdtls?" with evidence instead of assertion.
 The measured results stay out of the repository until stage 4, as pre-registered; what they found that is Lathe's own is in the gap log, listed under stage 3 below.
 
@@ -82,6 +82,44 @@ What running jdtls as its users get it took, each an amendment in the pre-regist
 
 What the harness itself had to learn: a server that stops reading its input while it imports deadlocks a client that writes on the reading thread; a Gradle build leaves worker processes running that must not count as the server's; a run the machine suspends during is discarded; and a readiness probe must be a query whose answer no server disputes.
 
+## Stage 1b — What a Neovim user does all day
+
+Stage 1 measures navigation; a jdtls user in Neovim spends the day typing, completing, reading errors and switching branches, and wants to know whether the errors match the build.
+Pre-registered in the 2026-11-11 amendment of `dev/lsp-bench/README.md`, with both servers at `-Xmx2G` from then on (the default of `bench.py --heap`).
+How each item is built from what exists:
+
+| Item | Reuse | Add | Size |
+|---|---|---|---|
+| Lathe's build, as a user first runs it: the README's first-build command with test capture, the same build with Lathe off, and build plus ready beside jdtls's ready | `servers.lathe_build_command` and `lathe_prepare`'s timing; the build row in `report.py` | the Maven command from the README instead of `process-test-classes`; a once-per-project baseline build with no Lathe loaded (Maven `clean test-compile`, Gradle `testClasses`; the same command with Lathe off would run every test); a "first answer" column | S |
+| Completion: four positions, an expected item in the first 20, the resolve timed | the case and position mechanism and `run_cases`' timing (`bench.py`); `jdtls_diff.canon_completion`, which strips jdtls's `Label - package` | `textDocument/completion` in `queries.CAPABILITY` and the completion capability in `bench.CLIENT_CAPABILITIES`; an `edit` field on a case, applied by `didChange` before the request; a rank-within-N check, and the import edit for the unimported type | S–M |
+| Diagnostics while typing | `lsp.change`/`save`; `lsp_staleness.Probe.diags` and its error checks; the metric the editor smoke already defines (`driver.lua`: insert, error, undo, clean) | a monotonic timestamp on every `publishDiagnostics`, as `StampedQueue` does for `language/status`; a case kind timed from the change to the publish for that version | M |
+| An error in another module | `lsp_staleness.Probe.poll` and `restore` | a case naming the upstream edit and the open downstream file; both servers saved to disk, as jdtls builds on save | M |
+| Diagnostics against the build | `jdtls_diff.canon_diagnostics` (Lathe against jdtls only, today) | `stage2.py`: the build with warnings shown, javac's `/path:[line,col]` lines parsed per file, each server's publishes on those files compared both ways; public fixtures under `dev/lsp-bench/fixtures/` (the invoker fixtures test Lathe only) | L |
+| Rename and imports | `lsp.prepare_rename`/`rename`, `code_action`/`resolve_code_action`; `jdtls_diff.rename_edit_count` | the edit applied to a `git worktree` copy and compiled with the build; `BenchClient` answering `workspace/applyEdit`, through which jdtls may apply an action, and declaring `workspaceEdit.documentChanges` | M |
+| A branch switch | `mcp_staleness.s_branch_switch` (MCP only): checkout of an older ref and back, files added or deleted since | an LSP port acting as Neovim on the benchmark's machine: open buffers reloaded; on Linux no `didChangeWatchedFiles`, as Neovim 0.12 offers it only on macOS and Windows (there, sent for `git diff --name-status` where the server registered); `wait_ready`'s polling for "until right" | M |
+| A build-file change | `lsp_staleness.s_pom` and `mcp_staleness.s_pom` (they check only that Lathe asks for a sync) | a dependency added from the local repository and a class of it used; `BenchClient` answering each server's prompt as a user clicking yes: Lathe's sync, jdtls's update (`java.configuration.updateBuildConfiguration` asks by default; to be confirmed in its source) | M |
+| Running one test (a class and one method), Lathe's replay of the captured launch against nvim-jdtls's java-test and java-debug path | Lathe: `lathe.run.test` as `lathe.nvim`'s test adapter calls it, and the editor smoke's neotest run (`driver.lua`); `mcp_battery`'s `run_test` checks | jdtls: the java-test and java-debug bundles fetched at pinned versions and passed as `bundles`; the java-test command that resolves a test's launch, then a launch through java-debug's debug adapter, with the results read from its output; the build's own run of the test as the expected outcome | L |
+| Disk and the project tree | `servers.jdtls_prepare`'s workspace and configuration directories | a `du` after the warm run: jdtls's `-data` and configuration, `.lathe/`; the shared installs apart; `git status --ignored` for the files each server writes into the tree; a report column | S |
+| Setup in Neovim | the editor guides | a short prose table | S |
+
+Projects, all Java and well known: spring-petclinic, Dropwizard, Helidon (the annotation-processing project: its processors generate the builders its code calls), Hibernate ORM and OpenMetadata.
+Projects mixing in Kotlin or Groovy were left out, as neither server analyses those: Micronaut Core (916 Kotlin, 3,101 Groovy files) and Spring Framework (396 Kotlin), which besides does little annotation processing.
+OpenJDK is reported as a project Lathe serves and jdtls does not: on a plain checkout jdtls reports `java.base`'s own packages as conflicting and navigates nowhere.
+Apache Fineract leaves the comparison: jdtls's failure to import it comes half from a Fineract plugin that breaks on Gradle 9 when its task is created, which a user can work around.
+
+Time: about 18 hours of an idle machine in all, estimated from the stage 1 runs and the release battery:
+the queries at the one heap about 5 h, the build row with test capture and its baseline about 1 h, the editing loop in every run about 4 h, the outside changes in sessions of their own (three per server and project) about 7–8 h, diagnostics against the build about 3 h.
+So they are gathered in sessions, one project and one group at a time, as the amendment sets out; building the tooling first is the larger cost, about a week in several pull requests.
+
+Risks to settle while building it:
+- jdtls may publish nothing for a clean file (`jdtls.JdtlsClient.open` gives up after 8 s), so "until clean" waits on the publish for the edited version or a quiet period, not on any publish.
+- Each server debounces edits its own way; the times are reported as they are, with the time until the error is gone as well as until it appears, as jdtls can publish an intermediate list.
+- How jdtls finds outside changes without a client's file watcher (Neovim on Linux): it is expected to fall back on Eclipse's own workspace refresh, to be confirmed in its source; Lathe scans on its own 2 s tick either way and ignores `didChangeWatchedFiles`.
+- jdtls's own lint set (unused imports, raw types) has no javac counterpart, so warnings are compared only in the categories the build enables; Error Prone and `-Werror` have none in ECJ.
+- The other dev scripts do not run the servers at one heap: `dev/jdtls.py` starts jdtls through its launcher's default, so `jdtls_diff.py` and `lsp_staleness.py` need `-Xmx2G` passed too before their numbers sit beside the benchmark's.
+
+Order: Lathe's build row and completion and diagnostics while typing first (they extend the harness the least and are what a user feels most), then the error in another module, rename and imports, disk; the branch switch, the build-file change and running a test next; diagnostics against the build (stage 2) alongside, as the largest.
+
 ## Stage 2 — Where each server disagrees with the build
 
 - Ground truth: compile each project with Maven or Gradle and collect javac's errors and warnings per file.
@@ -136,6 +174,25 @@ Written last, from the final reports, as `docs/guide/` page linked from the READ
 - The catalogue of disagreements with the build.
 - Where jdtls is better.
 
+The reports hold about 150 values per server and project, some 1,700 in all, too many for a reader.
+The page shows two levels, the headline set fixed here before any stage 1b result exists, so it cannot be chosen to flatter either server.
+
+**Headline: ten values per project, both servers side by side**
+1. Time to a first answer on a fresh checkout: Lathe's build with test capture plus its ready time, against jdtls's import plus its ready time.
+2. Reopening the project: the warm ready time.
+3. Memory at the same heap: peak and idle.
+4. Navigation: the median latency over the queries, and how many were right.
+5. Completion: the median latency, and how many positions offered the expected item.
+6. Typing an error: the time until it shows.
+7. An error in another module: the time until it shows.
+8. Errors against the build: the errors each server misses, and those it reports that the build does not.
+9. A branch switch: the time until the answers are right again, or never.
+10. Running one test: the time to its result.
+
+Each headline value is the median the reports give; a server that cannot do it on a project shows why, not a blank.
+
+**Below it:** "where jdtls is better", every loss in its own words; the Neovim setup of each, in prose; and per project the full report with every value, its raw results and the command that reproduces it.
+
 ## Order
 
 Stage 0 first; stage 1 (spring-petclinic, then the large projects) and stage 2 can run in parallel; stage 3 follows from what they find; stage 4 last.
@@ -143,7 +200,6 @@ Each stage is its own pull request.
 
 ## Open questions
 
-1. Which public projects represent Lombok and MapStruct (or Immutables) users: an established open-source application rather than a sample, so the numbers mean something.
-   Also whether a third-party project beats record-companion and Helidon for JPMS with annotation processing.
-2. Whether java-index stays in the comparison beyond spring-petclinic, given it answers only navigation.
-3. Which jdtls version to pin, and how often to move the pin.
+1. ~~Which public projects represent Lombok and annotation-processor users.~~ Settled 2026-11-11: OpenMetadata for Lombok, Helidon for annotation processing and JPMS; candidates that mix in Kotlin or Groovy (Micronaut Core, Spring Framework) were left out, and a MapStruct application (kafbat/kafka-ui) was set aside, as it needs Node to build and is less known.
+2. ~~Whether java-index stays in the comparison.~~ Settled 2026-11-11: it leaves, as it answers navigation only; spring-petclinic keeps its queries.
+3. ~~Which jdtls version to pin, and how often to move the pin.~~ Settled 2026-11-11: each round takes the newest jdtls release when it starts and keeps it throughout (1.63.0 on that date).
