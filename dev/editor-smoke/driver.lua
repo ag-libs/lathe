@@ -130,6 +130,17 @@ local function main()
   if not attached then
     return
   end
+  -- The version the server reports, else the one that synced the workspace.
+  local info = client.server_info or {}
+  local version = info.version
+  if not version then
+    local manifest = io.open(vim.fs.joinpath(client.root_dir or vim.fn.getcwd(), ".lathe", "workspace.json"))
+    if manifest then
+      version = (vim.json.decode(manifest:read("*a")).serverVersion or "?") .. " (synced)"
+      manifest:close()
+    end
+  end
+  out:write(string.format("SERVER %s %s\n", info.name or "?", version or "?"))
 
   local published = false
   vim.api.nvim_create_autocmd("DiagnosticChanged", { callback = function() published = true end })
@@ -150,8 +161,9 @@ local function main()
     vim.tbl_extend("force", p, { newName = "latheRenamed" }),
     function(r) return r and (next(r.changes or {}) or next(r.documentChanges or {})) end)
   local calls = probe("callHierarchy prepare", client, "textDocument/prepareCallHierarchy", p, nonempty)
+  -- Every workspace's smoke symbol has callers: an empty answer is a regression, not a quiet one.
   if calls and calls[1] then
-    probe("callHierarchy incoming", client, "callHierarchy/incomingCalls", { item = calls[1] }, answered)
+    probe("callHierarchy incoming", client, "callHierarchy/incomingCalls", { item = calls[1] }, nonempty)
   end
 
   local trow, tcol, keyword
@@ -164,6 +176,15 @@ local function main()
   end
   local types = probe("typeHierarchy prepare", client, "textDocument/prepareTypeHierarchy",
     at(client, trow, tcol + #keyword + 1), nonempty)
+  -- Hover on the type names its modifiers, as its declaration writes them.
+  local modifiers = vim.split(vim.trim(vim.api.nvim_buf_get_lines(0, trow, trow + 1, false)[1]:sub(1, tcol)), "%s+",
+    { trimempty = true })
+  probe("hover shows the type's modifiers", client, "textDocument/hover", at(client, trow, tcol + #keyword + 1),
+    function(r)
+      local text = r and r.contents and (r.contents.value or vim.inspect(r.contents)) or ""
+      return text:find(vim.trim(keyword), 1, true) ~= nil
+        and vim.iter(modifiers):all(function(m) return m:match("^@") or text:find(m, 1, true) ~= nil end)
+    end)
   if types and types[1] then
     probe("typeHierarchy supertypes", client, "typeHierarchy/supertypes", { item = types[1] }, answered)
   end
@@ -212,6 +233,26 @@ local function main()
   vim.cmd("silent undo")
   check("error clears after undo", vim.wait(20000, function() return errors() == 0 end, 100),
     string.format("errors=%d", errors()))
+  -- What MCP refuses by design the editor navigates: var to its inferred type, and the new of a
+  -- constructor reference to the constructor.
+  vim.api.nvim_buf_set_lines(0, body, body, false, {
+    "    var latheVar = new java.util.ArrayList<String>();",
+    "    java.util.function.Supplier<java.util.ArrayList<String>> latheNew = java.util.ArrayList::new;",
+  })
+  vim.wait(300)
+  local function lands_in_array_list(r)
+    local first = r and (r[1] or r)
+    local uri = first and (first.uri or first.targetUri) or ""
+    return uri:find("ArrayList", 1, true) ~= nil
+  end
+  probe("definition on var", client, "textDocument/definition",
+    { textDocument = p.textDocument, position = { line = body, character = 4 } }, lands_in_array_list)
+  local new_col = select(1, ("    java.util.function.Supplier<java.util.ArrayList<String>> latheNew = java.util.ArrayList::new;")
+    :find("::new", 1, true)) + 1
+  probe("definition on the new of Type::new", client, "textDocument/definition",
+    { textDocument = p.textDocument, position = { line = body + 1, character = new_col } }, lands_in_array_list)
+  vim.cmd("silent undo")
+
   local typed = '    String latheS = "x"; latheS.'
   vim.api.nvim_buf_set_lines(0, body, body, false, { typed })
   -- A person's keystroke reaches the server a loop turn before the completion trigger; a script's
@@ -237,7 +278,9 @@ local function main()
   vim.fn.setqflist({})
   local instances_ok, instances_error = pcall(vim.cmd, "LatheInstances")
   vim.wait(15000, function() return #vim.fn.getqflist() > 0 end, 200)
-  check("LatheInstances", instances_ok, string.format("qf=%d %s", #vim.fn.getqflist(), instances_error or ""))
+  -- Every workspace's smoke type is instantiated somewhere: an empty list is a regression.
+  check("LatheInstances", instances_ok and #vim.fn.getqflist() > 0,
+    string.format("qf=%d %s", #vim.fn.getqflist(), instances_error or ""))
 
   run_tests(assert(os.getenv("SMOKE_TEST"), "SMOKE_TEST not set"))
 end

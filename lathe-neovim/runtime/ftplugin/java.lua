@@ -10,7 +10,12 @@ vim.bo.cindent = false
 pcall(vim.treesitter.start, 0, "java")
 
 local buf = vim.api.nvim_get_current_buf()
+-- The buffer may be gone by then: a picker previewing files opens and wipes them quickly.
 vim.schedule(function()
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
   require("lathe.indent").apply_project_indent(buf)
   vim.bo[buf].indentexpr = "v:lua.require'lathe.indent'.indentexpr()"
 end)
@@ -20,5 +25,7 @@ end)
 -- client code that loads even when setup() was never called, so it's the one place
 -- that can surface "installed but not configured".
 vim.schedule(function()
-  require("lathe").warn_if_not_ready(buf)
+  if vim.api.nvim_buf_is_valid(buf) then
+    require("lathe").warn_if_not_ready(buf)
+  end
 end)

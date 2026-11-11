@@ -137,6 +137,55 @@ class McpClient:
             return False
 
 
+def machine_load():
+    """The 1-minute load average and the CPU count."""
+    return os.getloadavg()[0], os.cpu_count() or 1
+
+
+def loaded():
+    """More than half the CPUs busy: timings taken now say more about the machine than the server."""
+    load, cpus = machine_load()
+    return load > cpus / 2
+
+
+def load_line():
+    load, cpus = machine_load()
+    return "LOAD        1m=%.1f ncpu=%d%s" % (load, cpus, " (loaded: timings are not comparable)" if loaded() else "")
+
+
+# Held for the life of the process that took it; closing the file releases the lock.
+_held_locks = []
+
+
+def lock_workspace(workspace: Path):
+    """One battery or probe run per workspace: two would edit the same files and read each other's
+    changes. Refuses (exit 2) when another run holds the workspace; where there is no flock
+    (Windows), runs unguarded."""
+    try:
+        import fcntl
+    except ImportError:
+        return
+    import hashlib
+    import tempfile
+    key = hashlib.sha1(str(Path(workspace).resolve()).encode("utf-8")).hexdigest()[:12]
+    path = Path(tempfile.gettempdir()) / ("lathe-battery-%s.lock" % key)
+    handle = open(path, "w", encoding="utf-8")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        print("REFUSED: another battery or probe run is using %s (lock %s)" % (workspace, path))
+        sys.exit(2)
+    _held_locks.append(handle)
+
+
+def leftover_probe_files(workspace: Path):
+    """Probe files a killed run left behind: a later run would compile them, or trip over them."""
+    others = subprocess.run(["git", "-C", str(workspace), "ls-files", "--others", "--exclude-standard"],
+                            capture_output=True, text=True).stdout.splitlines()
+    return [p for p in others if Path(p).name.lower().startswith("latheprobe")]
+
+
 def _version_key(path: Path):
     """Orders server dirs by version number; a release sorts above its own SNAPSHOT."""
     name = path.parent.name

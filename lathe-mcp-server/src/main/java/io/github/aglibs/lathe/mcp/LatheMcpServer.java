@@ -352,7 +352,6 @@ public final class LatheMcpServer {
   }
 
   private static String version() {
-    final var packaged = LatheMcpServer.class.getPackage().getImplementationVersion();
-    return packaged != null ? packaged : "dev";
+    return LatheBuildInfo.version(LatheMcpServer.class).orElse("dev");
   }
 }

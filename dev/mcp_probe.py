@@ -12,6 +12,7 @@ import mcp_consistency as mc
 from mcp_consistency import first
 
 TEMPLATES = Path(__file__).resolve().parent / "battery"
+NOT_ON_NAME = "the position must be on a name"
 
 
 def line_of(text, token):
@@ -86,6 +87,7 @@ def run(b, ws: Path, probe: Probe):
     b.section("probe consistency", consistency_checks, b, probe)
     b.section("probe renames", rename_checks, b, probe)
     b.section("probe stale answer", stale_answer_check, b, probe)
+    b.section("probe recent fixes", recent_fix_checks, b, probe)
     b.section("probe imports", imports_checks, b, probe)
 
 
@@ -125,18 +127,20 @@ def implementation_checks(b, probe):
     b.check("probe impls(Color.label): enum constant body", has_line(label, probe.line('return "red";') - 1), first(label))
 
 
+def refused_as_no_name(text):
+    """MCP's position tools take a name: a keyword such as var or the new of Type::new is refused
+    by design, with a reason, though the editor navigates from both."""
+    return NOT_ON_NAME in text and not mc.locations(text) and mc.clean_refusal(text)
+
+
 def navigation_checks(b, probe):
     ctor = b.raw("get_definition", probe.at("Square::new", "new"))[0]
-    b.check("probe definition: Type::new", has_line(ctor, probe.line("Square(double side) {")), first(ctor),
-            known="Type::new is not navigable")
-    # A refusal echoes the source line, so look for ArrayList in a location's path only.
+    b.check("probe definition: the new of Type::new is refused as no name", refused_as_no_name(ctor), first(ctor))
     var = b.raw("get_definition", probe.at("var list = ", "var"))[0]
-    b.check("probe definition: var", any("ArrayList" in p for p, _, _ in mc.locations(var)), first(var),
-            known="var is not navigable")
+    b.check("probe definition: var is refused as no name", refused_as_no_name(var), first(var))
     calls = b.raw("call_hierarchy", dict(probe.pos("static List<Shape> shapes()", "shapes"), direction="outgoing"))[0]
     b.check("probe outgoing: method reference", "unit" in calls, first(calls))
-    b.check("probe outgoing: constructor reference", "Square" in calls, first(calls),
-            known="outgoing calls drop constructor references")
+    b.check("probe outgoing: constructor reference", "Square" in calls, first(calls))
 
 
 def reference_counts(b, probe, watched):
@@ -173,25 +177,28 @@ RENAMES = [
 def rename_keeps_meaning(b, probe, label, target, new, watched):
     files = (probe.file, probe.caller_file)
     originals = [f.read_bytes() for f in files]
-    before = reference_counts(b, probe, watched)
-    token, word = target
-    position = probe.at(token, word) if " " in word else probe.pos(token, word)
-    text, result = b.raw("rename_symbol", dict(position, newName=new))
-    if "No references" in text:
-        b.check(label, False, "found nothing to rename: %s" % first(text))
-    elif result.get("isError") or not text.startswith("Renamed"):
-        # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
-        if "would then" in text:
-            b.check(label, True, "refused: %s" % first(text))
+    # Restored even when a check throws: every later rename expects the probe as written.
+    try:
+        before = reference_counts(b, probe, watched)
+        token, word = target
+        position = probe.at(token, word) if " " in word else probe.pos(token, word)
+        text, result = b.raw("rename_symbol", dict(position, newName=new))
+        if "No references" in text:
+            b.check(label, False, "found nothing to rename: %s" % first(text))
+        elif result.get("isError") or not text.startswith("Renamed"):
+            # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
+            if "would then" in text:
+                b.check(label, True, "refused: %s" % first(text))
+            else:
+                b.check(label, False, "refused for another reason: %s" % first(text))
         else:
-            b.check(label, False, "refused for another reason: %s" % first(text))
-    else:
-        after = reference_counts(b, probe, watched)
-        moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
-        b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses")
-    for f, original in zip(files, originals):
-        f.write_bytes(original)
-    b.raw("get_diagnostics", {"file": str(probe.file)})
+            after = reference_counts(b, probe, watched)
+            moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
+            b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses")
+    finally:
+        for f, original in zip(files, originals):
+            f.write_bytes(original)
+        b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def rename_checks(b, probe):
@@ -203,19 +210,51 @@ def rename_checks(b, probe):
 def stale_answer_check(b, probe):
     original = probe.file.read_bytes()
     probe.file.write_bytes(original.replace(b"return list;", b"return listBroken;"))
-    text = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
-    current = has_line(text, probe.line("record Leaf("))
-    b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text))
-    probe.file.write_bytes(original)
-    b.raw("get_diagnostics", {"file": str(probe.file)})
+    try:
+        text = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
+        current = has_line(text, probe.line("record Leaf("))
+        b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text))
+    finally:
+        probe.file.write_bytes(original)
+        b.raw("get_diagnostics", {"file": str(probe.file)})
+
+
+def recent_fix_checks(b, probe):
+    """What this release's fixes changed, on constructs each workspace may not have."""
+    area = probe.pos("return side * side", "area", offset=-1)
+    callers = b.raw("call_hierarchy", dict(area, direction="incoming"))[0]
+    b.check("probe incoming(Square.area): through the base method", "viaShape" in callers, first(callers))
+    b.check("probe incoming(Square.area): not through a type Square is not",
+            mc.count(callers) >= 1 and "viaTile" not in callers, first(callers))
+    square = b.raw("describe_symbol", probe.pos("static final class Square", "Square"))[0]
+    b.check("probe describe(Square): modifiers and supertypes", "final class Square implements Shape" in square,
+            first(square))
+    doc = b.raw("describe_symbol", area)[0]
+    b.check("probe describe(Square.area): inherits the doc its own leaves out",
+            "LATHEPROBEAREA" in doc and "side squared" in doc, first(doc))
+    guarded = b.raw("find_references", dict(probe.pos("static int guarded(", "guarded"), maxResults=50))[0]
+    b.check("probe references(type-use annotated parameter): finds the other file's call",
+            probe.caller_file.name in guarded, first(guarded))
+    wrong_arguments(b, probe)
+
+
+def wrong_arguments(b, probe):
+    original = probe.file.read_bytes()
+    probe.file.write_bytes(original.replace(b"return pick(1);", b"return pick(1.5);"))
+    try:
+        text = b.raw("get_definition", probe.pos("return pick(1.5);", "pick"))[0]
+        offered = has_line(text, probe.line("int pick(int i)")) and has_line(text, probe.line("int pick(String s)"))
+        b.check("probe definition: a call no overload matches offers every overload", offered, first(text))
+    finally:
+        probe.file.write_bytes(original)
+        b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def imports_checks(b, probe):
     target = probe.write("LatheProbeImports")
     text = b.raw("fix_imports", {"file": str(target)})[0]
     b.check("probe fix_imports: single candidate", "java.util.concurrent.ConcurrentHashMap" in text, first(text))
-    b.check("probe fix_imports: nested type", "java.util.Map.Entry" in text, first(text),
-            known="import fixes ignore nested types")
+    b.check("probe fix_imports: nested type", "java.util.Map.Entry" in text, first(text))
     target = probe.write("LatheProbeImports", crlf=True)
     text = b.raw("fix_imports", {"file": str(target)})[0]
     data = target.read_bytes()

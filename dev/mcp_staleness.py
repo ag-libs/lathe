@@ -3,12 +3,14 @@
 file tools, git, or another process would) and check every answer reflects the disk at once.
 
     python3 -I dev/mcp_staleness.py <workspace> <dropwizard|equalsverifier|helidon> [scenario ...]
+                                    [--expect-version 0.2.2]
 
 Restores every file it touched. One PASS/FAIL line per check; exit 1 on any FAIL. A check that
 fails is retried after 3 s and 8 s and tagged [LAG] or [NEVER]. The branch scenario needs
 LATHE_PROBE_OLD_REF (a git ref: its Java sources are checked out, the build files are kept).
 Uses the launcher dev/mcp.py picks: LATHE_MCP_LAUNCHER, else the workspace's own .lathe/ launcher.
 """
+import argparse
 import os
 import re
 import subprocess
@@ -67,7 +69,9 @@ CONFIGS = {
              "io.helidon.common.configurable.AllowListConfig")),
 }
 
-ERRORS = re.compile(r"\b(\d+) diagnostic\(s\)|cannot find symbol|error:", re.I)
+# verify_change's two answers: a clean check, and one that found errors ("N error(s)...").
+VERIFY_CLEAN = "No errors — "
+VERIFY_ERRORS = re.compile(r"\d+ error\(s\)")
 
 
 def text_of(result):
@@ -120,10 +124,11 @@ class Probe:
         self.failures = 0
         self.created: list[Path] = []
         self.log: list[str] = []
+        self.last_ms = 0
 
     def start(self):
         self.client = mcp.McpClient(mcp.launcher_for(self.ws), self.ws)
-        self.client.initialize()
+        return (self.client.initialize().get("serverInfo") or {}).get("version")
 
     def stop(self):
         if self.client:
@@ -134,11 +139,15 @@ class Probe:
     def p(self, rel):
         return self.ws / rel
 
-    def record(self, passed, label, detail=""):
+    def record(self, passed, label, detail="", status=None):
         self.failures += 0 if passed else 1
-        line = "%s %-58s %s" % ("PASS" if passed else "FAIL", label, detail)
+        line = "%s %-58s %s" % (status or ("PASS" if passed else "FAIL"), label, detail)
         print(line, flush=True)
         self.log.append(line)
+
+    def skip(self, label, why):
+        """A scenario that did not run: neither a pass nor a failure."""
+        self.record(True, label, why, status="SKIP")
 
     def call(self, tool, args, client=None):
         t0 = time.monotonic()
@@ -148,9 +157,19 @@ class Probe:
             r = {"isError": True, "content": [{"type": "text", "text": "EXC " + str(e)[:300]}]}
         return text_of(r), int((time.monotonic() - t0) * 1000)
 
+    def warn_if_slower(self, label, limit_ms, why):
+        """A timing worth a look but not a failure: the machine's load can explain it."""
+        if self.last_ms > limit_ms:
+            line = "WARN %-58s %6dms over %dms: %s%s" % (label, self.last_ms, limit_ms, why,
+                                                         " (machine loaded)" if mcp.loaded() else "")
+            print(line, flush=True)
+            self.log.append(line)
+
     def check(self, label, tool, args, ok, client=None, show=False, settle=False):
         t, ms = self.call(tool, args, client)
-        passed = bool(ok(t))
+        self.last_ms = ms
+        # A hang or a protocol error answers nothing, so it must not pass a "no error" check.
+        passed = not t.startswith("EXC ") and bool(ok(t))
         head = " | ".join(x.strip() for x in t.strip().splitlines()[:2])[:150]
         note = ""
         if not passed and settle:
@@ -158,7 +177,8 @@ class Probe:
             for wait in (3, 5):
                 time.sleep(wait)
                 waited += wait
-                if ok(self.call(tool, args, client)[0]):
+                again = self.call(tool, args, client)[0]
+                if not again.startswith("EXC ") and ok(again):
                     note = "  [LAG: correct after %ds]" % waited
                     break
             else:
@@ -182,7 +202,8 @@ class Probe:
         for path in self.created:
             if path.exists():
                 path.unlink()
-        touched = [x for x in git(self.ws, "diff", "--name-only").split()
+        # --relative: paths from the workspace, which may sit below the repository root.
+        touched = [x for x in git(self.ws, "diff", "--name-only", "--relative").split()
                    if not x.startswith(".mvn/")]
         if touched:
             git(self.ws, "checkout", "--", *touched)
@@ -230,7 +251,7 @@ def s_add_use_delete(pr: Probe):
     pr.check("A6 downstream sees the upstream method rename as an error", "get_diagnostics", {"file": str(down)},
              lambda t: "cannot find symbol" in t)
     pr.check("A7 verify_change{} reports the broken downstream (MC-7)", "verify_change", {},
-             lambda t: "cannot find symbol" in t or "error" in t.lower(), show=True)
+             lambda t: VERIFY_ERRORS.match(t) is not None and "cannot find symbol" in t, show=True)
     down.write_text(down.read_text().replace("latheProbeValue()", "latheProbeValue2()"))
     pr.check("A8 downstream fixed externally compiles", "get_diagnostics", {"file": str(down)},
              lambda t: "cannot find symbol" not in t)
@@ -272,7 +293,7 @@ def s_add_use_delete(pr: Probe):
     pr.check("A13 restored downstream compiles cleanly", "get_diagnostics", {"file": str(down)},
              lambda t: "Error [" not in t and "Not compiled" not in t)
     pr.check("A14 verify_change{} after full revert: no stale advice (MC-13)", "verify_change", {},
-             lambda t: "lathe-sync" not in t and "cannot find" not in t, show=True)
+             lambda t: t.startswith(VERIFY_CLEAN) and "lathe-sync" not in t, show=True)
 
 
 def s_javadoc(pr: Probe):
@@ -436,11 +457,13 @@ def s_two_sessions(pr: Probe):
                  lambda t: "cannot find symbol" in t)
         pr.check("I3 session B (also stale-checking) sees the break too", "get_diagnostics", {"file": str(down)},
                  lambda t: "cannot find symbol" in t, client=other)
+        pr.warn_if_slower("I3 timing", 1000, "a query waiting a scan tick for the other server's lock (WS-26)?")
         up.write_text(up.read_text().replace("twoRenamed()", "two()"))
         pr.check("I4 session B sees the fix", "get_diagnostics", {"file": str(down)},
                  lambda t: "cannot find symbol" not in t, client=other)
         pr.check("I5 session A sees the fix", "get_diagnostics", {"file": str(down)},
                  lambda t: "cannot find symbol" not in t)
+        pr.warn_if_slower("I5 timing", 1000, "a query waiting a scan tick for the other server's lock (WS-26)?")
         git(pr.ws, "checkout", "--", c["down_file"])
         up.unlink()
         pr.check("I6 session B: search after delete finds nothing", "search_symbols", {"query": "LatheProbeTwo"},
@@ -453,7 +476,7 @@ def s_branch_switch(pr: Probe):
     """Check out an older revision of the Java sources only (no build files) and back."""
     ref = os.environ.get("LATHE_PROBE_OLD_REF")
     if not ref:
-        pr.record(True, "E  branch switch skipped (set LATHE_PROBE_OLD_REF)")
+        pr.skip("E branch switch", "set LATHE_PROBE_OLD_REF to run it")
         return
     changed = [x for x in git(pr.ws, "diff", "--name-only", ref, "HEAD", "--", "*.java").split()]
     existing = [x for x in changed if git(pr.ws, "cat-file", "-t", "%s:%s" % (ref, x)).strip() == "blob"]
@@ -483,7 +506,7 @@ def s_branch_switch(pr: Probe):
     pr.record(not left, "E3 probe restored HEAD sources", str(left[:3]))
     t0 = time.monotonic()
     pr.check("E4 verify_change{} back on HEAD: no errors", "verify_change", {},
-             lambda t: "Error [" not in t and "Not compiled" not in t, show=True)
+             lambda t: t.startswith(VERIFY_CLEAN) and "Not compiled" not in t, show=True)
     pr.record(True, "E4 catch-up wall time", "%.1fs" % (time.monotonic() - t0))
     sample = [x for x in at_head if "/src/main/" in x][:4]
     for x in sample:
@@ -525,22 +548,29 @@ def s_build(pr: Probe):
     c = pr.cfg
     pkg = c["up_pkg"]
     down = pr.p(c["down_file"])
-    log = open(Path(tempfile.gettempdir()) / ("lathe-probe-build-%s.log" % pr.ws.name), "w")
+    log = open(Path(tempfile.gettempdir()) / ("lathe-probe-build-%s.log" % pr.ws.name), "w", encoding="utf-8")
     proc = subprocess.Popen([str(pr.ws / ".lathe/lathe-sync.sh"), c["up_module"]], cwd=pr.ws,
                             stdout=log, stderr=subprocess.STDOUT)
-    lock = pr.ws / ".lathe/lathe.lock"
-    for _ in range(600):
-        if lock.exists() or proc.poll() is not None:
-            break
-        time.sleep(0.1)
-    pr.record(lock.exists(), "M0 reactor lock appears during the sync")
-    up = pr.new_file("%s/%s/LatheProbeBuild.java" % (c["up_src"], pkg.replace(".", "/")),
-                     "package %s;\n\npublic class LatheProbeBuild {\n  public static int b() { return 1; }\n}\n"
-                     % pkg)
-    append_member(down, "\n  static int latheProbeBuild() { return %s.LatheProbeBuild.b(); }\n" % pkg)
-    pr.check("M1 query during the build says a build is running", "get_diagnostics", {"file": str(down)},
-             lambda t: "build" in t.lower() and "running" in t.lower(), show=True)
-    rc = proc.wait(timeout=900)
+    # Ended either way: a sync left running would build into the next scenario.
+    try:
+        lock = pr.ws / ".lathe/lathe.lock"
+        for _ in range(600):
+            if lock.exists() or proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        pr.record(lock.exists(), "M0 reactor lock appears during the sync")
+        up = pr.new_file("%s/%s/LatheProbeBuild.java" % (c["up_src"], pkg.replace(".", "/")),
+                         "package %s;\n\npublic class LatheProbeBuild {\n  public static int b() { return 1; }\n}\n"
+                         % pkg)
+        append_member(down, "\n  static int latheProbeBuild() { return %s.LatheProbeBuild.b(); }\n" % pkg)
+        pr.check("M1 query during the build says a build is running", "get_diagnostics", {"file": str(down)},
+                 lambda t: "build" in t.lower() and "running" in t.lower(), show=True)
+        rc = proc.wait(timeout=900)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        log.close()
     pr.record(rc == 0, "M2 sync finished", "rc=%d" % rc)
     pr.check("M3 after the build, the edit made during it is caught up", "get_diagnostics", {"file": str(down)},
              lambda t: "cannot find symbol" not in t, show=True, settle=True)
@@ -553,7 +583,7 @@ def s_build(pr: Probe):
 def s_generated(pr: Probe):
     """An external blueprint edit must regenerate the annotation-processor output downstream sees."""
     if "gen" not in pr.cfg:
-        pr.record(True, "N  generated-sources scenario not configured")
+        pr.skip("N generated sources", "not configured for this workspace")
         return
     bp_rel, mod, gen_rel, down_rel, gen_fqn = pr.cfg["gen"]
     bp, down = pr.p(bp_rel), pr.p(down_rel)
@@ -580,13 +610,32 @@ SCENARIOS = dict(add=s_add_use_delete, javadoc=s_javadoc, impl=s_implementer, br
 
 
 def main():
-    ws, cfg = Path(sys.argv[1]).resolve(), CONFIGS[sys.argv[2]]
-    names = sys.argv[3:] or list(SCENARIOS)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("workspace")
+    parser.add_argument("config", choices=sorted(CONFIGS))
+    parser.add_argument("scenarios", nargs="*", help="any of: %s (default: all)" % " ".join(SCENARIOS))
+    parser.add_argument("--expect-version", help="refuse to run against another server version")
+    opts = parser.parse_args()
+    ws, cfg = Path(opts.workspace).resolve(), CONFIGS[opts.config]
+    names = opts.scenarios or list(SCENARIOS)
+    unknown = [n for n in names if n not in SCENARIOS]
+    if unknown:
+        parser.error("unknown scenario(s): %s" % ", ".join(unknown))
+    mcp.lock_workspace(ws)
+    leftovers = mcp.leftover_probe_files(ws)
+    if leftovers:
+        raise SystemExit("REFUSED: a killed run left probe files in %s; delete them first: %s" % (ws, leftovers[:10]))
     dirty = [x for x in git(ws, "status", "--porcelain").splitlines() if ".mvn/" not in x]
     if dirty:
-        raise SystemExit("workspace not clean: %s" % dirty[:5])
+        raise SystemExit("REFUSED: workspace not clean: %s" % dirty[:5])
     pr = Probe(ws, cfg)
-    pr.start()
+    version = pr.start()
+    print("SERVER %s from %s; workspace %s at %s" % (version, mcp.launcher_for(ws), ws.name,
+                                                    git(ws, "rev-parse", "--short=10", "HEAD").strip()))
+    print(mcp.load_line(), flush=True)
+    if opts.expect_version and version != opts.expect_version:
+        pr.stop()
+        raise SystemExit("REFUSED: the server reports %s, not %s" % (version, opts.expect_version))
     try:
         for n in names:
             print("== scenario %s" % n, flush=True)
@@ -603,6 +652,7 @@ def main():
         touched = pr.restore()
         left = [x for x in git(ws, "status", "--porcelain").splitlines() if ".mvn/" not in x]
         print("RESTORED", touched, "LEFT", left)
+    print(mcp.load_line())
     print("SUMMARY fail=%d" % pr.failures)
     sys.exit(1 if pr.failures else 0)
 

@@ -78,6 +78,12 @@ if git ls-remote --exit-code --tags origin "${tag}" >/dev/null 2>&1; then
   die "tag ${tag} already exists on origin"
 fi
 
+# Maven Central refuses a release over its monthly file limit once an organisation's grace period is
+# spent, after the tag is pushed and the docs name the version. Its usage is counted from Central's
+# public listings before anything is touched.
+python3 -I dev/central_usage.py || [ "$dry_run" -eq 1 ] \
+  || die "Maven Central would refuse this release, or its usage could not be read (above)"
+
 # (#4) Bump ONLY Lathe's version in the install docs:
 #   - the <version> on the line immediately after a lathe-* <artifactId>,
 #   - the <lathe.version> property,
@@ -153,15 +159,18 @@ git commit -m "release: ${version}"
 git tag "${tag}"
 
 # The Neovim client mirror is published on every release, even when the client did
-# not change, so its tags always match the server versions on Maven Central. It
-# needs the tag on origin first, so it runs right after the push.
+# not change, so its tags always match the server versions on Maven Central. It is
+# published only once the release workflow has put the server on Central: a client
+# ahead of every published server breaks every user who updates it, so publish-nvim.sh
+# waits for the server on Central first.
 echo
 printf 'Tagged %s. Push it and publish the Neovim client mirror now? [y/N] ' "${tag}"
 read -r reply || reply=""
 case "$reply" in
   y | Y | yes | YES) ;;
   *)
-    echo "Not pushed. When ready, push to trigger the release workflow, then publish the mirror:"
+    echo "Not pushed. When ready, push to trigger the release workflow, and once it has succeeded"
+    echo "publish the mirror (it waits for the server on Maven Central):"
     echo "  git push --atomic origin HEAD ${tag}"
     echo "  ./publish-nvim.sh ${version}"
     exit 0

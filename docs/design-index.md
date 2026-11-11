@@ -427,15 +427,18 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
-- [`:LatheInit`: Set Up Any Folder](potential/lathe-init.md) — **potential; direction decided,
-  spikes partly run (2026-10-28).** Merges Personal Setup and Plain Java Without a Build Tool. One
+- [`:LatheInit`: Set Up Any Folder](potential/lathe-init.md) — **potential; v1 scope agreed,
+  spikes partly run (2026-11-11).** Merges Personal Setup and Plain Java Without a Build Tool. One
   `:LatheInit` dialog, its default detected from the opened folder: Plain Java (a generated,
   user-owned `.lathe-pom.xml` run by a bundled Maven Wrapper), Maven personal (Lathe activated with
-  `-Dmaven.ext.class.path` and two jars, no project change), Maven team (the agreed previewed
-  `.mvn/extensions.xml` step), Sync, OpenJDK, later Gradle. Records the spikes (personal activation,
-  double registration, plain mode's first build, compile errors, runs, resources, stdin), the open
-  issues (compile errors in personal mode, runs without stdin, JDK lookup, flat layouts), the
-  alternatives set aside, and a survey of how other IDEs handle folders with no build.
+  `-Dmaven.ext.class.path` and the extension's runtime jars, no project change), Gradle personal (`--init-script`),
+  team modes (the agreed previewed `.mvn/extensions.xml` step), Sync, OpenJDK. v1 is Maven and
+  Gradle personal plus Sync in Neovim: `failOnError` off so broken code still sets up, the version
+  pinned at init and upgraded by `:LatheInit`, a sync that fails on a missing bootstrap file. Records
+  the spikes (personal activation, double registration, plain mode's first build, compile errors on
+  both tools, missing activation files, runs, resources, stdin), the open issues (runs without
+  stdin, JDK lookup, flat layouts), the alternatives set aside, and a survey of how other IDEs handle
+  folders with no build.
 - [Lessons from Metals v2](potential/lathe-metals-v2-lessons.md) — **potential.** Review of the
   Metals v2 Java language server (2026-10-25), judged by Lathe's simplicity: most of Metals'
   complexity comes from not trusting the build. Recommends `TaskListener` cancellation, a saved

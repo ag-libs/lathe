@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TokenScanner;
+import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -83,12 +84,12 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return CompletableFuture.completedFuture(result);
   }
 
-  // Version comes from the jar manifest (Implementation-Version); it is null outside a built jar
-  // (dev runs, tests), which lsp4j serializes as absent — acceptable, since the standalone-client
-  // protocol handshake keys off a separate constant, not this version string.
+  // Version comes from the jar manifest (Implementation-Version); outside a built jar (dev runs,
+  // tests) it is absent, which is acceptable since the standalone-client protocol handshake keys
+  // off a separate constant, not this version string.
   static ServerInfo serverInfo() {
-    final String version = LatheLanguageServer.class.getPackage().getImplementationVersion();
-    return new ServerInfo(SERVER_NAME, version);
+    return new ServerInfo(
+        SERVER_NAME, LatheBuildInfo.version(LatheLanguageServer.class).orElse(null));
   }
 
   static ServerCapabilities createCapabilities(final FormatEngine formatEngine) {

@@ -8,6 +8,11 @@ inputs:
   version:
     description: The Neovim release; the client needs 0.12 or newer.
     default: "0.12.6"
+  tree-sitter-java:
+    description: >-
+      The tree-sitter-java release whose parser the indenter's tree-sitter specs load (its parser
+      ABI must be one this Neovim reads: 13 to 15 for 0.12).
+    default: "0.23.5"
 runs:
   using: composite
   steps:
@@ -23,6 +28,8 @@ runs:
         fi
         echo "LATHE_NVIM_ASSET=nvim-$os-$arch" >> "$GITHUB_ENV"
         echo "LATHE_NVIM_HOME=$RUNNER_TEMP/nvim-${{ inputs.version }}" >> "$GITHUB_ENV"
+        # Where Neovim finds a parser by name, its data directory, as on a developer's machine.
+        echo "LATHE_TS_PARSER_DIR=$HOME/.local/share/nvim/site/parser" >> "$GITHUB_ENV"
         echo "$RUNNER_TEMP/nvim-${{ inputs.version }}/bin" >> "$GITHUB_PATH"
 
     - name: Restore Neovim ${{ inputs.version }}
@@ -43,3 +50,27 @@ runs:
         tar xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$LATHE_NVIM_HOME" --strip-components=1
         rm "$RUNNER_TEMP/nvim.tar.gz"
         "$LATHE_NVIM_HOME/bin/nvim" --version | head -1
+
+    # The indenter's tree-sitter path needs a Java parser, which Neovim does not ship. The grammar
+    # has no external scanner, so its generated parser.c is all there is to compile: no
+    # nvim-treesitter and no tree-sitter CLI.
+    - name: Restore the Java parser (tree-sitter-java ${{ inputs.tree-sitter-java }})
+      id: java-parser
+      uses: actions/cache@v6
+      with:
+        path: ${{ env.LATHE_TS_PARSER_DIR }}
+        key: ts-java-${{ runner.os }}-${{ env.LATHE_NVIM_ASSET }}-${{ inputs.tree-sitter-java }}
+
+    - name: Build the Java parser (tree-sitter-java ${{ inputs.tree-sitter-java }})
+      if: steps.java-parser.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        src="$RUNNER_TEMP/tree-sitter-java"
+        mkdir -p "$src" "$LATHE_TS_PARSER_DIR"
+        curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors --connect-timeout 20 -o "$src.tar.gz" \
+          "https://github.com/tree-sitter/tree-sitter-java/archive/refs/tags/v${{ inputs.tree-sitter-java }}.tar.gz"
+        tar xzf "$src.tar.gz" -C "$src" --strip-components=1
+        cc -shared -fPIC -O2 -I "$src/src" "$src/src/parser.c" -o "$LATHE_TS_PARSER_DIR/java.so"
+        rm -rf "$src" "$src.tar.gz"
+        "$LATHE_NVIM_HOME/bin/nvim" --headless --clean -u NONE \
+          +"lua vim.treesitter.language.add('java', { path = '$LATHE_TS_PARSER_DIR/java.so' }); io.stdout:write('java parser ABI ' .. vim.treesitter.language.inspect('java').abi_version .. '\\n')" +qa

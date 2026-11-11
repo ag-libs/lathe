@@ -5,6 +5,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -29,6 +30,16 @@ public final class LatheBuildInfo {
             value(attributes, BUILD_TIME),
             Runtime.version(),
             System.getProperty("java.home"));
+  }
+
+  // The jar's Implementation-Version, read from its manifest: Package.getImplementationVersion is
+  // empty for a class in a named module, which is how the language server runs. Empty outside a
+  // built jar.
+  public static Optional<String> version(final Class<?> type) {
+    return Optional.ofNullable(
+            manifestAttributes(Objects.requireNonNull(type))
+                .getValue(Attributes.Name.IMPLEMENTATION_VERSION))
+        .filter(version -> !version.isBlank());
   }
 
   private static String value(final Attributes attributes, final Attributes.Name name) {

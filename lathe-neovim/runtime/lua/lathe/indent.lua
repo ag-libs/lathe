@@ -573,11 +573,44 @@ local function node_at_line(root, lnum)
   return root:descendant_for_range(lnum - 1, col, lnum - 1, col + 1)
 end
 
+-- What a block belongs to: its `}` aligns with the line where the owner starts, not with its `{`
+-- line, which is a continuation line when parameters, a condition, a `throws` clause or a rule's
+-- labels wrap. A bare block, and a block under `case A:` on a line of its own, keep their `{` line.
+local BLOCK_OWNERS = {
+  annotation_type_declaration = true,
+  catch_clause = true,
+  class_declaration = true,
+  compact_constructor_declaration = true,
+  constructor_declaration = true,
+  do_statement = true,
+  enhanced_for_statement = true,
+  enum_declaration = true,
+  finally_clause = true,
+  for_statement = true,
+  if_statement = true,
+  interface_declaration = true,
+  lambda_expression = true,
+  method_declaration = true,
+  module_declaration = true,
+  object_creation_expression = true,
+  record_declaration = true,
+  static_initializer = true,
+  switch_expression = true,
+  switch_rule = true,
+  synchronized_statement = true,
+  try_statement = true,
+  try_with_resources_statement = true,
+  while_statement = true,
+}
+
+-- The indent of the line the nearest enclosing block belongs to: where its owner starts, from the
+-- tree, else its own `{` line.
 local function nearest_block_indent(node)
   local current = node
   while current do
     if BLOCK_NODES[current:type()] then
-      local start_row = current:start()
+      local owner = current:parent()
+      local start_row = (owner and BLOCK_OWNERS[owner:type()]) and owner:start() or current:start()
       return vim.fn.indent(start_row + 1)
     end
     current = current:parent()
@@ -617,6 +650,12 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
     return chain_indent(code_lnum, starts_with_operator)
   end
   if starts_with_switch_label(current) then
+    -- The first label sits one block inside its switch; a later one is the previous label's
+    -- sibling, which the tree places when the case above wrapped (switch_label_indent).
+    if ends_with_block_opener(prev) then
+      return prev_indent + block_width()
+    end
+
     return prev_indent
   end
   if starts_with_block_comment_open(prev) then
@@ -652,14 +691,62 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
   return prev_indent
 end
 
--- Match a closing }/)/] to the line that opened its block. The tree models
--- block nesting reliably; it is unreliable for Google Java Format's mixed
--- selector/continuation/lambda indentation, so it is used only here.
-local function closer_block_indent(bufnr, lnum, current)
+-- The parse tree answers what it models reliably: block nesting and ownership, text blocks and
+-- switch labels. Google Java Format's other continuation rules come from the text
+-- heuristic, which also covers unparseable code mid-edit.
+
+-- A line inside a text block is the string's content, which no formatter touches: it keeps its own
+-- indent, and a new blank line there takes the previous line's.
+local function text_block_indent(root, lnum, current, prev_lnum)
+  if not root then
+    return nil
+  end
+
+  local col = trim(current) == "" and 0 or first_nonblank_col(current)
+  local node = root:descendant_for_range(lnum - 1, col, lnum - 1, col)
+  while node and node:type() ~= "string_literal" do
+    node = node:parent()
+  end
+
+  if not node or node:start() >= lnum - 1 then
+    return nil
+  end
+
+  if trim(current) == "" then
+    return prev_lnum and vim.fn.indent(prev_lnum) or 0
+  end
+
+  return vim.fn.indent(lnum)
+end
+
+-- A `case`/`default` label sits one block inside the line its switch starts on, whatever the case
+-- above it wrapped onto.
+local function switch_label_indent(root, lnum, current)
+  if not starts_with_switch_label(current) then
+    return nil
+  end
+
+  if not root then
+    return nil
+  end
+
+  local current_node = node_at_line(root, lnum)
+  while current_node and current_node:type() ~= "switch_block" do
+    current_node = current_node:parent()
+  end
+
+  if not current_node or not current_node:parent() then
+    return nil
+  end
+
+  return vim.fn.indent(current_node:parent():start() + 1) + block_width()
+end
+
+-- A closing `}` aligns with the line its block belongs to.
+local function closer_block_indent(root, lnum, current)
   if not starts_with_closer(current) then
     return nil
   end
-  local root = parser_root(bufnr, lnum)
   if not root then
     return nil
   end
@@ -678,6 +765,13 @@ function M.compute(lnum, bufnr)
     end
   end
 
+  -- One parse serves every tree rule below: during `=`, each reindented line changes the buffer.
+  local root = parser_root(bufnr, lnum)
+  local text = text_block_indent(root, lnum, current, prev_lnum)
+  if text then
+    return text
+  end
+
   -- A line led by `)` or `]` aligns with the line that opened it; tree-sitter's block model only
   -- knows `{}`, so it would answer with the enclosing block's indent.
   if current:match("^%s*[)%]]") then
@@ -687,9 +781,14 @@ function M.compute(lnum, bufnr)
     end
   end
 
-  local block = closer_block_indent(bufnr, lnum, current)
+  local block = closer_block_indent(root, lnum, current)
   if block then
     return block
+  end
+
+  local label = switch_label_indent(root, lnum, current)
+  if label then
+    return label
   end
 
   return heuristic_indent(lnum, current, prev_lnum, prev)

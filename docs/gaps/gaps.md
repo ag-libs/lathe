@@ -625,6 +625,35 @@ None yet.
 
 ---
 
+## EG-105 — Every keystroke clears the file's diagnostics until the next compile
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: the editor (every client), most visibly Neovim.**
+
+Found by the jdtls comparison's harness (2026-11-11), measuring errors while typing on spring-petclinic.
+
+### Observed behaviour
+
+On every `didChange`, `WorkspaceSession.onChange` publishes an empty diagnostics list for the file, then compiles it after the 500 ms debounce and publishes the result.
+While a user types, every error and warning in the file vanishes, those far from the edit included, and comes back about half a second after the last keystroke: a single keystroke anywhere makes them flash off.
+jdtls keeps the previous diagnostics until its next result replaces them, so they do not flash.
+The harness first read "the error is gone 1 ms after the undo" for Lathe, whatever the edit: the empty publish, not a compile.
+
+### Fix direction
+
+Do not publish an empty list on change; the next compile's result replaces the diagnostics.
+Neovim, VS Code and Zed move a displayed diagnostic with the edited text, so a kept diagnostic stays on its line meanwhile.
+Check why the clearing was added (it predates the 2026-06 extraction of `DiagnosticPublisher`), for instance a client that does not move diagnostics, before removing it.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## EG-104 — Hover shows no usage count
 
 **Status: documented**
