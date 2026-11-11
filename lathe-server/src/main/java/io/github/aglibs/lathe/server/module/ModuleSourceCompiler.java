@@ -550,7 +550,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         args.stream().collect(Collectors.partitioningBy(arg -> arg.startsWith("-J")));
     final List<String> dropped = partitioned.get(true);
     if (!dropped.isEmpty()) {
-      LOG.info(
+      LOG.fine(
           () ->
               "[compile] dropped %d forked-javac -J option(s) %s; module access is applied via .lathe/jvm.args, others need LATHE_JVM_OPTS"
                   .formatted(dropped.size(), dropped));

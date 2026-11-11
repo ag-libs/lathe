@@ -26,13 +26,16 @@ class ServerInstallerTest {
         .containsExactly(
             "--add-modules",
             "java.net.http",
+            "-Dsun.misc.unsafe.memory.access=allow",
             "--module-path",
             joined,
             "-m",
             "io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer")
         .noneMatch(arg -> arg.contains("ALL-UNNAMED"));
     assertThat(ServerInstaller.mcpArgs(jars))
-        .contains("jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED")
+        .contains(
+            "jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+            "-Dsun.misc.unsafe.memory.access=allow")
         .endsWith("-cp", joined, "io.github.aglibs.lathe.mcp.LatheMcpServer");
   }
 

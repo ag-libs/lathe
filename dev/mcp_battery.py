@@ -357,8 +357,7 @@ def health_checks(b, exited):
     b.check("server log: no SEVERE or stack trace", not severe and not traces,
             "%d SEVERE, %d stack frame(s); first: %s" % (len(severe), len(traces), (severe or traces or ["none"])[0][:90]))
     jdk = [line for line in b.client.stderr_lines if line.startswith("WARNING:")]
-    b.check("server stderr: no JDK warnings", not jdk, first("\n".join(jdk)) if jdk else "none",
-            known="a JDK warning on the MCP server's stderr")
+    b.check("server stderr: no JDK warnings", not jdk, first("\n".join(jdk)) if jdk else "none")
 
 
 def restore_java(ws, created=()):

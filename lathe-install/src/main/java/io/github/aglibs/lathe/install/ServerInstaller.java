@@ -33,7 +33,12 @@ public final class ServerInstaller {
   // java.net.http is not in the default module graph, and lathe-server does not declare it since
   // it never uses it, but Error Prone (loaded as a classpath javac plugin, -Xplugin:ErrorProne)
   // references HttpClient when it loads.
-  private static final List<String> COMMON_JVM_ARGS = List.of("--add-modules", "java.net.http");
+  // The project's javac plugins and processors run in the server JVM, where on JDK 24+ the first
+  // sun.misc.Unsafe memory access of a library they bring (Error Prone's Guava) prints a warning
+  // to stderr, which an MCP client shows the user. The property is what the JDK's own
+  // --sun-misc-unsafe-memory-access option sets; unlike the option, older JDKs accept it.
+  private static final List<String> COMMON_JVM_ARGS =
+      List.of("--add-modules", "java.net.http", "-Dsun.misc.unsafe.memory.access=allow");
 
   // What install() resolves, each with its runtime closure. Gradle declares them as configurations
   // before it resolves anything.

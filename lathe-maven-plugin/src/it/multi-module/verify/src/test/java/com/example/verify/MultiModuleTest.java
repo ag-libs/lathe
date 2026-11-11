@@ -100,7 +100,12 @@ class MultiModuleTest {
 
     assertThat(launcher).doesNotContain(".jar");
     final List<String> args = Files.readAllLines(versionDir.resolve("lathe-server.args"));
-    assertThat(args).startsWith("--add-modules", "java.net.http", "--module-path");
+    assertThat(args)
+        .startsWith(
+            "--add-modules",
+            "java.net.http",
+            "-Dsun.misc.unsafe.memory.access=allow",
+            "--module-path");
     assertThat(args).endsWith("-m", "io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
     assertThat(args).noneMatch(arg -> arg.contains("=ALL-UNNAMED"));
     // A pinned formatter runs from an isolated classloader; nothing targets a formatter module.

@@ -24,6 +24,11 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
@@ -67,17 +72,45 @@ class ModuleSourceCompilerTest {
 
   // -J flags only reach a forked javac executable (maven-compiler-plugin fork=true); the in-process
   // javac API rejects them as "invalid flag", so they are dropped before any compile while every
-  // other arg is preserved in order.
+  // other arg is preserved in order. Every module's compiler drops them, so the note stays at FINE.
   @Test
-  void dropForkedLauncherArgs_removesOnlyForkedJvmOptions() {
-    assertThat(
-            ModuleSourceCompiler.dropForkedLauncherArgs(
-                List.of(
-                    "-Xlint:unchecked",
-                    "-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
-                    "-J-Xmx2g",
-                    "-Xplugin:ErrorProne")))
-        .containsExactly("-Xlint:unchecked", "-Xplugin:ErrorProne");
+  void dropForkedLauncherArgs_removesOnlyForkedJvmOptions_notedAtFine() {
+    final var levels = new CopyOnWriteArrayList<Level>();
+    final var handler =
+        new Handler() {
+          @Override
+          public void publish(final LogRecord record) {
+            if (record.getMessage().contains("-J-Xmx2g")) {
+              levels.add(record.getLevel());
+            }
+          }
+
+          @Override
+          public void flush() {}
+
+          @Override
+          public void close() {}
+        };
+    final var log = Logger.getLogger(ModuleSourceCompiler.class.getName());
+    // Its own level, not the inherited one: a FINE record must be published to be seen at all.
+    final Level inherited = log.getLevel();
+    log.setLevel(Level.FINE);
+    log.addHandler(handler);
+    try {
+      assertThat(
+              ModuleSourceCompiler.dropForkedLauncherArgs(
+                  List.of(
+                      "-Xlint:unchecked",
+                      "-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+                      "-J-Xmx2g",
+                      "-Xplugin:ErrorProne")))
+          .containsExactly("-Xlint:unchecked", "-Xplugin:ErrorProne");
+    } finally {
+      log.removeHandler(handler);
+      log.setLevel(inherited);
+    }
+
+    assertThat(levels).containsExactly(Level.FINE);
 
     final var withoutForked = List.of("-Xlint:unchecked", "-Xplugin:ErrorProne");
     assertThat(ModuleSourceCompiler.dropForkedLauncherArgs(withoutForked))

@@ -7,6 +7,33 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr — done
+
+**Status: done.**
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier and Dropwizard:
+`[compile] dropped N forked-javac -J option(s) …` was logged at INFO for every module compiler created (four times in one second on EqualsVerifier),
+and on JDK 24 and later the first `sun.misc.Unsafe` memory access of a library the project's javac plugins bring (Error Prone's Guava) printed
+`WARNING: A terminally deprecated method in sun.misc.Unsafe has been called` to the server's stderr, which an MCP client shows the user.
+
+### Resolution
+
+The dropped-options note is logged at FINE (`ModuleSourceCompiler.dropForkedLauncherArgs`): the sync already carries their module access over in `.lathe/jvm.args`.
+The server and MCP argfiles set `-Dsun.misc.unsafe.memory.access=allow` (`ServerInstaller`), the property the JDK's `--sun-misc-unsafe-memory-access` option sets;
+unlike that option, which JDK 17 and 21 reject at startup, the property is accepted by every supported JDK and read from JDK 23 on.
+The project's own build keeps its warnings; only the server, which runs the project's plugins in process, stops printing them.
+The release battery's stderr check is no longer a known failure.
+
+### Regression targets
+
+- `ServerInstallerTest.serverAndMcpArgs_joinJarsWithThePathSeparator_endWithTheEntryPoint`
+- `ModuleSourceCompilerTest.dropForkedLauncherArgs_removesOnlyForkedJvmOptions_notedAtFine`
+- `dev/mcp_battery.py` "server stderr: no JDK warnings" (Dropwizard on JDK 25)
+
+---
+
 ## EG-031 — JDK home fallback works, but missing JDK sources had no actionable explanation — done
 
 **Status: done.**
