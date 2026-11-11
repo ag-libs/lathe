@@ -102,7 +102,9 @@ How each item is built from what exists:
 | Disk and the project tree | `servers.jdtls_prepare`'s workspace and configuration directories | a `du` after the warm run: jdtls's `-data` and configuration, `.lathe/`; the shared installs apart; `git status --ignored` for the files each server writes into the tree; a report column | S |
 | Setup in Neovim | the editor guides | a short prose table | S |
 
-Projects: the stage 1 projects, without Apache Fineract (jdtls does not import it; reported as such, with Lathe's numbers alone), and with spring-petclinic built through its Gradle build as the small Gradle case.
+Projects, all Java and well known: spring-petclinic (Maven, and Gradle as the small Gradle case), Dropwizard, Helidon (the annotation-processing project: its processors generate the builders its code calls), Hibernate ORM and OpenMetadata.
+Projects mixing in Kotlin or Groovy were left out, as neither server analyses those: Micronaut Core (916 Kotlin, 3,101 Groovy files) and Spring Framework (396 Kotlin), which besides does little annotation processing.
+Apache Fineract and OpenJDK are reported as projects Lathe serves and jdtls does not: jdtls does not import Fineract, and on a plain OpenJDK checkout it reports `java.base`'s own packages as conflicting and navigates nowhere.
 
 Time: about 20 hours of an idle machine in all, estimated from the stage 1 runs and the release battery:
 the queries at the one heap about 6 h, the build row with test capture and its baseline about 1 h, the editing loop in every run about 4 h, the outside changes in sessions of their own (three per server and project) about 7–8 h, diagnostics against the build about 3 h.
