@@ -668,6 +668,31 @@ end
 -- Match a closing `}` to the line its block belongs to. The tree models block
 -- nesting and ownership reliably; it is unreliable for Google Java Format's
 -- mixed selector/continuation/lambda indentation, so it is used only here.
+-- A line inside a text block is the string's content, which no formatter touches: it keeps its own
+-- indent, and a new blank line there takes the previous line's.
+local function text_block_indent(bufnr, lnum, current, prev_lnum)
+  local root = parser_root(bufnr, lnum)
+  if not root then
+    return nil
+  end
+
+  local col = trim(current) == "" and 0 or first_nonblank_col(current)
+  local node = root:descendant_for_range(lnum - 1, col, lnum - 1, col)
+  while node and node:type() ~= "string_literal" do
+    node = node:parent()
+  end
+
+  if not node or node:start() >= lnum - 1 then
+    return nil
+  end
+
+  if trim(current) == "" then
+    return prev_lnum and vim.fn.indent(prev_lnum) or 0
+  end
+
+  return vim.fn.indent(lnum)
+end
+
 -- A `case`/`default` label sits one block inside the line its switch starts on, whatever the case
 -- above it wrapped onto.
 local function switch_label_indent(bufnr, lnum, current)
@@ -713,6 +738,11 @@ function M.compute(lnum, bufnr)
     if selector then
       return selector
     end
+  end
+
+  local text = text_block_indent(bufnr, lnum, current, prev_lnum)
+  if text then
+    return text
   end
 
   -- A line led by `)` or `]` aligns with the line that opened it; tree-sitter's block model only
