@@ -269,6 +269,17 @@ def merge(settings, overrides):
     return settings
 
 
+# What nvim-jdtls (lua/jdtls/capabilities.lua at 6e9d953f) tells jdtls its client handles, the Neovim
+# user's jdtls client: with them jdtls offers its import actions as commands the client carries out.
+NVIM_JDTLS_CAPABILITIES = {
+    "classFileContentsSupport": True, "generateToStringPromptSupport": True, "hashCodeEqualsPromptSupport": True,
+    "advancedExtractRefactoringSupport": True, "advancedOrganizeImportsSupport": True,
+    "generateConstructorsPromptSupport": True, "generateDelegateMethodsPromptSupport": True,
+    "moveRefactoringSupport": True, "overrideMethodsPromptSupport": True, "executeClientCommandSupport": True,
+    "inferSelectionSupport": ["extractMethod", "extractVariable", "extractConstant", "extractVariableAllOccurrence"],
+}
+
+
 def jdtls_spec(name, project, state, heap, overrides=None):
     settings = merge(jdtls_settings(name, project), overrides or {})
     launcher = glob.glob(str(JDTLS / "plugins" / "org.eclipse.equinox.launcher_*.jar"))[0]
@@ -299,8 +310,7 @@ def jdtls_spec(name, project, state, heap, overrides=None):
         "-data", str(state / "workspace"),
     ]
     env = {**os.environ, "JAVA_HOME": JDTLS_JAVA_HOME}
-    init_options = {"settings": settings,
-                    "extendedClientCapabilities": {"classFileContentsSupport": True}}
+    init_options = {"settings": settings, "extendedClientCapabilities": NVIM_JDTLS_CAPABILITIES}
     return {"cmd": cmd, "env": env, "init_options": init_options, "settings": settings}
 
 

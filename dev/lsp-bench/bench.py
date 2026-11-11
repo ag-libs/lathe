@@ -94,6 +94,8 @@ class BenchClient(LspClient):
         super().__init__(proc, [])
         self.settings = settings
         self.applied_edits = []
+        # The type an import case removed: what a user picks among ambiguous candidates.
+        self.wanted_import = None
         self.status = StampedQueue()
         self.diagnostics = StampedQueue()
         with self._notif_lock:
@@ -119,11 +121,21 @@ class BenchClient(LspClient):
         result = None
         if msg["method"] == "workspace/configuration":
             result = [self.setting(item.get("section")) for item in msg.get("params", {}).get("items", [])]
+        elif msg["method"] == "workspace/executeClientCommand":
+            result = self.client_command(msg.get("params", {}))
         elif msg["method"] == "workspace/applyEdit":
             # Applied, as an editor answers; the case reads the edit from the action itself.
             self.applied_edits.append(msg.get("params", {}).get("edit"))
             result = {"applied": True}
         self._send({"jsonrpc": "2.0", "id": msg["id"], "result": result})
+
+    def client_command(self, params):
+        """jdtls's commands that nvim-jdtls carries out: choosing among a name's import candidates picks
+        the type the user wants (the case's), else the first, as nvim-jdtls takes a lone candidate."""
+        if params.get("command") == "java.action.organizeImports.chooseImports":
+            return [next((c for c in selection["candidates"] if c.get("fullyQualifiedName") == self.wanted_import),
+                         selection["candidates"][0]) for selection in params["arguments"][1]]
+        return None
 
     def setting(self, section):
         node = self.settings
@@ -205,9 +217,10 @@ def typed_error(client, repo, case):
     return shown, gone
 
 
-# The actions that can import a missing type, in the order a user picks them: one naming the type,
-# else adding every missing import, else organizing them (jdtls may offer only the last two).
-IMPORT_ACTIONS = ("add all missing imports", "organize imports")
+# The actions that can import a missing type, in the order a user picks them: one naming the type, else
+# organizing the imports, which asks which type when the name is ambiguous, else adding every missing
+# import, which picks one itself (jdtls's took java.awt.print.Pageable for Spring's on spring-petclinic).
+IMPORT_ACTIONS = ("organize imports", "add all missing imports")
 
 
 def import_action(actions, fqn, simple):
@@ -226,6 +239,7 @@ def import_fix(client, repo, case):
     original = (repo / path).read_text(encoding="utf-8")
     target = Q.uri(repo, path)
     missing = []
+    client.wanted_import = fqn
 
     def names_it(diagnostics):
         missing[:] = [d for d in diagnostics if d.get("severity") == 1 and simple in d.get("message", "")]
@@ -237,14 +251,19 @@ def import_fix(client, repo, case):
         if shown is None:
             return None, None, False
         start = time.monotonic()
-        actions = client.request("textDocument/codeAction", {
-            "textDocument": {"uri": target}, "range": missing[0]["range"],
-            "context": {"diagnostics": missing[:1], "triggerKind": 1}}, timeout=DIAGNOSTICS_TIMEOUT_S) or []
+        asked = {"textDocument": {"uri": target}, "range": missing[0]["range"],
+                 "context": {"diagnostics": missing[:1], "triggerKind": 1}}
+        actions = client.request("textDocument/codeAction", asked, timeout=DIAGNOSTICS_TIMEOUT_S) or []
         action = import_action(actions, fqn, simple)
         if action and "edit" not in action and "command" not in action and client.resolves_actions:
             action = client.request("codeAction/resolve", action, timeout=DIAGNOSTICS_TIMEOUT_S) or action
         edit_ = (action or {}).get("edit")
-        if action and not edit_ and action.get("command"):
+        command_name = ((action or {}).get("command") or {}).get("command") if isinstance(
+            (action or {}).get("command"), dict) else (action or {}).get("command")
+        if command_name == "java.action.organizeImports":
+            # nvim-jdtls carries it out as java/organizeImports with the code action's own parameters.
+            edit_ = client.request("java/organizeImports", asked, timeout=DIAGNOSTICS_TIMEOUT_S)
+        elif action and not edit_ and action.get("command"):
             # A command that applies its edit through workspace/applyEdit, as jdtls's import actions do.
             command = action["command"] if isinstance(action["command"], dict) else action
             applied = len(client.applied_edits)
