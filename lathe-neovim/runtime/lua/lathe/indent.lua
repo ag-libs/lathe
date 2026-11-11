@@ -549,15 +549,43 @@ local function node_at_line(root, lnum)
   return root:descendant_for_range(lnum - 1, col, lnum - 1, col + 1)
 end
 
--- The indent of the line the nearest enclosing block belongs to: its `{` line, climbed back to the
--- line that opened that line's bracket groups, as a declaration whose parameters (or a condition)
--- wrap puts its `{` on a continuation line while the closing `}` aligns with the declaration.
+-- The declarations and statements a block belongs to: its `}` aligns with the line where the owner
+-- starts, not with its `{` line, which is a continuation line when the parameters, a condition or a
+-- `throws` clause wrap. A lambda body, a bare block and a `case` block own nothing above their `{`.
+local BLOCK_OWNERS = {
+  annotation_type_declaration = true,
+  catch_clause = true,
+  class_declaration = true,
+  compact_constructor_declaration = true,
+  constructor_declaration = true,
+  do_statement = true,
+  enhanced_for_statement = true,
+  enum_declaration = true,
+  finally_clause = true,
+  for_statement = true,
+  if_statement = true,
+  interface_declaration = true,
+  method_declaration = true,
+  module_declaration = true,
+  object_creation_expression = true,
+  record_declaration = true,
+  static_initializer = true,
+  switch_expression = true,
+  synchronized_statement = true,
+  try_statement = true,
+  try_with_resources_statement = true,
+  while_statement = true,
+}
+
+-- The indent of the line the nearest enclosing block belongs to: where its owner starts, from the
+-- tree, else its own `{` line.
 local function nearest_block_indent(node)
   local current = node
   while current do
     if BLOCK_NODES[current:type()] then
-      local start_row = current:start()
-      return block_owner_indent(start_row + 1)
+      local owner = current:parent()
+      local start_row = (owner and BLOCK_OWNERS[owner:type()]) and owner:start() or current:start()
+      return vim.fn.indent(start_row + 1)
     end
     current = current:parent()
   end
@@ -631,9 +659,9 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
   return prev_indent
 end
 
--- Match a closing }/)/] to the line that opened its block. The tree models
--- block nesting reliably; it is unreliable for Google Java Format's mixed
--- selector/continuation/lambda indentation, so it is used only here.
+-- Match a closing `}` to the line its block belongs to. The tree models block
+-- nesting and ownership reliably; it is unreliable for Google Java Format's
+-- mixed selector/continuation/lambda indentation, so it is used only here.
 local function closer_block_indent(bufnr, lnum, current)
   if not starts_with_closer(current) then
     return nil

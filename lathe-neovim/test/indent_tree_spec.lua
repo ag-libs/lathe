@@ -26,7 +26,12 @@ if not vim.uv.fs_stat(parser) then
   spec.finish("skipped")
 end
 
-vim.treesitter.language.add("java", { path = parser })
+-- A parser built for another Neovim's tree-sitter ABI does not load: skip, as without one.
+local loaded, why = pcall(vim.treesitter.language.add, "java", { path = parser })
+if not loaded then
+  spec.pending("tree-sitter closers", "the Java parser at " .. parser .. " does not load: " .. why)
+  spec.finish("skipped")
+end
 
 -- {name, google-java-format output, the closing line (1-based), its indent}
 local FIXTURES = {
@@ -75,6 +80,68 @@ local FIXTURES = {
     { "class C {", "  void m()", "      throws Exception {", "    x();", "  }", "}" },
     5,
     2,
+  },
+  {
+    "anonymous class after a trailing `?`: `}` aligns with `new`",
+    {
+      "class C {",
+      "  void m() {",
+      "    Runnable r = cond ?",
+      "        new Runnable() {",
+      "          public void run() {}",
+      "        } : null;",
+      "  }",
+      "}",
+    },
+    6,
+    8,
+  },
+  {
+    "block lambda after a trailing `&&`: `}` aligns with the lambda's line",
+    {
+      "class C {",
+      "  boolean m() {",
+      "    return ready",
+      "        && list.stream().anyMatch(x -> {",
+      "          return x;",
+      "        });",
+      "  }",
+      "}",
+    },
+    6,
+    8,
+  },
+  {
+    "loop under an outdented label: `}` aligns with the loop",
+    {
+      "class C {",
+      "  void m() {",
+      "  outer:",
+      "    for (;;) {",
+      "      x();",
+      "    }",
+      "  }",
+      "}",
+    },
+    6,
+    4,
+  },
+  {
+    "bare block under a case label: `}` aligns with its `{`",
+    {
+      "class C {",
+      "  void m() {",
+      "    switch (k) {",
+      "      case A:",
+      "        {",
+      "          x();",
+      "        }",
+      "    }",
+      "  }",
+      "}",
+    },
+    7,
+    8,
   },
   {
     "plain method (control)",
@@ -136,5 +203,11 @@ for _, fixture in ipairs(FIXTURES) do
   vim.bo.tabstop = 2
   spec.check(name, indent.compute(target, vim.api.nvim_get_current_buf()), expected)
 end
+
+-- The fixtures pass through the text heuristic too: make sure the tree answered them.
+local parsed = pcall(function()
+  return vim.treesitter.get_parser(0, "java"):parse()[1]:root()
+end)
+spec.check("the fixtures were parsed (the tree path ran)", parsed, true)
 
 spec.finish(string.format("%d fixtures", #FIXTURES))
