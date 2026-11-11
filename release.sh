@@ -92,7 +92,7 @@ fi
 public_docs=(
   -- '*.md' '*.txt'
   ':!docs/done/' ':!docs/planned/' ':!docs/potential/' ':!docs/gaps/' ':!dev/'
-  ':!RELEASING.md' ':!docs/roadmap.md' ':!docs/lathe-design.md'
+  ':!RELEASING.md' ':!docs/roadmap.md' ':!docs/lathe-design.md' ':!docs/design-index.md'
 )
 mapfile -t docs < <(git ls-files "${public_docs[@]}")
 for f in "${docs[@]}"; do
