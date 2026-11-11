@@ -11,6 +11,7 @@ All files live in `dev/` and are never shipped with the distribution.
 |---|---|
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
 | `check-nvim.sh` | Headless Neovim smoke check for the Lathe runtime |
+| `indent-corpus.sh` | How often the Neovim indenter disagrees with a formatter on already formatted files (default: this repo's sources, google-java-format), grouped by construct with examples; `LATHE_NVIM_RUNTIME` compares another indenter |
 | *(moved)* | The neotest end-to-end check now lives in `lathe-neovim/test/e2e/` and runs in the build (below) |
 | `debug-e2e.sh` | Headless end-to-end check of the debug attach flow (DAP over JDWP) against a live server + real replay |
 | `debug_probe.py` | Raw DAP client the debug harness drives (launch → attach → breakpoint → inspect → resume) |
