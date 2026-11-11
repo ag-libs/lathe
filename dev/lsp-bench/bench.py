@@ -343,6 +343,8 @@ def main():
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
     parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
                         help="a jdtls setting changed from vscode-java's defaults: a labelled variant")
+    parser.add_argument("--baseline", action="store_true",
+                        help="first time the build the project costs without Lathe (once per project)")
     parser.add_argument("--prime", action="store_true",
                         help="one cold run per server, only to download dependencies; not a measurement")
     args = parser.parse_args()
@@ -359,6 +361,14 @@ def main():
     out_dir = RESULTS / ("%s-%s%s" % (stamp, name, suffix))
     out_dir.mkdir(parents=True)
     (out_dir / "environment.json").write_text(json.dumps(environment(name, project, args), indent=2))
+    if args.baseline:
+        print("%-14s" % "baseline", end="", flush=True)
+        before = set(M.processes())
+        build_ms = S.baseline_build(name, project, out_dir / "baseline.log")
+        M.stop_leftovers(before, str(S.repo_of(name)))
+        (out_dir / "baseline.json").write_text(json.dumps(
+            {"build_ms": build_ms, "command": " ".join(S.baseline_command(project, S.repo_of(name)))}, indent=2))
+        print("build %6.1fs" % (build_ms / 1000), flush=True)
     for server in args.servers.split(","):
         for i in range(1 if args.prime else args.runs):
             for mode in ("cold",) if args.prime else ("cold", "warm"):

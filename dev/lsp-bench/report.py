@@ -22,7 +22,7 @@ EXAMPLES = 10
 def load(out_dir):
     runs = {}
     for path in sorted(out_dir.glob("*.json")):
-        if path.name == "environment.json":
+        if path.name in ("environment.json", "baseline.json"):
             continue
         result = json.loads(path.read_text())
         runs.setdefault(result["server"], []).append(result)
@@ -40,18 +40,40 @@ def fmt(value, unit="", scale=1.0, digits=0):
     return "%.*f%s" % (digits, value / scale, unit)
 
 
+def first_answer_ms(result):
+    """What a user waits for a first answer: the run's build (Lathe's; jdtls's install where it needs
+    one) and the server's ready time, which holds jdtls's import."""
+    if result.get("ready_ms") is None:
+        return None
+    return (result.get("build_ms") or 0) + result["ready_ms"]
+
+
+def baseline_lines(out_dir, runs):
+    """The build without Lathe, and Lathe's share of its cold build beside it."""
+    path = out_dir / "baseline.json"
+    if not path.exists():
+        return []
+    baseline = json.loads(path.read_text())
+    lathe = median([r.get("build_ms") for r in runs.get("lathe", []) if r["mode"] == "cold" and not r.get("error")])
+    share = "; Lathe's cold build %s, so its share %s" % (
+        fmt(lathe, " s", 1000, 1), fmt(lathe - baseline["build_ms"], " s", 1000, 1)) if lathe else ""
+    return ["", "Build without Lathe (`%s`, fresh checkout): %s%s." % (
+        baseline["command"], fmt(baseline["build_ms"], " s", 1000, 1), share)]
+
+
 def server_table(runs):
-    rows = ["| Server | Mode | Runs | Build | Import | Ready | Startup peak | Query peak | Idle | CPU | Failed |",
-            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| Server | Mode | Runs | Build | Import | Ready | First answer | Startup peak | Query peak | Idle | CPU | Failed |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for server, results in runs.items():
         for mode in ("cold", "warm"):
             done = [r for r in results if r["mode"] == mode]
             ok = [r for r in done if not r.get("error")]
-            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %d |" % (
+            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %d |" % (
                 server, mode, len(done),
                 fmt(median([r.get("build_ms") for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("import_ms") for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("ready_ms") for r in ok]), " s", 1000, 1),
+                fmt(median([first_answer_ms(r) for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("startup_peak_mb") for r in ok]), " MB"),
                 fmt(median([r.get("query_peak_mb") for r in ok]), " MB"),
                 fmt(median([r.get("idle_mb") for r in ok]), " MB"),
@@ -166,12 +188,13 @@ def main():
         "",
         "## Servers (medians; memory is the summed RSS of the server's processes)",
         "",
-    ] + server_table(runs) + [
+    ] + server_table(runs) + baseline_lines(out_dir, runs) + [
         "",
-        "Build is what a cold run builds before the server starts: Lathe's build and sync (on Gradle with "
-        "its test capture), and for jdtls only where it needs the project installed first. Import is "
-        "jdtls's own project import, inside its ready time. Ready runs from the server's start to the "
-        "first right answer to the probe query.",
+        "Build is what a cold run builds before the server starts: Lathe's first build as the README has a "
+        "user run it, tests captured but not run, and for jdtls only where it needs the project installed "
+        "first. Import is jdtls's own project import, inside its ready time. Ready runs from the server's "
+        "start to the first right answer to the probe query. First answer is build plus ready: what a user "
+        "waits for on a fresh checkout.",
         "",
         "## Queries (warm runs, medians)",
         "",

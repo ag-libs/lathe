@@ -75,8 +75,11 @@ PROJECTS = {
         "main_module": "openmetadata-service",
         "lombok": "1.18.36",
         # Through package, so the shaded module's jar exists; without the UI, distribution and
-        # generated-client modules (README.md, Projects).
-        "maven_goals": ["package", "-DskipTests", "-Dlathe.sync.phase=package",
+        # generated-client modules (README.md, Projects). Tests captured, not run, as the README's
+        # first build; the baseline compiles the same modules without Lathe.
+        "maven_goals": ["package", "-Dlathe.capture.only=true", "-Dlathe.sync.phase=package",
                         "-pl", "!openmetadata-ui,!openmetadata-dist,!openmetadata-clients"],
+        "baseline_goals": ["package", "-DskipTests",
+                           "-pl", "!openmetadata-ui,!openmetadata-dist,!openmetadata-clients"],
     },
 }

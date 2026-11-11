@@ -87,8 +87,30 @@ def lathe_build_command(project, repo):
     if project["build"] == "gradle":
         return ["./gradlew", "--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process",
                 "--init-script", str(gradle_init_script(project)), "latheSync", "-Plathe.capture.only=true"]
-    maven = "./mvnw" if (repo / "mvnw").exists() else MAVEN
-    return [maven, "-B", "-q"] + project.get("maven_goals", ["process-test-classes"])
+    # The README's first build: tests captured (in a dry run), not run (the 2026-11-11 amendment).
+    return maven_command(repo) + project.get("maven_goals", ["clean", "test", "-Dlathe.capture.only=true"])
+
+
+def maven_command(repo):
+    return ["./mvnw" if (repo / "mvnw").exists() else MAVEN, "-B", "-q"]
+
+
+def baseline_command(project, repo):
+    """What compiles the code and its tests with no Lathe loaded: the build a project costs anyway."""
+    if project["build"] == "gradle":
+        return ["./gradlew", "--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process", "testClasses"]
+    return maven_command(repo) + project.get("baseline_goals", ["clean", "test-compile"])
+
+
+def baseline_build(name, project, log):
+    """The baseline on a fresh checkout, timed in ms; the checkout carries no Lathe extension."""
+    repo = repo_of(name)
+    fresh_checkout(repo)
+    start = time.monotonic()
+    with open(log, "ab") as out:
+        subprocess.run(baseline_command(project, repo), cwd=repo, env=build_env(project),
+                       stdout=out, stderr=subprocess.STDOUT, check=True)
+    return (time.monotonic() - start) * 1000
 
 
 def lathe_prepare(name, project, mode, log):
