@@ -122,6 +122,7 @@ class Probe:
         self.failures = 0
         self.created: list[Path] = []
         self.log: list[str] = []
+        self.last_ms = 0
 
     def start(self):
         self.client = mcp.McpClient(mcp.launcher_for(self.ws), self.ws)
@@ -154,8 +155,16 @@ class Probe:
             r = {"isError": True, "content": [{"type": "text", "text": "EXC " + str(e)[:300]}]}
         return text_of(r), int((time.monotonic() - t0) * 1000)
 
+    def warn_if_slower(self, label, limit_ms, why):
+        """A timing worth a look but not a failure: the machine's load can explain it."""
+        if self.last_ms > limit_ms:
+            line = "WARN %-58s %6dms over %dms: %s" % (label, self.last_ms, limit_ms, why)
+            print(line, flush=True)
+            self.log.append(line)
+
     def check(self, label, tool, args, ok, client=None, show=False, settle=False):
         t, ms = self.call(tool, args, client)
+        self.last_ms = ms
         # A hang or a protocol error answers nothing, so it must not pass a "no error" check.
         passed = not t.startswith("EXC ") and bool(ok(t))
         head = " | ".join(x.strip() for x in t.strip().splitlines()[:2])[:150]
@@ -443,11 +452,13 @@ def s_two_sessions(pr: Probe):
                  lambda t: "cannot find symbol" in t)
         pr.check("I3 session B (also stale-checking) sees the break too", "get_diagnostics", {"file": str(down)},
                  lambda t: "cannot find symbol" in t, client=other)
+        pr.warn_if_slower("I3 timing", 1000, "a query waiting a scan tick for the other server's lock (WS-26)?")
         up.write_text(up.read_text().replace("twoRenamed()", "two()"))
         pr.check("I4 session B sees the fix", "get_diagnostics", {"file": str(down)},
                  lambda t: "cannot find symbol" not in t, client=other)
         pr.check("I5 session A sees the fix", "get_diagnostics", {"file": str(down)},
                  lambda t: "cannot find symbol" not in t)
+        pr.warn_if_slower("I5 timing", 1000, "a query waiting a scan tick for the other server's lock (WS-26)?")
         git(pr.ws, "checkout", "--", c["down_file"])
         up.unlink()
         pr.check("I6 session B: search after delete finds nothing", "search_symbols", {"query": "LatheProbeTwo"},

@@ -87,6 +87,7 @@ def run(b, ws: Path, probe: Probe):
     b.section("probe consistency", consistency_checks, b, probe)
     b.section("probe renames", rename_checks, b, probe)
     b.section("probe stale answer", stale_answer_check, b, probe)
+    b.section("probe recent fixes", recent_fix_checks, b, probe)
     b.section("probe imports", imports_checks, b, probe)
 
 
@@ -211,6 +212,37 @@ def stale_answer_check(b, probe):
     b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text))
     probe.file.write_bytes(original)
     b.raw("get_diagnostics", {"file": str(probe.file)})
+
+
+def recent_fix_checks(b, probe):
+    """What this release's fixes changed, on constructs each workspace may not have."""
+    area = probe.pos("return side * side", "area", offset=-1)
+    callers = b.raw("call_hierarchy", dict(area, direction="incoming"))[0]
+    b.check("probe incoming(Square.area): through the base method", "viaShape" in callers, first(callers))
+    b.check("probe incoming(Square.area): not through a type Square is not", "viaTile" not in callers,
+            first(callers))
+    square = b.raw("describe_symbol", probe.pos("static final class Square", "Square"))[0]
+    b.check("probe describe(Square): modifiers and supertypes", "final class Square implements Shape" in square,
+            first(square))
+    doc = b.raw("describe_symbol", area)[0]
+    b.check("probe describe(Square.area): inherits the doc its own leaves out",
+            "LATHEPROBEAREA" in doc and "side squared" in doc, first(doc))
+    guarded = b.raw("find_references", dict(probe.pos("static int guarded(", "guarded"), maxResults=50))[0]
+    b.check("probe references(type-use annotated parameter): finds the other file's call",
+            probe.caller_file.name in guarded, first(guarded))
+    wrong_arguments(b, probe)
+
+
+def wrong_arguments(b, probe):
+    original = probe.file.read_bytes()
+    probe.file.write_bytes(original.replace(b"return pick(1);", b"return pick(1.5);"))
+    try:
+        text = b.raw("get_definition", probe.pos("return pick(1.5);", "pick"))[0]
+        offered = has_line(text, probe.line("int pick(int i)")) and has_line(text, probe.line("int pick(String s)"))
+        b.check("probe definition: a call no overload matches offers every overload", offered, first(text))
+    finally:
+        probe.file.write_bytes(original)
+        b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def imports_checks(b, probe):

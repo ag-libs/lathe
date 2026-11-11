@@ -42,6 +42,9 @@ def main():
     parser.add_argument("--expect-version", required=True)
     parser.add_argument("--staleness", action="store_true", help="also run dev/mcp_staleness.py")
     parser.add_argument("--scale", action="store_true", help="also run dev/verify_scale.py on Helidon")
+    parser.add_argument("--old-jdk", metavar="JAVA_HOME",
+                        help="also run the Dropwizard battery with the server on this JDK (17 or 21): javac 21 and "
+                             "older keep type-use annotations in erasure, which newer ones hide")
     opts = parser.parse_args()
     clones = Path(opts.clones).expanduser().resolve()
     python = [sys.executable, "-I"]
@@ -56,6 +59,10 @@ def main():
                                                       "--expect-version", opts.expect_version]))
         if opts.staleness:
             runs.append(run("staleness %s" % name, python + [str(DEV / "mcp_staleness.py"), str(ws), name]))
+    if opts.old_jdk and (clones / "dropwizard" / ".lathe").is_dir():
+        runs.append(run("battery dropwizard (server on %s)" % Path(opts.old_jdk).name,
+                        python + [str(DEV / "mcp_battery.py"), str(clones / "dropwizard"), "dropwizard",
+                                  "--expect-version", opts.expect_version, "--server-jdk", opts.old_jdk]))
     if opts.scale and (clones / "helidon" / ".lathe").is_dir():
         runs.append(run("verify_change scale helidon", python + [str(DEV / "verify_scale.py"), str(clones / "helidon")]))
 

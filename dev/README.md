@@ -128,6 +128,8 @@ with `.lathe/lathe-sync.sh --tests <module>` (or `mvn test` on one test class); 
 ```bash
 # All MCP checks on every clone found under ~/git, one report in dev/reports/
 python3 -I dev/release_check.py ~/git --expect-version 0.2.2            # add --staleness, --scale
+#   --old-jdk /opt/amazon-corretto-21…: Dropwizard's battery again with the server on JDK 21, where
+#   javac keeps type-use annotations in erasure (a bug class JDK 22+ hides)
 
 # MCP battery on one workspace
 python3 -I dev/mcp_battery.py ~/git/dropwizard dropwizard --expect-version 0.2.2
@@ -150,12 +152,20 @@ It checks:
 
 - **every tool**, with answers that must hold content (references in several modules, callers, a
   rename that edits several modules), and fails when the server lists a tool the battery has no check for;
+- **the pinned commit's exact counts** of the symbol's references and callers and of the interface's
+  implementations (`counts` in `CONFIGS`), which a search that drops files would change; skipped when
+  HEAD is not the pin; and, on Dropwizard, an override's callers reached through its base method in an
+  upstream module;
 - **tools agreeing with each other** (`mcp_consistency.py`): every outline item resolves, an interface's
   implementations cover its method's, a method's override family, `analyze_change`'s modules, references
-  leading back to their declaration, location lists without duplicates and grouped by module;
+  leading back to their declaration (asked at each row's column), location lists without duplicates,
+  every row with its column, a header that counts every row, and modules grouped;
 - **a probe file** (`mcp_probe.py`, `battery/LatheProbe.java.tmpl`) copied into one module and deleted
   after: anonymous classes, enum constant bodies, lambdas, records, outgoing calls through `Type::new`, a
-  file that stops compiling, `fix_imports` on a nested type and on a CRLF file; definition on `var` and on
+  file that stops compiling, `fix_imports` on a nested type and on a CRLF file, incoming calls of an
+  override through its base method and not through a type it is not, hover modifiers, supertypes and an
+  inherited doc, definition on a call no overload matches, and references to a method whose parameter
+  carries a type-use annotation (only JDK 21 and older show that bug: `--old-jdk`); definition on `var` and on
   the `new` of `Type::new` must be refused with a reason, as MCP's position tools take a name (the editor
   navigates from both, which the editor smoke checks);
 - **renames that keep what names mean** (`mcp_probe.RENAMES`): a parameter, lambda parameter or local
