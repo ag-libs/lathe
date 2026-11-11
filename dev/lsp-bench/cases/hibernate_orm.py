@@ -160,3 +160,15 @@ CASES = [
         "expect": {"locations": ["PostgresPlusDialect.java:case DATE:"]},
     },
 ]
+
+# An error in another module (2026-11-11 amendment): the widely used method of the queries gains a
+# parameter, saved; the open caller in another module must show the error at its call, then settle
+# without it after the revert.
+CASES += [
+    {
+        "name": "diagnostics: an error in another module",
+        "method": "textDocument/publishDiagnostics",
+        "upstream": (CORE + "dialect/identifier/spi/KeywordRegistration.java", "void registerKeyword(String keyword);", "void registerKeyword(int latheBench, String keyword);"),
+        "downstream": ("hibernate-community-dialects/src/main/java/org/hibernate/community/dialect/CUBRIDDialect.java", "registerKeyword("),
+    },
+]

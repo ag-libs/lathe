@@ -39,7 +39,8 @@ LOAD_ATTEMPTS = 3
 
 # The same client capabilities for every server.
 CLIENT_CAPABILITIES = {
-    "workspace": {"configuration": True, "workspaceFolders": True, "symbol": {}},
+    "workspace": {"configuration": True, "workspaceFolders": True, "symbol": {}, "applyEdit": True,
+                  "workspaceEdit": {"documentChanges": True, "resourceOperations": ["create", "rename", "delete"]}},
     "window": {"workDoneProgress": True},
     "textDocument": {
         "synchronization": {"didSave": True},
@@ -54,7 +55,13 @@ CLIENT_CAPABILITIES = {
         "typeHierarchy": {},
         "callHierarchy": {},
         "publishDiagnostics": {},
-        # As Neovim (0.12) declares it, so both servers send what Neovim gets.
+        # As Neovim (0.12) declares them, so both servers send what Neovim gets.
+        "rename": {"prepareSupport": True},
+        "codeAction": {"dataSupport": True, "isPreferredSupport": True,
+                       "resolveSupport": {"properties": ["edit", "command"]},
+                       "codeActionLiteralSupport": {"codeActionKind": {"valueSet": [
+                           "", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite",
+                           "source", "source.organizeImports"]}}},
         "completion": {"completionItem": {"snippetSupport": True,
                                           "resolveSupport": {"properties": ["documentation", "detail",
                                                                             "additionalTextEdits"]}}},
@@ -86,6 +93,7 @@ class BenchClient(LspClient):
         threading.Thread(target=self._write_loop, args=(proc,), daemon=True).start()
         super().__init__(proc, [])
         self.settings = settings
+        self.applied_edits = []
         self.status = StampedQueue()
         self.diagnostics = StampedQueue()
         with self._notif_lock:
@@ -111,6 +119,10 @@ class BenchClient(LspClient):
         result = None
         if msg["method"] == "workspace/configuration":
             result = [self.setting(item.get("section")) for item in msg.get("params", {}).get("items", [])]
+        elif msg["method"] == "workspace/applyEdit":
+            # Applied, as an editor answers; the case reads the edit from the action itself.
+            self.applied_edits.append(msg.get("params", {}).get("edit"))
+            result = {"applied": True}
         self._send({"jsonrpc": "2.0", "id": msg["id"], "result": result})
 
     def setting(self, section):
@@ -141,10 +153,11 @@ SETTLED_S = 2.0
 DIAGNOSTICS_TIMEOUT_S = 60
 
 
-def until_published(client, edit, target, ok, settled=False):
-    """Ms from an edit to the first publish for the edited version (any after the edit from a server
-    that sends no version) whose diagnostics satisfy ok; with settled, to the last publish before the
-    diagnostics stay unchanged for SETTLED_S, which must satisfy ok. None past the timeout."""
+def until_published(client, edit, target, ok, settled=False, versioned=True):
+    """Ms from an edit to the first publish for the target (for the edited version, when the target is
+    the edited file and the server sends versions) whose diagnostics satisfy ok; with settled, to the
+    last publish before the diagnostics stay unchanged for SETTLED_S, which must satisfy ok. None past
+    the timeout."""
     start = time.monotonic()
     mark = len(client.diagnostics.times)
     version = edit()
@@ -152,7 +165,7 @@ def until_published(client, edit, target, ok, settled=False):
     while time.monotonic() - start < DIAGNOSTICS_TIMEOUT_S:
         for at, msg in client.diagnostics.times[mark:]:
             params = msg.get("params", {})
-            if params.get("uri") == target and params.get("version") in (None, version):
+            if params.get("uri") == target and (not versioned or params.get("version") in (None, version)):
                 if not settled and ok(params.get("diagnostics", [])):
                     return (at - start) * 1000
                 last = (at, params.get("diagnostics", []))
@@ -164,30 +177,97 @@ def until_published(client, edit, target, ok, settled=False):
 
 
 def typed_error(client, repo, case):
-    """Types the case's line, which does not compile, then undoes it: ms until its error shows, and ms
-    until the diagnostics settle without it; saved after each change when the case says so."""
-    path = case["edit"][0]
-    text, pos = Q.edited_text(repo, case)
-    original = (repo / path).read_text(encoding="utf-8")
-    target = Q.uri(repo, path)
-    save = case.get("save", False)
+    """An edit that breaks the code, then its undo: ms until the error shows on the watched line, and
+    ms until the diagnostics there settle without it. A typed error edits the file it watches; an error
+    in another module edits the upstream file, saved, and watches the open caller."""
+    if "upstream" in case:
+        path, old, new = case["upstream"]
+        original = (repo / path).read_text(encoding="utf-8")
+        edited, save = original.replace(old, new, 1), True
+        watched, call = case["downstream"]
+        line = next(i for i, text in enumerate((repo / watched).read_text(encoding="utf-8").split("\n")) if call in text)
+    else:
+        path = watched = case["edit"][0]
+        original = (repo / path).read_text(encoding="utf-8")
+        edited, pos = Q.edited_text(repo, case)
+        line, save = pos["line"], case.get("save", False)
+    target, versioned = Q.uri(repo, watched), watched == path
 
     def on_line(diagnostics):
-        return any(d.get("severity") == 1 and d["range"]["start"]["line"] == pos["line"] for d in diagnostics)
+        return any(d.get("severity") == 1 and d["range"]["start"]["line"] == line for d in diagnostics)
 
     try:
-        shown = until_published(client, lambda: Q.change(client, repo, path, text, save), target, on_line)
+        shown = until_published(client, lambda: Q.change(client, repo, path, edited, save), target, on_line,
+                                versioned=versioned)
     finally:
         gone = until_published(client, lambda: Q.change(client, repo, path, original, save), target,
-                               lambda diagnostics: not on_line(diagnostics), settled=True)
+                               lambda diagnostics: not on_line(diagnostics), settled=True, versioned=versioned)
     return shown, gone
 
 
-def typed_error_results(client, repo, case, reps):
-    """Two rows, as the amendment reports them: the error showing, and settled without it after the undo."""
-    runs = [typed_error(client, repo, case) for _ in range(1 + reps)]
+# The actions that can import a missing type, in the order a user picks them: one naming the type,
+# else adding every missing import, else organizing them (jdtls may offer only the last two).
+IMPORT_ACTIONS = ("add all missing imports", "organize imports")
+
+
+def import_action(actions, fqn, simple):
+    titles = [(a, a.get("title", "").lower()) for a in actions]
+    named = next((a for a, title in titles if "import" in title and (fqn.lower() in title or simple.lower() in title)),
+                 None)
+    return named or next((a for wanted in IMPORT_ACTIONS for a, title in titles if title == wanted), None)
+
+
+def import_fix(client, repo, case):
+    """Removes an import the file uses: ms until the error shows, then ms until a code action importing
+    the type is offered and resolved, and whether its edit adds the import back."""
+    path, line = case["import_removed"]
+    fqn = line.split()[1].rstrip(";")
+    simple = fqn.rsplit(".", 1)[1]
+    original = (repo / path).read_text(encoding="utf-8")
+    target = Q.uri(repo, path)
+    missing = []
+
+    def names_it(diagnostics):
+        missing[:] = [d for d in diagnostics if d.get("severity") == 1 and simple in d.get("message", "")]
+        return bool(missing)
+
+    try:
+        shown = until_published(client, lambda: Q.change(client, repo, path, original.replace(line + "\n", "", 1)),
+                                target, names_it)
+        if shown is None:
+            return None, None, False
+        start = time.monotonic()
+        actions = client.request("textDocument/codeAction", {
+            "textDocument": {"uri": target}, "range": missing[0]["range"],
+            "context": {"diagnostics": missing[:1], "triggerKind": 1}}, timeout=DIAGNOSTICS_TIMEOUT_S) or []
+        action = import_action(actions, fqn, simple)
+        if action and "edit" not in action and "command" not in action and client.resolves_actions:
+            action = client.request("codeAction/resolve", action, timeout=DIAGNOSTICS_TIMEOUT_S) or action
+        edit_ = (action or {}).get("edit")
+        if action and not edit_ and action.get("command"):
+            # A command that applies its edit through workspace/applyEdit, as jdtls's import actions do.
+            command = action["command"] if isinstance(action["command"], dict) else action
+            applied = len(client.applied_edits)
+            client.request("workspace/executeCommand", {"command": command["command"],
+                                                        "arguments": command.get("arguments", [])},
+                           timeout=DIAGNOSTICS_TIMEOUT_S)
+            edit_ = client.applied_edits[-1] if len(client.applied_edits) > applied else next(
+                (arg for arg in command.get("arguments", []) or []
+                 if isinstance(arg, dict) and ("changes" in arg or "documentChanges" in arg)), None)
+        ready = (time.monotonic() - start) * 1000 if action else None
+        adds = any(fqn in e.get("newText", "") for edits in Q.text_edits(edit_).values() for e in edits)
+        return shown, ready, adds
+    finally:
+        Q.change(client, repo, path, original)
+
+
+def scenario_results(client, repo, case, reps, run, suffixes):
+    """One row per timing a scenario returns, as the amendment reports them; a run is right when every
+    timing is there and its last value, when it is a bool, is true."""
+    runs = [run(client, repo, case) for _ in range(1 + reps)]
+    right = all(r[-1] for r in runs) if isinstance(runs[0][-1], bool) else True
     rows = {}
-    for index, suffix in ((0, "shows"), (1, "settles without it")):
+    for index, suffix in enumerate(suffixes):
         times = [r[index] for r in runs]
         done = [t for t in times if t is not None]
         rows["%s: %s" % (case["name"], suffix)] = {
@@ -195,7 +275,7 @@ def typed_error_results(client, repo, case, reps):
             "first_ms": times[0], "median_ms": statistics.median(done[1:] or done) if done else None,
             "p95_ms": p95(done[1:] or done) if done else None,
             "error": None if len(done) == len(times) else "not within %ss" % DIAGNOSTICS_TIMEOUT_S,
-            "correct": len(done) == len(times), "answer": {"names": [], "locations": [], "text": ""}}
+            "correct": len(done) == len(times) and right, "answer": {"names": [], "locations": [], "text": ""}}
     return rows
 
 
@@ -233,11 +313,15 @@ def thread_dumps(pids, out_dir, label):
             (out_dir / ("%s-%d.jstack" % (label, pid))).write_text(dump.stdout, encoding="utf-8")
 
 
-def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeout):
+def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeout, compile_check=None):
     results = {}
     for case in cases:
         if case["method"] == "textDocument/publishDiagnostics":
-            results.update(typed_error_results(client, repo, case, reps))
+            results.update(scenario_results(client, repo, case, reps, typed_error, ("shows", "settles without it")))
+            continue
+        if "import_removed" in case:
+            results.update(scenario_results(client, repo, case, reps, import_fix,
+                                            ("error shows", "import action offered and resolved")))
             continue
         if not capabilities.get(Q.CAPABILITY[case["method"]]):
             results[case["name"]] = {"method": case["method"], "supported": False}
@@ -246,6 +330,8 @@ def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeo
         if error and "timed out" in error:
             on_timeout()
         summary = Q.summarize(repo, case, answer)
+        compiles = compile_check(answer) if compile_check and case["method"] == "textDocument/rename" and answer \
+            else None
         times = [timed(client, repo, case, request_timeout)[0] for _ in range(reps)]
         results[case["name"]] = {
             "method": case["method"],
@@ -254,8 +340,9 @@ def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeo
             "median_ms": statistics.median(times),
             "p95_ms": p95(times),
             "error": error,
-            "correct": error is None and Q.check(case["expect"], summary),
+            "correct": error is None and Q.check(case["expect"], summary) and compiles is not False,
             "answer": summary,
+            "compiles": compiles,
         }
     return results
 
@@ -296,8 +383,12 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         client.notify("initialized", {})
         result["initialize_ms"] = (time.monotonic() - start) * 1000
         result["server_info"] = init.get("serverInfo")
-        client.resolves_completion = bool((init.get("capabilities", {}).get("completionProvider") or {})
-                                          .get("resolveProvider"))
+        server = init.get("capabilities", {})
+        client.resolves_completion = bool((server.get("completionProvider") or {}).get("resolveProvider"))
+        client.prepares_rename = isinstance(server.get("renameProvider"), dict) \
+            and bool(server["renameProvider"].get("prepareProvider"))
+        client.resolves_actions = isinstance(server.get("codeActionProvider"), dict) \
+            and bool(server["codeActionProvider"].get("resolveProvider"))
         open_files(client, repo, cases.CASES)
         ready_at = wait_ready(client, repo, probe, start, args.ready_timeout, args.request_timeout)
         result["ready_ms"] = (ready_at - start) * 1000
@@ -306,7 +397,8 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         result["startup_peak_mb"] = sampler.peak_mb(until=ready_at)
         result["cases"] = run_cases(client, repo, cases.CASES, init.get("capabilities", {}), args.reps,
                                     args.request_timeout,
-                                    lambda: thread_dumps(sampler.pids, out_dir, label))
+                                    lambda: thread_dumps(sampler.pids, out_dir, label),
+                                    (lambda edit: S.compiles_with(name, project, edit)) if args.compile_renames else None)
         result["query_peak_mb"] = sampler.peak_mb(since=ready_at)
         time.sleep(5)
         sampler.sample()
@@ -419,6 +511,8 @@ def main():
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
     parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
                         help="a jdtls setting changed from vscode-java's defaults: a labelled variant")
+    parser.add_argument("--compile-renames", action="store_true",
+                        help="apply each rename case's edit to a copy of the project and compile it there")
     parser.add_argument("--baseline", action="store_true",
                         help="first time the build the project costs without Lathe (once per project)")
     parser.add_argument("--prime", action="store_true",

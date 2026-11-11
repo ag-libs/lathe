@@ -181,3 +181,20 @@ CASES += [
         "save": True,
     },
 ]
+
+# Rename and imports (2026-11-11 amendment): the widely used method (java-index's getId query) renamed,
+# its edit applied to a copy that must compile (--compile-renames); and an import the file uses
+# removed, until the error shows and an action importing it is offered and resolved.
+CASES += [
+    {
+        "name": "rename: widely used method",
+        "method": "textDocument/rename",
+        "at": (PKG + "model/BaseEntity.java", "public Integer getId()", "getId"),
+        "expect": {"rename_files": 2},
+    },
+    {
+        "name": "code action: import a removed import",
+        "method": "textDocument/codeAction",
+        "import_removed": (OWNER_CONTROLLER, "import org.springframework.data.domain.Pageable;"),
+    },
+]

@@ -12,9 +12,11 @@ import platform
 import shutil
 import subprocess
 import time
+import urllib.parse
 from pathlib import Path
 
 import projects as P
+import queries as Q
 
 BENCH = Path(__file__).resolve().parent
 # BENCH_WORK: another checkout's work directory, so a worktree needs no copy of the clones and servers.
@@ -101,6 +103,54 @@ def baseline_command(project, repo):
     if project["build"] == "gradle":
         return ["./gradlew", "--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process", "testClasses"]
     return maven_command(repo) + project.get("baseline_goals", ["clean", "test-compile"])
+
+
+# A rename's edit must compile; whether the renamed lines still match a project's formatting or lint
+# rules is no part of that (a longer name rewraps a line spring-javaformat then rejects).
+MAVEN_CHECKS_OFF = ["-Dspotless.check.skip=true", "-Dspring-javaformat.skip=true", "-Dcheckstyle.skip=true",
+                    "-Denforcer.skip=true", "-Drat.skip=true", "-Dpmd.skip=true", "-Dspotbugs.skip=true",
+                    "-Dlicense.skip=true", "-Dmaven.javadoc.skip=true"]
+
+
+def compiles_with(name, project, edit):
+    """Applies a WorkspaceEdit to a copy of the project at its commit and builds it there, offline, with
+    no Lathe loaded: whether its main and test code still compile."""
+    repo = repo_of(name)
+    copy = WORK / "rename-check" / name
+    subprocess.run(["git", "worktree", "remove", "--force", str(copy)], cwd=repo, capture_output=True)
+    subprocess.run(["git", "worktree", "add", "--detach", "-q", str(copy), "HEAD"], cwd=repo, check=True)
+    try:
+        prefix = repo.as_uri() + "/"
+        for target, edits in Q.text_edits(edit).items():
+            target = urllib.parse.unquote(target)
+            if not target.startswith(prefix):
+                continue
+            path = copy / target[len(prefix):]
+            path.write_text(apply_edits(path.read_text(encoding="utf-8"), edits), encoding="utf-8")
+        command = baseline_command(project, copy) + (["--offline"] if project["build"] == "gradle" else
+                                                     ["-o"] + MAVEN_CHECKS_OFF)
+        build = subprocess.run(command, cwd=copy, env=build_env(project), capture_output=True, text=True)
+        # Why it did not compile, for the run's reader: the build's own output.
+        (WORK / ("rename-check-%s.log" % name)).write_text(build.stdout + build.stderr, encoding="utf-8")
+        return build.returncode == 0
+    finally:
+        subprocess.run(["git", "worktree", "remove", "--force", str(copy)], cwd=repo, capture_output=True)
+
+
+def apply_edits(text, edits):
+    """The text with LSP TextEdits applied, last first, so earlier ranges stay right (UTF-16 columns
+    taken as characters: the projects' sources are ASCII where they are renamed)."""
+    lines = text.split("\n")
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line) + 1)
+
+    def at(pos):
+        return offsets[pos["line"]] + pos["character"]
+
+    for e in sorted(edits, key=lambda e: at(e["range"]["start"]), reverse=True):
+        text = text[:at(e["range"]["start"])] + e["newText"] + text[at(e["range"]["end"]):]
+    return text
 
 
 def baseline_build(name, project, log):

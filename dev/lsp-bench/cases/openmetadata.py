@@ -154,3 +154,15 @@ CASES = [
         "expect": {"locations": ["OpenMetadataOperations.java:case MYSQL -> new MysqlAutoTuner();"]},
     },
 ]
+
+# An error in another module (2026-11-11 amendment): the widely used method of the queries gains a
+# parameter, saved; the open caller in another module must show the error at its call, then settle
+# without it after the revert.
+CASES += [
+    {
+        "name": "diagnostics: an error in another module",
+        "method": "textDocument/publishDiagnostics",
+        "upstream": (ENTITY, "getEntityRepository(\n", "getEntityRepository(int latheBench,\n"),
+        "downstream": ("openmetadata-integration-tests/src/test/java/org/openmetadata/it/bootstrap/TestSuiteBootstrap.java", "getEntityRepository("),
+    },
+]

@@ -27,11 +27,15 @@ CAPABILITY = {
     "textDocument/documentSymbol": "documentSymbolProvider",
     "workspace/symbol": "workspaceSymbolProvider",
     "textDocument/completion": "completionProvider",
+    "textDocument/rename": "renameProvider",
+    "textDocument/codeAction": "codeActionProvider",
     # Not a request: the diagnostics a server publishes after an edit, which every server does.
     "textDocument/publishDiagnostics": None,
 }
 # A completion's expected item must rank within this many, in the order Neovim shows them.
 COMPLETION_TOP = 20
+# The new name of a rename case.
+RENAMED = "latheRenamed"
 
 LOCATION_METHODS = ("textDocument/definition", "textDocument/typeDefinition", "textDocument/references",
                     "textDocument/implementation", "textDocument/documentHighlight")
@@ -58,7 +62,8 @@ def position(repo, at):
 
 def opened_files(cases):
     return sorted({c["at"][0] for c in cases if "at" in c} | {c["file"] for c in cases if "file" in c}
-                  | {c["edit"][0] for c in cases if "edit" in c})
+                  | {c["edit"][0] for c in cases if "edit" in c}
+                  | {c[k][0] for c in cases for k in ("upstream", "downstream", "import_removed") if k in c})
 
 
 def edited_text(repo, case):
@@ -108,10 +113,31 @@ def complete(client, repo, case, timeout):
         change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
 
 
+def text_edits(edit):
+    """{uri: [TextEdit]} of a WorkspaceEdit, from its changes or its documentChanges."""
+    found = {}
+    for uri_, edits in (edit or {}).get("changes", {}).items():
+        found.setdefault(uri_, []).extend(edits)
+    for change_ in (edit or {}).get("documentChanges", []) or []:
+        if "textDocument" in change_:
+            found.setdefault(change_["textDocument"]["uri"], []).extend(change_.get("edits", []))
+    return found
+
+
+def rename(client, repo, case, timeout):
+    """prepareRename then rename, as Neovim asks them."""
+    params = {"textDocument": {"uri": uri(repo, case["at"][0])}, "position": position(repo, case["at"])}
+    if client.__dict__.get("prepares_rename"):
+        client.request("textDocument/prepareRename", params, timeout=timeout)
+    return client.request("textDocument/rename", dict(params, newName=RENAMED), timeout=timeout)
+
+
 def ask(client, repo, case, timeout):
     method = case["method"]
     if method == "textDocument/completion":
         return complete(client, repo, case, timeout)
+    if method == "textDocument/rename":
+        return rename(client, repo, case, timeout)
     if method == "workspace/symbol":
         return client.request(method, {"query": case["query"]}, timeout=timeout)
     if method == "textDocument/documentSymbol":
@@ -184,6 +210,12 @@ def summarize(repo, case, result):
         out["text"] = hover_text(result)
     elif method == "textDocument/signatureHelp":
         out["names"] = [s.get("label", "") for s in result.get("signatures", [])]
+    elif method == "textDocument/rename":
+        edits = text_edits(result)
+        out["names"] = sorted(urllib.parse.unquote(u)[len(repo.as_uri()) + 1:] for u in edits)
+        # Occurrences of the new name, not edits: jdtls sends one edit per file spanning every use in it.
+        out["text"] = "%d file(s), %d renamed" % (
+            len(edits), sum(e.get("newText", "").count(RENAMED) for file_edits in edits.values() for e in file_edits))
     elif method == "textDocument/completion":
         out["names"] = [label_name(i.get("label", "")) for i in result["items"]][:COMPLETION_TOP]
         out["text"] = "\n".join(e.get("newText", "") for e in (result["resolved"] or {}).get("additionalTextEdits") or [])
@@ -206,6 +238,8 @@ def check(expect, summary):
     if "contains" in expect:
         return all(any(w == n or n.startswith(w + "(") or n.startswith(w + " ") or w == n.split(".")[-1]
                        for n in names) for w in expect["contains"])
+    if "rename_files" in expect:
+        return len(names) >= expect["rename_files"]
     if "completion" in expect:
         return expect["completion"] in names and ("import" not in expect or expect["import"] in summary["text"])
     if "signature_contains" in expect:

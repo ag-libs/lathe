@@ -141,3 +141,30 @@ CASES = [
         "expect": {"locations": ["Environment.java:return name;"]},
     },
 ]
+
+# An error in another module (2026-11-11 amendment): the widely used method of the queries gains a
+# parameter, saved; the open caller in another module must show the error at its call, then settle
+# without it after the revert.
+CASES += [
+    {
+        "name": "diagnostics: an error in another module",
+        "method": "textDocument/publishDiagnostics",
+        "upstream": (ENVIRONMENT, "public JerseyEnvironment jersey() {", "public JerseyEnvironment jersey(int latheBench) {"),
+        "downstream": ("dropwizard-e2e/src/main/java/com/example/app1/App1.java", ".jersey()"),
+    },
+]
+
+# Rename and imports (2026-11-11 amendment), as in the other projects' case files.
+CASES += [
+    {
+        "name": "rename: widely used method",
+        "method": "textDocument/rename",
+        "at": (ENVIRONMENT, "public JerseyEnvironment jersey()", "jersey"),
+        "expect": {"rename_files": 2},
+    },
+    {
+        "name": "code action: import a removed import",
+        "method": "textDocument/codeAction",
+        "import_removed": (ENVIRONMENT, "import io.dropwizard.health.HealthEnvironment;"),
+    },
+]
