@@ -4,9 +4,10 @@
 -- completion, cross-module go-to-definition, and running tests. It is a DEMONSTRATION you can read
 -- and borrow from -- not a config meant to replace your own ~/.config/nvim wholesale.
 --
--- Requires Neovim 0.12+ and the Java Treesitter parser (:TSInstall java). The client is the
--- standalone `ag-libs/lathe.nvim` plugin (installed below like any other); the server still comes from
--- your Maven build (`lathe:sync` writes it as each project's `.lathe/lathe-launcher.sh`).
+-- Requires Neovim 0.12+, plus the `tree-sitter` CLI and a C compiler for nvim-treesitter to build its
+-- parsers. The client is the standalone `ag-libs/lathe.nvim` plugin (installed below like any other);
+-- the server still comes from your Maven or Gradle build, which writes it as each project's
+-- `.lathe/lathe-launcher.sh`.
 
 -- Space as leader: either thumb reaches it, and it does nothing useful in normal mode on its own.
 vim.g.mapleader = " "
@@ -31,7 +32,7 @@ end
 vim.opt.rtp:prepend(lazypath)
 
 -- Lathe client: the standalone plugin from GitHub. For local development or demo recording, set
--- LATHE_NVIM_DIR to a working-tree checkout of the client to load that instead of the published repo.
+-- LATHE_NVIM_DIR to a checkout's `lathe-neovim/runtime` to load that instead of the published repo.
 local lathe_nvim_dir = vim.env.LATHE_NVIM_DIR
 local lathe_source = lathe_nvim_dir and { dir = lathe_nvim_dir } or { "ag-libs/lathe.nvim" }
 
@@ -87,7 +88,8 @@ require("lazy").setup({
         },
         signature = { enabled = true },
       })
-      -- Advertise blink's completion capabilities to every LSP server, Lathe included.
+      -- Advertise blink's completion capabilities to every LSP server. Lathe registers its own
+      -- capabilities, which win over "*", so its setup below passes blink's too.
       vim.lsp.config("*", {
         capabilities = require("blink.cmp").get_lsp_capabilities(nil, true),
       })
@@ -110,8 +112,11 @@ require("lazy").setup({
   vim.tbl_extend("force", lathe_source, {
     ft = "java",
     cmd = "LatheStart",
+    -- A pom.xml is filetype xml: load Lathe for it too, so its pom validation runs on first open.
+    event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
     config = function()
       require("lathe").setup({
+        capabilities = require("blink.cmp").get_lsp_capabilities(nil, true),
         style = { indent = { profile = "google" }, formatter = { engine = "google" } },
         format_on_save = true,
       })
@@ -148,6 +153,9 @@ require("lazy").setup({
       vim.keymap.set("n", "<leader>ts", neotest.summary.toggle, { desc = "Test Summary" })
     end,
   },
+}, {
+  -- Keep the lock file with the plugins, not in the config directory (a checkout when tried in place).
+  lockfile = vim.fn.stdpath("data") .. "/lazy-lock.json",
 })
 
 -- ---------------------------------------------------------

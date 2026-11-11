@@ -12,13 +12,19 @@ per-action keymap guide see [docs/guide/editors/neovim.md](../../docs/guide/edit
 
 ## Try it
 
-Requires **Neovim 0.12+**, the Java Treesitter parser (`:TSInstall java`), and a Maven or Gradle project
-Lathe has built (so its `.lathe/lathe-launcher.sh` exists). The config installs the client from the
-standalone `ag-libs/lathe.nvim` repo; set `LATHE_NVIM_DIR` to a working-tree checkout to load that
-instead. To try it in isolation without touching your own config:
+Requires **Neovim 0.12+**, `git`, the `tree-sitter` CLI and a C compiler (nvim-treesitter builds its
+parsers with them), and a Maven or Gradle project Lathe has built (so its `.lathe/lathe-launcher.sh`
+exists). The config installs the client from the standalone `ag-libs/lathe.nvim` repo; set
+`LATHE_NVIM_DIR` to a checkout's `lathe-neovim/runtime` to load that instead.
+
+To try it in isolation, give it its own config, data and state directories, so its plugins never mix
+with your own (`/path/to/lathe` is this repository's checkout):
 
 ```sh
-XDG_CONFIG_HOME=/path/to/lathe/examples nvim SomeFile.java
+XDG_CONFIG_HOME=/path/to/lathe/examples \
+XDG_DATA_HOME=/tmp/lathe-demo/data \
+XDG_STATE_HOME=/tmp/lathe-demo/state \
+  nvim SomeFile.java
 ```
 
 On first launch Neovim bootstraps `lazy.nvim` and downloads the plugins, including `lathe.nvim`. The

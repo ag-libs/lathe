@@ -1,21 +1,23 @@
-*lathe.txt*   Java language server for Maven projects — Neovim client
+*lathe.txt*   Java language server for Maven and Gradle projects — Neovim client
 
                                                         *lathe* *lathe.nvim*
 
-Lathe is a Java language server for Maven projects: code intelligence,
-diagnostics, and run/test/debug, built on the JDK's own compiler. This plugin
-is the Neovim client; the server is resolved and installed by your Maven build.
+Lathe is a Java language server for Maven and Gradle projects: code
+intelligence, diagnostics, and run/test/debug, built on the JDK's own
+compiler. This plugin is the Neovim client; the server is resolved and
+installed by your build.
 
 ==============================================================================
 REQUIREMENTS                                            *lathe-requirements*
 
-  - Neovim 0.12+
+  - Neovim 0.12+, on Linux or macOS
   - The Java Treesitter parser: `:TSInstall java`
-  - A Maven project whose build enables the Lathe Maven extension, built once
-    with `mvn clean test -Dlathe.capture.only=true` (this installs the
-    server and creates the `.lathe/` workspace).
+  - A Maven or Gradle project whose build enables Lathe, built once with
+    `mvn clean test -Dlathe.capture.only=true` (Maven) or
+    `./gradlew latheSync -Plathe.capture.only=true` (Gradle); this installs
+    the server and creates the `.lathe/` workspace.
 
-Installing this plugin alone is not enough — the Maven build must run too.
+Installing this plugin alone is not enough — the build must run too.
 
 ==============================================================================
 SETUP                                                   *lathe-setup*
