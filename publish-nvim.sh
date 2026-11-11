@@ -92,13 +92,16 @@ if [ "$dry_run" -eq 0 ]; then
   undo="undo the release: git push --force-with-lease origin ${tag}~1:main && git push origin :refs/tags/${tag} && git tag -d ${tag}"
   for attempt in $(seq 1 45); do
     curl -fsI "$server_pom" >/dev/null 2>&1 && break
-    conclusion="$(GH_HOST=github.com gh run list --workflow release.yml --branch "${tag}" --limit 1 \
-      --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)"
-    case "$conclusion" in
-      failure | cancelled) die "the release workflow of ${tag} ended in ${conclusion}, so lathe-server ${version} is not on Maven Central; ${undo}" ;;
+    # The workflow's result once it ended, else its status (queued, in_progress); empty without gh.
+    workflow="$(GH_HOST=github.com gh run list --workflow release.yml --branch "${tag}" --limit 1 \
+      --json status,conclusion --jq '.[0] | if .conclusion != "" then .conclusion else .status end' \
+      2>/dev/null || true)"
+    case "$workflow" in
+      failure | cancelled) die "the release workflow of ${tag} ended in ${workflow}, so lathe-server ${version} is not on Maven Central; ${undo}" ;;
     esac
     [ "$attempt" -eq 45 ] && die "lathe-server ${version} is not on Maven Central after 45 minutes; if the release workflow failed, ${undo}; otherwise rerun this once it is there"
     [ "$attempt" -eq 1 ] && echo "Waiting for lathe-server ${version} on Maven Central..."
+    echo "  $((attempt - 1)) min: not yet; release workflow ${workflow:-unknown (no gh)}"
     sleep 60
   done
 fi
