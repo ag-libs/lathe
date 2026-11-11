@@ -168,7 +168,13 @@ def untracked(ws):
 
 
 def preflight(ws, cfg, expected):
-    """Refuses to run on a tree with edited sources or a sync from another version."""
+    """Refuses to run on a tree with edited sources, a killed run's probe files, or a sync from
+    another version."""
+    mcp.lock_workspace(ws)
+    leftovers = mcp.leftover_probe_files(ws)
+    if leftovers:
+        raise SystemExit("REFUSED: a killed run left probe files in %s; delete them first:\n%s"
+                         % (ws, "\n".join(leftovers[:10])))
     dirty = dirty_java(ws)
     if dirty:
         raise SystemExit("REFUSED: %d edited .java file(s) in %s; commit or stash them first:\n%s"
@@ -348,6 +354,7 @@ def negative_checks(b, ws, f):
         b.call("bad request: file outside the workspace", "outline", {"file": str(target)},
                ok=lambda t, r: r.get("isError") and mc.clean_refusal(t), known=known)
         link = ws / "LatheProbeLink.java"
+        link.unlink(missing_ok=True)
         link.symlink_to(target)
         try:
             b.call("bad request: symlink out of the workspace", "outline", {"file": str(link)},
@@ -403,13 +410,13 @@ def restore_java(ws, created=()):
     return len(touched) + len(created)
 
 
-def write_report(cfg_name, version, head, results):
+def write_report(cfg_name, version, head, results, loaded):
     REPORTS.mkdir(parents=True, exist_ok=True)
     # One file per run, not per version: a SNAPSHOT run would overwrite the run it compares with.
     previous = sorted(REPORTS.glob("%s-*.json" % cfg_name), key=lambda p: p.stat().st_mtime)
     report = REPORTS / ("%s-%s-%s.json" % (cfg_name, version, datetime.now().strftime("%Y%m%d-%H%M%S")))
     report.write_text(json.dumps(dict(workspace=cfg_name, version=version, head=head, date=str(date.today()),
-                                      checks=results), indent=1), encoding="utf-8")
+                                      loaded=loaded, checks=results), indent=1), encoding="utf-8")
     if not previous:
         return
     before = json.loads(previous[-1].read_text(encoding="utf-8"))
@@ -417,8 +424,9 @@ def write_report(cfg_name, version, head, results):
     for check in results:
         was = times.get(check["label"])
         if was is not None and check["ms"] > 2 * was and check["ms"] - was > 500:
-            print("SLOWER      %-56s %6dms  was %dms in %s on %s"
-                  % (check["label"], check["ms"], was, before["version"], before["date"]))
+            print("SLOWER      %-56s %6dms  was %dms in %s on %s%s"
+                  % (check["label"], check["ms"], was, before["version"], before["date"],
+                     " (machine loaded)" if loaded else ""))
 
 
 def java_version(home: Path):
@@ -460,6 +468,8 @@ def main():
     version = (b.client.initialize().get("serverInfo") or {}).get("version")
     print("SERVER      %s from %s; workspace %s at %s; JDK %s (%s)"
           % (version, launcher, ws.name, head[:10], java_version(java_home), java_home))
+    print(mcp.load_line())
+    loaded = mcp.loaded()
     if version != opts.expect_version:
         b.client.close()
         raise SystemExit("REFUSED: the server reports %s, not %s" % (version, opts.expect_version))
@@ -491,7 +501,8 @@ def main():
     lifecycle_checks(b, launcher)
     # A run on another JDK is compared only with runs on that JDK.
     report_name = opts.config if not opts.server_jdk else "%s@jdk%s" % (opts.config, java_version(java_home).split(".")[0])
-    write_report(report_name, version, head, b.results)
+    print(mcp.load_line())
+    write_report(report_name, version, head, b.results, loaded or mcp.loaded())
     counts = {s: sum(1 for r in b.results if r["status"] == s) for s in ("PASS", "FAIL", "KNOWN", "NOW PASSES", "SKIP")}
     print("SUMMARY     " + " ".join("%s=%d" % (s.lower().replace(" ", "_"), n) for s, n in counts.items()))
     sys.exit(1 if b.failures() else 0)

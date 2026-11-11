@@ -177,25 +177,28 @@ RENAMES = [
 def rename_keeps_meaning(b, probe, label, target, new, watched):
     files = (probe.file, probe.caller_file)
     originals = [f.read_bytes() for f in files]
-    before = reference_counts(b, probe, watched)
-    token, word = target
-    position = probe.at(token, word) if " " in word else probe.pos(token, word)
-    text, result = b.raw("rename_symbol", dict(position, newName=new))
-    if "No references" in text:
-        b.check(label, False, "found nothing to rename: %s" % first(text))
-    elif result.get("isError") or not text.startswith("Renamed"):
-        # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
-        if "would then" in text:
-            b.check(label, True, "refused: %s" % first(text))
+    # Restored even when a check throws: every later rename expects the probe as written.
+    try:
+        before = reference_counts(b, probe, watched)
+        token, word = target
+        position = probe.at(token, word) if " " in word else probe.pos(token, word)
+        text, result = b.raw("rename_symbol", dict(position, newName=new))
+        if "No references" in text:
+            b.check(label, False, "found nothing to rename: %s" % first(text))
+        elif result.get("isError") or not text.startswith("Renamed"):
+            # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
+            if "would then" in text:
+                b.check(label, True, "refused: %s" % first(text))
+            else:
+                b.check(label, False, "refused for another reason: %s" % first(text))
         else:
-            b.check(label, False, "refused for another reason: %s" % first(text))
-    else:
-        after = reference_counts(b, probe, watched)
-        moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
-        b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses")
-    for f, original in zip(files, originals):
-        f.write_bytes(original)
-    b.raw("get_diagnostics", {"file": str(probe.file)})
+            after = reference_counts(b, probe, watched)
+            moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
+            b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses")
+    finally:
+        for f, original in zip(files, originals):
+            f.write_bytes(original)
+        b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def rename_checks(b, probe):
@@ -207,11 +210,13 @@ def rename_checks(b, probe):
 def stale_answer_check(b, probe):
     original = probe.file.read_bytes()
     probe.file.write_bytes(original.replace(b"return list;", b"return listBroken;"))
-    text = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
-    current = has_line(text, probe.line("record Leaf("))
-    b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text))
-    probe.file.write_bytes(original)
-    b.raw("get_diagnostics", {"file": str(probe.file)})
+    try:
+        text = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
+        current = has_line(text, probe.line("record Leaf("))
+        b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text))
+    finally:
+        probe.file.write_bytes(original)
+        b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def recent_fix_checks(b, probe):

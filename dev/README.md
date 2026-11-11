@@ -148,6 +148,10 @@ server the same way, so on a clone pinned to a release they run that release, no
 server change.
 It warns when the clone's HEAD is not the commit its expectations were written against (`pin` in
 `CONFIGS`).
+The battery, the staleness probe and `verify_scale.py` each lock their workspace (a second run on it
+is refused), refuse to start over probe files a killed run left behind, and print the machine's load
+(`LOAD 1m=… ncpu=…`) at start and end: a `SLOWER` or timing `WARN` taken with more than half the CPUs
+busy is marked `(machine loaded)` and says more about the machine than the server.
 It checks:
 
 - **every tool**, with answers that must hold content (references in several modules, callers, a

@@ -58,13 +58,15 @@ def main():
         runs.append(run("battery %s" % name, python + [str(DEV / "mcp_battery.py"), str(ws), name,
                                                       "--expect-version", opts.expect_version]))
         if opts.staleness:
-            runs.append(run("staleness %s" % name, python + [str(DEV / "mcp_staleness.py"), str(ws), name]))
+            runs.append(run("staleness %s" % name, python + [str(DEV / "mcp_staleness.py"), str(ws), name,
+                                                             "--expect-version", opts.expect_version]))
     if opts.old_jdk and (clones / "dropwizard" / ".lathe").is_dir():
         runs.append(run("battery dropwizard (server on %s)" % Path(opts.old_jdk).name,
                         python + [str(DEV / "mcp_battery.py"), str(clones / "dropwizard"), "dropwizard",
                                   "--expect-version", opts.expect_version, "--server-jdk", opts.old_jdk]))
     if opts.scale and (clones / "helidon" / ".lathe").is_dir():
-        runs.append(run("verify_change scale helidon", python + [str(DEV / "verify_scale.py"), str(clones / "helidon")]))
+        runs.append(run("verify_change scale helidon", python + [str(DEV / "verify_scale.py"), str(clones / "helidon"),
+                                                                "--expect-version", opts.expect_version]))
 
     report = DEV / "reports" / ("release-%s-%s.md" % (opts.expect_version, date.today()))
     report.parent.mkdir(parents=True, exist_ok=True)

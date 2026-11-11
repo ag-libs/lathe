@@ -3,12 +3,14 @@
 file tools, git, or another process would) and check every answer reflects the disk at once.
 
     python3 -I dev/mcp_staleness.py <workspace> <dropwizard|equalsverifier|helidon> [scenario ...]
+                                    [--expect-version 0.2.2]
 
 Restores every file it touched. One PASS/FAIL line per check; exit 1 on any FAIL. A check that
 fails is retried after 3 s and 8 s and tagged [LAG] or [NEVER]. The branch scenario needs
 LATHE_PROBE_OLD_REF (a git ref: its Java sources are checked out, the build files are kept).
 Uses the launcher dev/mcp.py picks: LATHE_MCP_LAUNCHER, else the workspace's own .lathe/ launcher.
 """
+import argparse
 import os
 import re
 import subprocess
@@ -126,7 +128,7 @@ class Probe:
 
     def start(self):
         self.client = mcp.McpClient(mcp.launcher_for(self.ws), self.ws)
-        self.client.initialize()
+        return (self.client.initialize().get("serverInfo") or {}).get("version")
 
     def stop(self):
         if self.client:
@@ -158,7 +160,8 @@ class Probe:
     def warn_if_slower(self, label, limit_ms, why):
         """A timing worth a look but not a failure: the machine's load can explain it."""
         if self.last_ms > limit_ms:
-            line = "WARN %-58s %6dms over %dms: %s" % (label, self.last_ms, limit_ms, why)
+            line = "WARN %-58s %6dms over %dms: %s%s" % (label, self.last_ms, limit_ms, why,
+                                                         " (machine loaded)" if mcp.loaded() else "")
             print(line, flush=True)
             self.log.append(line)
 
@@ -198,7 +201,8 @@ class Probe:
         for path in self.created:
             if path.exists():
                 path.unlink()
-        touched = [x for x in git(self.ws, "diff", "--name-only").split()
+        # --relative: paths from the workspace, which may sit below the repository root.
+        touched = [x for x in git(self.ws, "diff", "--name-only", "--relative").split()
                    if not x.startswith(".mvn/")]
         if touched:
             git(self.ws, "checkout", "--", *touched)
@@ -543,22 +547,29 @@ def s_build(pr: Probe):
     c = pr.cfg
     pkg = c["up_pkg"]
     down = pr.p(c["down_file"])
-    log = open(Path(tempfile.gettempdir()) / ("lathe-probe-build-%s.log" % pr.ws.name), "w")
+    log = open(Path(tempfile.gettempdir()) / ("lathe-probe-build-%s.log" % pr.ws.name), "w", encoding="utf-8")
     proc = subprocess.Popen([str(pr.ws / ".lathe/lathe-sync.sh"), c["up_module"]], cwd=pr.ws,
                             stdout=log, stderr=subprocess.STDOUT)
-    lock = pr.ws / ".lathe/lathe.lock"
-    for _ in range(600):
-        if lock.exists() or proc.poll() is not None:
-            break
-        time.sleep(0.1)
-    pr.record(lock.exists(), "M0 reactor lock appears during the sync")
-    up = pr.new_file("%s/%s/LatheProbeBuild.java" % (c["up_src"], pkg.replace(".", "/")),
-                     "package %s;\n\npublic class LatheProbeBuild {\n  public static int b() { return 1; }\n}\n"
-                     % pkg)
-    append_member(down, "\n  static int latheProbeBuild() { return %s.LatheProbeBuild.b(); }\n" % pkg)
-    pr.check("M1 query during the build says a build is running", "get_diagnostics", {"file": str(down)},
-             lambda t: "build" in t.lower() and "running" in t.lower(), show=True)
-    rc = proc.wait(timeout=900)
+    # Ended either way: a sync left running would build into the next scenario.
+    try:
+        lock = pr.ws / ".lathe/lathe.lock"
+        for _ in range(600):
+            if lock.exists() or proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        pr.record(lock.exists(), "M0 reactor lock appears during the sync")
+        up = pr.new_file("%s/%s/LatheProbeBuild.java" % (c["up_src"], pkg.replace(".", "/")),
+                         "package %s;\n\npublic class LatheProbeBuild {\n  public static int b() { return 1; }\n}\n"
+                         % pkg)
+        append_member(down, "\n  static int latheProbeBuild() { return %s.LatheProbeBuild.b(); }\n" % pkg)
+        pr.check("M1 query during the build says a build is running", "get_diagnostics", {"file": str(down)},
+                 lambda t: "build" in t.lower() and "running" in t.lower(), show=True)
+        rc = proc.wait(timeout=900)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        log.close()
     pr.record(rc == 0, "M2 sync finished", "rc=%d" % rc)
     pr.check("M3 after the build, the edit made during it is caught up", "get_diagnostics", {"file": str(down)},
              lambda t: "cannot find symbol" not in t, show=True, settle=True)
@@ -598,13 +609,32 @@ SCENARIOS = dict(add=s_add_use_delete, javadoc=s_javadoc, impl=s_implementer, br
 
 
 def main():
-    ws, cfg = Path(sys.argv[1]).resolve(), CONFIGS[sys.argv[2]]
-    names = sys.argv[3:] or list(SCENARIOS)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("workspace")
+    parser.add_argument("config", choices=sorted(CONFIGS))
+    parser.add_argument("scenarios", nargs="*", help="any of: %s (default: all)" % " ".join(SCENARIOS))
+    parser.add_argument("--expect-version", help="refuse to run against another server version")
+    opts = parser.parse_args()
+    ws, cfg = Path(opts.workspace).resolve(), CONFIGS[opts.config]
+    names = opts.scenarios or list(SCENARIOS)
+    unknown = [n for n in names if n not in SCENARIOS]
+    if unknown:
+        parser.error("unknown scenario(s): %s" % ", ".join(unknown))
+    mcp.lock_workspace(ws)
+    leftovers = mcp.leftover_probe_files(ws)
+    if leftovers:
+        raise SystemExit("REFUSED: a killed run left probe files in %s; delete them first: %s" % (ws, leftovers[:10]))
     dirty = [x for x in git(ws, "status", "--porcelain").splitlines() if ".mvn/" not in x]
     if dirty:
-        raise SystemExit("workspace not clean: %s" % dirty[:5])
+        raise SystemExit("REFUSED: workspace not clean: %s" % dirty[:5])
     pr = Probe(ws, cfg)
-    pr.start()
+    version = pr.start()
+    print("SERVER %s from %s; workspace %s at %s" % (version, mcp.launcher_for(ws), ws.name,
+                                                    git(ws, "rev-parse", "--short=10", "HEAD").strip()))
+    print(mcp.load_line(), flush=True)
+    if opts.expect_version and version != opts.expect_version:
+        pr.stop()
+        raise SystemExit("REFUSED: the server reports %s, not %s" % (version, opts.expect_version))
     try:
         for n in names:
             print("== scenario %s" % n, flush=True)
@@ -621,6 +651,7 @@ def main():
         touched = pr.restore()
         left = [x for x in git(ws, "status", "--porcelain").splitlines() if ".mvn/" not in x]
         print("RESTORED", touched, "LEFT", left)
+    print(mcp.load_line())
     print("SUMMARY fail=%d" % pr.failures)
     sys.exit(1 if pr.failures else 0)
 
