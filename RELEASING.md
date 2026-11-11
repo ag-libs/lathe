@@ -51,7 +51,10 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    The **Release** workflow runs: it stamps the version, builds, signs, and publishes all modules to
    Maven Central and the Gradle plugin to the Gradle Plugin Portal, then creates the tag's GitHub release
    with generated notes and the VS Code extension's `.vsix` attached. If the `release` environment requires approval, approve the run.
-4. **Publish the Neovim client mirror — on every release.** Once the tag is on origin:
+4. **Publish the Neovim client mirror — on every release.** `release.sh` runs it after the push when you
+   confirm; run it yourself if you pushed by hand. It waits until `lathe-server` of that version is on
+   Maven Central (up to 45 minutes), so a release Central refused never leaves the client ahead of every
+   server. Once the tag is on origin:
    ```bash
    ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag
    ```
@@ -62,6 +65,23 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    Publish even when the client did not change, so every server version has a matching client tag.
 5. Verify the artifacts at
    [central.sonatype.com/namespace/io.github.ag-libs](https://central.sonatype.com/namespace/io.github.ag-libs).
+
+## Maven Central's monthly limits
+
+Central limits each organisation's publishing per calendar month (UTC): release count, size and file
+count, the free tier's limits shown in its Usage Center. Past a 30-day grace period, a release over a
+limit is refused; the grace period renews after two months under the limits.
+File count binds first: every module publishes its jar, sources, Javadoc and POM, each with a signature
+and MD5 and SHA-1 checksums (`<checksums>required</checksums>`; SHA-256 and SHA-512 would add two files
+each), about 200 files a release, so about five releases a month fit the free tier's 1,000.
+
+`release.sh` checks before it touches anything: `dev/central_usage.py` counts this month's files from
+Central's public listings, for every artifact under the namespace, and refuses when the next release
+would exceed `LATHE_CENTRAL_FILE_LIMIT` (default 1000; copy the current limit from the Usage Center, as
+Central has no usage API). Run it any time to see where the month stands:
+```bash
+python3 -I dev/central_usage.py
+```
 
 ## How it works
 

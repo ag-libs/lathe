@@ -487,6 +487,9 @@
             <extensions>true</extensions>
             <configuration>
               <publishingServerId>central</publishingServerId>
+              <!-- MD5 and SHA-1 only, what Central requires: SHA-256 and SHA-512 add two files per
+                   artifact file against its monthly file limit (dev/central_usage.py). -->
+              <checksums>required</checksums>
               <autoPublish>true</autoPublish>
               <waitUntil>published</waitUntil>
               <!--
