@@ -117,7 +117,8 @@ require("lazy").setup({
     config = function()
       require("lathe").setup({
         capabilities = require("blink.cmp").get_lsp_capabilities(nil, true),
-        style = { indent = { profile = "google" }, formatter = { engine = "google" } },
+        -- The formatter is the project's own (Spotless on Maven, else its lathe-style.json).
+        style = { indent = { profile = "google" } },
         format_on_save = true,
       })
       -- Run the `main` under the cursor from .lathe/ bytecode; output streams into Lathe's docked

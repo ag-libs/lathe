@@ -525,33 +525,6 @@ A VS Code command over the same server command.
 
 ---
 
-## EG-078 — No formatter detection on a Gradle build
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: formatting in the editor and `format_file` on Gradle builds.**
-
-Found while documenting the Gradle plugin (2026-10-30), from its design notes.
-
-### Observed behaviour
-
-On Maven the sync reads the project's Spotless configuration and runs the exact formatter release it pins.
-The Gradle plugin reads no formatting plugin, so a Gradle project formats only through a committed
-`lathe-style.json` with a command engine.
-
-### Fix direction
-
-Detect the Spotless Gradle plugin's Java step (its name is readable; its version and options are not, per the
-design spike), or document the `lathe-style.json` recipe as the supported path.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)

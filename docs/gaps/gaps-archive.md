@@ -7,6 +7,39 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-078 — No formatter detection on a Gradle build — done
+
+**Status: done.** Fixed by [Declared Formatters](../done/lathe-declared-formatters.md) (2026-11-11).
+
+**Value: medium — Size: M**
+
+**Affects: formatting in the editor and `format_file` on Gradle builds.**
+
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+On Maven the sync reads the project's Spotless configuration and runs the exact formatter release it pins.
+The Gradle plugin reads no formatting plugin, so a Gradle project formats only through a committed
+`lathe-style.json` with a command engine.
+
+### Fix direction
+
+[Declared Formatters](../done/lathe-declared-formatters.md): the project names its formatter in
+`lathe-style.json`, and every sync, Gradle's included, resolves its jars.
+Reading the Spotless Gradle plugin's step was rejected: its options are out of reach, and observing what it resolves
+is wrong on real builds.
+
+### Regression targets
+
+- `LatheFormatterFunctionalTest` (Gradle TestKit): a declared formatter resolved and re-resolved under the
+  configuration cache; the Spotless and pinned-defaults warnings; a declaration that cannot be completed.
+- `declared-formatter` (Maven invoker fixture): a project without Spotless resolving a declared `aosp`.
+- `FormatterStepsTest`, `WorkspaceStyleTest.read_declarationAndItsResolution_generatedSpecRuns`,
+  `WorkspaceWatcherTest.poll_styleFileCreatedAfterSync_reportedAsBuildFileChange`.
+
+---
+
 ## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr — done
 
 **Status: done.**

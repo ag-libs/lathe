@@ -1,11 +1,8 @@
--- Verifies lathe.setup()'s formatter wiring from the formatting-and-indentation
--- design: the server `formatter` init option and the format-on-save autocmd. The
+-- Verifies lathe.setup()'s formatter wiring: no editor-wide formatter (a project declares its own),
+-- and the format-on-save autocmd. The
 -- autocmd is installed whenever format_on_save == true; the actual formatting is
 -- gated at runtime on the server's advertised capability (checked per attach),
 -- which itself is covered in LatheLanguageServerTest.
---
--- The default (formatter absent) case runs first because vim.lsp.config merges
--- successive config calls, so only the first setup observes a fresh config.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -24,22 +21,29 @@ local function lspattach_count()
   return #vim.api.nvim_get_autocmds({ group = "LatheFormatOnSave", event = "LspAttach" })
 end
 
--- Default: no style init option, no format-on-save autocmd.
+-- Default: no init options for the server, no format-on-save autocmd.
 lathe.setup({})
-spec.check("default: no style init option", vim.lsp.config["lathe"].init_options.lathe.style, nil)
+spec.check("default: no init options", vim.lsp.config["lathe"].init_options, nil)
 spec.check("default: no format-on-save autocmd", lspattach_count(), 0)
 
--- style.formatter is forwarded to the server as the global-default init option.
+-- style.formatter is no longer read: the formatter is the project's. Passing it warns, once.
+local warnings = {}
+local notify = vim.notify
+vim.notify = function(msg, level)
+  if level == vim.log.levels.WARN then
+    table.insert(warnings, msg)
+  end
+end
 lathe.setup({ style = { formatter = { engine = "google" } }, format_on_save = true })
-spec.check(
-  "google: formatter engine init option",
-  vim.lsp.config["lathe"].init_options.lathe.style.formatter.engine,
-  "google"
-)
-spec.check("format_on_save: autocmd installed", lspattach_count(), 1)
-
--- format_on_save == false: no save autocmd regardless of the formatter.
 lathe.setup({ style = { formatter = { engine = "google" } }, format_on_save = false })
+vim.notify = notify
+spec.check("global formatter: not sent to the server", vim.lsp.config["lathe"].init_options, nil)
+spec.check("global formatter: warned once", #warnings, 1)
+spec.check(
+  "global formatter: points at lathe-style.json",
+  warnings[1] and warnings[1]:find("lathe-style.json", 1, true) ~= nil,
+  true
+)
 spec.check("no save: no format-on-save autocmd", lspattach_count(), 0)
 
 -- format_on_save wires the autocmd even without a global formatter option: the formatter can come

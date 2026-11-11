@@ -139,9 +139,10 @@ in its working directory or above it, so a client that starts it in a module dir
 
 ### What runs automatically
 
-On Maven, the sync derives the formatter from your `spotless-maven-plugin` `<java>` config; a Gradle
-build has no formatter detection yet (see [its limits](gradle.md#known-limits)), so use a committed
-`lathe-style.json` as described under [Overriding it](#overriding-it):
+The formatter is the project's own; there is no editor-wide formatter setting.
+On Maven, the sync derives it from your `spotless-maven-plugin` `<java>` config.
+Elsewhere — a Gradle build, or Maven without Spotless — you declare it in a `lathe-style.json`, as
+described under [Declaring it](#declaring-it), and the sync resolves it the same way.
 
 | Spotless step | Lathe engine | Range formatting | Notes |
 |---|---|---|---|
@@ -159,6 +160,7 @@ first failure names the cause.
 The formatter is the exact release the project's Spotless pins (its `<version>`, else that Spotless
 version's default), resolved by sync and run in-process from an isolated classloader — no Maven at
 format time, so a format takes milliseconds (the first one in a session also loads the formatter).
+A change of formatter takes effect after the sync and a restart of the language server.
 
 Lathe runs the **formatter step only**.
 Other steps in the same `<java>` section — `importOrder`, `removeUnusedImports` (beyond what
@@ -178,19 +180,42 @@ Other limits:
 - If the formatter cannot run (a missing jar, an unsupported JDK), the first failure shows a message with
   the reason; later ones are only logged.
 
-### Overriding it
+### Declaring it
 
-Two places select the formatter, in precedence order:
+A `lathe-style.json` at the repo root names the formatter, for any build tool:
 
-1. **Per project: a committed `lathe-style.json`** at the repo root.
-   It overrides the generated `.lathe/style.json` **section by section**: a `formatter` section here
-   replaces the detected formatter, and an `indent` section replaces the detected indent, while a
-   section you leave out still comes from sync.
-   Edit the committed `lathe-style.json`, not `.lathe/style.json`, which every sync regenerates.
-2. **Editor global default** — the `style` you pass to the client (for example the Neovim `setup()`; see
-   the [Neovim cheatsheet](editors/neovim.md)) applies when neither file defines a formatter.
+```json
+{ "formatter": { "engine": "google", "version": "1.28.0", "options": { "style": "AOSP" } } }
+```
 
-Engines you can select there:
+- `engine`: `google`, `aosp`, `palantir`, `eclipse`, or one of the engines below that need no jars.
+- `version` (optional): the formatter's release, not Spotless's.
+  Left out, it is the default of the build's Spotless, or, in a build without Spotless, of the Spotless
+  release Lathe pins.
+  On Gradle, only a Spotless applied in the root project counts; when only subprojects apply it, declare
+  the version, and the sync warns until you do.
+- `options` (optional): the Spotless step's options from the table above (`reorderImports`,
+  `reflowLongStrings`, `formatJavadoc`, `style`, `groupArtifact`); for `eclipse`, `file` names the
+  profile, relative to the repo root.
+
+Every sync resolves the declared formatter's jars through your build (its repositories, mirrors and
+credentials) and writes them to the generated `.lathe/style.json`, with the indentation the formatter
+implies; nobody writes a classpath.
+Editing `lathe-style.json` makes the editor ask for a sync, as a build-file change does.
+
+Commit the file so the whole team gets the formatter, or keep a personal one out of version control
+with `.git/info/exclude`.
+
+On a Gradle build that applies Spotless, the sync warns until a `lathe-style.json` declares a formatter:
+Lathe cannot read Spotless's settings there.
+Declare the one Spotless runs, or `none` to keep formatting off.
+
+The file overrides the generated `.lathe/style.json` **section by section**: a `formatter` section
+replaces the detected formatter, and an `indent` section replaces the detected indent, while a section
+you leave out still comes from sync.
+Edit `lathe-style.json`, not `.lathe/style.json`, which every sync regenerates.
+
+Engines that need no jars:
 
 ```jsonc
 // turn Lathe formatting off for this project:
@@ -212,10 +237,6 @@ Engines you can select there:
   temporary file.
   Running the build per save takes seconds; with `mvnd`, or a running Gradle daemon, it is far less.
 - Both run from the workspace root, format whole files only, and pay process startup on every format.
-
-`google`, `aosp`, `palantir`, and `eclipse` need the jars sync resolves, so they come from the
-Spotless configuration; naming one in `lathe-style.json` or the editor default without a `classpath`
-leaves formatting off (the server logs `run .lathe/lathe-sync.sh`).
 
 ## Coexisting with another Java language server (jdtls)
 

@@ -12,11 +12,9 @@
 --
 -- Options (all optional):
 --   capabilities        LSP capabilities table; defaults to vim.lsp.protocol.make_client_capabilities()
---   style               table; the global-default style, overridden per project by a workspace
---                       lathe-style.json / .lathe/style.json. Same shape as that file:
---                         style.formatter { engine = "google"|"aosp"|"palantir"|"eclipse"|"command"
---                                         |"command-file"|"none", command = {..} }
---                                         server-side save-formatter (default: none).
+--   style               table; the fallback style, overridden per project by a workspace
+--                       lathe-style.json / .lathe/style.json. Only its indent is read here: the
+--                       formatter is the project's own, declared in lathe-style.json.
 --                         style.indent    { profile = "google"|"editorconfig", block, continuation }
 --                                         editorconfig follows Neovim's built-in EditorConfig
 --                                         (4-space fallback); google uses 2/4-space widths. block and
@@ -183,6 +181,24 @@ function M.check_protocol(server_protocol)
   vim.notify(msg, vim.log.levels.WARN, { title = "Lathe" })
 end
 
+-- Formatting is a project's own: a formatter in setup() would format every project the same, and
+-- had no jars to run a pinned formatter from anyway. Said once per session.
+local global_formatter_warned = false
+
+function M.warn_if_global_formatter(style)
+  if global_formatter_warned or not (style and style.formatter) then
+    return
+  end
+
+  global_formatter_warned = true
+  vim.notify(
+    "Lathe: setup()'s style.formatter is no longer read; declare the project's formatter in its "
+      .. "lathe-style.json instead (see :help lathe-formatter).",
+    vim.log.levels.WARN,
+    { title = "Lathe" }
+  )
+end
+
 function M.setup(opts)
   opts = opts or {}
   -- Read by warn_if_not_ready (via ftplugin) to tell "installed but not configured"
@@ -192,6 +208,7 @@ function M.setup(opts)
   M.warn_if_double_loaded()
 
   require("lathe.indent").setup({ indent = opts.style and opts.style.indent })
+  M.warn_if_global_formatter(opts.style)
 
   local augroup = vim.api.nvim_create_augroup("LathePlugin", { clear = true })
 
@@ -221,9 +238,6 @@ function M.setup(opts)
       end
     end,
     capabilities = opts.capabilities or vim.lsp.protocol.make_client_capabilities(),
-    -- The global-default style (same shape as a workspace style file); a project's file overrides it.
-    -- The server reads style.formatter; indent is consumed client-side by lathe.indent.
-    init_options = { lathe = { style = opts.style } },
   })
   vim.lsp.enable("lathe")
 

@@ -31,6 +31,19 @@ For `setup()` options, the full feature/endpoint reference, and a suggested
 keymap set, see the guide:
   https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md
 
+==============================================================================
+FORMATTING                                              *lathe-formatter*
+
+The formatter is the project's own, not an editor setting. On Maven, Lathe
+runs the formatter the project's Spotless configuration names. Otherwise,
+declare it in `lathe-style.json` at the project root: >json
+    { "formatter": { "engine": "google", "version": "1.28.0" } }
+<
+The next build or `:LatheSync` resolves its jars; restart the server to use
+it. Engines: `google`, `aosp`, `palantir`, `eclipse`, `command`,
+`command-file`, `none`. See the installation guide:
+  https://github.com/ag-libs/lathe/blob/main/docs/guide/installation.md
+
 Report issues against the monorepo (this repository is a generated mirror):
   https://github.com/ag-libs/lathe
 
