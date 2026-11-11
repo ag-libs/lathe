@@ -72,8 +72,9 @@ class MavenSyncScriptTest {
     properties.setProperty("maven.home", absolute("/opt/maven").toString());
     properties.setProperty("java.home", absolute("/opt/jdk").toString());
 
-    final SyncScript packaged = MavenSyncScript.of(properties, new Properties(), "package", false);
-    final SyncScript tested = MavenSyncScript.of(properties, new Properties(), "test", false);
+    final SyncScript packaged =
+        MavenSyncScript.of(properties, new Properties(), "package", List.of());
+    final SyncScript tested = MavenSyncScript.of(properties, new Properties(), "test", List.of());
 
     assertThat(packaged.goals()).containsExactly("package", "-DskipTests");
     assertThat(packaged.testsGoals())
@@ -84,41 +85,58 @@ class MavenSyncScriptTest {
         .containsExactly("test", "-Dlathe.capture.only=true", "-DfailIfNoTests=false");
   }
 
-  // Lathe brought in from the command line comes back in every sync, with its jars required and as
-  // absolute paths; a project that registers Lathe itself keeps its own pin, so nothing is
-  // replayed.
+  // An ext class path counts as Lathe's when it carries lathe-maven-extension's jar; its entries
+  // resolve against the directory the build started in, as Maven resolves them.
   @Test
-  void script_personalActivation_isReplayedWithFailOnError_unlessTheProjectRegistersLathe() {
-    final var system = new Properties();
-    system.setProperty("maven.home", absolute("/opt/maven").toString());
-    system.setProperty("java.home", absolute("/opt/jdk").toString());
-    final Path extension = absolute("/home/me/lathe boot/lathe-maven-extension.jar");
-    final Path core = absolute("/home/me/lathe boot/lathe-core.jar");
+  void activation_extClassPathWithLathe_resolvesItsEntries_anotherExtensionAloneIsNotLathe() {
+    final Path startedIn = absolute("/home/me/project");
+    final Path core = absolute("/home/me/lathe boot/lathe-core-1.0.jar");
     final var user = new Properties();
     user.setProperty(
         MavenSyncScript.EXT_CLASS_PATH,
-        " %s%s%s%s".formatted(extension, File.pathSeparator, File.pathSeparator, core));
+        " boot/lathe-maven-extension-1.0.jar%s%s%s"
+            .formatted(File.pathSeparator, File.pathSeparator, core));
+    final var other = new Properties();
+    other.setProperty(MavenSyncScript.EXT_CLASS_PATH, absolute("/opt/corp/ext.jar").toString());
+
+    assertThat(MavenSyncScript.activation(user, startedIn))
+        .containsExactly(startedIn.resolve("boot").resolve("lathe-maven-extension-1.0.jar"), core);
+    assertThat(MavenSyncScript.activation(other, startedIn)).isEmpty();
+    assertThat(MavenSyncScript.activation(new Properties(), startedIn)).isEmpty();
+  }
+
+  // Lathe brought in from the command line comes back in every sync, its jars required, with
+  // failOnError when the build had it; no activation is today's script.
+  @Test
+  void script_personalActivation_isReplayedWithFailOnErrorAndItsJarsRequired() {
+    final var system = new Properties();
+    system.setProperty("maven.home", absolute("/opt/maven").toString());
+    system.setProperty("java.home", absolute("/opt/jdk").toString());
+    final Path extension = absolute("/home/me/lathe boot/lathe-maven-extension-1.0.jar");
+    final Path core = absolute("/home/me/lathe boot/lathe-core-1.0.jar");
+    final List<Path> activation = List.of(extension, core);
+    final var user = new Properties();
     user.setProperty(MavenSyncScript.FAIL_ON_ERROR, "false");
 
-    final SyncScript personal = MavenSyncScript.of(system, user, MavenSyncScript.SYNC_PHASE, false);
-    final SyncScript team = MavenSyncScript.of(system, user, MavenSyncScript.SYNC_PHASE, true);
-    user.remove(MavenSyncScript.FAIL_ON_ERROR);
+    final SyncScript personal =
+        MavenSyncScript.of(system, user, MavenSyncScript.SYNC_PHASE, activation);
+    final SyncScript team = MavenSyncScript.of(system, user, MavenSyncScript.SYNC_PHASE, List.of());
     final SyncScript compileErrorsStop =
-        MavenSyncScript.of(system, user, MavenSyncScript.SYNC_PHASE, false);
+        MavenSyncScript.of(system, new Properties(), MavenSyncScript.SYNC_PHASE, activation);
 
+    final String classPath =
+        "-Dmaven.ext.class.path=%s%s%s".formatted(extension, File.pathSeparator, core);
     assertThat(personal.requiredFiles()).containsExactly(extension, core);
     assertThat(personal.fixedArgs())
         .containsExactly(
             "--no-transfer-progress",
             "-Dmaven.build.cache.enabled=false",
-            "-Dmaven.ext.class.path=%s%s%s".formatted(extension, File.pathSeparator, core),
+            classPath,
             "-Dmaven.compiler.failOnError=false");
     assertThat(team.requiredFiles()).isEmpty();
     assertThat(team.fixedArgs())
         .containsExactly("--no-transfer-progress", "-Dmaven.build.cache.enabled=false");
-    assertThat(compileErrorsStop.fixedArgs())
-        .last()
-        .isEqualTo("-Dmaven.ext.class.path=%s%s%s".formatted(extension, File.pathSeparator, core));
+    assertThat(compileErrorsStop.fixedArgs()).last().isEqualTo(classPath);
   }
 
   private static SyncScript script(final String mavenHome, final String mvndHome) {
@@ -129,7 +147,7 @@ class MavenSyncScriptTest {
       properties.setProperty("mvnd.home", absolute(mvndHome).toString());
     }
 
-    return MavenSyncScript.of(properties, new Properties(), MavenSyncScript.SYNC_PHASE, false);
+    return MavenSyncScript.of(properties, new Properties(), MavenSyncScript.SYNC_PHASE, List.of());
   }
 
   // On Windows a path from '/' has no drive, so it is not absolute until it gains the current one.

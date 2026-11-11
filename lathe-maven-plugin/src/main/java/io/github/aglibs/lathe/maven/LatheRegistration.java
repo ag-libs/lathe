@@ -14,6 +14,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
+import org.xml.sax.helpers.DefaultHandler;
 
 // Whether the project registers lathe-maven-extension itself: in .mvn/extensions.xml, or as a
 // build extension of the root POM, inherited ones included. A build started with Lathe on
@@ -25,15 +26,21 @@ final class LatheRegistration {
   private static final String EXTENSION_ELEMENT = "extension";
   private static final String GROUP_ID_ELEMENT = "groupId";
   private static final String ARTIFACT_ID_ELEMENT = "artifactId";
-  private static final String DISALLOW_DOCTYPE =
-      "http://apache.org/xml/features/disallow-doctype-decl";
+  private static final String EXTERNAL_GENERAL_ENTITIES =
+      "http://xml.org/sax/features/external-general-entities";
+  private static final String EXTERNAL_PARAMETER_ENTITIES =
+      "http://xml.org/sax/features/external-parameter-entities";
+  private static final String LOAD_EXTERNAL_DTD =
+      "http://apache.org/xml/features/nonvalidating/load-external-dtd";
 
   private LatheRegistration() {}
 
-  static boolean registersLathe(final Path workspaceRoot, final MavenProject rootProject) {
+  // mavenProjectDir is where Maven reads .mvn/ from (its multiModuleProjectDirectory), which a
+  // build started with -f on a module still finds above it.
+  static boolean registersLathe(final Path mavenProjectDir, final MavenProject rootProject) {
     return rootProject.getBuildExtensions().stream()
             .anyMatch(extension -> isLathe(extension.getGroupId(), extension.getArtifactId()))
-        || inCoreExtensions(workspaceRoot.resolve(MavenJvmArgs.MVN_DIR).resolve(EXTENSIONS_FILE));
+        || inCoreExtensions(mavenProjectDir.resolve(MavenJvmArgs.MVN_DIR).resolve(EXTENSIONS_FILE));
   }
 
   private static boolean inCoreExtensions(final Path file) {
@@ -53,15 +60,22 @@ final class LatheRegistration {
         .anyMatch(LatheRegistration::isLatheExtension);
   }
 
-  // The JDK's parser: Maven 3.9 gives plugins Xpp3Dom but not its builder. No DTDs, as for any
-  // XML read from a project.
+  // The JDK's parser: Maven 3.9 gives plugins Xpp3Dom but not its builder. A DOCTYPE is
+  // allowed, as Maven allows it, but nothing outside the file is read. Errors are thrown, not
+  // printed to the build's output.
   private static Document parse(final Path file)
       throws IOException, ParserConfigurationException, SAXException {
     final var factory = DocumentBuilderFactory.newInstance();
     factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-    factory.setFeature(DISALLOW_DOCTYPE, true);
+    factory.setFeature(EXTERNAL_GENERAL_ENTITIES, false);
+    factory.setFeature(EXTERNAL_PARAMETER_ENTITIES, false);
+    factory.setFeature(LOAD_EXTERNAL_DTD, false);
+    factory.setXIncludeAware(false);
+    factory.setExpandEntityReferences(false);
+    final var builder = factory.newDocumentBuilder();
+    builder.setErrorHandler(new DefaultHandler());
     try (final var input = Files.newInputStream(file)) {
-      return factory.newDocumentBuilder().parse(input);
+      return builder.parse(input);
     }
   }
 

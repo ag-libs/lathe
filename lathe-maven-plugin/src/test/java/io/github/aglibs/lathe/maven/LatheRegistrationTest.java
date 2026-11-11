@@ -66,6 +66,25 @@ class LatheRegistrationTest {
         .isFalse();
   }
 
+  // Maven reads a DOCTYPE; nothing it names outside the file is fetched.
+  @Test
+  void registersLathe_extensionsXmlWithDoctype_isRead() throws Exception {
+    writeExtensionsXml(
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE extensions SYSTEM "http://example.invalid/extensions.dtd">
+        <extensions>
+          <extension>
+            <groupId>io.github.ag-libs</groupId>
+            <artifactId>lathe-maven-extension</artifactId>
+            <version>1</version>
+          </extension>
+        </extensions>
+        """);
+
+    assertThat(LatheRegistration.registersLathe(workspaceRoot, project())).isTrue();
+  }
+
   @Test
   void registersLathe_malformedExtensionsXml_throwsNamingTheFile() throws Exception {
     final Path file = writeExtensionsXml("<extensions><extension>");

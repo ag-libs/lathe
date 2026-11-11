@@ -21,7 +21,7 @@ The rest of this page applies to every build.
 
 Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe/` on the machine.
 
-**In the project — `.lathe/`** (per-build, add to `.gitignore`), written by the build as it compiles and
+**In the project — `.lathe/`** (per-build, out of git through the `.gitignore` Lathe writes inside it), written by the build as it compiles and
 tests; each build's guide says when ([Maven](maven.md#what-the-build-writes-to-lathe),
 [Gradle](gradle.md#what-the-build-keeps-current)):
 

@@ -49,9 +49,9 @@ settingsEvaluated {
 
 A build that commits the plugin keeps its own version; the init script then steps aside.
 
-Keep `.lathe/` out of version control (`echo '.lathe/' >> .gitignore`) and out of any check that scans the
-whole project directory ([troubleshooting](troubleshooting.md)), then build once; this records your
-project's setup without running the tests:
+Then build once; this records your project's setup without running the tests (`.lathe/` keeps itself out of
+version control, as Lathe writes a `.gitignore` inside it; keep it out of any check that scans the whole project
+directory too, see [troubleshooting](troubleshooting.md)):
 
 ```sh
 ./gradlew latheSync -Plathe.capture.only=true

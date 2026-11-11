@@ -155,7 +155,7 @@ Every later sync (`:LatheSync`, a server prompt, the terminal) runs `.lathe/lath
 The Gradle script already replays the `--init-script` files that registered Lathe (`GradleSyncScript`).
 
 `MavenSyncScript` (`lathe-maven-plugin`) renders into the script:
-- the `-Dmaven.ext.class.path` value and `-Dmaven.compiler.failOnError=false`, as passed to the build, when the project does not register Lathe itself ([Never loading Lathe twice](#never-loading-lathe-twice));
+- the `-Dmaven.ext.class.path` value (its entries made absolute against the directory the build started in, as Maven resolves them) and `-Dmaven.compiler.failOnError=false`, as passed to the build, when one entry is `lathe-maven-extension`'s jar and the project does not register Lathe itself ([Never loading Lathe twice](#never-loading-lathe-twice)); another extension brought in that way is not Lathe's to replay;
 - `-f <pom>` when the session's POM is not `<root>/pom.xml`.
 
 ### Versions over time
@@ -168,7 +168,8 @@ The Gradle script already replays the `--init-script` files that registered Lath
 3. **Messages.** No registration found and `.lathe/` present means a personal workspace (the same text check as the dialog); there, the client's protocol-mismatch warning says "run `:LatheInit`" instead of "update the Lathe build plugin".
    A different version with the same protocol stays silent, as today.
 4. **A missing bootstrap file fails the sync.** [Spiked](#spike-results-2026-11-11): Maven ignores a missing `maven.ext.class.path` jar and the build succeeds without Lathe, leaving `.lathe/` stale with no message; Gradle stops on a missing `--init-script`, in its own words.
-   So `SyncScript` checks the files it replays before it runs, as it checks the tool today, and names `:LatheInit` when one is gone.
+   So the Maven sync script checks the activation jars before it runs, as it checks the tool, and asks to set Lathe up again when one is gone (editor-neutral wording: every client runs the script).
+   The Gradle script requires nothing: Gradle's own message is clear, and an unrelated init script a user once passed must not be reported as Lathe's.
 5. **No automatic cleanup** of old bootstrap directories (about 500 KB each); a docs line says they are safe to delete.
 
 ### Plain mode

@@ -101,7 +101,7 @@ final class SyncCoordinator {
                   session.getSystemProperties(),
                   session.getUserProperties(),
                   syncPhase,
-                  LatheRegistration.registersLathe(workspaceRoot, session.getTopLevelProject()))));
+                  replayedActivation(workspaceRoot))));
       // The whole reactor only: a forced sync under -pl sees part of it.
       if (!isPartialReactor()) {
         CapturePruner.prune(workspaceRoot, ReactorProjects.sourceTrees(workspaceRoot, projects));
@@ -180,6 +180,27 @@ final class SyncCoordinator {
                 LatheFlags.SYNC_PHASE,
                 MavenSyncScript.PACKAGE_PHASE,
                 syncPhase));
+  }
+
+  // Lathe brought in on -Dmaven.ext.class.path, which the sync script replays unless the project
+  // registers Lathe too: the -D copy wins, so replaying it would override the project's pin. The
+  // registration is read only when there is an activation to replay.
+  private List<Path> replayedActivation(final Path workspaceRoot) {
+    final var request = session.getRequest();
+    final String baseDirectory = request.getBaseDirectory();
+    final List<Path> activation =
+        MavenSyncScript.activation(
+            session.getUserProperties(),
+            baseDirectory == null ? workspaceRoot : Path.of(baseDirectory));
+    if (activation.isEmpty()) {
+      return List.of();
+    }
+
+    final var multiModuleDir = request.getMultiModuleProjectDirectory();
+    final Path mavenProjectDir = multiModuleDir == null ? workspaceRoot : multiModuleDir.toPath();
+    return LatheRegistration.registersLathe(mavenProjectDir, session.getTopLevelProject())
+        ? List.of()
+        : activation;
   }
 
   private boolean isPartialReactor() {

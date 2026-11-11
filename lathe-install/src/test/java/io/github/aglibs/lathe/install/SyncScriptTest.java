@@ -126,20 +126,22 @@ class SyncScriptTest {
   void render_requiredFileGone_failsWithTheSetupHint_whilePresentRunsTheBuild() throws Exception {
     final Path extension =
         Files.writeString(tool.resolveSibling("lathe ext'1.jar"), "", StandardCharsets.UTF_8);
-    final Path initScript =
-        Files.writeString(tool.resolveSibling("lathe.init.gradle.kts"), "", StandardCharsets.UTF_8);
+    // An ext class path may name a classes directory too.
+    final Path classes = Files.createDirectories(tool.resolveSibling("ext classes"));
+    final Path core =
+        Files.writeString(tool.resolveSibling("lathe-core.jar"), "", StandardCharsets.UTF_8);
     final var script =
         new SyncScript(
             tool,
             jdk,
-            List.of(extension, initScript),
+            List.of(extension, classes, core),
             FIXED,
             List.of("sync"),
             List.of(),
             List.of(),
             List.of());
     assertThat(run(script).stdout()).endsWith("args=--quiet -Dcache=false sync");
-    Files.delete(initScript);
+    Files.delete(core);
 
     final Process process = start(script);
 
@@ -147,8 +149,9 @@ class SyncScriptTest {
     assertThat(process.exitValue()).isEqualTo(1);
     assertThat(read(process.getInputStream().readAllBytes())).isEmpty();
     assertThat(read(process.getErrorStream().readAllBytes()))
-        .contains("%s not found; it brought Lathe into this build".formatted(initScript))
-        .contains(":LatheInit");
+        .contains(
+            "%s not found; it brought Lathe into this build, so set Lathe up for this project again"
+                .formatted(core));
   }
 
   // The render_ tests run the cmd script on Windows; this checks the text for what cmd.exe needs.

@@ -85,8 +85,9 @@ public final class WorkspaceSync {
   }
 
   // .lathe/ keeps itself out of git, so a project set up without changing it stays unchanged. Only
-  // when missing: a user may have edited it.
-  static void writeGitignore(final Path workspaceRoot) {
+  // when missing: a user may have edited it. Also where a front-end first creates .lathe/, so a
+  // first build that fails before the sync leaves none in sight.
+  public static void writeGitignore(final Path workspaceRoot) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var file = latheDir.resolve(GITIGNORE_FILE);
     if (Files.exists(file)) {

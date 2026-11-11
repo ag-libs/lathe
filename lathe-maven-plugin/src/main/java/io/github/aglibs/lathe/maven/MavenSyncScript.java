@@ -71,16 +71,14 @@ final class MavenSyncScript {
   // -amd: Maven does not add the dependents' own upstream, so on a large reactor a dependent fails
   // to resolve a module outside the scope; callers that need dependents name them. The build cache
   // stays off, since a cache hit skips javac and the test fork, where Lathe captures.
-  // A personal activation is replayed, its jars required, unless the project registers Lathe too.
+  // A personal activation (its jars, from activation) is replayed and its jars required.
   static SyncScript of(
       final Properties systemProperties,
       final Properties userProperties,
       final String phase,
-      final boolean projectRegistersLathe) {
+      final List<Path> activation) {
     final int position = SYNC_PHASES.indexOf(phase);
     final int testPosition = SYNC_PHASES.indexOf(TEST_PHASE);
-    final List<Path> activation =
-        projectRegistersLathe ? List.of() : activationJars(userProperties);
     return new SyncScript(
         LatheLayout.Maven.runningTool(systemProperties, Platform.WINDOWS),
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
@@ -99,12 +97,23 @@ final class MavenSyncScript {
         List.of("-am"));
   }
 
-  // Absolute, as the sync script runs from the workspace root, not where this build started.
-  private static List<Path> activationJars(final Properties userProperties) {
-    return Stream.of(userProperties.getProperty(EXT_CLASS_PATH, "").split(File.pathSeparator))
-        .filter(entry -> !entry.isBlank())
-        .map(entry -> Path.of(entry.trim()).toAbsolutePath())
-        .toList();
+  // The -Dmaven.ext.class.path entries when they bring Lathe in (one is lathe-maven-extension's
+  // jar), else none: another extension brought in that way is not Lathe's to replay. Resolved as
+  // Maven does, against the directory the build started in, since the sync script runs from the
+  // workspace root.
+  static List<Path> activation(final Properties userProperties, final Path invocationDir) {
+    final List<Path> entries =
+        Stream.of(userProperties.getProperty(EXT_CLASS_PATH, "").split(File.pathSeparator))
+            .filter(entry -> !entry.isBlank())
+            .map(entry -> invocationDir.resolve(entry.trim()).normalize())
+            .toList();
+    return entries.stream().anyMatch(MavenSyncScript::isLatheExtensionJar) ? entries : List.of();
+  }
+
+  private static boolean isLatheExtensionJar(final Path entry) {
+    final String name = entry.getFileName().toString();
+    return name.startsWith("%s-".formatted(LatheLayout.Maven.EXTENSION_ARTIFACT_ID))
+        && name.endsWith(".jar");
   }
 
   private static Stream<String> activationArgs(

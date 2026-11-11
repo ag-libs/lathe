@@ -114,9 +114,9 @@ class LatheSyncTaskFunctionalTest {
 
   // A personal setup on a broken branch: the init script brings Lathe in and keeps a compile error
   // in core from stopping the build, so app, which depends on it, is captured too. Every later sync
-  // replays the init script and stops when it is gone; .lathe/ keeps itself out of git.
+  // replays the init script; .lathe/ keeps itself out of git.
   @Test
-  void sync_initScriptOnCodeThatDoesNotCompile_capturesEveryProjectAndRequiresTheScript()
+  void sync_initScriptOnCodeThatDoesNotCompile_capturesEveryProjectAndReplaysTheScript()
       throws Exception {
     final var fixture =
         new GradleFixture(dir)
@@ -147,7 +147,7 @@ class LatheSyncTaskFunctionalTest {
     assertThat(params("app", LatheLayout.CLASSES_DIR)).isRegularFile();
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
     assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
-        .contains("--init-script", "lathe.init.gradle.kts", "it brought Lathe into this build");
+        .contains("--init-script", "lathe.init.gradle.kts");
     assertThat(lathe.resolve(".gitignore")).hasContent("*");
   }
 

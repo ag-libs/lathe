@@ -17,8 +17,9 @@ import org.slf4j.LoggerFactory;
 // are that build's own, so the script chooses nothing. A front-end only fills this in; testsGoals
 // and moduleArgs are both empty when it ignores arguments (OpenJDK re-reads the whole build).
 // Everything but fixedArgs is spliced in unquoted, so those tokens must not contain whitespace.
-// requiredFiles are what the build was started with to bring Lathe in (an init script, extension
-// jars): the script stops when one is gone, as Maven would otherwise build without Lathe, silently.
+// requiredFiles are what the build was started with to bring Lathe in (extension jars, or a
+// directory): the script stops when one is gone, as Maven would otherwise build without Lathe,
+// silently.
 public record SyncScript(
     Path tool,
     Path javaHome,
@@ -31,7 +32,7 @@ public record SyncScript(
 
   private static final Logger LOG = LoggerFactory.getLogger(SyncScript.class);
   private static final String SETUP_GONE =
-      "not found; it brought Lathe into this build, so run that setup again: :LatheInit in Neovim";
+      "not found; it brought Lathe into this build, so set Lathe up for this project again";
 
   public SyncScript {
     requiredFiles = List.copyOf(requiredFiles);
@@ -114,7 +115,7 @@ public record SyncScript(
 
     return """
         for required in %s; do
-          if [ ! -f "$required" ]; then
+          if [ ! -e "$required" ]; then
             echo "lathe-sync: $required %s" >&2
             exit 1
           fi
