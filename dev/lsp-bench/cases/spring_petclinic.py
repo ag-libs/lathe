@@ -132,3 +132,35 @@ CASES = [
         "expect": {"contains": ["PetValidator"]},
     },
 ]
+
+# Completion, pre-registered in the 2026-11-11 amendment: a line typed into the definition query's file
+# (after the anchor line, inside a method), completed at its end; the expected item must rank within
+# the first 20, and the unimported type's must add its import. These are Lathe's own, not java-index's.
+CREATION_FORM = "public String initCreationForm() {"
+CASES += [
+    {
+        "name": "completion: member of a project type",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, "\t\tOwner latheBench = new Owner(); latheBench."),
+        "expect": {"completion": "getPets"},
+    },
+    {
+        "name": "completion: an unimported project type",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, "\t\tSpe"),
+        "expect": {"completion": "Specialty", "import": "org.springframework.samples.petclinic.vet.Specialty"},
+    },
+    {
+        "name": "completion: a JDK type's static member",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, "\t\tList."),
+        "expect": {"completion": "of"},
+    },
+    {
+        "name": "completion: a lambda parameter",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM,
+                 "\t\tjava.util.function.Function<Owner, String> latheBench = o -> o."),
+        "expect": {"completion": "getLastName"},
+    },
+]

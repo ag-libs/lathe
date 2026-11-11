@@ -17,7 +17,8 @@ from pathlib import Path
 import projects as P
 
 BENCH = Path(__file__).resolve().parent
-WORK = BENCH / ".work"
+# BENCH_WORK: another checkout's work directory, so a worktree needs no copy of the clones and servers.
+WORK = Path(os.environ.get("BENCH_WORK", str(BENCH / ".work")))
 REPOS = WORK / "repos"
 SERVERS = WORK / "servers"
 LATHE_VERSION = os.environ.get("BENCH_LATHE_VERSION", "0.3.99-c15d3a55")

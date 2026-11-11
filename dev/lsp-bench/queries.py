@@ -8,6 +8,7 @@ its occurrence on the line) or `file` or `query`, and `expect`, a hand-written c
 the answer summaries follow java-index's harness (benchmark/bench.py), so spring-petclinic's results
 compare with its published ones.
 """
+import re
 import urllib.parse
 from pathlib import Path
 
@@ -25,7 +26,10 @@ CAPABILITY = {
     "textDocument/signatureHelp": "signatureHelpProvider",
     "textDocument/documentSymbol": "documentSymbolProvider",
     "workspace/symbol": "workspaceSymbolProvider",
+    "textDocument/completion": "completionProvider",
 }
+# A completion's expected item must rank within this many, in the order Neovim shows them.
+COMPLETION_TOP = 20
 
 LOCATION_METHODS = ("textDocument/definition", "textDocument/typeDefinition", "textDocument/references",
                     "textDocument/implementation", "textDocument/documentHighlight")
@@ -51,11 +55,55 @@ def position(repo, at):
 
 
 def opened_files(cases):
-    return sorted({c["at"][0] for c in cases if "at" in c} | {c["file"] for c in cases if "file" in c})
+    return sorted({c["at"][0] for c in cases if "at" in c} | {c["file"] for c in cases if "file" in c}
+                  | {c["edit"][0] for c in cases if "edit" in c})
+
+
+def edited_text(repo, case):
+    """The file with the case's line typed in after its anchor line, and the position at its end."""
+    path, anchor, typed = case["edit"]
+    lines = (repo / path).read_text(encoding="utf-8").split("\n")
+    row = next(i for i, line in enumerate(lines) if anchor in line) + 1
+    return "\n".join(lines[:row] + [typed] + lines[row:]), {"line": row, "character": len(typed)}
+
+
+def change(client, repo, path, text):
+    """Sends the whole document, as one change, at its next version."""
+    versions = client.__dict__.setdefault("versions", {})
+    versions[path] = versions.get(path, 1) + 1
+    client.notify("textDocument/didChange", {
+        "textDocument": {"uri": uri(repo, path), "version": versions[path]}, "contentChanges": [{"text": text}]})
+
+
+def label_name(label):
+    """The name an item completes, without jdtls's ' - package' or a signature."""
+    match = re.match(r"[\w$]+", label.strip())
+    return match.group(0) if match else label
+
+
+def complete(client, repo, case, timeout):
+    """Types the case's line, asks for completion at its end, and resolves the expected item when the
+    server defers its details (jdtls does): the time a user waits for the item to apply."""
+    path = case["edit"][0]
+    text, pos = edited_text(repo, case)
+    change(client, repo, path, text)
+    try:
+        result = client.request("textDocument/completion", {"textDocument": {"uri": uri(repo, path)}, "position": pos},
+                                timeout=timeout)
+        items = result.get("items", []) if isinstance(result, dict) else result or []
+        items = sorted(items, key=lambda i: i.get("sortText") or i.get("label", ""))
+        wanted = next((i for i in items if label_name(i.get("label", "")) == case["expect"]["completion"]), None)
+        if wanted and "additionalTextEdits" not in wanted and client.__dict__.get("resolves_completion"):
+            wanted = client.request("completionItem/resolve", wanted, timeout=timeout)
+        return {"items": items, "resolved": wanted}
+    finally:
+        change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
 
 
 def ask(client, repo, case, timeout):
     method = case["method"]
+    if method == "textDocument/completion":
+        return complete(client, repo, case, timeout)
     if method == "workspace/symbol":
         return client.request(method, {"query": case["query"]}, timeout=timeout)
     if method == "textDocument/documentSymbol":
@@ -128,6 +176,9 @@ def summarize(repo, case, result):
         out["text"] = hover_text(result)
     elif method == "textDocument/signatureHelp":
         out["names"] = [s.get("label", "") for s in result.get("signatures", [])]
+    elif method == "textDocument/completion":
+        out["names"] = [label_name(i.get("label", "")) for i in result["items"]][:COMPLETION_TOP]
+        out["text"] = "\n".join(e.get("newText", "") for e in (result["resolved"] or {}).get("additionalTextEdits") or [])
     return out
 
 
@@ -147,6 +198,8 @@ def check(expect, summary):
     if "contains" in expect:
         return all(any(w == n or n.startswith(w + "(") or n.startswith(w + " ") or w == n.split(".")[-1]
                        for n in names) for w in expect["contains"])
+    if "completion" in expect:
+        return expect["completion"] in names and ("import" not in expect or expect["import"] in summary["text"])
     if "signature_contains" in expect:
         return any(expect["signature_contains"] in n for n in names)
     return bool(names or locations or summary["text"])
