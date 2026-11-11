@@ -69,6 +69,9 @@
     <assertj.version>3.27.7</assertj.version>
     <mockito.version>5.24.0</mockito.version>
     <spotless.version>3.10.4</spotless.version>
+    <!-- The spotless-lib and spotless-lib-extra that spotless-maven-plugin ${spotless.version} ships: the
+         Spotless whose formatter defaults a build without Spotless of its own gets. -->
+    <spotless-lib.version>4.10.4</spotless-lib.version>
     <google-java-format.version>1.35.0</google-java-format.version>
     <palantir-java-format.version>2.103.0</palantir-java-format.version>
     <!-- Lombok for the tests and the lombok invoker fixture, never for Lathe itself; 1.18.48 runs on

@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.CapturePruner;
+import io.github.aglibs.lathe.install.FormatterSteps;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ResolvedJar;
@@ -120,7 +121,7 @@ final class SyncCoordinator {
           workspaceRoot,
           projects,
           session.getSystemProperties().getProperty(MAVEN_OPTS_PROPERTY, ""),
-          style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
+          style == null ? List.of() : FormatterSteps.javacGrants(style.formatter()));
     }
   }
 

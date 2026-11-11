@@ -21,8 +21,6 @@
     <!-- The fixtures' Lathe cache, under a path with a space, so the launchers and their argfiles
          are tested with one. -->
     <lathe.it.cache>${project.build.directory}/it home/.cache/lathe</lathe.it.cache>
-    <!-- The spotless-lib and spotless-lib-extra that spotless-maven-plugin ${spotless.version} ships. -->
-    <spotless-lib.version>4.10.4</spotless-lib.version>
   </properties>
 
   <dependencies>
@@ -134,38 +132,6 @@
 
   <build>
     <plugins>
-      <plugin>
-        <!-- Tests read Spotless's step defaults from real Spotless libraries in target/, loaded in an
-             isolated classloader the way sync loads a project's; it is never on the test class path. -->
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>copy-test-spotless-lib</id>
-            <goals>
-              <goal>copy</goal>
-            </goals>
-            <phase>process-test-resources</phase>
-            <configuration>
-              <outputDirectory>${project.build.directory}/test-spotless</outputDirectory>
-              <artifactItems>
-                <artifactItem>
-                  <groupId>com.diffplug.spotless</groupId>
-                  <artifactId>spotless-lib</artifactId>
-                  <version>${spotless-lib.version}</version>
-                  <destFileName>spotless-lib.jar</destFileName>
-                </artifactItem>
-                <artifactItem>
-                  <groupId>com.diffplug.spotless</groupId>
-                  <artifactId>spotless-lib-extra</artifactId>
-                  <version>${spotless-lib.version}</version>
-                  <destFileName>spotless-lib-extra.jar</destFileName>
-                </artifactItem>
-              </artifactItems>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
