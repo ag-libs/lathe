@@ -165,6 +165,25 @@ Written last, from the final reports, as `docs/guide/` page linked from the READ
 - The catalogue of disagreements with the build.
 - Where jdtls is better.
 
+The reports hold about 150 values per server and project, some 1,700 in all, too many for a reader.
+The page shows two levels, the headline set fixed here before any stage 1b result exists, so it cannot be chosen to flatter either server.
+
+**Headline: ten values per project, both servers side by side**
+1. Time to a first answer on a fresh checkout: Lathe's build with test capture plus its ready time, against jdtls's import plus its ready time.
+2. Reopening the project: the warm ready time.
+3. Memory at the same heap: peak and idle.
+4. Navigation: the median latency over the queries, and how many were right.
+5. Completion: the median latency, and how many positions offered the expected item.
+6. Typing an error: the time until it shows.
+7. An error in another module: the time until it shows.
+8. Errors against the build: the errors each server misses, and those it reports that the build does not.
+9. A branch switch: the time until the answers are right again, or never.
+10. Running one test: the time to its result.
+
+Each headline value is the median the reports give; a server that cannot do it on a project (jdtls importing Fineract) shows why, not a blank.
+
+**Below it:** "where jdtls is better", every loss in its own words; the Neovim setup of each, in prose; and per project the full report with every value, its raw results and the command that reproduces it.
+
 ## Order
 
 Stage 0 first; stage 1 (spring-petclinic, then the large projects) and stage 2 can run in parallel; stage 3 follows from what they find; stage 4 last.
