@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
@@ -196,6 +197,27 @@ class MavenStyleTest {
 
     assertThat(written).isNull();
     assertThat(file).doesNotExist();
+  }
+
+  // A declared engine with no jars (none, a command) replaces Spotless's formatter in the server:
+  // the sync keeps the indent Spotless implies, but resolves nothing (no resolver here) and grants
+  // nothing.
+  @Test
+  void write_declaredEngineWithoutJars_keepsSpotlessIndentResolvesNothing() throws Exception {
+    final MavenProject root = withSpotless(project("root", "pom"), "<googleJavaFormat/>", "3.0.0");
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\":{\"engine\":\"none\"}}");
+
+    final WorkspaceStyleData granted =
+        new MavenStyle(null, new SystemStreamLog()).write(tmp, root, List.of(root));
+
+    assertThat(granted).isNull();
+    final WorkspaceStyleData generated =
+        Json.read(
+            tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE),
+            WorkspaceStyleData.class);
+    assertThat(generated.indent().block()).isEqualTo(2);
+    assertThat(generated.formatter().classpath()).isEmpty();
   }
 
   private MavenProject project(final String name, final String packaging) {

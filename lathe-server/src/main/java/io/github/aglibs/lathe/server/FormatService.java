@@ -131,7 +131,7 @@ final class FormatService {
     if (engine == null) {
       final String reason =
           pinned
-              ? "The project's formatter is not resolved yet: run `%s`, then restart Lathe."
+              ? "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it), then restart Lathe."
                   .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
               : "No formatter for this workspace: the project declares none (no formatter in %s, and on Maven no Spotless Java step); declare one there to format here."
                   .formatted(LatheLayout.STYLE_SHARED_FILE);

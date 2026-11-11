@@ -44,10 +44,8 @@ final class MavenStyle {
   // Spotless Java formatter) so the caller can grant what the formatter needs.
   WorkspaceStyleData write(
       final Path workspaceRoot, final MavenProject rootProject, final List<MavenProject> projects) {
-    // Only a pinned declaration has jars to resolve; any other replaces the detected formatter in
-    // the server, section by section, and keeps the indent Spotless implies.
-    final Optional<FormatterSpec> declared = declared(workspaceRoot).filter(FormatterSteps::pinned);
-    if (declared.isPresent()) {
+    final Optional<FormatterSpec> declared = declared(workspaceRoot);
+    if (declared.isPresent() && FormatterSteps.pinned(declared.get().engine())) {
       return writeDeclared(workspaceRoot, declared.get(), rootProject, projects);
     }
 
@@ -59,6 +57,13 @@ final class MavenStyle {
 
     final Plugin spotless = spotlessPlugin(styleSource.get());
     final WorkspaceStyleData detected = detect(spotless);
+    // Another declaration (none, a command) replaces the detected formatter in the server, section
+    // by section: keep the indent Spotless implies, but resolve and grant nothing it never runs.
+    if (declared.isPresent()) {
+      StyleWriter.write(workspaceRoot, detected);
+      return null;
+    }
+
     if (LatheFlags.FORMATTER_NONE.equals(detected.formatter().engine())) {
       log.warn(
           "[sync] formatter Spotless java formatter has no in-process engine, formatting disabled;"
@@ -67,7 +72,7 @@ final class MavenStyle {
 
     final FormatterSpec formatter =
         withLocalProfile(detected.formatter(), styleSource.get().getBasedir().toPath())
-            .map(spec -> resolver.resolve(spec, spotless.getVersion()))
+            .map(spec -> resolver.resolve(spec, versionOf(spotless)))
             .orElse(detected.formatter());
     final var style = new WorkspaceStyleData(formatter, detected.indent());
     StyleWriter.write(workspaceRoot, style);
@@ -85,7 +90,7 @@ final class MavenStyle {
         Stream.concat(Stream.of(rootProject), projects.stream())
             .map(MavenStyle::spotlessPlugin)
             .filter(Objects::nonNull)
-            .map(Plugin::getVersion)
+            .map(MavenStyle::versionOf)
             .findFirst()
             .orElse("");
     final FormatterSpec formatter =
@@ -95,6 +100,12 @@ final class MavenStyle {
     final var style = new WorkspaceStyleData(formatter, FormatterSteps.indent(formatter));
     StyleWriter.write(workspaceRoot, style);
     return style;
+  }
+
+  // A plugin the POM declares without a version has none in the model; Lathe then takes the
+  // defaults of the Spotless it pins.
+  private static String versionOf(final Plugin spotless) {
+    return Objects.requireNonNullElse(spotless.getVersion(), "");
   }
 
   // The formatter section of the committed lathe-style.json; a malformed file declares none, and

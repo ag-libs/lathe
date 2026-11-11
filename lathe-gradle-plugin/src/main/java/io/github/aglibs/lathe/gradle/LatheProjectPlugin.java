@@ -113,7 +113,15 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 LatheFactsTask.class,
                 task -> {
                   task.getFacts()
-                      .set(project.provider(() -> Json.toJson(ProjectFacts.of(module(project)))));
+                      .set(
+                          project.provider(
+                              () ->
+                                  Json.toJson(
+                                      ProjectFacts.of(
+                                          module(project),
+                                          project
+                                              .getPluginManager()
+                                              .hasPlugin(LatheFormatter.SPOTLESS_PLUGIN)))));
                   task.getFactsFile()
                       .set(
                           LatheWorkspaceTask.factsFile(

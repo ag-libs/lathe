@@ -241,13 +241,13 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   // with; declaring "none" silences this.
   private void warnUnformatted(final List<ProjectFacts> facts) {
     if (getDeclaredEngine().isPresent()) {
-      final var declared = new FormatterSpec(getDeclaredEngine().get(), List.of());
-      if (FormatterSteps.pinned(declared)) {
+      final String engine = getDeclaredEngine().get();
+      if (FormatterSteps.pinned(engine)) {
         getLogger()
             .warn(
                 "[lathe] formatter {} declared in {} could not be completed, formatting disabled;"
                     + " see the warning when the build was configured",
-                declared.engine(),
+                engine,
                 LatheLayout.STYLE_SHARED_FILE);
       }
 

@@ -38,11 +38,12 @@ record ProjectFacts(
     runnerClasspath = runnerClasspath != null ? List.copyOf(runnerClasspath) : List.of();
   }
 
-  // A project without Java: its directory only.
-  static ProjectFacts of(final String module) {
+  // A project without Java: its directory, and whether it applies Spotless (a root formatting the
+  // whole build's sources often does).
+  static ProjectFacts of(final String module, final boolean spotless) {
     return new ProjectFacts(
         module, List.of(), List.of(), null, 0, List.of(), List.of(), List.of(), List.of(),
-        List.of(), false);
+        List.of(), spotless);
   }
 
   // Known only when the facts task runs: after any task that generates sources, and resolved then.

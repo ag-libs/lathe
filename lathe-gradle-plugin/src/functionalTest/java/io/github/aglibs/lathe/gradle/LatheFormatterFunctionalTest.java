@@ -68,21 +68,8 @@ class LatheFormatterFunctionalTest {
   @Test
   void sync_spotlessApplied_warnsUntilAFormatterIsDeclaredWithItsVersion() throws Exception {
     final var fixture =
-        app()
-            .file("app/build.gradle", "plugins { id 'java'\n id 'com.diffplug.spotless' }\n")
-            .file(
-                "buildSrc/src/main/java/StandInSpotless.java",
-                """
-                import org.gradle.api.Plugin;
-                import org.gradle.api.Project;
-
-                public class StandInSpotless implements Plugin<Project> {
-                  public void apply(Project project) {}
-                }
-                """)
-            .file(
-                "buildSrc/src/main/resources/META-INF/gradle-plugins/com.diffplug.spotless.properties",
-                "implementation-class=StandInSpotless\n");
+        withStandInSpotless(app())
+            .file("app/build.gradle", "plugins { id 'java'\n id 'com.diffplug.spotless' }\n");
 
     final var undeclared = fixture.runner("latheSync").build();
     fixture.file(LatheLayout.STYLE_SHARED_FILE, "{\"formatter\": {\"engine\": \"aosp\"}}");
@@ -98,6 +85,15 @@ class LatheFormatterFunctionalTest {
         .doesNotContain(SPOTLESS_WARNING)
         .doesNotContain("the Spotless Lathe pins");
     assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+  }
+
+  // A root without Java that applies Spotless to the whole build's sources is noticed too.
+  @Test
+  void sync_spotlessAppliedInARootWithoutJava_warns() throws Exception {
+    final var fixture =
+        withStandInSpotless(app()).file("build.gradle", "plugins { id 'com.diffplug.spotless' }\n");
+
+    assertThat(fixture.runner("latheSync").build().getOutput()).contains(SPOTLESS_WARNING);
   }
 
   // A declaration that cannot be completed (an Eclipse profile that is not there) is reported by
@@ -117,6 +113,25 @@ class LatheFormatterFunctionalTest {
     assertThat(List.of(first.getOutput(), reused.getOutput()))
         .allMatch(output -> output.contains("formatter eclipse declared in lathe-style.json"));
     assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+  }
+
+  // A plugin under Spotless's id, so the fixture needs no plugin portal: the sync only asks
+  // whether a project applies it.
+  private static GradleFixture withStandInSpotless(final GradleFixture fixture) throws Exception {
+    return fixture
+        .file(
+            "buildSrc/src/main/java/StandInSpotless.java",
+            """
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class StandInSpotless implements Plugin<Project> {
+                  public void apply(Project project) {}
+                }
+                """)
+        .file(
+            "buildSrc/src/main/resources/META-INF/gradle-plugins/com.diffplug.spotless.properties",
+            "implementation-class=StandInSpotless\n");
   }
 
   private WorkspaceStyleData style() throws Exception {
