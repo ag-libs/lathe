@@ -102,6 +102,12 @@ How each item is built from what exists:
 | Disk and the project tree | `servers.jdtls_prepare`'s workspace and configuration directories | a `du` after the warm run: jdtls's `-data` and configuration, `.lathe/`; the shared installs apart; `git status --ignored` for the files each server writes into the tree; a report column | S |
 | Setup in Neovim | the editor guides | a short prose table | S |
 
+Projects: the stage 1 projects, without Apache Fineract (jdtls does not import it; reported as such, with Lathe's numbers alone), and with spring-petclinic built through its Gradle build as the small Gradle case.
+
+Time: about 20 hours of an idle machine in all, estimated from the stage 1 runs and the release battery:
+the queries at the one heap about 6 h, the build row with test capture and its baseline about 1 h, the editing loop in every run about 4 h, the outside changes in sessions of their own (three per server and project) about 7–8 h, diagnostics against the build about 3 h.
+So they are gathered in sessions, one project and one group at a time, as the amendment sets out; building the tooling first is the larger cost, about a week in several pull requests.
+
 Risks to settle while building it:
 - jdtls may publish nothing for a clean file (`jdtls.JdtlsClient.open` gives up after 8 s), so "until clean" waits on the publish for the edited version or a quiet period, not on any publish.
 - Each server debounces edits its own way; the times are reported as they are, with the time until the error is gone as well as until it appears, as jdtls can publish an intermediate list.

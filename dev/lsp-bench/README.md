@@ -126,6 +126,14 @@ Then every row with its raw results and the command that reproduces it, the rows
   - **Whose setup.** One user throughout: Neovim as the client, with jdtls on vscode-java's settings (the 2026-11-07 setup, now at the same heap as Lathe).
     The client side (what it sends after outside changes, how it runs a test) follows Neovim and nvim-jdtls; the server side follows vscode-java, as a Neovim user's own settings vary (often no heap limit, a Lombok agent added by hand) and the page names the setup it measured instead of measuring each.
     The heap applies to the servers only; the builds and the test JVMs run with their own defaults.
+  - **Gathered in sessions, one at a time.** The measurements need about 20 hours of an idle machine, so they are gathered in sessions, each one project and one group of measurements (the queries; the editing loop; the outside changes; diagnostics against the build), in the order of the design's stage 1b.
+    Within a session both servers are measured, alternating, as before; sessions may fall on different days, and each published value names its session (date, machine load, versions).
+    The Lathe build, jdtls and the projects' commits stay the pinned ones across all sessions; a session on another version starts the round again.
+    The outside changes (rename with its compile, the branch switch, the build-file change) run in sessions of their own, three times per server and project, not inside every cold and warm run.
+  - **Apache Fineract** leaves the new measurements: jdtls does not import it (the 2026-11-07 amendment), so they would compare nothing.
+    It stays in the report as a project Lathe serves and jdtls does not, with the reason and Lathe's own numbers (its build, its readiness and its answers to the queries, at the same heap), and the headline says so.
+  - **spring-petclinic built with Gradle**, a project of its own (`spring-petclinic-gradle`): the same commit (`500158f7`), which carries a Gradle build beside its Maven one, and the same java-index queries; the small Gradle case beside Hibernate ORM's large one.
+    jdtls imports it through Gradle with its Maven import turned off (`java.import.maven.enabled=false`), as it would otherwise take the `pom.xml`; Lathe syncs it through its Gradle plugin, as its other Gradle projects.
   - **The editing loop and outside changes**, measured on every project both servers import, with positions fixed in each project's case file before its first measured run, by the rules below.
     Latency is reported as for the queries: the first answer, then median and 95th percentile over the repeats.
     1. **Completion**, four positions in the main module's file of the definition query: member access after `.` on a project-type receiver; the first three letters of a project type the file does not import; after `.` on a JDK class's static member access (`Math.`, `List.`); on a lambda parameter inside a lambda body.
