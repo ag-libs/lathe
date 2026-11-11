@@ -211,6 +211,41 @@ local FIXTURES = {
     6,
   },
   {
+    "first argument of a chain's root call: two continuations deep",
+    {
+      "class C {",
+      "  List<String> m() {",
+      "    return Stream.of(",
+      "            first, second)",
+      "        .map(x -> x)",
+      "        .toList();",
+      "  }",
+      "}",
+    },
+    4,
+    12,
+  },
+  {
+    "first argument of a call no chain follows: one continuation (control)",
+    { "class C {", "  int m() {", "    return compute(", "        first, second);", "  }", "}" },
+    4,
+    8,
+  },
+  {
+    "first argument of a call inside the chain: one continuation (control)",
+    {
+      "class C {",
+      "  List<String> m() {",
+      "    return list.stream()",
+      "        .collect(",
+      "            Collectors.toList());",
+      "  }",
+      "}",
+    },
+    5,
+    12,
+  },
+  {
     "text block content keeps its indent",
     {
       "class C {",

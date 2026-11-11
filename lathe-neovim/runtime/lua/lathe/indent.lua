@@ -695,6 +695,47 @@ local function text_block_indent(bufnr, lnum, current, prev_lnum)
   return vim.fn.indent(lnum)
 end
 
+-- The first argument of a call that roots a method chain broken onto the next lines (`Stream.of(`
+-- ... `)` then `.map(` on its own line) sits two continuations deep: google-java-format adds the
+-- chain's level to the arguments'. Only the tree sees the chain below; while it is still being
+-- typed, the argument takes the usual single continuation.
+local function chain_root_argument_indent(bufnr, lnum, current, prev_lnum, prev)
+  if not prev_lnum or not ends_with_open_bracket(prev) or starts_with_closer(current) then
+    return nil
+  end
+
+  local root = parser_root(bufnr, lnum)
+  if not root then
+    return nil
+  end
+
+  local paren_col = #prev:gsub("%s+$", "") - 1
+  local arguments =
+    root:descendant_for_range(prev_lnum - 1, paren_col, prev_lnum - 1, paren_col + 1)
+  if arguments and arguments:type() ~= "argument_list" then
+    arguments = arguments:parent()
+  end
+
+  local call = arguments and arguments:type() == "argument_list" and arguments:parent()
+  local chain = call and call:type() == "method_invocation" and call:parent()
+  if not chain or chain:type() ~= "method_invocation" or call:start() ~= prev_lnum - 1 then
+    return nil
+  end
+
+  local receiver = chain:field("object")[1]
+  local selector = chain:field("name")[1]
+  if not receiver or not receiver:equal(call) or not selector then
+    return nil
+  end
+
+  local call_end = call:end_()
+  if selector:start() <= call_end then
+    return nil
+  end
+
+  return vim.fn.indent(prev_lnum) + 2 * continuation_width()
+end
+
 -- A `case`/`default` label sits one block inside the line its switch starts on, whatever the case
 -- above it wrapped onto.
 local function switch_label_indent(bufnr, lnum, current)
@@ -764,6 +805,11 @@ function M.compute(lnum, bufnr)
   local label = switch_label_indent(bufnr, lnum, current)
   if label then
     return label
+  end
+
+  local argument = chain_root_argument_indent(bufnr, lnum, current, prev_lnum, prev)
+  if argument then
+    return argument
   end
 
   return heuristic_indent(lnum, current, prev_lnum, prev)
