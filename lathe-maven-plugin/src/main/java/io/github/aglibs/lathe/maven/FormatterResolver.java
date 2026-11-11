@@ -6,9 +6,8 @@ import io.github.aglibs.lathe.install.FormatterSteps;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
 import java.io.IOException;
-import java.net.URL;
+import java.io.UncheckedIOException;
 import java.net.URLClassLoader;
-import java.util.ArrayList;
 import java.util.List;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.artifact.Artifact;
@@ -41,7 +40,7 @@ final class FormatterResolver {
   // that run nothing pinned, and with an empty classpath when resolution fails: the server then
   // reports the formatter unavailable instead of sync failing.
   FormatterSpec resolve(final FormatterSpec spec, final String spotlessVersion) {
-    if (!FormatterSteps.pinned(spec)) {
+    if (!FormatterSteps.pinned(spec.engine())) {
       return spec;
     }
 
@@ -51,7 +50,10 @@ final class FormatterResolver {
           "[sync] formatter %s %s jars=%d"
               .formatted(spec.engine(), resolved.version(), resolved.classpath().size()));
       return resolved;
-    } catch (final SyncException | ReflectiveOperationException | IOException e) {
+    } catch (final SyncException
+        | UncheckedIOException
+        | ReflectiveOperationException
+        | IOException e) {
       log.warn(
           "[sync] formatter %s unresolved, formatting disabled: %s (%s)"
               .formatted(spec.engine(), e.getMessage(), ExceptionUtil.rootCause(e).getMessage()));
@@ -59,15 +61,10 @@ final class FormatterResolver {
     }
   }
 
-  private URLClassLoader spotlessLibraries(final String spotlessVersion) throws IOException {
+  private URLClassLoader spotlessLibraries(final String spotlessVersion) {
     final List<String> libraries =
         spotlessVersion.isEmpty() ? FormatterSteps.pinnedSpotless() : declared(spotlessVersion);
-    final List<URL> urls = new ArrayList<>();
-    for (final String library : libraries) {
-      urls.add(pluginArtifacts.resolve(library).toUri().toURL());
-    }
-
-    return new URLClassLoader(urls.toArray(URL[]::new), ClassLoader.getPlatformClassLoader());
+    return FormatterSteps.spotlessLoader(libraries.stream().map(pluginArtifacts::resolve).toList());
   }
 
   // The Spotless libraries the project's spotless-maven-plugin declares, at their versions (read

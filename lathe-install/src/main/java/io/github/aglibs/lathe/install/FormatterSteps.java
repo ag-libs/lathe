@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.install;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -9,6 +10,8 @@ import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,8 +65,8 @@ public final class FormatterSteps {
   private FormatterSteps() {}
 
   // Whether the engine runs from the formatter's own jars, which a sync must resolve.
-  public static boolean pinned(final FormatterSpec spec) {
-    return STEPS.containsKey(spec.engine());
+  public static boolean pinned(final String engine) {
+    return STEPS.containsKey(engine);
   }
 
   // The Spotless libraries Lathe pins, for a build without Spotless of its own: groupId:artifactId:
@@ -73,6 +76,15 @@ public final class FormatterSteps {
     return SPOTLESS_LIBRARIES.stream()
         .map(library -> "%s:%s:%s".formatted(SPOTLESS_GROUP, library, version))
         .toList();
+  }
+
+  // Spotless's libraries in a classloader of their own, so they never meet the build's classes.
+  public static URLClassLoader spotlessLoader(final List<Path> libraries) {
+    return new URLClassLoader(
+        libraries.stream()
+            .map(library -> IOUtil.unchecked(() -> library.toUri().toURL()))
+            .toArray(URL[]::new),
+        ClassLoader.getPlatformClassLoader());
   }
 
   // The formatter section of a lathe-style.json, when it declares one.
@@ -194,7 +206,7 @@ public final class FormatterSteps {
   // The as-you-type indentation the formatter implies: google-java-format's and palantir's GOOGLE
   // style indents by 2, their other styles by 4; any other formatter leaves it to .editorconfig.
   public static IndentSpec indent(final FormatterSpec spec) {
-    if (!pinned(spec) || LatheFlags.FORMATTER_ECLIPSE.equals(spec.engine())) {
+    if (!pinned(spec.engine()) || LatheFlags.FORMATTER_ECLIPSE.equals(spec.engine())) {
       return EDITORCONFIG_INDENT;
     }
 

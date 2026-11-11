@@ -10,10 +10,8 @@ import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.ArrayList;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -55,7 +53,7 @@ final class LatheFormatter {
   private LatheFormatter(final Project project, final FormatterSpec declared) {
     this.project = project;
     this.declared = declared;
-    if (declared == null || !FormatterSteps.pinned(declared)) {
+    if (declared == null || !FormatterSteps.pinned(declared.engine())) {
       this.jars = project.files();
       this.unresolved = project.provider(() -> "");
       return;
@@ -177,7 +175,7 @@ final class LatheFormatter {
 
   // Null when there is nothing to resolve.
   private Completion complete() {
-    if (declared == null || !FormatterSteps.pinned(declared)) {
+    if (declared == null || !FormatterSteps.pinned(declared.engine())) {
       return null;
     }
 
@@ -213,18 +211,14 @@ final class LatheFormatter {
     }
   }
 
-  private URLClassLoader pinnedSpotlessLoader() throws MalformedURLException {
-    final List<URL> urls = new ArrayList<>();
-    for (final File library : pinnedSpotless.getFiles()) {
-      urls.add(library.toURI().toURL());
-    }
-
-    if (urls.size() != FormatterSteps.SPOTLESS_LIBRARIES.size()) {
+  private URLClassLoader pinnedSpotlessLoader() {
+    final List<Path> libraries = pinnedSpotless.getFiles().stream().map(File::toPath).toList();
+    if (libraries.size() != FormatterSteps.SPOTLESS_LIBRARIES.size()) {
       throw new SyncException(
           "could not resolve %s".formatted(FormatterSteps.pinnedSpotless()), null);
     }
 
-    return new URLClassLoader(urls.toArray(URL[]::new), ClassLoader.getPlatformClassLoader());
+    return FormatterSteps.spotlessLoader(libraries);
   }
 
   private ExternalModuleDependency dependency(final String coordinates, final boolean transitive) {
