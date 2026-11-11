@@ -522,7 +522,9 @@ local function continuation_indent(prev_lnum, prev)
     return prev_indent + continuation_width()
   end
   if ends_with_comma(prev) then
-    return prev_indent
+    -- The next argument or element aligns with where the one the comma ends began: after a
+    -- multi-line argument (`new Rule(` ... `last),`) that is the line opening its group.
+    return vim.fn.indent(bracket_group_start(prev_lnum))
   end
   if ends_with_operator(prev) then
     return prev_indent + continuation_width()
