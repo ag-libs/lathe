@@ -427,6 +427,10 @@ def write_report(cfg_name, version, head, results, loaded):
             print("SLOWER      %-56s %6dms  was %dms in %s on %s%s"
                   % (check["label"], check["ms"], was, before["version"], before["date"],
                      " (machine loaded)" if loaded else ""))
+    # A baseline taken under load is slow itself, so it can hide a real slowdown.
+    if before.get("loaded"):
+        print("WARN        timings compared with %s's run, taken on a loaded machine: a slowdown may not show"
+              % before["date"])
 
 
 def java_version(home: Path):
@@ -450,7 +454,10 @@ def main():
     ws, cfg = Path(opts.workspace).resolve(), CONFIGS[opts.config]
     if opts.server_jdk:
         os.environ["LATHE_JAVA_HOME"] = opts.server_jdk
-    java_home = Path(opts.server_jdk or (ws / ".lathe" / "java-home").read_text(encoding="utf-8").strip())
+    recorded = ws / ".lathe" / "java-home"
+    if not opts.server_jdk and not recorded.is_file():
+        raise SystemExit("REFUSED: %s has no .lathe/java-home; run `mvn process-test-classes` first" % ws)
+    java_home = Path(opts.server_jdk or recorded.read_text(encoding="utf-8").strip())
     head = preflight(ws, cfg, opts.expect_version)
     f = ws / cfg["file"]
     try:

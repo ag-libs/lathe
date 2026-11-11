@@ -224,8 +224,8 @@ def recent_fix_checks(b, probe):
     area = probe.pos("return side * side", "area", offset=-1)
     callers = b.raw("call_hierarchy", dict(area, direction="incoming"))[0]
     b.check("probe incoming(Square.area): through the base method", "viaShape" in callers, first(callers))
-    b.check("probe incoming(Square.area): not through a type Square is not", "viaTile" not in callers,
-            first(callers))
+    b.check("probe incoming(Square.area): not through a type Square is not",
+            mc.count(callers) >= 1 and "viaTile" not in callers, first(callers))
     square = b.raw("describe_symbol", probe.pos("static final class Square", "Square"))[0]
     b.check("probe describe(Square): modifiers and supertypes", "final class Square implements Shape" in square,
             first(square))

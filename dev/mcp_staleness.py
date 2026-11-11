@@ -177,7 +177,8 @@ class Probe:
             for wait in (3, 5):
                 time.sleep(wait)
                 waited += wait
-                if ok(self.call(tool, args, client)[0]):
+                again = self.call(tool, args, client)[0]
+                if not again.startswith("EXC ") and ok(again):
                     note = "  [LAG: correct after %ds]" % waited
                     break
             else:

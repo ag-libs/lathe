@@ -194,7 +194,7 @@ def list_shape(b, ws: Path, text, label, duplicates_known=None, grouped_known=No
     b.check("%s: no duplicate rows" % label, duplicates == 0, "%d duplicate(s) in %d row(s)" % (duplicates, len(rows)),
             known=duplicates_known)
     without = sum(1 for _, _, column in positions(text) if column is None)
-    b.check("%s: rows carry columns" % label, rows and not without, "%d of %d row(s) without a column"
+    b.check("%s: rows carry columns" % label, bool(rows) and not without, "%d of %d row(s) without a column"
             % (without, len(rows)))
     # A list cut at maxResults says so ("showing first N"); an uncut one lists every row it counts.
     if "showing first" not in text:

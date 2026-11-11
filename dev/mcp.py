@@ -159,8 +159,12 @@ _held_locks = []
 
 def lock_workspace(workspace: Path):
     """One battery or probe run per workspace: two would edit the same files and read each other's
-    changes. Refuses (exit 2) when another run holds the workspace."""
-    import fcntl
+    changes. Refuses (exit 2) when another run holds the workspace; where there is no flock
+    (Windows), runs unguarded."""
+    try:
+        import fcntl
+    except ImportError:
+        return
     import hashlib
     import tempfile
     key = hashlib.sha1(str(Path(workspace).resolve()).encode("utf-8")).hexdigest()[:12]
