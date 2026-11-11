@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.install;
 
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
@@ -8,6 +10,8 @@ import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.install.typeindex.JdkTypeIndexSync;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -15,6 +19,8 @@ import java.util.List;
 // indexes, the JDK's sources and type index, then the workspace manifest and the sync script. A
 // front-end gathers the inputs from its build and adds what is its own around this.
 public final class WorkspaceSync {
+
+  static final String GITIGNORE_FILE = ".gitignore";
 
   private WorkspaceSync() {}
 
@@ -75,5 +81,22 @@ public final class WorkspaceSync {
         inputs.outputs(),
         inputs.syncScript().tool());
     inputs.syncScript().write(inputs.workspaceRoot());
+    writeGitignore(inputs.workspaceRoot());
+  }
+
+  // .lathe/ keeps itself out of git, so a project set up without changing it stays unchanged. Only
+  // when missing: a user may have edited it.
+  static void writeGitignore(final Path workspaceRoot) {
+    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    final var file = latheDir.resolve(GITIGNORE_FILE);
+    if (Files.exists(file)) {
+      return;
+    }
+
+    try {
+      FileUtil.writeIfChanged(latheDir, file, "*\n", false);
+    } catch (final IOException e) {
+      throw new SyncException("lathe:sync failed to write %s".formatted(file), e);
+    }
   }
 }

@@ -336,7 +336,7 @@ On Gradle the init script steps aside when the build applies the plugin itself, 
 
 ### Keeping `.lathe/` out of git
 
-Personal and plain modes promise no project changes, so `.lathe/` ignores itself: `lathe:init` writes `.lathe/.gitignore` containing `*` for every workspace (a small Java change; it also helps team mode and OpenJDK).
+Personal and plain modes promise no project changes, so `.lathe/` ignores itself: every Maven and Gradle sync writes `.lathe/.gitignore` containing `*` when it is missing (`WorkspaceSync`, which both front-ends share; it also helps team mode), and leaves one the user edited alone.
 
 ### Running `main` and loading resources
 
@@ -449,7 +449,7 @@ For v1 (Maven personal, Gradle personal, Sync):
 - **Neovim:** `:LatheInit` (detection, dialog, the Maven and Gradle personal steps, fetching the activation jars, the Gradle init-script template under `runtime/templates/`); the sync runner generalized; starting the server for the open Java buffers when the build ends; the nudge and the personal-mode protocol-mismatch wording.
 - **`SyncScript`** (`lathe-install`): check the files the script replays before it runs, naming `:LatheInit` when one is missing; a change to a public record, so it needs its own design summary.
 - **`MavenSyncScript`:** replay `-Dmaven.ext.class.path` and `-Dmaven.compiler.failOnError=false`, only when the project does not register Lathe, which it checks itself.
-- **`lathe:init`:** write `.lathe/.gitignore`.
+- **`WorkspaceSync`:** write `.lathe/.gitignore` when missing, for Maven and Gradle.
 - **Docs:** the Neovim cheatsheet ("Set up a project": `:LatheInit`, personal modes, upgrading), the installation guide, the Maven and Gradle guides (personal mode; the Gradle guide's cache note), `status.md`.
 
 After v1:
