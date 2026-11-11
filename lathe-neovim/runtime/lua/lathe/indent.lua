@@ -624,6 +624,12 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
     return chain_indent(code_lnum, starts_with_operator)
   end
   if starts_with_switch_label(current) then
+    -- The first label sits one block inside its switch; a later one is the previous label's
+    -- sibling, which the tree places when the case above wrapped (switch_label_indent).
+    if ends_with_block_opener(prev) then
+      return prev_indent + block_width()
+    end
+
     return prev_indent
   end
   if starts_with_block_comment_open(prev) then
@@ -662,6 +668,30 @@ end
 -- Match a closing `}` to the line its block belongs to. The tree models block
 -- nesting and ownership reliably; it is unreliable for Google Java Format's
 -- mixed selector/continuation/lambda indentation, so it is used only here.
+-- A `case`/`default` label sits one block inside the line its switch starts on, whatever the case
+-- above it wrapped onto.
+local function switch_label_indent(bufnr, lnum, current)
+  if not starts_with_switch_label(current) then
+    return nil
+  end
+
+  local root = parser_root(bufnr, lnum)
+  if not root then
+    return nil
+  end
+
+  local current_node = node_at_line(root, lnum)
+  while current_node and current_node:type() ~= "switch_block" do
+    current_node = current_node:parent()
+  end
+
+  if not current_node or not current_node:parent() then
+    return nil
+  end
+
+  return vim.fn.indent(current_node:parent():start() + 1) + block_width()
+end
+
 local function closer_block_indent(bufnr, lnum, current)
   if not starts_with_closer(current) then
     return nil
@@ -697,6 +727,11 @@ function M.compute(lnum, bufnr)
   local block = closer_block_indent(bufnr, lnum, current)
   if block then
     return block
+  end
+
+  local label = switch_label_indent(bufnr, lnum, current)
+  if label then
+    return label
   end
 
   return heuristic_indent(lnum, current, prev_lnum, prev)

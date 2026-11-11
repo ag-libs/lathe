@@ -64,6 +64,12 @@ local FIXTURES = {
     0,
   },
   {
+    "switch label: the first one sits one block inside its switch",
+    { "return switch (k) {", "case A -> 1;" },
+    2,
+    2,
+  },
+  {
     "block closer of a method whose parameters wrap aligns with the declaration",
     {
       "public String create(",
