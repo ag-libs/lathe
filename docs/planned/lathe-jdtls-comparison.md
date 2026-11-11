@@ -104,7 +104,8 @@ How each item is built from what exists:
 
 Projects, all Java and well known: spring-petclinic, Dropwizard, Helidon (the annotation-processing project: its processors generate the builders its code calls), Hibernate ORM and OpenMetadata.
 Projects mixing in Kotlin or Groovy were left out, as neither server analyses those: Micronaut Core (916 Kotlin, 3,101 Groovy files) and Spring Framework (396 Kotlin), which besides does little annotation processing.
-Apache Fineract and OpenJDK are reported as projects Lathe serves and jdtls does not: jdtls does not import Fineract, and on a plain OpenJDK checkout it reports `java.base`'s own packages as conflicting and navigates nowhere.
+OpenJDK is reported as a project Lathe serves and jdtls does not: on a plain checkout jdtls reports `java.base`'s own packages as conflicting and navigates nowhere.
+Apache Fineract leaves the comparison: jdtls's failure to import it comes half from a Fineract plugin that breaks on Gradle 9 when its task is created, which a user can work around.
 
 Time: about 20 hours of an idle machine in all, estimated from the stage 1 runs and the release battery:
 the queries at the one heap about 6 h, the build row with test capture and its baseline about 1 h, the editing loop in every run about 4 h, the outside changes in sessions of their own (three per server and project) about 7–8 h, diagnostics against the build about 3 h.
@@ -188,7 +189,7 @@ The page shows two levels, the headline set fixed here before any stage 1b resul
 9. A branch switch: the time until the answers are right again, or never.
 10. Running one test: the time to its result.
 
-Each headline value is the median the reports give; a server that cannot do it on a project (jdtls importing Fineract) shows why, not a blank.
+Each headline value is the median the reports give; a server that cannot do it on a project shows why, not a blank.
 
 **Below it:** "where jdtls is better", every loss in its own words; the Neovim setup of each, in prose; and per project the full report with every value, its raw results and the command that reproduces it.
 
