@@ -550,7 +550,7 @@ final class WorkspaceSession {
     // Another server's pass holding the write lock may run for minutes: past a grace, the query
     // answers from the mirror as it is, and this pass still runs once the lock is free.
     CompletableFuture.delayedExecutor(
-            OTHER_SERVER_GRACE_MS, TimeUnit.MILLISECONDS, eventLoop::execute)
+            WritePass.OTHER_SERVER_GRACE_MS, TimeUnit.MILLISECONDS, eventLoop::execute)
         .execute(
             () -> {
               if (writePass.waitingForWriteLock()) {
@@ -621,8 +621,6 @@ final class WorkspaceSession {
   private static final long IDLE_SESSION_MS = 5 * 60 * 1000;
   // Under pressure, a session asked for within this long is left: it would only be rebuilt at once.
   private static final long PRESSURE_IDLE_MS = 10_000;
-  // Long enough for another server's pass after a save; a query waits no longer than this for it.
-  private static final long OTHER_SERVER_GRACE_MS = 2_000;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";

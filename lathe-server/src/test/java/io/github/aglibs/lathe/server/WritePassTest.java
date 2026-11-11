@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
@@ -496,6 +497,37 @@ class WritePassTest extends ServiceTestBase {
     assertThat(reconcileForVerify().get(10, TimeUnit.SECONDS).deferral())
         .as("with the lock free, a query waits for its pass as before")
         .isEqualTo(ReconcileOutcome.DeferReason.NONE);
+  }
+
+  // A tick's pass that found the lock held tries again only at the next tick, 2 s on. A query
+  // waiting on it makes it try at once: the other server's pass has usually ended by then.
+  @Test
+  void reconcileForVerify_tickPassWaitingForReleasedLock_queryAnswersWithoutWaitingForTheTick()
+      throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    host.initialize(tmp);
+    awaitStartup();
+    writeFoo(CHANGED_FOO, 5_000L);
+    final Closeable otherServer =
+        LatheLock.tryExclusive(LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR)))
+            .orElseThrow();
+    final CompletableFuture<Void> tickPass;
+    try {
+      tickPass = reconcileNow(false);
+      assertThatThrownBy(() -> tickPass.get(300, TimeUnit.MILLISECONDS))
+          .as("waits while the other server writes")
+          .isInstanceOf(TimeoutException.class);
+    } finally {
+      otherServer.close();
+    }
+
+    final var timer = Stopwatch.start();
+    assertThat(reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
+        .isEqualTo(ReconcileOutcome.DeferReason.NONE);
+
+    assertThat(timer.elapsedMs()).as("well before the next tick").isLessThan(1_000L);
+    assertThat(tickPass).isDone();
+    assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
   }
 
   @Test
