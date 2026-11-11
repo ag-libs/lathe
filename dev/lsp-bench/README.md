@@ -118,6 +118,11 @@ Then every row with its raw results and the command that reproduces it, the rows
     The 2026-11-08 equal-heap runs showed every Lathe answer the same at that limit, so the comparison no longer leans on a heap only one server gets.
     Runs before this amendment are reported as they ran:
     Lathe with no limit, except the `-heap2G` runs.
+  - **Lathe's build, as a user first runs it.** The build row of a cold Lathe run is the README's first-build command, test capture included: Maven `mvn clean test -Dlathe.capture.only=true`, Gradle `latheSync -Plathe.capture.only=true` (as before).
+    Until now a Maven row was `process-test-classes`, which captures no test launch (the 2026-11-07 amendment), so it left out part of what Lathe asks of a user; those rows are reported as they ran.
+    A project that cannot run that command as is (OpenMetadata needs `package` for its shaded module) states the command it ran instead, capture included where the build allows it.
+    Beside it, the same command with Lathe turned off (Maven `-Dlathe.disabled=true`; Gradle the same tasks without the Lathe plugin), timed once per project on a fresh checkout: the build the project costs anyway, so Lathe's own share is the difference.
+    The report also gives Lathe's time to a first answer, its build plus its ready time, beside jdtls's ready time, which includes its import.
   - **jdtls's setup.** jdtls keeps vscode-java's settings.
     A Neovim user starts it through nvim-jdtls with settings of their own, often no heap limit and a Lombok agent added by hand; the published page names the setup measured and does not measure each nvim-jdtls configuration.
   - **The editing loop and outside changes**, measured on every project both servers import, with positions fixed in each project's case file before its first measured run, by the rules below.
