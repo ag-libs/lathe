@@ -31,7 +31,19 @@ class LatheProbe {
     }
 
     interface Shape {
+        /** The space the shape covers, LATHEPROBEAREA. */
         double area();
+    }
+
+    // A subinterface Square does not implement: a call through it never reaches Square.area.
+    interface Tile extends Shape {}
+
+    static double viaShape(Shape s) {
+        return s.area();
+    }
+
+    static double viaTile(Tile t) {
+        return t.area();
     }
 
     sealed interface Node permits Leaf, Pair {}
@@ -74,6 +86,7 @@ class LatheProbe {
             this.side = side;
         }
 
+        /** @return the side squared */
         @Override
         public double area() {
             return side * side;
@@ -146,5 +159,29 @@ class LatheProbe {
 
     static int gauge(int v) {
         return v;
+    }
+
+    // Overloads for a call whose arguments match neither: definition offers both.
+    int pick(int i) {
+        return i;
+    }
+
+    int pick(String s) {
+        return s.length();
+    }
+
+    int picker() {
+        return pick(1);
+    }
+
+    // A type-use annotation on a parameter: a search from the declaration must find calls compiled
+    // against the class file, which carries no such annotation (javac 21 and older kept it in the
+    // declaration's parameter type).
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+    @java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE_USE)
+    @interface LatheProbeNonNull {}
+
+    static int guarded(@LatheProbeNonNull String s) {
+        return s.length();
     }
 }

@@ -7,17 +7,18 @@ server's own health. Restores the files it touched; exits 1 if a check fails, 2 
 
 Each check prints one line: PASS, FAIL, SKIP (a prerequisite is missing), KNOWN (a wrong answer the
 gap log already describes) or NOW PASSES (a KNOWN one that is right now; drop its mark). A JSON
-report goes to dev/reports/battery/, and checks more than twice as slow as the previous version's
-report are listed as SLOWER.
+report goes to dev/reports/battery/, one per run, and checks more than twice as slow as in the
+workspace's previous report are listed as SLOWER.
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 DEV = Path(__file__).resolve().parent
@@ -29,10 +30,13 @@ from mcp_consistency import first  # noqa: E402
 
 # Per workspace: the commit the expectations were written against; a symbol with cross-module uses
 # (renamed and back); an interface and one of its methods; a dependency or JDK type used in the
-# file; a reactor type and a CamelHumps query for it; a test method; where the probe file goes.
+# file; a reactor type and a CamelHumps query for it; a test method; where the probe file goes;
+# and, at the pinned commit, the exact counts of the symbol's references and callers and of the
+# interface's implementations, which a search that drops files (a lost batch) would change.
 CONFIGS = {
     "dropwizard": dict(
         pin="46bb4ed819",
+        counts=dict(references=52, callers=51, implementations=13),
         file="dropwizard-util/src/main/java/io/dropwizard/util/Duration.java",
         symbol="toMilliseconds", newname="toMillisLatheSmoke", is_method=True,
         iface=("dropwizard-lifecycle/src/main/java/io/dropwizard/lifecycle/Managed.java", "Managed {", "Managed"),
@@ -43,9 +47,14 @@ CONFIGS = {
         # JettyManaged gets its stop() from Jetty's AbstractLifeCycle, so a rename of Managed.stop
         # must refuse rather than leave JettyManaged not implementing Managed.
         inherited_rename=("dropwizard-lifecycle/src/main/java/io/dropwizard/lifecycle/Managed.java", "void stop()",
-                          "stop", "stopLatheSmoke")),
+                          "stop", "stopLatheSmoke"),
+        # An override's callers include the base method's callers in an upstream module:
+        # Application.run calls initialize, which reaches App1's override.
+        override_callers=("dropwizard-e2e/src/main/java/com/example/app1/App1.java",
+                          "public void initialize(", "initialize", "run", "dropwizard-core")),
     "equalsverifier": dict(
         pin="ab54bfce",
+        counts=dict(references=31, callers=0, implementations=8),
         file="equalsverifier-core/src/main/java/nl/jqno/equalsverifier/Warning.java",
         symbol="ALL_FIELDS_SHOULD_BE_USED", newname="ALL_FIELDS_LATHE_SMOKE", is_method=False,
         iface=("equalsverifier-core/src/main/java/nl/jqno/equalsverifier/internal/checkers/Checker.java",
@@ -58,6 +67,7 @@ CONFIGS = {
         probe=("equalsverifier-core/src/main/java/nl/jqno/equalsverifier", "nl.jqno.equalsverifier")),
     "helidon": dict(
         pin="2f6df16425",
+        counts=dict(references=77, callers=66, implementations=4),
         file="common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java",
         symbol="text()", newname="textLatheSmoke", is_method=True,
         iface=("common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java", "MediaType {", "MediaType"),
@@ -66,6 +76,8 @@ CONFIGS = {
         test=("common/media-type/src/test/java/io/helidon/common/media/type/MediaTypesTest.java", "testCustom",
               "MediaTypesTest"),
         probe=("common/media-type/src/main/java/io/helidon/common/media/type", "io.helidon.common.media.type"),
+        # MC-78: MediaType.text() is redeclared abstract in subinterfaces the family leaves out.
+        family_known="analyze_change's override family leaves out abstract redeclarations",
         module_info="common/media-type/src/main/java/module-info.java",
         # Implemented in many modules (about 50 implementations in 14), as the checks of a listing's
         # modules need: a method implemented in a few cannot show what they look for.
@@ -156,7 +168,13 @@ def untracked(ws):
 
 
 def preflight(ws, cfg, expected):
-    """Refuses to run on a tree with edited sources or a sync from another version."""
+    """Refuses to run on a tree with edited sources, a killed run's probe files, or a sync from
+    another version."""
+    mcp.lock_workspace(ws)
+    leftovers = mcp.leftover_probe_files(ws)
+    if leftovers:
+        raise SystemExit("REFUSED: a killed run left probe files in %s; delete them first:\n%s"
+                         % (ws, "\n".join(leftovers[:10])))
     dirty = dirty_java(ws)
     if dirty:
         raise SystemExit("REFUSED: %d edited .java file(s) in %s; commit or stash them first:\n%s"
@@ -174,7 +192,16 @@ def preflight(ws, cfg, expected):
     return head
 
 
-def workspace_checks(b, ws, cfg, f, pos, tests_captured):
+def exact_count(b, cfg, pinned, what, text):
+    want = cfg["counts"][what]
+    label = "%s: the pinned commit's count" % what
+    if not pinned:
+        b.record("SKIP", label, "HEAD is not the pinned commit, so the count may differ", 0)
+        return
+    b.check(label, mc.count(text) == want, "%d, want %d" % (mc.count(text), want))
+
+
+def workspace_checks(b, ws, cfg, f, pos, tests_captured, pinned):
     b.call("get_diagnostics (clean file)", "get_diagnostics", {"file": str(f)},
            ok=lambda t, r: not r.get("isError") and "No errors or warnings" in t)
     b.call("describe_symbol", "describe_symbol", pos,
@@ -190,20 +217,24 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured):
     b.check("find_references: uses in several modules", mc.count(refs) >= 3 and len(ref_modules) >= 2,
             "%d reference(s) in %d module(s)" % (mc.count(refs), len(ref_modules)))
     mc.list_shape(b, ws, refs, "find_references")
+    exact_count(b, cfg, pinned, "references", refs)
 
     incoming = b.raw("call_hierarchy", dict(pos, direction="incoming"))[0]
     if cfg["is_method"]:
         b.check("call_hierarchy incoming: has callers", mc.count(incoming) >= 1, first(incoming))
     else:
         b.check("call_hierarchy incoming: answers", not incoming.startswith("EXCEPTION"), first(incoming))
+    exact_count(b, cfg, pinned, "callers", incoming)
     b.call("call_hierarchy outgoing", "call_hierarchy", dict(pos, direction="outgoing"))
     b.call("analyze_change", "analyze_change", pos,
            ok=lambda t, r: not r.get("isError") and "references:" in t and "affected modules:" in t)
 
     iface = ws / cfg["iface"][0]
     il, _ = locate(iface, cfg["iface"][1])
-    b.call("find_implementations", "find_implementations", {"file": str(iface), "line": il, "symbol": cfg["iface"][2]},
-           ok=lambda t, r: not r.get("isError") and mc.count(t) >= 1)
+    impls = b.call("find_implementations", "find_implementations",
+                   {"file": str(iface), "line": il, "symbol": cfg["iface"][2]},
+                   ok=lambda t, r: not r.get("isError") and mc.count(t) >= 1)
+    exact_count(b, cfg, pinned, "implementations", impls)
     # "No symbols matching 'X'." repeats the query, so each check needs a count too.
     b.call("search_symbols", "search_symbols", {"query": cfg["search"]},
            ok=lambda t, r: mc.count(t) >= 1 and cfg["search"] in t)
@@ -259,9 +290,18 @@ def consistency_checks(b, ws, cfg, f, pos):
                       grouped_known="locations come back in discovery order, modules mixed")
     mc.references_round_trip(b, ws, f, pos, cfg["symbol"].rstrip("()"), "references lead back to the declaration")
     mc.family_covers_definitions(b, ws, f, pos, cfg["symbol"].rstrip("()"), "override family covers what references reach",
-                                 known="analyze_change's override family leaves out abstract redeclarations")
+                                 known=cfg.get("family_known"))
     mc.outline_resolves(b, f)
     mc.diagnostics_agree_with_notes(b, f, "diagnostics agree with notes")
+    if cfg.get("override_callers"):
+        path, token, name, caller, module = cfg["override_callers"]
+        override = ws / path
+        text = b.raw("call_hierarchy", {"file": str(override), "line": locate(override, token)[0], "symbol": name,
+                                        "direction": "incoming"})[0]
+        upstream = [p for p, _, _ in mc.locations(text) if mc.module_of(ws, p) == module]
+        b.check("incoming calls of an override: the base method's caller upstream",
+                re.search(r"\b%s\b" % caller, text) is not None and bool(upstream),
+                "%s; %d row(s) in %s" % (first(text), len(upstream), module))
 
 
 def break_and_repair(b, f):
@@ -314,6 +354,7 @@ def negative_checks(b, ws, f):
         b.call("bad request: file outside the workspace", "outline", {"file": str(target)},
                ok=lambda t, r: r.get("isError") and mc.clean_refusal(t), known=known)
         link = ws / "LatheProbeLink.java"
+        link.unlink(missing_ok=True)
         link.symlink_to(target)
         try:
             b.call("bad request: symlink out of the workspace", "outline", {"file": str(link)},
@@ -369,13 +410,13 @@ def restore_java(ws, created=()):
     return len(touched) + len(created)
 
 
-def write_report(cfg_name, version, head, results):
+def write_report(cfg_name, version, head, results, loaded):
     REPORTS.mkdir(parents=True, exist_ok=True)
-    report = REPORTS / ("%s-%s.json" % (cfg_name, version))
-    previous = sorted((p for p in REPORTS.glob("%s-*.json" % cfg_name) if p != report),
-                      key=lambda p: p.stat().st_mtime)
+    # One file per run, not per version: a SNAPSHOT run would overwrite the run it compares with.
+    previous = sorted(REPORTS.glob("%s-*.json" % cfg_name), key=lambda p: p.stat().st_mtime)
+    report = REPORTS / ("%s-%s-%s.json" % (cfg_name, version, datetime.now().strftime("%Y%m%d-%H%M%S")))
     report.write_text(json.dumps(dict(workspace=cfg_name, version=version, head=head, date=str(date.today()),
-                                      checks=results), indent=1), encoding="utf-8")
+                                      loaded=loaded, checks=results), indent=1), encoding="utf-8")
     if not previous:
         return
     before = json.loads(previous[-1].read_text(encoding="utf-8"))
@@ -383,7 +424,23 @@ def write_report(cfg_name, version, head, results):
     for check in results:
         was = times.get(check["label"])
         if was is not None and check["ms"] > 2 * was and check["ms"] - was > 500:
-            print("SLOWER      %-56s %6dms  was %dms in %s" % (check["label"], check["ms"], was, before["version"]))
+            print("SLOWER      %-56s %6dms  was %dms in %s on %s%s"
+                  % (check["label"], check["ms"], was, before["version"], before["date"],
+                     " (machine loaded)" if loaded else ""))
+    # A baseline taken under load is slow itself, so it can hide a real slowdown.
+    if before.get("loaded"):
+        print("WARN        timings compared with %s's run, taken on a loaded machine: a slowdown may not show"
+              % before["date"])
+
+
+def java_version(home: Path):
+    """The JAVA_VERSION a JDK's release file names, or "?"."""
+    release = home / "release"
+    if release.is_file():
+        m = re.search(r'^JAVA_VERSION="([^"]+)"', release.read_text(encoding="utf-8"), re.M)
+        if m:
+            return m.group(1)
+    return "?"
 
 
 def main():
@@ -391,8 +448,16 @@ def main():
     parser.add_argument("workspace")
     parser.add_argument("config", choices=sorted(CONFIGS))
     parser.add_argument("--expect-version", required=True, help="the Lathe version under test, e.g. 0.2.2")
+    parser.add_argument("--server-jdk", help="run the server on this JDK (LATHE_JAVA_HOME) instead of the "
+                                             "workspace's build JDK: javac 21 and older show bugs newer ones hide")
     opts = parser.parse_args()
     ws, cfg = Path(opts.workspace).resolve(), CONFIGS[opts.config]
+    if opts.server_jdk:
+        os.environ["LATHE_JAVA_HOME"] = opts.server_jdk
+    recorded = ws / ".lathe" / "java-home"
+    if not opts.server_jdk and not recorded.is_file():
+        raise SystemExit("REFUSED: %s has no .lathe/java-home; run `mvn process-test-classes` first" % ws)
+    java_home = Path(opts.server_jdk or recorded.read_text(encoding="utf-8").strip())
     head = preflight(ws, cfg, opts.expect_version)
     f = ws / cfg["file"]
     try:
@@ -408,7 +473,10 @@ def main():
     untracked_before = untracked(ws)
     b = Battery(ws, launcher)
     version = (b.client.initialize().get("serverInfo") or {}).get("version")
-    print("SERVER      %s from %s; workspace %s at %s" % (version, launcher, ws.name, head[:10]))
+    print("SERVER      %s from %s; workspace %s at %s; JDK %s (%s)"
+          % (version, launcher, ws.name, head[:10], java_version(java_home), java_home))
+    print(mcp.load_line())
+    loaded = mcp.loaded()
     if version != opts.expect_version:
         b.client.close()
         raise SystemExit("REFUSED: the server reports %s, not %s" % (version, opts.expect_version))
@@ -419,7 +487,7 @@ def main():
         b.check("every listed tool has a check", listed <= CHECKED_TOOLS,
                 "untested: %s" % ", ".join(sorted(listed - CHECKED_TOOLS)) if listed - CHECKED_TOOLS
                 else "%d tool(s)" % len(listed))
-        b.section("workspace", workspace_checks, b, ws, cfg, f, pos, tests_captured)
+        b.section("workspace", workspace_checks, b, ws, cfg, f, pos, tests_captured, head.startswith(cfg["pin"]))
         b.section("consistency", consistency_checks, b, ws, cfg, f, pos)
         b.section("break and repair", break_and_repair, b, f)
         b.section("rename round-trip", rename_round_trip, b, ws, cfg, f, pos)
@@ -438,7 +506,10 @@ def main():
             print("RESTORED    %d file(s)" % restored)
     health_checks(b, exited)
     lifecycle_checks(b, launcher)
-    write_report(opts.config, version, head, b.results)
+    # A run on another JDK is compared only with runs on that JDK.
+    report_name = opts.config if not opts.server_jdk else "%s@jdk%s" % (opts.config, java_version(java_home).split(".")[0])
+    print(mcp.load_line())
+    write_report(report_name, version, head, b.results, loaded or mcp.loaded())
     counts = {s: sum(1 for r in b.results if r["status"] == s) for s in ("PASS", "FAIL", "KNOWN", "NOW PASSES", "SKIP")}
     print("SUMMARY     " + " ".join("%s=%d" % (s.lower().replace(" ", "_"), n) for s, n in counts.items()))
     sys.exit(1 if b.failures() else 0)

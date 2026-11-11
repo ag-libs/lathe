@@ -7,7 +7,7 @@ its Battery (call/raw/check) in as `b`.
 import re
 from pathlib import Path
 
-LOCATION = re.compile(r"(\S+\.java):(\d+)(?::\d+)?(?: \[(\w+)\])?: ?(.*)$")
+LOCATION = re.compile(r"(\S+\.java):(\d+)(?::(\d+))?(?: \[(\w+)\])?: ?(.*)$")
 OUTLINE_ITEM = re.compile(r"^( *)(\S+) (.+?)  (\d+):(\d+): ")
 SERVER_LOG_FAILURE = "see the server log"
 
@@ -24,8 +24,14 @@ def locations(text):
     for line in text.splitlines():
         m = LOCATION.search(line)
         if m:
-            found.append((m.group(1), int(m.group(2)), m.group(4).strip()))
+            found.append((m.group(1), int(m.group(2)), m.group(5).strip()))
     return found
+
+
+def positions(text):
+    """(path, line, column) of every location line, in answer order; column None when missing."""
+    return [(m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
+            for m in map(LOCATION.search, text.splitlines()) if m]
 
 
 def count(text):
@@ -140,12 +146,14 @@ def diagnostics_agree_with_notes(b, file: Path, label, known=None):
 def references_round_trip(b, ws: Path, decl_file: Path, pos, name, label, limit=10):
     """get_definition at each of the first references leads back to the declaration, or to a
     declaration that counts this reference among its own: a call through a subtype resolves to
-    that subtype's override or redeclaration."""
-    refs = locations(b.raw("find_references", dict(pos, maxResults=limit))[0])
+    that subtype's override or redeclaration. Each is asked at the column its row gives, so two
+    uses on one line are each checked."""
+    refs = positions(b.raw("find_references", dict(pos, maxResults=limit))[0])
     wrong = []
-    for path, line, _ in refs[:limit]:
+    for path, line, column in refs[:limit]:
         file = Path(path) if Path(path).is_absolute() else ws / path
-        targets = locations(b.raw("get_definition", {"file": str(file), "line": line, "symbol": name})[0])
+        at = {"column": column} if column else {"symbol": name}
+        targets = locations(b.raw("get_definition", dict({"file": str(file), "line": line}, **at))[0])
         if any(Path(p).name == decl_file.name for p, _, _ in targets):
             continue
         if not targets:
@@ -185,6 +193,13 @@ def list_shape(b, ws: Path, text, label, duplicates_known=None, grouped_known=No
     duplicates = len(keys) - len(set(keys))
     b.check("%s: no duplicate rows" % label, duplicates == 0, "%d duplicate(s) in %d row(s)" % (duplicates, len(rows)),
             known=duplicates_known)
+    without = sum(1 for _, _, column in positions(text) if column is None)
+    b.check("%s: rows carry columns" % label, bool(rows) and not without, "%d of %d row(s) without a column"
+            % (without, len(rows)))
+    # A list cut at maxResults says so ("showing first N"); an uncut one lists every row it counts.
+    if "showing first" not in text:
+        b.check("%s: header counts every row" % label, count(text) == len(rows), "header %d, rows %d"
+                % (count(text), len(rows)))
     order = [module_of(ws, p) for p, _, _ in rows]
     seen, scattered = set(), set()
     for i, module in enumerate(order):
