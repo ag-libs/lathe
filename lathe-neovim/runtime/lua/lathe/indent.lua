@@ -549,12 +549,15 @@ local function node_at_line(root, lnum)
   return root:descendant_for_range(lnum - 1, col, lnum - 1, col + 1)
 end
 
+-- The indent of the line the nearest enclosing block belongs to: its `{` line, climbed back to the
+-- line that opened that line's bracket groups, as a declaration whose parameters (or a condition)
+-- wrap puts its `{` on a continuation line while the closing `}` aligns with the declaration.
 local function nearest_block_indent(node)
   local current = node
   while current do
     if BLOCK_NODES[current:type()] then
       local start_row = current:start()
-      return vim.fn.indent(start_row + 1)
+      return block_owner_indent(start_row + 1)
     end
     current = current:parent()
   end

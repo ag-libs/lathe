@@ -64,6 +64,17 @@ local FIXTURES = {
     0,
   },
   {
+    "block closer of a method whose parameters wrap aligns with the declaration",
+    {
+      "public String create(",
+      "    @Valid Owner owner, BindingResult result) {",
+      "  return x;",
+      "}",
+    },
+    4,
+    0,
+  },
+  {
     "empty block closer aligns with its opener, not one level shallower",
     { "class Foo {", "  static {", "}" },
     3,
