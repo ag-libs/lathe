@@ -475,7 +475,7 @@ def s_branch_switch(pr: Probe):
     """Check out an older revision of the Java sources only (no build files) and back."""
     ref = os.environ.get("LATHE_PROBE_OLD_REF")
     if not ref:
-        pr.skip("E  branch switch", "set LATHE_PROBE_OLD_REF to run it")
+        pr.skip("E branch switch", "set LATHE_PROBE_OLD_REF to run it")
         return
     changed = [x for x in git(pr.ws, "diff", "--name-only", ref, "HEAD", "--", "*.java").split()]
     existing = [x for x in changed if git(pr.ws, "cat-file", "-t", "%s:%s" % (ref, x)).strip() == "blob"]
@@ -582,7 +582,7 @@ def s_build(pr: Probe):
 def s_generated(pr: Probe):
     """An external blueprint edit must regenerate the annotation-processor output downstream sees."""
     if "gen" not in pr.cfg:
-        pr.skip("N  generated sources", "not configured for this workspace")
+        pr.skip("N generated sources", "not configured for this workspace")
         return
     bp_rel, mod, gen_rel, down_rel, gen_fqn = pr.cfg["gen"]
     bp, down = pr.p(bp_rel), pr.p(down_rel)

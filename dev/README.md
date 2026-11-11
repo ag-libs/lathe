@@ -130,6 +130,9 @@ with `.lathe/lathe-sync.sh --tests <module>` (or `mvn test` on one test class); 
 python3 -I dev/release_check.py ~/git --expect-version 0.2.2            # add --staleness, --scale
 #   --old-jdk /opt/amazon-corretto-21…: Dropwizard's battery again with the server on JDK 21, where
 #   javac keeps type-use annotations in erasure (a bug class JDK 22+ hides)
+#   --editor: the editor smoke below as one more run
+# The report's table gives each run's pass/fail/known/now-passes/skip/warn/slower counts, its wall
+# time and the machine's load (peak / mean); every NOW PASSES, KNOWN and SKIP is listed once.
 
 # MCP battery on one workspace
 python3 -I dev/mcp_battery.py ~/git/dropwizard dropwizard --expect-version 0.2.2
