@@ -9980,6 +9980,41 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-26 — A second agent session can answer from stale state while the first one writes — done
+
+**Status: done.**
+
+**Affects: MCP, two sessions on one workspace (an editor's and an agent's server, or two agents).**
+
+Found by the pre-release check (2026-11-04) on Helidon with `dev/mcp_staleness.py`: once in 13 runs, session B, asked about a downstream file straight after session A fixed its upstream file, still reported the error the fix removed;
+B's queries took 2.05 s instead of 0.3–0.5 s.
+The check of 2026-11-10 showed the wait without the stale answer: on Dropwizard B's I3 took 1.5–1.7 s in all 4 runs, against 0.2 s on 2026-11-06.
+
+### Cause
+
+Servers on one workspace take turns writing `.lathe/` under its write lock, and a pass that found the lock held tried again only at the next scan tick, 2 s on (`WritePass.runLocked`).
+A query's pass queues behind the pass already running, so when B's own tick pass had found A's lock held a moment before, B's query waited for that tick pass's next try, though A had long finished:
+a log line at each retry showed it, with nothing else between the query and the retry.
+A query that itself found the lock held waited the same way, and a query gives up waiting after a 2 s grace, then answers from its own state: the stale answer of 2026-11-04.
+
+### Resolution
+
+A query no longer waits for the tick.
+When a query's pass queues behind a pass waiting for the lock, that pass tries the lock at once,
+and while a query waits on it, a waiting pass tries again every 100 ms, as `LatheLock`'s own wait does, instead of every scan tick.
+An idle editor's server still tries only at its tick, so it wakes no more often while another server's long pass (a branch switch) runs.
+A query still answers after the 2 s grace when the other server's pass runs longer than that, as `verify_change` already says (`another Lathe server on this workspace is updating .lathe/`).
+
+Measured on Dropwizard, three runs of the staleness probe: I3 255–283 ms (was 1.5–1.7 s), I1 1.3 s (was 2.2–3.6 s), I5 73–199 ms (was up to 1.5 s).
+
+### Regression targets
+
+- `WritePassTest.reconcileForVerify_tickPassWaitingForReleasedLock_queryAnswersWithoutWaitingForTheTick` (fails without the fix: the query waits for the tick)
+- `WritePassTest.reconcile_anotherServerHoldsTheWriteLock_passWaitsThenWrites_queryStopsWaiting`
+- `dev/mcp_staleness.py` scenario I (two sessions on one workspace)
+
+---
+
 ## WS-23 — A killed build's locks make `verify_change` defer for about two minutes — done
 
 **Status: done.**

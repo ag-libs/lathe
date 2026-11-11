@@ -56,6 +56,8 @@ final class WritePass {
 
   private static final long DEFAULT_SCAN_INTERVAL_MS = 2_000L;
   private static final String WRITE_LOCK_KEY = "write-lock";
+  // How often a pass that a query waits on tries the write lock again, as LatheLock's own wait.
+  private static final long QUERY_LOCK_RETRY_MS = 100;
 
   // What a pass needs from the session that owns the open documents.
   // heldByEditor: an open document whose buffer, not the disk, is the truth (an editor's; the
@@ -103,8 +105,9 @@ final class WritePass {
   // The running pass's hold on .lathe/'s write lock, which another Lathe server on this workspace
   // (an editor's and an agent's) takes for its passes too.
   private Closeable writeLock;
-  // The pass is waiting for another server to release the write lock.
-  private boolean waitingForWriteLock;
+  // The next attempt of a pass waiting for another server to release the write lock; null when
+  // none waits.
+  private Runnable writeLockRetry;
   // Each source tree's stamps as this server last knew them, its own writes included: stamps that
   // differ at the next pass were written by another server on the workspace (or a build).
   private final Map<ModuleSourceConfig, Map<Path, SourceStamp>> stampsSeen = new HashMap<>();
@@ -163,7 +166,7 @@ final class WritePass {
 
   boolean waitingForWriteLock() {
     eventLoop.checkOnLoop();
-    return waitingForWriteLock;
+    return writeLockRetry != null;
   }
 
   // The sources whose last write failed, with the mtime compiled and the first error.
@@ -215,6 +218,12 @@ final class WritePass {
       }
 
       nextPassEager |= eager;
+      // A query waits on the passes before its own: one waiting for the lock tries it now, as the
+      // other server's pass may have ended since its last try.
+      if (eager && writeLockRetry != null) {
+        eventLoop.schedule(WRITE_LOCK_KEY, 0, writeLockRetry);
+      }
+
       return nextPass;
     }
 
@@ -234,18 +243,24 @@ final class WritePass {
           LatheLock.tryExclusive(
               LatheLayout.writeLockFile(state.root().resolve(LatheLayout.LATHE_DIR)));
       // The other server's pass can run for minutes (a branch switch); trying again only as often
-      // as the change scan keeps an editor's idle server from waking more while it waits.
+      // as the change scan keeps an editor's idle server from waking more while it waits. A query
+      // waiting on it tries sooner, so it waits about as long as the other pass runs.
       if (lock.isEmpty()) {
-        waitingForWriteLock = true;
-        eventLoop.schedule(WRITE_LOCK_KEY, scanIntervalMs(), () -> runLocked(eager, pass));
+        if (writeLockRetry == null) {
+          LOG.fine(() -> "[reconcile] write lock held by another server, waiting");
+        }
+
+        writeLockRetry = () -> runLocked(eager, pass);
+        final long retryMs = eager || nextPassEager ? QUERY_LOCK_RETRY_MS : scanIntervalMs();
+        eventLoop.schedule(WRITE_LOCK_KEY, retryMs, writeLockRetry);
         return;
       }
 
-      waitingForWriteLock = false;
+      writeLockRetry = null;
       writeLock = lock.get();
       runPass(eager, pass);
     } catch (final IOException | RuntimeException e) {
-      waitingForWriteLock = false;
+      writeLockRetry = null;
       LOG.log(Level.SEVERE, e, () -> "[reconcile] pass failed");
       pass.completeExceptionally(e); // never leave a pass running, or every later request waits
     }
