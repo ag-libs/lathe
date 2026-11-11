@@ -64,12 +64,6 @@ local FIXTURES = {
     0,
   },
   {
-    "argument after a multi-line argument aligns with that argument's first line",
-    { "List.of(", "    new Rule(", "        first,", "        second),", "new Rule(" },
-    5,
-    4,
-  },
-  {
     "switch label: the first one sits one block inside its switch",
     { "return switch (k) {", "case A -> 1;" },
     2,

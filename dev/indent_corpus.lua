@@ -13,19 +13,20 @@ vim.treesitter.language.add("java", { path = parser })
 local indent = require("lathe.indent")
 indent.setup({ indent = { profile = "google", block = block, continuation = continuation } })
 
--- What a line starts with, to group the disagreements by construct.
+-- What a line starts with, to group the disagreements by construct; first match wins, so `->`
+-- and a javadoc `*` come before the arithmetic operators they would otherwise count as.
 local KINDS = {
   { "closer }", "^}" },
   { "closer ) or ]", "^[%)%]]" },
   { "ternary ?", "^%?" },
   { "ternary :", "^:" },
   { "chain .", "^%." },
+  { "lambda ->", "^%->" },
+  { "javadoc *", "^%*" },
   { "operator && ||", "^[&|][&|]" },
   { "operator + - * /", "^[%+%-%*/][^/%*]" },
-  { "lambda ->", "^%->" },
   { "annotation @", "^@" },
   { "comment", "^//" },
-  { "javadoc *", "^%*" },
 }
 
 local function kind_of(text)

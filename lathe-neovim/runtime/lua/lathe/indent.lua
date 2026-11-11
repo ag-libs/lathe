@@ -522,9 +522,7 @@ local function continuation_indent(prev_lnum, prev)
     return prev_indent + continuation_width()
   end
   if ends_with_comma(prev) then
-    -- The next argument or element aligns with where the one the comma ends began: after a
-    -- multi-line argument (`new Rule(` ... `last),`) that is the line opening its group.
-    return vim.fn.indent(bracket_group_start(prev_lnum))
+    return prev_indent
   end
   if ends_with_operator(prev) then
     return prev_indent + continuation_width()
@@ -551,9 +549,9 @@ local function node_at_line(root, lnum)
   return root:descendant_for_range(lnum - 1, col, lnum - 1, col + 1)
 end
 
--- The declarations and statements a block belongs to: its `}` aligns with the line where the owner
--- starts, not with its `{` line, which is a continuation line when the parameters, a condition or a
--- `throws` clause wrap. A lambda body, a bare block and a `case` block own nothing above their `{`.
+-- What a block belongs to: its `}` aligns with the line where the owner starts, not with its `{`
+-- line, which is a continuation line when parameters, a condition, a `throws` clause or a rule's
+-- labels wrap. A bare block, and a block under `case A:` on a line of its own, keep their `{` line.
 local BLOCK_OWNERS = {
   annotation_type_declaration = true,
   catch_clause = true,
@@ -567,12 +565,14 @@ local BLOCK_OWNERS = {
   for_statement = true,
   if_statement = true,
   interface_declaration = true,
+  lambda_expression = true,
   method_declaration = true,
   module_declaration = true,
   object_creation_expression = true,
   record_declaration = true,
   static_initializer = true,
   switch_expression = true,
+  switch_rule = true,
   synchronized_statement = true,
   try_statement = true,
   try_with_resources_statement = true,
@@ -667,13 +667,13 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
   return prev_indent
 end
 
--- Match a closing `}` to the line its block belongs to. The tree models block
--- nesting and ownership reliably; it is unreliable for Google Java Format's
--- mixed selector/continuation/lambda indentation, so it is used only here.
+-- The parse tree answers what it models reliably: block nesting and ownership, text blocks and
+-- switch labels. Google Java Format's other continuation rules come from the text
+-- heuristic, which also covers unparseable code mid-edit.
+
 -- A line inside a text block is the string's content, which no formatter touches: it keeps its own
 -- indent, and a new blank line there takes the previous line's.
-local function text_block_indent(bufnr, lnum, current, prev_lnum)
-  local root = parser_root(bufnr, lnum)
+local function text_block_indent(root, lnum, current, prev_lnum)
   if not root then
     return nil
   end
@@ -695,55 +695,13 @@ local function text_block_indent(bufnr, lnum, current, prev_lnum)
   return vim.fn.indent(lnum)
 end
 
--- The first argument of a call that roots a method chain broken onto the next lines (`Stream.of(`
--- ... `)` then `.map(` on its own line) sits two continuations deep: google-java-format adds the
--- chain's level to the arguments'. Only the tree sees the chain below; while it is still being
--- typed, the argument takes the usual single continuation.
-local function chain_root_argument_indent(bufnr, lnum, current, prev_lnum, prev)
-  if not prev_lnum or not ends_with_open_bracket(prev) or starts_with_closer(current) then
-    return nil
-  end
-
-  local root = parser_root(bufnr, lnum)
-  if not root then
-    return nil
-  end
-
-  local paren_col = #prev:gsub("%s+$", "") - 1
-  local arguments =
-    root:descendant_for_range(prev_lnum - 1, paren_col, prev_lnum - 1, paren_col + 1)
-  if arguments and arguments:type() ~= "argument_list" then
-    arguments = arguments:parent()
-  end
-
-  local call = arguments and arguments:type() == "argument_list" and arguments:parent()
-  local chain = call and call:type() == "method_invocation" and call:parent()
-  if not chain or chain:type() ~= "method_invocation" or call:start() ~= prev_lnum - 1 then
-    return nil
-  end
-
-  local receiver = chain:field("object")[1]
-  local selector = chain:field("name")[1]
-  if not receiver or not receiver:equal(call) or not selector then
-    return nil
-  end
-
-  local call_end = call:end_()
-  if selector:start() <= call_end then
-    return nil
-  end
-
-  return vim.fn.indent(prev_lnum) + 2 * continuation_width()
-end
-
 -- A `case`/`default` label sits one block inside the line its switch starts on, whatever the case
 -- above it wrapped onto.
-local function switch_label_indent(bufnr, lnum, current)
+local function switch_label_indent(root, lnum, current)
   if not starts_with_switch_label(current) then
     return nil
   end
 
-  local root = parser_root(bufnr, lnum)
   if not root then
     return nil
   end
@@ -760,11 +718,11 @@ local function switch_label_indent(bufnr, lnum, current)
   return vim.fn.indent(current_node:parent():start() + 1) + block_width()
 end
 
-local function closer_block_indent(bufnr, lnum, current)
+-- A closing `}` aligns with the line its block belongs to.
+local function closer_block_indent(root, lnum, current)
   if not starts_with_closer(current) then
     return nil
   end
-  local root = parser_root(bufnr, lnum)
   if not root then
     return nil
   end
@@ -783,7 +741,9 @@ function M.compute(lnum, bufnr)
     end
   end
 
-  local text = text_block_indent(bufnr, lnum, current, prev_lnum)
+  -- One parse serves every tree rule below: during `=`, each reindented line changes the buffer.
+  local root = parser_root(bufnr, lnum)
+  local text = text_block_indent(root, lnum, current, prev_lnum)
   if text then
     return text
   end
@@ -797,19 +757,14 @@ function M.compute(lnum, bufnr)
     end
   end
 
-  local block = closer_block_indent(bufnr, lnum, current)
+  local block = closer_block_indent(root, lnum, current)
   if block then
     return block
   end
 
-  local label = switch_label_indent(bufnr, lnum, current)
+  local label = switch_label_indent(root, lnum, current)
   if label then
     return label
-  end
-
-  local argument = chain_root_argument_indent(bufnr, lnum, current, prev_lnum, prev)
-  if argument then
-    return argument
   end
 
   return heuristic_indent(lnum, current, prev_lnum, prev)
