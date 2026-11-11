@@ -86,8 +86,9 @@ if [ "$dry_run" -eq 0 ]; then
   git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1 \
     || die "tag ${tag} is not on origin — push the monorepo release first: git push origin ${tag}"
   # The client must never be ahead of every published server: wait for the server on Maven Central,
-  # which shows it a few minutes after the release workflow has published it.
-  # A failed release workflow stops the wait at once (when gh is installed), rather than at the timeout.
+  # which shows it a few minutes after the release workflow has published it. A failed workflow stops
+  # the wait at once (when gh is installed); it may have failed after its deploy, so undoing is the
+  # user's call, made on the run's steps.
   server_pom="https://repo1.maven.org/maven2/io/github/ag-libs/lathe-server/${version}/lathe-server-${version}.pom"
   undo="undo the release: git push --force-with-lease origin ${tag}~1:main && git push origin :refs/tags/${tag} && git tag -d ${tag}"
   for attempt in $(seq 1 45); do
@@ -97,7 +98,7 @@ if [ "$dry_run" -eq 0 ]; then
       --json status,conclusion --jq '.[0] | if .conclusion != "" then .conclusion else .status end' \
       2>/dev/null || true)"
     case "$workflow" in
-      failure | cancelled) die "the release workflow of ${tag} ended in ${workflow}, so lathe-server ${version} is not on Maven Central; ${undo}" ;;
+      failure | cancelled) die "the release workflow of ${tag} ended in ${workflow}. If its \"Build, sign, and deploy\" step failed, nothing reached Maven Central: ${undo}. If that step succeeded, the server will reach Central: rerun this" ;;
     esac
     [ "$attempt" -eq 45 ] && die "lathe-server ${version} is not on Maven Central after 45 minutes; if the release workflow failed, ${undo}; otherwise rerun this once it is there"
     [ "$attempt" -eq 1 ] && echo "Waiting for lathe-server ${version} on Maven Central..."
