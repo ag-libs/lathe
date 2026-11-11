@@ -27,6 +27,26 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   its LSP log (Neovim: [cheatsheet](editors/neovim.md#verbose-logging)). An unexpected exit
   is also surfaced as an editor notification pointing at the log, and a server that fails at JVM
   startup writes its error there too.
+- **A build check fails on files under `.lathe/`, from the second build on** — a check that scans the
+  whole project directory, not just the source roots, finds the compiled classes and resources Lathe
+  keeps in `.lathe/` (from the first build's sync on, so the first build passes).
+  nohttp is the usual one: a copied SBOM or a resource with an `http://` URL fails it.
+  Exclude `.lathe/` from the check, as you exclude `target/` or `build/`:
+
+  ```xml
+  <!-- Maven: the maven-checkstyle-plugin execution that runs nohttp-checkstyle -->
+  <excludes>**/.git/**/*,**/target/**/*,**/.lathe/**/*</excludes>
+  ```
+
+  ```groovy
+  // Gradle: the io.spring.nohttp plugin's own source set (an exclude on its checkstyleNohttp task is lost)
+  nohttp {
+    source.exclude '**/.lathe/**'
+  }
+  ```
+
+  Do the same for other whole-project checks (a license-header or RAT check that does not read
+  `.gitignore`), and add `.lathe/` to `.dockerignore` if a Docker build copies the project directory.
 - **Another Java language server (jdtls) misbehaves when Lathe is present** — a co-running Eclipse JDT LS
   scans Lathe's generated `.lathe/` mirror and can treat it as duplicate projects. Add `**/.lathe/**` to
   its `java.import.exclusions`; see
