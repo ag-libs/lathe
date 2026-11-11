@@ -250,7 +250,7 @@ class McpTextTest {
                     8,
                     LatheLocation.Origin.REACTOR,
                     "client.connect();")))
-        .isEqualTo("app/src/main/java/App.java:412: client.connect();");
+        .isEqualTo("app/src/main/java/App.java:412:9: client.connect();");
     assertThat(
             McpText.locationLine(
                 new LatheLocation(
@@ -260,7 +260,38 @@ class McpTextTest {
                     8,
                     LatheLocation.Origin.EXTERNAL,
                     "void connect() {")))
-        .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412 [EXTERNAL]: void connect() {");
+        .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412:9 [EXTERNAL]: void connect() {");
+  }
+
+  // Two uses on one line are two rows the column tells apart, not one row printed twice.
+  @Test
+  void referencesResult_twoHitsOnOneLine_rowsDifferByColumn() {
+    final var first =
+        new LatheLocation(
+            "file:///w/app/App.java",
+            "app/App.java",
+            11,
+            4,
+            LatheLocation.Origin.REACTOR,
+            "sell(sell(1));");
+    final var second =
+        new LatheLocation(
+            "file:///w/app/App.java",
+            "app/App.java",
+            11,
+            9,
+            LatheLocation.Origin.REACTOR,
+            "sell(sell(1));");
+
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(2, false, List.of(first, second)), McpText.NO_NOTES)))
+        .startsWith(
+            lines(
+                "2 reference(s):",
+                "app/App.java:12:5: sell(sell(1));",
+                "app/App.java:12:10: sell(sell(1));"));
   }
 
   // A capped list says how many there are in all; an empty one says none, without the authority.
@@ -277,8 +308,8 @@ class McpTextTest {
         .startsWith(
             lines(
                 "5 references (showing first 2):",
-                "app/App.java:12: shop.sell(1);",
-                "lib/Lib.java:3 [EXTERNAL]: void sell(int n) {",
+                "app/App.java:12:1: shop.sell(1);",
+                "lib/Lib.java:3:1 [EXTERNAL]: void sell(int n) {",
                 "",
                 "All javac-resolved references"));
     assertThat(
@@ -288,7 +319,7 @@ class McpTextTest {
         .startsWith(
             lines(
                 "1 implementation(s):",
-                "app/App.java:12: shop.sell(1);",
+                "app/App.java:12:1: shop.sell(1);",
                 "",
                 "All javac-resolved implementers"));
     assertThat(
@@ -327,7 +358,7 @@ class McpTextTest {
         .endsWith(
             lines(
                 "Not renamed — review: the old name is still text in 4 place(s) (showing first 1):",
-                "app/Shop.java:7: // the count of items"));
+                "app/Shop.java:7:1: // the count of items"));
     assertThat(
             text(
                 McpText.renameResult(
@@ -347,14 +378,15 @@ class McpTextTest {
                     new LatheCallHierarchy(true, 3, true, List.of(caller)),
                     SymbolScope.REACTOR,
                     McpText.NO_NOTES)))
-        .isEqualTo(lines("3 callers (showing first 1):", "← run  app/App.java:12: shop.sell(1);"));
+        .isEqualTo(
+            lines("3 callers (showing first 1):", "← run  app/App.java:12:1: shop.sell(1);"));
     assertThat(
             text(
                 McpText.callHierarchyResult(
                     new LatheCallHierarchy(false, 1, false, List.of(callee)),
                     SymbolScope.ALL,
                     McpText.NO_NOTES)))
-        .isEqualTo(lines("1 call(s):", "→ total  app/Shop.java:9: return total();"));
+        .isEqualTo(lines("1 call(s):", "→ total  app/Shop.java:9:1: return total();"));
     assertThat(
             text(
                 McpText.callHierarchyResult(
@@ -391,8 +423,8 @@ class McpTextTest {
         .isEqualTo(
             lines(
                 "2 symbol(s):",
-                "Shop (class) — com.example  app/Shop.java:3",
-                "sell (method)  app/Shop.java:8"));
+                "Shop (class) — com.example  app/Shop.java:3:1",
+                "sell (method)  app/Shop.java:8:1"));
     assertThat(text(McpText.searchResult("Cart", List.of(), McpText.NO_NOTES)))
         .isEqualTo("No symbols matching 'Cart'.");
   }
@@ -481,8 +513,8 @@ class McpTextTest {
                 "affected modules: app, core",
                 "relevant tests: ShopTest",
                 "override family: 2",
-                "app/Base.java:4: abstract int sell(int count);",
-                "app/Shop.java:8: int sell(int count) {"));
+                "app/Base.java:4:1: abstract int sell(int count);",
+                "app/Shop.java:8:1: int sell(int count) {"));
     assertThat(
             text(
                 McpText.analyzeResult(

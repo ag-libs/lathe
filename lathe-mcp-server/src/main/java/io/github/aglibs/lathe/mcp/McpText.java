@@ -508,8 +508,14 @@ final class McpText {
     return "%s: %s".formatted(position(location), location.snippet());
   }
 
+  // The column tells two hits on one line apart, and is the position the other tools take.
   static String position(final LatheLocation location) {
-    return "%s:%d%s".formatted(location.path(), line(location), originTag(location.origin()));
+    return "%s:%d:%d%s"
+        .formatted(
+            location.path(),
+            line(location),
+            toWire(location.column()),
+            originTag(location.origin()));
   }
 
   static int line(final LatheLocation location) {

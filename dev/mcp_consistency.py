@@ -7,7 +7,7 @@ its Battery (call/raw/check) in as `b`.
 import re
 from pathlib import Path
 
-LOCATION = re.compile(r"(\S+\.java):(\d+)(?: \[(\w+)\])?: ?(.*)$")
+LOCATION = re.compile(r"(\S+\.java):(\d+)(?::\d+)?(?: \[(\w+)\])?: ?(.*)$")
 OUTLINE_ITEM = re.compile(r"^( *)(\S+) (.+?)  (\d+):(\d+): ")
 SERVER_LOG_FAILURE = "see the server log"
 
@@ -180,7 +180,8 @@ def family_covers_definitions(b, ws: Path, decl_file: Path, pos, name, label, li
 def list_shape(b, ws: Path, text, label, duplicates_known=None, grouped_known=None):
     """A location list has no duplicate rows and keeps each module's rows together."""
     rows = locations(text)
-    keys = [(p, line, s) for p, line, s in rows]
+    # The whole row, column included: two hits on one line differ only by it.
+    keys = [line for line in text.splitlines() if LOCATION.search(line)]
     duplicates = len(keys) - len(set(keys))
     b.check("%s: no duplicate rows" % label, duplicates == 0, "%d duplicate(s) in %d row(s)" % (duplicates, len(rows)),
             known=duplicates_known)

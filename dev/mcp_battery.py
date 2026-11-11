@@ -189,8 +189,7 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured):
     ref_modules = {mc.module_of(ws, p) for p, _, _ in mc.locations(refs)} - {None}
     b.check("find_references: uses in several modules", mc.count(refs) >= 3 and len(ref_modules) >= 2,
             "%d reference(s) in %d module(s)" % (mc.count(refs), len(ref_modules)))
-    mc.list_shape(b, ws, refs, "find_references",
-                  duplicates_known="two hits on one line show as identical rows with no column")
+    mc.list_shape(b, ws, refs, "find_references")
 
     incoming = b.raw("call_hierarchy", dict(pos, direction="incoming"))[0]
     if cfg["is_method"]:
