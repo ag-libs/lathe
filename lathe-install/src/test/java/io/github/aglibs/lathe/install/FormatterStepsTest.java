@@ -156,7 +156,7 @@ class FormatterStepsTest {
 
     assertThat(google.classpath())
         .containsExactly(
-            Path.of("transitive", "com.google.googlejavaformat:google-java-format:1.28.0")
+            Path.of("transitive", "com.google.googlejavaformat_google-java-format_1.28.0.jar")
                 .toString());
     assertThat(eclipse.classpath()).hasSizeGreaterThan(1);
     assertThat(resolver.alone).hasSize(eclipse.classpath().size());
@@ -232,7 +232,8 @@ class FormatterStepsTest {
     return new FormatterSpec(LatheFlags.FORMATTER_GOOGLE, List.of(), version, options, List.of());
   }
 
-  // Answers each coordinate with a path naming how it was asked for.
+  // Answers each coordinate with a path naming how it was asked for; a jar name never holds the
+  // coordinates' colons, which no Windows path may.
   private static final class RecordingResolver implements ArtifactResolver {
 
     private final List<String> alone = new ArrayList<>();
@@ -241,13 +242,17 @@ class FormatterStepsTest {
     @Override
     public Path resolve(final String coordinates) {
       alone.add(coordinates);
-      return Path.of("alone", coordinates);
+      return Path.of("alone", jar(coordinates));
     }
 
     @Override
     public List<Path> resolveTransitive(final String coordinates) {
       transitive.add(coordinates);
-      return List.of(Path.of("transitive", coordinates));
+      return List.of(Path.of("transitive", jar(coordinates)));
+    }
+
+    private static String jar(final String coordinates) {
+      return "%s.jar".formatted(coordinates.replace(':', '_'));
     }
   }
 }
