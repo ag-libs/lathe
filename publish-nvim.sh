@@ -85,6 +85,15 @@ trap cleanup EXIT
 if [ "$dry_run" -eq 0 ]; then
   git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1 \
     || die "tag ${tag} is not on origin — push the monorepo release first: git push origin ${tag}"
+  # The client must never be ahead of every published server: wait for the server on Maven Central,
+  # which shows it a few minutes after the release workflow has published it.
+  server_pom="https://repo1.maven.org/maven2/io/github/ag-libs/lathe-server/${version}/lathe-server-${version}.pom"
+  for attempt in $(seq 1 45); do
+    curl -fsI "$server_pom" >/dev/null 2>&1 && break
+    [ "$attempt" -eq 45 ] && die "lathe-server ${version} is not on Maven Central after 45 minutes: if the release workflow failed, undo the release (git push origin :refs/tags/${tag}, and main back before its release commit); otherwise rerun this once it is there"
+    [ "$attempt" -eq 1 ] && echo "Waiting for lathe-server ${version} on Maven Central..."
+    sleep 60
+  done
 fi
 
 if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
