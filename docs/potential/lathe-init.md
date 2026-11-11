@@ -12,7 +12,7 @@ Nothing here is approved for implementation; [What changes](#what-changes) needs
 
 - **From personal to team** (2026-10-24): an explicit, previewed step that writes `.mvn/extensions.xml` pinned to the version the user already runs ([Team mode](#team-mode)).
 - **One command, `:LatheInit`, with a dialog** (2026-10-28), replacing `:LatheInitPlain` and Personal Setup's `:LatheSetup`: Plain Java, Maven personal, Maven team, Sync, OpenJDK, later Gradle.
-- **Detection looks only at the opened folder** (2026-10-28): a `pom.xml`, Gradle files or `.lathe/` there pick the dialog's default, which covers the large majority of projects (estimated 95%); the user chooses explicitly otherwise.
+- **Detection walks up from the current file** (2026-11-11, replacing "only the opened folder" of 2026-10-28): from the current buffer's file, else `:pwd`, to the build's root, which the dialog names before anything runs ([Finding the build's root](#finding-the-builds-root)).
 - **Personal activation is `-Dmaven.ext.class.path`** with `lathe-maven-extension` and its runtime dependencies at the client's version (2026-10-28; the dependencies added 2026-11-11), [spiked](#spike-results-2026-11-11) on Maven 3.6.3 and 3.9.11.
 - **Plain mode is personal mode on a generated `.lathe-pom.xml` that never mentions Lathe** (2026-10-28), run by a bundled Maven Wrapper, so the user installs only a JDK.
 - **`.lathe-pom.xml` is written once and then belongs to the user** (2026-10-29): release, formatter and dependencies are edited there.
@@ -92,9 +92,9 @@ Team mode follows; plain mode follows once its blockers ([issues 2 and 4](#open-
 ### The `:LatheInit` dialog
 
 Neovim `:LatheInit`; VS Code **Lathe: Initialize Workspace** (a quick pick).
-Detection looks only at the opened folder and only proposes the default:
+Detection finds the build's root ([below](#finding-the-builds-root)) and only proposes the default:
 
-| Found in the folder | Default | Also offered |
+| Found at the root | Default | Also offered |
 |---|---|---|
 | `.lathe/` | **Sync** (`.lathe/lathe-sync.sh`) | the mode-specific re-init |
 | `pom.xml`, Lathe registered (the client text-checks `.mvn/extensions.xml` and the POM for `lathe-maven-extension`) | **Sync** (a build of the project) | none |
@@ -113,8 +113,29 @@ Lathe: initialize ~/work/course-app
 ```
 
 - Enter accepts the default, so the common case is one keystroke.
-- The choice can be passed directly: `:LatheInit plain|maven|maven-team|gradle|gradle-team|sync|openjdk`.
-- A build file outside the opened folder (a module of a bigger project opened alone): the user chooses explicitly, or opens the folder that holds the build; the workspace root is always the build file's folder, because clients find `.lathe/` by walking up from a source file.
+- The choice can be passed directly: `:LatheInit plain|maven|maven-team|gradle|gradle-team|sync|openjdk`, with a directory to override the root (`:LatheInit maven ~/work/app`).
+
+### Finding the build's root
+
+**Agreed 2026-11-11.** The first design looked only at the opened folder (`:pwd`).
+A Neovim user starts the editor from a module, from a folder of several projects, or with `nvim path/to/Foo.java`, and the rest of the client already ignores `:pwd`: it finds `.lathe/` by walking up from the buffer's file (`workspace.lua`).
+Worse, a module's own `pom.xml` would propose Maven personal there, and Lathe skips a build that is not the reactor root (`ReactorProjects.isReactorRoot`), so the build would succeed and write no `.lathe/`, with no word why.
+
+So `:LatheInit` walks up from the current buffer's file, else from `:pwd`:
+
+| Walking up finds | Root |
+|---|---|
+| `.lathe/` | that folder: **Sync**, the client's existing root lookup |
+| `settings.gradle(.kts)` | the nearest one: Gradle's own rule for a build's root |
+| a folder with `pom.xml` and `.mvn/` or `mvnw` | that folder: the reactor root by Maven's own markers |
+| `pom.xml` without those | the topmost folder of the unbroken run of folders holding a `pom.xml` |
+| a Maven and a Gradle root | the dialog asks which |
+| nothing | `:pwd`, for **Plain Java** |
+
+- The Maven fallback is a heuristic: Lathe's own check, `ReactorProjects.isReactorRoot` in `lathe-maven-plugin`, reads each parent POM's `<modules>`, which the Lua client does not parse.
+  When the client guesses a module, Maven gives the exact answer: `lathe:init` and `lathe:sync` skip a build that is not the reactor root.
+  That skip logs at debug level today; it becomes a warning naming the reactor root (*"[lathe] … is a module of the reactor at …; run the build there"*), which the client shows as the reason no `.lathe/` appeared.
+- The dialog's header shows the root it found, so a wrong guess is visible before anything runs, and `:LatheInit <mode> <dir>` overrides it.
 
 ### Personal activation
 
@@ -270,7 +291,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 
 ### Maven personal mode
 
-1. **Check:** a `pom.xml` in the opened folder, Lathe not registered (else the dialog defaults to Sync).
+1. **Check:** a Maven root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else the dialog defaults to Sync).
 2. **Pre-flight:** find Maven (project `mvnw`, else `mvn` on `PATH`, else the bundled wrapper); Maven 3.6.3+; Maven's JDK 17+ ([Detecting and explaining](#detecting-and-explaining)).
 3. **Fetch** the activation jars if missing.
 4. **Run** `<maven> -Dmaven.ext.class.path=… -Dmaven.compiler.failOnError=false process-test-classes` at the reactor root: editing first, no clean, no tests executed; tests are captured on demand.
@@ -278,7 +299,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 
 ### Gradle personal mode
 
-1. **Check:** a settings or build script in the opened folder, Lathe not registered (else the dialog defaults to Sync).
+1. **Check:** a Gradle root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else the dialog defaults to Sync).
 2. **Pre-flight:** find Gradle (the project's `gradlew`, else `gradle` on `PATH` resolved to its full path); Gradle 8.8+ and JDK 17+ are checked inside the build, which stops with a message ([Gradle support](../done/lathe-gradle-support.md)).
 3. **Write** `~/.cache/lathe/bootstrap/<v>/lathe.init.gradle.kts` from the client's template if missing:
 
@@ -396,6 +417,7 @@ New Java Project gains a **Plain Java (no build tool)** choice that writes `src/
 | Maven's JDK below 17 | client (`mvn -v`, or the JDK's `release` file) | *"Lathe needs Maven to run on Java 17+ (your project can still target older Java)."* |
 | Compiler plugin below 3.6.2 | inside Maven (D3) | *"[lathe] … pin a newer maven-compiler-plugin … or build with -Dlathe.disabled=true"* |
 | A build ran but wrote no `.lathe/` | client, after the build | *"Lathe needs Maven 3.6.3+ and prints `[lathe]` lines in the build log; if there are none, the extension did not load."* |
+| The build was a module, not the reactor root | inside Maven: `lathe:init`'s reactor-root check, a warning naming the root | *"Lathe: this folder is a module of the build at `~/work/app`; run `:LatheInit` there."* |
 | A JDK without `src.zip` | client | *"This JDK has no sources (install `openjdk-NN-source`): no navigation into the JDK."* |
 
 ### Other topics
@@ -451,6 +473,7 @@ For v1 (Maven personal, Gradle personal, Sync):
 - **`SyncScript`** (`lathe-install`): check the files the script replays before it runs, naming `:LatheInit` when one is missing; a change to a public record, so it needs its own design summary.
 - **`MavenSyncScript`:** replay `-Dmaven.ext.class.path` and `-Dmaven.compiler.failOnError=false`, only when the project does not register Lathe, which it checks itself.
 - **`WorkspaceSync`:** write `.lathe/.gitignore` when missing, for Maven and Gradle.
+- **`lathe:init`:** the skip of a build that is not the reactor root becomes a warning naming the root.
 - **Docs:** the Neovim cheatsheet ("Set up a project": `:LatheInit`, personal modes, upgrading), the installation guide, the Maven and Gradle guides (personal mode; the Gradle guide's cache note), `status.md`.
 
 After v1:
