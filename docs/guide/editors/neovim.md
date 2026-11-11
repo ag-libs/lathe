@@ -277,6 +277,19 @@ Both follow a per-workspace **style** — a project's committed `lathe-style.jso
   `style.indent.continuation` (or override the block with `style.indent.block`).
 - `google` — 2-space block, 4-space continuation.
 
+Which indent a Java buffer gets, when they disagree:
+
+1. **The project's style:** a committed `lathe-style.json` `indent`, or the indent the sync derives from
+   the project's formatter (google-java-format's Google style 2/4, its AOSP style and palantir 4/8).
+   It wins over `.editorconfig`: format-on-save would rewrite any other indent, so typing follows the
+   formatter.
+2. **The project's `.editorconfig`,** when the style's profile is `editorconfig` (an Eclipse or command
+   formatter, or none) or the project has no style.
+3. **`style.indent` in `setup()`:** your fallback for projects that say nothing.
+
+EditorConfig still applies everything else to Java buffers (charset, line endings, trailing
+whitespace, final newline), and governs every other file type.
+
 **Formatting** — on Maven you usually set nothing: the sync detects the project's Spotless formatter
 (`googleJavaFormat`, `palantirJavaFormat`, or `eclipse`) and the server runs that exact release
 in-process, so formatting takes milliseconds.
