@@ -10001,7 +10001,7 @@ A query that itself found the lock held waited the same way, and a query gives u
 
 A query no longer waits for the tick.
 When a query's pass queues behind a pass waiting for the lock, that pass tries the lock at once,
-and while a query waits on it, a waiting pass tries again every 100 ms, as `LatheLock`'s own wait does, instead of every scan tick.
+and for the 2 s the query waits on it, a waiting pass tries again every 100 ms, as `LatheLock`'s own wait does, instead of every scan tick; past that grace the query has answered and the pass is back at the scan pace.
 An idle editor's server still tries only at its tick, so it wakes no more often while another server's long pass (a branch switch) runs.
 A query still answers after the 2 s grace when the other server's pass runs longer than that, as `verify_change` already says (`another Lathe server on this workspace is updating .lathe/`).
 

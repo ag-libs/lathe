@@ -56,6 +56,8 @@ final class WritePass {
 
   private static final long DEFAULT_SCAN_INTERVAL_MS = 2_000L;
   private static final String WRITE_LOCK_KEY = "write-lock";
+  // Long enough for another server's pass after a save; a query waits no longer than this for it.
+  static final long OTHER_SERVER_GRACE_MS = 2_000;
   // How often a pass that a query waits on tries the write lock again, as LatheLock's own wait.
   private static final long QUERY_LOCK_RETRY_MS = 100;
 
@@ -108,6 +110,9 @@ final class WritePass {
   // The next attempt of a pass waiting for another server to release the write lock; null when
   // none waits.
   private Runnable writeLockRetry;
+  // Since a query began waiting on that pass; null when none waits. Past the grace the query has
+  // answered, so the pass goes back to trying at the scan pace.
+  private Stopwatch queryWaiting;
   // Each source tree's stamps as this server last knew them, its own writes included: stamps that
   // differ at the next pass were written by another server on the workspace (or a build).
   private final Map<ModuleSourceConfig, Map<Path, SourceStamp>> stampsSeen = new HashMap<>();
@@ -221,6 +226,7 @@ final class WritePass {
       // A query waits on the passes before its own: one waiting for the lock tries it now, as the
       // other server's pass may have ended since its last try.
       if (eager && writeLockRetry != null) {
+        queryWaiting = Stopwatch.start();
         eventLoop.schedule(WRITE_LOCK_KEY, 0, writeLockRetry);
       }
 
@@ -243,24 +249,29 @@ final class WritePass {
           LatheLock.tryExclusive(
               LatheLayout.writeLockFile(state.root().resolve(LatheLayout.LATHE_DIR)));
       // The other server's pass can run for minutes (a branch switch); trying again only as often
-      // as the change scan keeps an editor's idle server from waking more while it waits. A query
-      // waiting on it tries sooner, so it waits about as long as the other pass runs.
+      // as the change scan keeps an editor's idle server from waking more while it waits. During a
+      // query's grace it tries sooner, so the query waits about as long as the other pass runs.
       if (lock.isEmpty()) {
         if (writeLockRetry == null) {
           LOG.fine(() -> "[reconcile] write lock held by another server, waiting");
+          queryWaiting = eager ? Stopwatch.start() : null;
         }
 
         writeLockRetry = () -> runLocked(eager, pass);
-        final long retryMs = eager || nextPassEager ? QUERY_LOCK_RETRY_MS : scanIntervalMs();
-        eventLoop.schedule(WRITE_LOCK_KEY, retryMs, writeLockRetry);
+        final boolean queryInGrace =
+            queryWaiting != null && queryWaiting.elapsedMs() < OTHER_SERVER_GRACE_MS;
+        eventLoop.schedule(
+            WRITE_LOCK_KEY, queryInGrace ? QUERY_LOCK_RETRY_MS : scanIntervalMs(), writeLockRetry);
         return;
       }
 
       writeLockRetry = null;
+      queryWaiting = null;
       writeLock = lock.get();
       runPass(eager, pass);
     } catch (final IOException | RuntimeException e) {
       writeLockRetry = null;
+      queryWaiting = null;
       LOG.log(Level.SEVERE, e, () -> "[reconcile] pass failed");
       pass.completeExceptionally(e); // never leave a pass running, or every later request waits
     }
