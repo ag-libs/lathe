@@ -90,7 +90,7 @@ if [ "$dry_run" -eq 0 ]; then
   server_pom="https://repo1.maven.org/maven2/io/github/ag-libs/lathe-server/${version}/lathe-server-${version}.pom"
   for attempt in $(seq 1 45); do
     curl -fsI "$server_pom" >/dev/null 2>&1 && break
-    [ "$attempt" -eq 45 ] && die "lathe-server ${version} is not on Maven Central after 45 minutes: if the release workflow failed, undo the release (git push origin :refs/tags/${tag}, and main back before its release commit); otherwise rerun this once it is there"
+    [ "$attempt" -eq 45 ] && die "lathe-server ${version} is not on Maven Central after 45 minutes: if the release workflow failed, undo the release (git push --force-with-lease origin ${tag}~1:main && git push origin :refs/tags/${tag} && git tag -d ${tag}); otherwise rerun this once it is there"
     [ "$attempt" -eq 1 ] && echo "Waiting for lathe-server ${version} on Maven Central..."
     sleep 60
   done

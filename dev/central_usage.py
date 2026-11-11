@@ -5,7 +5,8 @@ whether one more release fits the free tier's monthly file limit; exit 3 when it
 
     python3 -I dev/central_usage.py
 
-Central evaluates its limits per calendar month (UTC) against the organisation's whole usage, so
+Central evaluates its limits per calendar month (taken here as UTC, as repo1's listing times are)
+against the organisation's whole usage, so
 every artifact under the namespace counts, not only Lathe's. The limit is LATHE_CENTRAL_FILE_LIMIT
 (default 1000), copied from the Usage Center, as Sonatype may change it; Central has no usage API.
 The next release is estimated from the newest Lathe release's files, without the SHA-256 and
