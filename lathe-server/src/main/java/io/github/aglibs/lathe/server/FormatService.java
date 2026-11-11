@@ -131,9 +131,9 @@ final class FormatService {
     if (engine == null) {
       final String reason =
           pinned
-              ? "The project's formatter is not resolved yet: run `%s`."
+              ? "The project's formatter is not resolved yet: run `%s`, then restart Lathe."
                   .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
-              : "No formatter for this workspace: the project pins none (no Spotless Java step), so a sync does not add one; name one in %s to format here."
+              : "No formatter for this workspace: the project declares none (no formatter in %s, and on Maven no Spotless Java step); declare one there to format here."
                   .formatted(LatheLayout.STYLE_SHARED_FILE);
       return CompletableFuture.failedFuture(FeatureAnswers.refused(reason));
     }

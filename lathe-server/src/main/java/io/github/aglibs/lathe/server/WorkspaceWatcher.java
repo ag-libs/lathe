@@ -39,6 +39,8 @@ final class WorkspaceWatcher {
   private record FileStat(long mtime, long size) {}
 
   private final Path manifestPath;
+  // Watched even when the last sync saw none: declaring a formatter there needs a sync too.
+  private final Path styleFile;
   private long lastManifestMtime;
   private String lastManifestContent;
   // Each build file's mtime and size at the last poll: what moved since is looked at again.
@@ -53,6 +55,7 @@ final class WorkspaceWatcher {
   WorkspaceWatcher(final Path workspaceRoot) {
     this.manifestPath =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    this.styleFile = workspaceRoot.resolve(LatheLayout.STYLE_SHARED_FILE);
     this.lastManifestMtime = mtime(manifestPath);
     this.lastManifestContent = readManifest();
   }
@@ -106,16 +109,23 @@ final class WorkspaceWatcher {
   }
 
   // A file watched by touch differs whenever it moved; one watched by content only when its
-  // content is not what the sync saw (a touch, or an edit put back, is not a change).
+  // content is not what the sync saw (a touch, or an edit put back, is not a change). A file the
+  // sync never saw differs only while it exists.
   private boolean differsFromSync(final Path file) {
-    return !ServerFiles.hasContent(file, syncedContent.get(file));
+    final ContentFingerprint synced = syncedContent.get(file);
+    if (synced == null && file.equals(styleFile)) {
+      return Files.exists(file);
+    }
+
+    return !ServerFiles.hasContent(file, synced);
   }
 
   // A file watched by touch is taken as changed before startup when it is newer than the manifest
   // the last sync wrote.
-  void updateBuildFiles(
-      final List<Path> absBuildFiles, final Map<Path, ContentFingerprint> synced) {
+  void updateBuildFiles(final List<Path> buildFiles, final Map<Path, ContentFingerprint> synced) {
     final long syncedMs = mtime(manifestPath);
+    final List<Path> absBuildFiles =
+        Stream.concat(buildFiles.stream(), Stream.of(styleFile)).distinct().toList();
     syncedContent = Map.copyOf(synced);
     buildFileStats = statAll(absBuildFiles);
     changedSinceSync = Set.of();

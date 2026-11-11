@@ -120,6 +120,36 @@ class WorkspaceManifestWriterTest {
     assertThat(data.jdk().sourceDir()).isNull();
   }
 
+  // lathe-style.json declares the formatter the sync resolves, so it is a build file when present;
+  // the test above lists none without it.
+  @Test
+  void write_styleFilePresent_fingerprintedWithTheBuildFiles() throws Exception {
+    final Path style =
+        Files.writeString(
+            workspaceRoot.resolve(LatheLayout.STYLE_SHARED_FILE),
+            "{\"formatter\":{\"engine\":\"google\"}}");
+
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(),
+        JdkSource.missing("Example Vendor", "21.0.1", "example-vendor-21.0.1", Path.of("/jdk")),
+        null,
+        List.of(),
+        List.of("pom.xml"),
+        List.of(),
+        List.of(),
+        TOOL);
+
+    final var data =
+        Json.read(
+            workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+            WorkspaceManifestData.class);
+    assertThat(data.buildFiles())
+        .containsExactly(
+            new BuildFileData("pom.xml", FileUtil.fingerprint(pom)),
+            new BuildFileData(LatheLayout.STYLE_SHARED_FILE, FileUtil.fingerprint(style)));
+  }
+
   @Test
   void write_sameContent_touchesMtimeButKeepsContent() throws Exception {
     final var jdk = JdkSource.missing("Vendor", "21", "vendor-21", Path.of("/jdk"));

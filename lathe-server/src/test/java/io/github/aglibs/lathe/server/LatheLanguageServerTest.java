@@ -111,23 +111,7 @@ class LatheLanguageServerTest {
         .containsEntry(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL);
   }
 
-  @Test
-  void initialize_optionFormatterCommand_advertisesFormatting() throws Exception {
-    final var server = new LatheLanguageServer();
-    server.connect(mock(LatheLanguageClient.class));
-    final var params = new InitializeParams();
-    params.setInitializationOptions(
-        JsonParser.parseString(
-                "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[\"cat\"]}}}}")
-            .getAsJsonObject());
-
-    final var capabilities = server.initialize(params).get().getCapabilities();
-
-    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
-    server.shutdown().join();
-  }
-
-  static Stream<Arguments> initialize_optionNoFormatter_cases() {
+  static Stream<Arguments> initialize_optionFormatter_cases() {
     return Stream.of(
         Arguments.of((Object) null),
         Arguments.of(JsonParser.parseString("{}").getAsJsonObject()),
@@ -147,13 +131,17 @@ class LatheLanguageServerTest {
         Arguments.of(
             JsonParser.parseString(
                     "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[]}}}}")
+                .getAsJsonObject()),
+        // An editor-wide default formatter is not read: formatting comes only from the project.
+        Arguments.of(
+            JsonParser.parseString(
+                    "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[\"cat\"]}}}}")
                 .getAsJsonObject()));
   }
 
   @ParameterizedTest
-  @MethodSource("initialize_optionNoFormatter_cases")
-  void initialize_optionNoUsableFormatter_omitsFormatting(final Object initOptions)
-      throws Exception {
+  @MethodSource("initialize_optionFormatter_cases")
+  void initialize_optionFormatter_omitsFormatting(final Object initOptions) throws Exception {
     final var server = new LatheLanguageServer();
     server.connect(mock(LatheLanguageClient.class));
     final var params = new InitializeParams();
@@ -183,13 +171,15 @@ class LatheLanguageServerTest {
     assertThat(initializeWithRoot(null).getDocumentFormattingProvider()).isNull();
   }
 
+  // A committed declaration runs from the jars the sync resolved for it.
   @Test
-  void initialize_styleFileNone_overridesClientGoogleAndOmitsFormatting() throws Exception {
-    writeStyle("{\"formatter\":{\"engine\":\"none\"}}");
-    final var clientGoogle =
-        JsonParser.parseString("{\"lathe\":{\"formatter\":\"google\"}}").getAsJsonObject();
+  void initialize_declaredFormatterResolvedBySync_advertisesFormatting() throws Exception {
+    writeStyle(
+        "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\",\"classpath\":[\"/pinned/gjf.jar\"]}}");
+    Files.writeString(
+        root.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\":{\"engine\":\"google\"}}");
 
-    assertThat(initializeWithRoot(clientGoogle).getDocumentFormattingProvider()).isNull();
+    assertThat(initializeWithRoot(null).getDocumentFormattingProvider().getLeft()).isTrue();
   }
 
   private void writeStyle(final String json) throws Exception {

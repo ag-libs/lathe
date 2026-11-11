@@ -59,13 +59,14 @@ public final class FormatEngines {
     };
   }
 
-  // The project's pinned formatter is unavailable until lathe:sync has resolved its jars.
+  // The project's pinned formatter is unavailable until a sync has resolved its jars for what the
+  // style files declare now.
   private static FormatEngine pinned(
       final FormatterSpec spec, final Supplier<FormatEngine> engine) {
     if (spec.classpath().isEmpty()) {
       LOG.warning(
           () ->
-              "[initialize] %s formatter has no resolved classpath; run %s"
+              "[initialize] %s formatter has no resolved classpath; run %s, then restart"
                   .formatted(spec.engine(), LatheLayout.SYNC_SCRIPT_COMMAND));
       return null;
     }
