@@ -68,7 +68,7 @@ mvn clean test -Dlathe.capture.only=true               # Maven
 ./gradlew latheSync -Plathe.capture.only=true          # Gradle
 ```
 
-Add `.lathe/` to your `.gitignore`, and exclude it from any check that scans the whole project directory, such as nohttp ([how](docs/guide/troubleshooting.md)).
+`.lathe/` keeps itself out of git (Lathe writes a `.gitignore` inside it); exclude it from any check that scans the whole project directory, such as nohttp ([how](docs/guide/troubleshooting.md)).
 After this, every normal build keeps Lathe up to date.
 
 **3. Set up your editor** using its guide below.

@@ -10,6 +10,7 @@ There are no Groovy or BeanShell verify scripts: a fixture proves what it tests 
 | `formatters` | One project synced once per Spotless formatter, palantir then Eclipse; the second build also checks the first one's `jvm.args` is gone. |
 | `lombok` | A Lombok project as its users build it, checked against the real LSP and MCP servers (`LombokTest`); JDK 17 to 27 only. |
 | `multi-module` | The main fixture, a reactor of six modules (below), built twice: a full `test`, then a scoped sync with one `-pl` per module. |
+| `personal-activation` | Lathe brought in from the command line, as `:LatheInit` does (`-Dmaven.ext.class.path` with the extension and its runtime dependencies, `failOnError` off), on a project that does not register it and does not compile: every module is captured, the sync script replays the activation and requires its jars, `.lathe/` ignores itself (`PersonalActivationTest`). |
 | `old-compiler` | A compiler plugin older than Lathe supports: the requirements check fails the build. |
 | `shaded` | A module shading Gson into its main jar and a module compiling against the relocated classes, with `lathe.sync.phase=package` in `.mvn/maven.config`: the editor sees the relocated classes (`ShadedTest`) and the sync script builds to `package`. |
 

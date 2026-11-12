@@ -17,9 +17,13 @@ import org.slf4j.LoggerFactory;
 // are that build's own, so the script chooses nothing. A front-end only fills this in; testsGoals
 // and moduleArgs are both empty when it ignores arguments (OpenJDK re-reads the whole build).
 // Everything but fixedArgs is spliced in unquoted, so those tokens must not contain whitespace.
+// requiredFiles are what the build was started with to bring Lathe in (extension jars, or a
+// directory): the script stops when one is gone, as Maven would otherwise build without Lathe,
+// silently.
 public record SyncScript(
     Path tool,
     Path javaHome,
+    List<Path> requiredFiles,
     List<String> fixedArgs,
     List<String> goals,
     List<String> testsGoals,
@@ -27,8 +31,11 @@ public record SyncScript(
     List<String> afterModules) {
 
   private static final Logger LOG = LoggerFactory.getLogger(SyncScript.class);
+  private static final String SETUP_GONE =
+      "not found; it brought Lathe into this build, so set Lathe up for this project again";
 
   public SyncScript {
+    requiredFiles = List.copyOf(requiredFiles);
     fixedArgs = List.copyOf(fixedArgs);
     goals = List.copyOf(goals);
     testsGoals = List.copyOf(testsGoals);
@@ -41,6 +48,9 @@ public record SyncScript(
         .when(
             javaHome != null,
             v -> v.assertTrue(javaHome.isAbsolute(), "javaHome must be an absolute path"))
+        .assertTrue(
+            requiredFiles.stream().allMatch(Path::isAbsolute),
+            "requiredFiles must be absolute paths")
         .notEmpty(goals, "goals")
         .assertTrue(
             testsGoals.isEmpty() == moduleArgs.isEmpty(),
@@ -83,7 +93,7 @@ public record SyncScript(
           echo "lathe-sync: $tool not found; run a Lathe-enabled build to regenerate this script" >&2
           exit 1
         fi
-        %sset -- "$tool" %s
+        %s%sset -- "$tool" %s
         echo "lathe-sync: $*" >&2
         export JAVA_HOME=%s
         exec "$@"
@@ -92,9 +102,30 @@ public record SyncScript(
             LatheLayout.syncScriptCommand(false),
             LatheLayout.SYNC_TESTS_FLAG,
             quote(tool.toString()),
+            posixRequired(),
             posixArguments(),
             posixCommand(),
             quote(javaHome.toString()));
+  }
+
+  private String posixRequired() {
+    if (requiredFiles.isEmpty()) {
+      return "";
+    }
+
+    return """
+        for required in %s; do
+          if [ ! -e "$required" ]; then
+            echo "lathe-sync: $required %s" >&2
+            exit 1
+          fi
+        done
+        """
+        .formatted(
+            requiredFiles.stream()
+                .map(file -> quote(file.toString()))
+                .collect(Collectors.joining(" ")),
+            SETUP_GONE);
   }
 
   private String posixArguments() {
@@ -162,7 +193,7 @@ public record SyncScript(
         echo lathe-sync: "%%tool%%" not found; run a Lathe-enabled build to regenerate this script 1>&2
         exit /b 1
         :found
-        %sset "JAVA_HOME=%s"
+        %s%sset "JAVA_HOME=%s"
         echo lathe-sync: "%%tool%%" %s 1>&2
         call "%%tool%%" %s
         exit /b %%ERRORLEVEL%%
@@ -171,11 +202,34 @@ public record SyncScript(
             LatheLayout.syncScriptCommand(true),
             LatheLayout.SYNC_TESTS_FLAG,
             batch(tool.toString()),
+            cmdRequired(),
             cmdArguments(),
             batch(javaHome.toString()),
             command,
             command)
         .replace("\n", "\r\n");
+  }
+
+  private String cmdRequired() {
+    if (requiredFiles.isEmpty()) {
+      return "";
+    }
+
+    final String checks =
+        requiredFiles.stream()
+            .map(
+                file ->
+                    "set \"required=%s\"\nif not exist \"%%required%%\" goto missing\n"
+                        .formatted(batch(file.toString())))
+            .collect(Collectors.joining());
+    return """
+        %sgoto required
+        :missing
+        echo lathe-sync: "%%required%%" %s 1>&2
+        exit /b 1
+        :required
+        """
+        .formatted(checks, SETUP_GONE);
   }
 
   private String cmdArguments() {

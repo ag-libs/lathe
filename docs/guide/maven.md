@@ -171,8 +171,8 @@ on JUnit 5.10 or newer through JUnit's dry-run mode, on older JUnit through a fi
 On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
 
 After that, any normal build (`mvn test` / `verify` / `install`) refreshes the templates automatically.
-Add `.lathe/` to `.gitignore`, and exclude it from any check that scans the whole project directory
-([troubleshooting](troubleshooting.md)).
+`.lathe/` keeps itself out of git: Lathe writes a `.gitignore` inside it.
+Exclude it from any check that scans the whole project directory ([troubleshooting](troubleshooting.md)).
 
 The [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) makes these builds noticeably faster; use it in place of `mvn` where you can.
 

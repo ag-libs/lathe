@@ -122,6 +122,38 @@ class SyncScriptTest {
         .contains("%s not found; run a Lathe-enabled build".formatted(tool));
   }
 
+  @Test
+  void render_requiredFileGone_failsWithTheSetupHint_whilePresentRunsTheBuild() throws Exception {
+    final Path extension =
+        Files.writeString(tool.resolveSibling("lathe ext'1.jar"), "", StandardCharsets.UTF_8);
+    // An ext class path may name a classes directory too.
+    final Path classes = Files.createDirectories(tool.resolveSibling("ext classes"));
+    final Path core =
+        Files.writeString(tool.resolveSibling("lathe-core.jar"), "", StandardCharsets.UTF_8);
+    final var script =
+        new SyncScript(
+            tool,
+            jdk,
+            List.of(extension, classes, core),
+            FIXED,
+            List.of("sync"),
+            List.of(),
+            List.of(),
+            List.of());
+    assertThat(run(script).stdout()).endsWith("args=--quiet -Dcache=false sync");
+    Files.delete(core);
+
+    final Process process = start(script);
+
+    assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();
+    assertThat(process.exitValue()).isEqualTo(1);
+    assertThat(read(process.getInputStream().readAllBytes())).isEmpty();
+    assertThat(read(process.getErrorStream().readAllBytes()))
+        .contains(
+            "%s not found; it brought Lathe into this build, so set Lathe up for this project again"
+                .formatted(core));
+  }
+
   // The render_ tests run the cmd script on Windows; this checks the text for what cmd.exe needs.
   @Test
   void cmd_crlfScriptRunsTheBuildsTool_withTestsAndModuleArgs_quotingAndDoublingPercent() {
@@ -129,6 +161,7 @@ class SyncScriptTest {
         new SyncScript(
             tool,
             jdk,
+            List.of(tmp.resolve("o'neil tools").resolve("ext 100%.jar")),
             List.of("--quiet", "-Dlog=100%"),
             List.of("sync"),
             List.of("test", "-Dcapture=true"),
@@ -148,6 +181,8 @@ class SyncScriptTest {
             "set \"goal=test -Dcapture=true\"",
             "set \"scope=%scope% -pl %~1\"",
             "if defined scope set \"scope=%scope% -am\"",
+            "set \"required=%s\"".formatted(tmp.resolve("o'neil tools").resolve("ext 100%%.jar")),
+            "if not exist \"%required%\" goto missing",
             "set \"JAVA_HOME=%s\"".formatted(jdk),
             "call \"%tool%\" \"--quiet\" \"-Dlog=100%%\" %goal% %scope%",
             "exit /b %ERRORLEVEL%");
@@ -166,24 +201,49 @@ class SyncScriptTest {
     final List<String> module = List.of("-pl", LatheFlags.SYNC_MODULE_TOKEN);
     assertThatThrownBy(
             () ->
-                new SyncScript(Path.of("mvn"), jdk, FIXED, goals, List.of(), List.of(), List.of()))
+                new SyncScript(
+                    Path.of("mvn"), jdk, List.of(), FIXED, goals, List.of(), List.of(), List.of()))
         .as("relative tool")
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("tool must be an absolute path");
-    assertThatThrownBy(() -> new SyncScript(tool, jdk, FIXED, goals, List.of(), module, List.of()))
+    assertThatThrownBy(
+            () -> new SyncScript(tool, jdk, List.of(), FIXED, goals, List.of(), module, List.of()))
         .as("modules without --tests goals")
         .isInstanceOf(ValidationException.class);
     assertThatThrownBy(
-            () -> new SyncScript(tool, jdk, FIXED, goals, goals, List.of("-pl"), List.of()))
+            () ->
+                new SyncScript(
+                    tool, jdk, List.of(), FIXED, goals, goals, List.of("-pl"), List.of()))
         .as("module args without the module token")
         .isInstanceOf(ValidationException.class)
         .hasMessageContaining("moduleArgs must contain {module}");
     assertThatThrownBy(
             () ->
                 new SyncScript(
-                    tool, jdk, FIXED, List.of("two words"), List.of(), List.of(), List.of()))
+                    tool,
+                    jdk,
+                    List.of(),
+                    FIXED,
+                    List.of("two words"),
+                    List.of(),
+                    List.of(),
+                    List.of()))
         .as("whitespace in an unquoted arg")
         .isInstanceOf(ValidationException.class);
+    assertThatThrownBy(
+            () ->
+                new SyncScript(
+                    tool,
+                    jdk,
+                    List.of(Path.of("ext.jar")),
+                    FIXED,
+                    goals,
+                    List.of(),
+                    List.of(),
+                    List.of()))
+        .as("relative required file")
+        .isInstanceOf(ValidationException.class)
+        .hasMessageContaining("requiredFiles must be absolute paths");
   }
 
   private SyncScript script(
@@ -191,7 +251,7 @@ class SyncScriptTest {
       final List<String> testsGoals,
       final List<String> moduleArgs,
       final List<String> afterModules) {
-    return new SyncScript(tool, jdk, FIXED, goals, testsGoals, moduleArgs, afterModules);
+    return new SyncScript(tool, jdk, List.of(), FIXED, goals, testsGoals, moduleArgs, afterModules);
   }
 
   private record Result(String stdout, String stderr) {

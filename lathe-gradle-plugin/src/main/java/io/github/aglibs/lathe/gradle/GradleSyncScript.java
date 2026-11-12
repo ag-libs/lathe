@@ -9,8 +9,9 @@ import java.util.List;
 import java.util.stream.Stream;
 
 // The sync script for a Gradle build: the Gradle that ran it, on the JDK it ran on, with the
-// init scripts that registered Lathe from the command line. Its -P/-D properties are not replayed:
-// flags every build needs belong in gradle.properties.
+// init scripts that registered Lathe from the command line, not required up front: Gradle stops on
+// a missing one in its own words. Its -P/-D properties are not replayed: flags every build needs
+// belong in gradle.properties.
 final class GradleSyncScript {
 
   // The editor's sync with tests goes on past a failed task: Gradle starts no new task after a
@@ -23,6 +24,7 @@ final class GradleSyncScript {
     return new SyncScript(
         runningTool(gradleHome, Platform.WINDOWS),
         javaHome,
+        List.of(),
         initScripts.stream().flatMap(script -> Stream.of("--init-script", script)).toList(),
         List.of(LatheLayout.Gradle.SYNC_TASK),
         List.of(LatheLayout.Gradle.SYNC_TASK, LatheLayout.Gradle.CAPTURE_ONLY_ARG, CONTINUE_ARG),

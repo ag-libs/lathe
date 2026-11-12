@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.install.WorkspaceSync;
 import java.io.IOException;
 import java.nio.file.Files;
 import org.apache.maven.execution.MavenSession;
@@ -37,5 +38,7 @@ public final class InitMojo extends AbstractMojo {
     } catch (final IOException e) {
       throw new MojoExecutionException("lathe:init failed", e);
     }
+
+    WorkspaceSync.writeGitignore(workspaceRoot);
   }
 }

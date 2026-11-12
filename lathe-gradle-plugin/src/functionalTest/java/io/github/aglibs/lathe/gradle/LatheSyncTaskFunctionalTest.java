@@ -112,6 +112,45 @@ class LatheSyncTaskFunctionalTest {
     assertThat(Path.of(withSources.dir()).resolve("com/example/withsrc/Api.java")).exists();
   }
 
+  // A personal setup on a broken branch: the init script brings Lathe in and keeps a compile error
+  // in core from stopping the build, so app, which depends on it, is captured too. Every later sync
+  // replays the init script; .lathe/ keeps itself out of git.
+  @Test
+  void sync_initScriptOnCodeThatDoesNotCompile_capturesEveryProjectAndReplaysTheScript()
+      throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .latheInitScript("lathe.init.gradle.kts")
+            .file(
+                "settings.gradle",
+                "rootProject.name = \"root\"\ninclude(\"core\", \"app\")\n%s"
+                    .formatted(GradleFixture.latheRepositories()))
+            .file("core/build.gradle", GradleFixture.JAVA)
+            .file(
+                "core/src/main/java/com/example/core/Broken.java",
+                "package com.example.core; public class Broken { int count = \"no\"; }\n")
+            .file(
+                "core/src/main/java/com/example/core/Api.java",
+                "package com.example.core; public class Api {}\n")
+            .file(
+                "app/build.gradle",
+                GradleFixture.JAVA + "dependencies { implementation project(':core') }\n")
+            .file(
+                "app/src/main/java/com/example/app/App.java",
+                "package com.example.app; public class App { com.example.core.Api api; }\n");
+
+    final var result =
+        fixture.runner("latheSync", "--init-script", "lathe.init.gradle.kts").build();
+
+    assertThat(result.getOutput()).contains("incompatible types");
+    assertThat(params("core", LatheLayout.CLASSES_DIR)).isRegularFile();
+    assertThat(params("app", LatheLayout.CLASSES_DIR)).isRegularFile();
+    final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
+    assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
+        .contains("--init-script", "lathe.init.gradle.kts");
+    assertThat(lathe.resolve(".gitignore")).hasContent("*");
+  }
+
   // Every source set beyond main and test is a tree of its own, with its own classpath: here
   // integrationTest sees main's classes and a library of its own, not test's. Test code by Gradle's
   // convention (a name containing "test", test fixtures, a JVM test suite); bench is not. A source
