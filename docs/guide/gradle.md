@@ -49,7 +49,8 @@ settingsEvaluated {
 
 A build that commits the plugin keeps its own version; the init script then steps aside.
 
-Keep `.lathe/` out of version control (`echo '.lathe/' >> .gitignore`), then build once; this records your
+Keep `.lathe/` out of version control (`echo '.lathe/' >> .gitignore`) and out of any check that scans the
+whole project directory ([troubleshooting](troubleshooting.md)), then build once; this records your
 project's setup without running the tests:
 
 ```sh
