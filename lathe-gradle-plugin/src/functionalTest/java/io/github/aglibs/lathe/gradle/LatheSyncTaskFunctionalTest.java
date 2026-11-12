@@ -150,11 +150,10 @@ class LatheSyncTaskFunctionalTest {
     assertThat(params("core", LatheLayout.CLASSES_DIR)).isRegularFile();
     assertThat(params("app", LatheLayout.CLASSES_DIR)).isRegularFile();
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
-    // core's compile failed: nothing recorded as built. app's compiled: javac wrote the Api it
-    // uses, so its capture is a good one.
+    // core's compile failed: nothing recorded as built. Whether app's compiled depends on the JDK
+    // (some javac versions still write the Api it uses), so only core is checked here.
     final String stamps = LatheLayout.compiledStampsFileName(LatheLayout.CLASSES_DIR);
     assertThat(lathe.resolve("core").resolve(stamps)).doesNotExist();
-    assertThat(lathe.resolve("app").resolve(stamps)).isRegularFile();
 
     final Path api = lathe.resolve("core/classes/com/example/core/Api.class");
     assertThat(api).doesNotExist();
@@ -169,6 +168,7 @@ class LatheSyncTaskFunctionalTest {
 
     assertThat(api).isRegularFile();
     assertThat(lathe.resolve("core").resolve(stamps)).isRegularFile();
+    assertThat(lathe.resolve("app").resolve(stamps)).isRegularFile();
   }
 
   // Every source set beyond main and test is a tree of its own, with its own classpath: here
