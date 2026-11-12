@@ -11,6 +11,7 @@ Changed after the priming run: the probe was the constructor call `new PersistEv
 Lathe answers the class and jdtls the constructor; a probe must be a query whose answer no server
 disputes, so the probe is a plain method call and the constructor call is a query of its own.
 """
+import queries as Q
 
 CORE = "hibernate-core/src/main/java/org/hibernate/"
 SESSION = CORE + "internal/SessionImpl.java"
@@ -172,3 +173,14 @@ CASES += [
         "downstream": ("hibernate-community-dialects/src/main/java/org/hibernate/community/dialect/CUBRIDDialect.java", "registerKeyword("),
     },
 ]
+
+# The editing loop (2026-11-11 amendment), in the definition query's file.
+_PROBE_FILE = next(c for c in CASES if c["name"] == PROBE)["at"][0]
+CASES += Q.editing_cases(
+    _PROBE_FILE, "protected ActionQueue createActionQueue() {",
+    member=("        ActionQueue latheBench = null; latheBench.", "hasAnyQueuedActions"),
+    unimported=("Dia", "Dialect", "org.hibernate.dialect.Dialect"),
+    static=("        Math.", "max"),
+    lambda_line=("        java.util.function.Function<ActionQueue, Object> latheBench = a -> a.", "hasAnyQueuedActions"),
+    removed_import="import org.hibernate.action.queue.spi.ActionQueue;",
+    rename_at=next(c for c in CASES if c["name"] == "references: widely used method")["at"])

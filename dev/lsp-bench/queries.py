@@ -250,3 +250,36 @@ def check(expect, summary):
 def location_keys(summary):
     """A set-valued answer's project locations as 'path:line', for comparing the servers."""
     return sorted({"%s:%d" % (loc["path"], loc["line"]) for loc in summary["locations"] if loc.get("project")})
+
+
+def editing_cases(path, anchor, member, unimported, static, lambda_line, removed_import=None, rename_at=None):
+    """The 2026-11-11 amendment's editing-loop cases for one file: four completions (a member of a
+    project type, an unimported project type, a JDK static member, a lambda parameter), an error typed
+    without and with a save, and, where given, the rename of the widely used method and an import
+    removed. Each line is typed after the anchor line, inside a method."""
+    member_line, member_name = member
+    prefix, type_name, fqn = unimported
+    static_line, static_name = static
+    lambda_text, lambda_name = lambda_line
+    typed_error = "        int latheBench = \"x\";"
+    cases = [
+        {"name": "completion: member of a project type", "method": "textDocument/completion",
+         "edit": (path, anchor, member_line), "expect": {"completion": member_name}},
+        {"name": "completion: an unimported project type", "method": "textDocument/completion",
+         "edit": (path, anchor, "        " + prefix), "expect": {"completion": type_name, "import": fqn}},
+        {"name": "completion: a JDK type's static member", "method": "textDocument/completion",
+         "edit": (path, anchor, static_line), "expect": {"completion": static_name}},
+        {"name": "completion: a lambda parameter", "method": "textDocument/completion",
+         "edit": (path, anchor, lambda_text), "expect": {"completion": lambda_name}},
+        {"name": "diagnostics: typing an error", "method": "textDocument/publishDiagnostics",
+         "edit": (path, anchor, typed_error)},
+        {"name": "diagnostics: typing an error, saved", "method": "textDocument/publishDiagnostics",
+         "edit": (path, anchor, typed_error), "save": True},
+    ]
+    if rename_at:
+        cases.append({"name": "rename: widely used method", "method": "textDocument/rename", "at": rename_at,
+                      "expect": {"rename_files": 2}})
+    if removed_import:
+        cases.append({"name": "code action: import a removed import", "method": "textDocument/codeAction",
+                      "import_removed": (path, removed_import)})
+    return cases

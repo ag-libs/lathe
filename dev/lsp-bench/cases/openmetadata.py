@@ -12,6 +12,7 @@ little third-party API directly (its model classes are generated from JSON schem
 getters by Lombok), so the library queries ask about the JDK, as in Helidon; the local variable's
 type is such a generated class.
 """
+import queries as Q
 
 SERVICE = "openmetadata-service/src/main/java/org/openmetadata/service/"
 APP = SERVICE + "apps/bundles/autoPilot/AutoPilotApp.java"
@@ -166,3 +167,15 @@ CASES += [
         "downstream": ("openmetadata-integration-tests/src/test/java/org/openmetadata/it/bootstrap/TestSuiteBootstrap.java", "getEntityRepository("),
     },
 ]
+
+# The editing loop (2026-11-11 amendment), in the definition query's file. EntityReference and Table
+# are generated from openmetadata-spec's JSON schemas.
+_PROBE_FILE = next(c for c in CASES if c["name"] == PROBE)["at"][0]
+CASES += Q.editing_cases(
+    _PROBE_FILE, "public void uninstall() {",
+    member=("        EntityReference latheBench = null; latheBench.", "getId"),
+    unimported=("Tab", "Table", "org.openmetadata.schema.entity.data.Table"),
+    static=("        Math.", "max"),
+    lambda_line=("        java.util.function.Function<EntityReference, Object> latheBench = r -> r.", "getName"),
+    removed_import="import org.openmetadata.schema.type.EntityReference;",
+    rename_at=next(c for c in CASES if c["name"] == "references: widely used method")["at"])
