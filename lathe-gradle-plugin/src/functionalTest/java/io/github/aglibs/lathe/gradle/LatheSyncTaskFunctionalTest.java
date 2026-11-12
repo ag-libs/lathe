@@ -113,10 +113,13 @@ class LatheSyncTaskFunctionalTest {
   }
 
   // A personal setup on a broken branch: the init script brings Lathe in and keeps a compile error
-  // in core from stopping the build, so app, which depends on it, is captured too. Every later sync
-  // replays the init script; .lathe/ keeps itself out of git.
+  // in core from stopping the build, so app, which depends on it, is captured too. A compile that
+  // wrote no classes mirrors nothing and records nothing as built, so the server compiles those
+  // sources itself; once they compile, the next sync mirrors them. Every later sync replays the
+  // init
+  // script; .lathe/ keeps itself out of git.
   @Test
-  void sync_initScriptOnCodeThatDoesNotCompile_capturesEveryProjectAndReplaysTheScript()
+  void sync_initScriptOnCodeThatDoesNotCompile_capturesEveryProjectAndMirrorsOnlyGoodCompiles()
       throws Exception {
     final var fixture =
         new GradleFixture(dir)
@@ -142,13 +145,30 @@ class LatheSyncTaskFunctionalTest {
     final var result =
         fixture.runner("latheSync", "--init-script", "lathe.init.gradle.kts").build();
 
-    assertThat(result.getOutput()).contains("incompatible types");
+    assertThat(result.getOutput())
+        .contains("incompatible types", "compile failed; kept the last good capture");
     assertThat(params("core", LatheLayout.CLASSES_DIR)).isRegularFile();
     assertThat(params("app", LatheLayout.CLASSES_DIR)).isRegularFile();
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
+    // core's compile failed: nothing recorded as built. app's compiled: javac wrote the Api it
+    // uses, so its capture is a good one.
+    final String stamps = LatheLayout.compiledStampsFileName(LatheLayout.CLASSES_DIR);
+    assertThat(lathe.resolve("core").resolve(stamps)).doesNotExist();
+    assertThat(lathe.resolve("app").resolve(stamps)).isRegularFile();
+
+    final Path api = lathe.resolve("core/classes/com/example/core/Api.class");
+    assertThat(api).doesNotExist();
     assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
         .contains("--init-script", "lathe.init.gradle.kts");
     assertThat(lathe.resolve(".gitignore")).hasContent("*");
+
+    fixture.file(
+        "core/src/main/java/com/example/core/Broken.java",
+        "package com.example.core; public class Broken { int count = 1; }\n");
+    fixture.runner("latheSync", "--init-script", "lathe.init.gradle.kts").build();
+
+    assertThat(api).isRegularFile();
+    assertThat(lathe.resolve("core").resolve(stamps)).isRegularFile();
   }
 
   // Every source set beyond main and test is a tree of its own, with its own classpath: here

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.gradle;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
@@ -42,6 +43,7 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   private static final String PROC = "-proc:";
   private static final String PROC_NONE = "none";
+  private static final String CLASS_SUFFIX = ".class";
 
   @Input
   public abstract Property<String> getSourceTree();
@@ -135,11 +137,49 @@ public abstract class LatheCaptureTask extends DefaultTask {
     LatheLock.acquire(lock);
     try {
       CompileCapture.writeParams(moduleDir, config);
+      if (!compiled(config)) {
+        getLogger()
+            .lifecycle(
+                "[lathe] {} compile failed; kept the last good capture", getSourceTree().get());
+        return;
+      }
+
       CompileCapture.mirror(
           moduleDir, config, List.of(getResourcesDir().get().getAsFile().toPath()));
     } finally {
       LatheLock.release(lock);
     }
+  }
+
+  // Whether the compile wrote a class for every source. A compile with errors writes none for what
+  // it compiled, and with failOnError off (a personal setup's init script) Gradle runs this task as
+  // after a good one, so the mirror would record sources as built that have no classes, and the
+  // server would never compile them: keep the last good capture, as Maven's shim does. A source
+  // declaring only a type of another name reads as failed too, which costs the server a compile
+  // of its own, never a wrong mirror. module-info and package-info may compile to no class.
+  private static boolean compiled(final ModuleConfigData config) throws IOException {
+    final Path classes = Path.of(config.outputDir());
+    for (final String sourceRoot : config.sourceRoots()) {
+      final Path root = Path.of(sourceRoot);
+      for (final Path source : FileUtil.walkFiles(root, LatheCaptureTask::compilesToItsClass)) {
+        final Path classFile =
+            classes
+                .resolve(root.relativize(source.getParent()))
+                .resolve("%s%s".formatted(FileUtil.javaTypeName(source), CLASS_SUFFIX));
+        if (!Files.isRegularFile(classFile)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  private static boolean compilesToItsClass(final Path path) {
+    final String name = path.getFileName().toString();
+    return FileUtil.isJavaFile(path)
+        && !name.equals(LatheLayout.MODULE_INFO_JAVA)
+        && !name.equals(LatheLayout.PACKAGE_INFO_JAVA);
   }
 
   private ModuleConfigData moduleConfig() {
