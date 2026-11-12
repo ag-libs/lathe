@@ -25,6 +25,8 @@ public record FileCommandFormatEngine(List<String> command, Path workspaceRoot, 
   private static final Logger LOG = Logger.getLogger(FileCommandFormatEngine.class.getName());
 
   public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+  // The scratch file beside the edited one that the command formats, deleted once it has run.
+  public static final String SCRATCH_PREFIX = ".lathe-fmt-";
 
   public FileCommandFormatEngine {
     ValidCheck.check()
@@ -40,7 +42,7 @@ public record FileCommandFormatEngine(List<String> command, Path workspaceRoot, 
   public String format(final String source, final FormatTarget target)
       throws IOException, InterruptedException {
     final Path scratch =
-        Files.createTempFile(target.file().toAbsolutePath().getParent(), ".lathe-fmt-", ".java");
+        Files.createTempFile(target.file().toAbsolutePath().getParent(), SCRATCH_PREFIX, ".java");
     try {
       Files.writeString(scratch, source, StandardCharsets.UTF_8);
       run(resolve(scratch, target));

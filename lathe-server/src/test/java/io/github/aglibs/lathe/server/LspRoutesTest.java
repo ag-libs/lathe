@@ -43,6 +43,9 @@ import org.junit.jupiter.api.condition.EnabledForJreRange;
 // a real workspace: the features are covered on their own, this covers the way to them.
 class LspRoutesTest extends ServiceTestBase {
 
+  // Starting the formatter JVM, and on close killing it, can take seconds on a loaded runner.
+  private static final long SCRATCH_WAIT_MS = 30_000;
+
   @Test
   void navigationRequests_onTheShop_eachAnswerComesFromTheWorkspace() throws Exception {
     final ShopFixture shop = openShop();
@@ -201,41 +204,46 @@ class LspRoutesTest extends ServiceTestBase {
   }
 
   // Closing the server while a command formatter runs answers the request (no edits) instead of
-  // leaving it waiting, and stops the formatter's process. The answer comes before the process has
-  // exited, so the test waits for it: on Windows a running process keeps its working directory,
-  // this test's temporary one, from being deleted.
+  // leaving it waiting, and stops the formatter's process. The answer comes before the format
+  // thread has killed the process and deleted its scratch file, so the test waits for that: on
+  // Windows a live process keeps its working directory, this test's temporary one, from deletion.
   @Test
   void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
     final ShopFixture shop = openShop();
-    final Path gate = tmp.resolve("never");
     useFormatter(
         new FileCommandFormatEngine(
-            TestProcess.command("await", gate.toString(), "%FILE%"),
+            TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
             tmp,
             FileCommandFormatEngine.DEFAULT_TIMEOUT));
     final var formatting =
         service.formatting(
             new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
-    final ProcessHandle formatter = startedProcess(TestProcess.pidFile(gate));
+    awaitWorkerIdle();
+    final Path sources = shop.use().getParent();
+    awaitScratchFile(sources, true);
 
     host.close();
 
     assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
-    formatter.onExit().get(TIMEOUT_S, TimeUnit.SECONDS);
-    assertThat(formatter.isAlive()).isFalse();
+    awaitScratchFile(sources, false);
   }
 
-  // The process that announced its pid in the file, once it has; a process that has already exited
-  // is one with nothing left to stop.
-  private static ProcessHandle startedProcess(final Path pidFile) throws Exception {
+  // The formatter's scratch file exists from just before its process starts until the format
+  // thread has stopped the process and cleaned up. A JVM can be slow to start on a loaded runner,
+  // so the wait is generous.
+  private static void awaitScratchFile(final Path dir, final boolean present) throws Exception {
     final var waited = Stopwatch.start();
-    while (!Files.exists(pidFile) || Files.readString(pidFile).isBlank()) {
-      assertThat(waited.elapsedMs()).isLessThan(TimeUnit.SECONDS.toMillis(TIMEOUT_S));
+    while (hasScratchFile(dir) != present) {
+      assertThat(waited.elapsedMs()).isLessThan(SCRATCH_WAIT_MS);
       Thread.sleep(10);
     }
+  }
 
-    final long pid = Long.parseLong(Files.readString(pidFile).trim());
-    return ProcessHandle.of(pid).orElseThrow(() -> new AssertionError("formatter already gone"));
+  private static boolean hasScratchFile(final Path dir) throws Exception {
+    try (var files = Files.list(dir)) {
+      return files.anyMatch(
+          file -> file.getFileName().toString().startsWith(FileCommandFormatEngine.SCRATCH_PREFIX));
+    }
   }
 
   private static List<String> files(

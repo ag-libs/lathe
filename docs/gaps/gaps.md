@@ -1235,7 +1235,7 @@ None yet.
 
 ## WS-34 — A build check that scans the whole project finds the class mirror in `.lathe/`
 
-**Status: documented** (a workaround is documented; the options below are open)
+**Status: documented**
 
 **Value: medium — Size: M**
 
@@ -1245,25 +1245,27 @@ Found syncing spring-petclinic for the Declared Formatters probes (2026-11-11).
 
 ### Observed behaviour
 
-From the second build on, petclinic's nohttp check fails: on Maven the `maven-checkstyle-plugin` execution that runs
-`nohttp-checkstyle` over `${basedir}`, on Gradle the `io.spring.nohttp` plugin's `checkstyleNohttp`.
-Both find `http://` URLs in `.lathe/classes/META-INF/sbom/application.cdx.json`, a generated resource Lathe's class
-and resource mirror copies.
-The first build passes only because `.lathe/` does not exist yet; the check runs in `validate`, before the sync, so
-the sync cannot change it.
+From the second build on, petclinic's nohttp check fails.
+On Maven it is the `maven-checkstyle-plugin` execution that runs `nohttp-checkstyle` over `${basedir}`;
+on Gradle, the `io.spring.nohttp` plugin's `checkstyleNohttp`.
+Both find `http://` URLs in `.lathe/classes/META-INF/sbom/application.cdx.json`,
+a generated resource that Lathe's class and resource mirror copies.
+The first build passes only because `.lathe/` does not exist yet.
+The check runs in `validate`, before the sync, so the sync cannot change it.
 Only the mirror (`classes`, `test-classes`, generated sources) holds such files; the small files in `.lathe/` hold none.
 
 ### Fix direction
 
-Documented now: exclude `.lathe/` from such checks (README, `troubleshooting.md`; #178).
-Two ways to need no exclusion, both open:
+The workaround is documented: exclude `.lathe/` from such checks (README, `troubleshooting.md`; #178).
+Two ways to need no exclusion are open:
 
-- **Lathe adds the exclusion itself:** the Maven extension appends `**/.lathe/**` to a nohttp checkstyle execution's
-  `<excludes>` in memory, and the Gradle plugin to the nohttp extension's `source`, when Lathe is active.
-  Narrow (one tool), and an execution's configuration edited after model building needs a spike.
+- **Lathe adds the exclusion itself.**
+  The Maven extension appends `**/.lathe/**` to a nohttp checkstyle execution's `<excludes>` in memory,
+  and the Gradle plugin adds it to the nohttp extension's `source`, when Lathe is active.
+  It covers one tool, and editing an execution's configuration after the model is built needs a spike.
 - **Move the mirror out of the project** into the per-user cache, leaving `.lathe/` the small files.
-  No scanner or Docker context would see it, at the cost of a per-workspace cache and its cleanup; the mirror must
-  stay outside `target/`/`build/` (it outlives a clean and a failed build: `lathe-gradle-support.md`).
+  No scanner or Docker context would see it, at the cost of a per-workspace cache and its cleanup.
+  The mirror must stay outside `target/` and `build/`: it outlives a clean and a failed build (`lathe-gradle-support.md`).
 
 ### Regression targets
 
@@ -1624,22 +1626,24 @@ Found measuring the indenter against formatted code (#176).
 
 ### Observed behaviour
 
-`dev/indent-corpus.sh` asks the indenter for each line of this repository's own sources, which google-java-format
-formats: it disagrees on 536 of 53,893 non-blank lines (1.0%; 3.9% before #176).
+`dev/indent-corpus.sh` asks the indenter for each line of this repository's own sources, which google-java-format formats.
+It disagrees on 536 of 53,893 non-blank lines (1.0%; 3.9% before #176).
 What remains is continuation shapes that would each need a rule of their own:
-an argument after a multi-line argument, the first argument of a call that roots a method chain broken onto the next
-lines (google-java-format indents it two continuations deep), `&&`/`||` lines, and ternary branches.
+an argument after a multi-line argument,
+the first argument of a call that roots a method chain broken onto the next lines (google-java-format indents it two continuations deep),
+`&&`/`||` lines, and ternary branches.
 Format-on-save rewrites them, so the cost is a line typed at the wrong column, not a wrong file.
 
 ### Fix direction
 
-Two of these were implemented and dropped in #176: the chain-root rule had to look ahead through the tree for a
-chain still being typed, and the multi-line-argument rule regressed hand-formatted code.
+Two of these were implemented and dropped in #176:
+the chain-root rule had to look ahead through the tree for a chain still being typed,
+and the multi-line-argument rule regressed hand-formatted code.
 Take one up only with a narrow, tree-based rule, measured with `dev/indent-corpus.sh` before and after.
 
 ### Regression targets
 
-`lathe-neovim/test/indent_tree_spec.lua`, `indent_spec.lua`; the measure is `dev/indent-corpus.sh`.
+`lathe-neovim/test/indent_tree_spec.lua` and `indent_spec.lua`; the measure is `dev/indent-corpus.sh`.
 
 ---
 
@@ -1655,15 +1659,14 @@ Found when a macOS row failed on #176 (2026-11-11) with every Neovim spec passin
 
 ### Observed behaviour
 
-`test/e2e/run-e2e.sh` clones neotest, nvim-nio and plenary into `target/e2e-plugins` at the commits `plugins.txt`
-pins; `target/` is new on every CI run, so every run clones from GitHub.
-One clone failed (`fatal: could not read Username for 'https://github.com'`), and under GitHub Actions a failed clone
-fails the build; the rerun passed.
+`test/e2e/run-e2e.sh` clones neotest, nvim-nio and plenary into `target/e2e-plugins`, at the commits `plugins.txt` pins.
+`target/` is new on every CI run, so every run clones from GitHub.
+One clone failed (`fatal: could not read Username for 'https://github.com'`), and under GitHub Actions a failed clone fails the build.
+The rerun passed.
 
 ### Fix direction
 
-Cache `target/e2e-plugins` across runs (`actions/cache`, keyed on `plugins.txt`), and retry the clone as the Neovim
-download already does.
+Cache `target/e2e-plugins` across runs (`actions/cache`, keyed on `plugins.txt`), and retry the clone as the Neovim download already does.
 
 ### Regression targets
 
