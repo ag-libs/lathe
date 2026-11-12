@@ -76,7 +76,9 @@ spec.check("completion offers the config name", run.complete_config("d")[1], "de
 -- 4. Refusing to overwrite without the bang.
 local res = client:request_sync("workspace/executeCommand", {
   command = "lathe.runConfigs.save",
-  arguments = { { name = "dev", moduleRel = "jpms", kind = "MAIN", mainClass = "com.example.jpms.HelloMain" } },
+  arguments = {
+    { name = "dev", moduleRel = "jpms", kind = "MAIN", mainClass = "com.example.jpms.HelloMain" },
+  },
 }, 30000, 0)
 spec.check("save without bang refuses an existing name", res.err ~= nil, true)
 
