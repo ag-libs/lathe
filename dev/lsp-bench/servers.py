@@ -164,17 +164,32 @@ def baseline_build(name, project, log):
     return (time.monotonic() - start) * 1000
 
 
+def lathe_edits(name, project):
+    """What the benchmark changes in a checkout for Lathe: its Maven extension and a project's appended
+    lines. Safe to repeat, so a branch switch re-applies it to the commit it checks out."""
+    repo = repo_of(name)
+    if project["build"] == "maven" and "lathe-maven-extension" not in (
+            (repo / ".mvn" / "extensions.xml").read_text(encoding="utf-8")
+            if (repo / ".mvn" / "extensions.xml").exists() else ""):
+        enable_lathe_maven(repo)
+    for path, line in project.get("lathe_appends", {}).items():
+        target = repo / path
+        if line not in (target.read_text(encoding="utf-8") if target.exists() else ""):
+            with open(target, "a", encoding="utf-8") as f:
+                f.write(line)
+
+
+def no_edits(name, project):
+    """jdtls needs no change to a checkout."""
+
+
 def lathe_prepare(name, project, mode, log):
     """Cold: a fresh checkout's first build with Lathe, timed in ms. Warm: what the last run left."""
     repo = repo_of(name)
     if mode == "warm" and (repo / ".lathe" / "lathe-launcher.sh").exists():
         return None
     fresh_checkout(repo)
-    if project["build"] == "maven":
-        enable_lathe_maven(repo)
-    for path, line in project.get("lathe_appends", {}).items():
-        with open(repo / path, "a", encoding="utf-8") as f:
-            f.write(line)
+    lathe_edits(name, project)
     start = time.monotonic()
     with open(log, "ab") as out:
         subprocess.run(lathe_build_command(project, repo), cwd=repo, env=build_env(project),
@@ -356,9 +371,9 @@ def jdtls_disk(name, state):
 
 SERVERS_BY_NAME = {
     "lathe": {"prepare": lambda name, project, mode, state, log: lathe_prepare(name, project, mode, log),
-              "spec": lathe_spec, "disk": lathe_disk},
+              "spec": lathe_spec, "disk": lathe_disk, "edits": lathe_edits},
     "jdtls": {"prepare": jdtls_prepare,
-              "spec": jdtls_spec, "disk": jdtls_disk},
+              "spec": jdtls_spec, "disk": jdtls_disk, "edits": no_edits},
 }
 
 

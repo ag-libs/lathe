@@ -17,9 +17,11 @@ import json
 import os
 import platform
 import queue
+import re
 import statistics
 import subprocess
 import sys
+import urllib.parse
 import threading
 import time
 from pathlib import Path
@@ -366,6 +368,179 @@ def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeo
     return results
 
 
+def launch(spec, repo, name, log):
+    """Starts a server as its spec says, stderr to the run's log."""
+    with open(log, "ab") as err:
+        proc = subprocess.Popen(spec["cmd"], cwd=repo, env=spec["env"], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=err, start_new_session=True)
+    return BenchClient(proc, spec["settings"])
+
+
+def initialize(client, spec, repo, name, timeout):
+    """The LSP handshake, and what the server's answer tells the cases about it."""
+    init = client.request("initialize", {
+        "processId": os.getpid(),
+        "rootUri": repo.as_uri(),
+        "rootPath": str(repo),
+        "workspaceFolders": [{"uri": repo.as_uri(), "name": name}],
+        "capabilities": CLIENT_CAPABILITIES,
+        "initializationOptions": spec["init_options"],
+    }, timeout=timeout)
+    client.notify("initialized", {})
+    provides = init.get("capabilities", {})
+    client.resolves_completion = bool((provides.get("completionProvider") or {}).get("resolveProvider"))
+    client.prepares_rename = isinstance(provides.get("renameProvider"), dict) \
+        and bool(provides["renameProvider"].get("prepareProvider"))
+    client.resolves_actions = isinstance(provides.get("codeActionProvider"), dict) \
+        and bool(provides["codeActionProvider"].get("resolveProvider"))
+    return init
+
+
+# A branch switch: how long it may take to be right again, how often it is checked, and how long the
+# answers must stay unchanged before the poll stops.
+SWITCH_DEADLINE_S = 600
+SWITCH_POLL_S = 1.0
+SWITCH_STEADY_S = 60
+# A fresh start's answers count once they stayed the same this long.
+FRESH_STEADY_S = 15
+
+
+def git(repo, *args):
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout
+
+
+def errors_in(client, target):
+    """The errors in a file's last published diagnostics; None before any publish."""
+    published = [msg["params"] for _, msg in client.diagnostics.times if msg["params"].get("uri") == target]
+    return sum(1 for d in published[-1]["diagnostics"] if d.get("severity") == 1) if published else None
+
+
+def references_count(client, repo, case, timeout):
+    _ms, answer, _error = timed(client, repo, case, timeout)
+    return len(Q.summarize(repo, case, answer)["locations"]) if answer is not None else None
+
+
+def finds_type(client, name, path, timeout):
+    """Whether workspace symbol search finds the type declared in that file."""
+    try:
+        found = client.request("workspace/symbol", {"query": name}, timeout=timeout) or []
+    except Exception:  # a refused or timed-out search finds nothing
+        return False
+    return any(s.get("name") == name and urllib.parse.unquote((s.get("location") or {}).get("uri", "")).endswith(path)
+               for s in found)
+
+
+TYPE_DECLARATION = re.compile(r"^\s*(?:public\s+|abstract\s+|final\s+|sealed\s+)*(class|interface|enum|record)\s+(\w+)")
+
+
+def switch_checks(repo, project, ref, pin):
+    """What must change when the tree goes from the pinned commit to the older one, picked by rule
+    from the diff: a type added since the older commit (search must stop finding it), a type deleted
+    since (search must find it), the type whose uses changed most by text (its reference count must
+    match a fresh start), and a changed file of the main module (its errors must match the build:
+    none). Main-module files first, then any."""
+    main = project["main_module"] + "/"
+    status = [line.split("\t") for line in git(repo, "diff", "--name-status", "--no-renames", ref, pin).splitlines()]
+    java = [(s, p) for s, p in status if p.endswith(".java") and "/src/main/java/" in "/" + p]
+
+    def first(kind):
+        files = sorted((not p.startswith(main), p) for s, p in java if s == kind)
+        return files[0][1] if files else None
+
+    added, deleted = first("A"), first("D")
+    modified = sorted((not p.startswith(main), p) for s, p in java if s == "M")
+    watched = modified[0][1]
+
+    def uses(name, rev):
+        counts = git_ok(repo, "grep", "-c", "-w", name, rev, "--", "*.java")
+        return sum(int(line.rsplit(":", 1)[1]) for line in counts.splitlines() if line)
+
+    best = None
+    for _main_first, path in modified[:40]:
+        declared = next((m.group(2) for m in map(TYPE_DECLARATION.match, (repo / path).read_text().splitlines()) if m),
+                        None)
+        if declared:
+            change = abs(uses(declared, ref) - uses(declared, pin))
+            if best is None or change > best[0]:
+                best = (change, path, declared)
+    _change, used_path, used = best
+    # Kind and name only: the rest of the declaration line may differ between the two commits.
+    kind = next(m.group(1) for m in map(TYPE_DECLARATION.match, (repo / used_path).read_text().splitlines())
+                if m and m.group(2) == used)
+    return {"added": added, "deleted": deleted, "watched": watched,
+            "references": {"name": "references: %s" % used, "method": "textDocument/references",
+                           "at": (used_path, "%s %s" % (kind, used), used)}}
+
+
+def git_ok(repo, *args):
+    """git output, empty when it fails (git grep exits 1 when nothing matches)."""
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True).stdout
+
+
+def switch_answers(client, repo, checks, timeout):
+    """(added type found, deleted type found, reference count, watched file's errors)."""
+    stem = lambda path: Path(path).stem if path else None
+    return (finds_type(client, stem(checks["added"]), checks["added"], timeout) if checks["added"] else None,
+            finds_type(client, stem(checks["deleted"]), checks["deleted"], timeout) if checks["deleted"] else None,
+            references_count(client, repo, checks["references"], timeout),
+            errors_in(client, Q.uri(repo, checks["watched"])))
+
+
+def checkout(repo, rev, reapply):
+    """Checks out a commit and re-applies the benchmark's own edits to it (the Lathe extension, a
+    project's appended lines), as a user's setup survives a branch switch."""
+    git(repo, "checkout", "-q", "-f", "--detach", rev)
+    reapply()
+
+
+def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
+    """git checkout of the project's older commit while the server runs; the client reloads its open
+    buffers, as Neovim does, sends no watched-file events (Neovim offers none on Linux) and answers no
+    prompt. Ms until each answer of switch_checks matches what a fresh start of the same server gives
+    at that commit; then the tree goes back."""
+    ref, pin = project["branch_ref"], git(repo, "rev-parse", "HEAD").strip()
+    checks = switch_checks(repo, project, ref, pin)
+    for path in (checks["watched"], checks["references"]["at"][0]):
+        client.notify("textDocument/didOpen", {"textDocument": {"uri": Q.uri(repo, path), "languageId": "java",
+                                                                  "version": 1, "text": (repo / path).read_text()}})
+    opened = Q.opened_files(cases.CASES) + [checks["watched"], checks["references"]["at"][0]]
+    # The answers just before the switch: a check whose answer does not change tells nothing.
+    before = switch_answers(client, repo, checks, args.request_timeout)
+    polls = []
+    start = time.monotonic()
+    checkout(repo, ref, reapply)
+    try:
+        for path in opened:
+            if (repo / path).exists():
+                Q.change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
+            else:
+                client.notify("textDocument/didClose", {"textDocument": {"uri": Q.uri(repo, path)}})
+        while time.monotonic() - start < SWITCH_DEADLINE_S:
+            # Stamped when the round of queries ends: the moment its answers were all there.
+            answers = switch_answers(client, repo, checks, args.request_timeout)
+            at = time.monotonic() - start
+            polls.append((at,) + answers)
+            steady = [p for p in polls if p[0] >= at - SWITCH_STEADY_S]
+            if at >= SWITCH_STEADY_S and len({p[1:] for p in steady}) == 1:
+                break
+            time.sleep(SWITCH_POLL_S)
+        expected = fresh_answers(checks)
+    finally:
+        checkout(repo, pin, reapply)
+
+    def settled(index):
+        """Ms from the switch to the poll after which every poll matches the fresh start; None if the
+        last does not."""
+        last_wrong = max((i for i, p in enumerate(polls) if p[index] != expected[index - 1]), default=-1)
+        return polls[last_wrong + 1][0] * 1000 if last_wrong + 1 < len(polls) else None
+
+    return {"ref": ref, "checks": {k: v for k, v in checks.items() if k != "references"},
+            "references_at": checks["references"]["at"], "before": before, "expected": expected,
+            "polls": len(polls), "changed": [b != e for b, e in zip(before, expected)],
+            "added_type_ms": settled(1), "deleted_type_ms": settled(2), "references_ms": settled(3),
+            "diagnostics_ms": settled(4)}
+
+
 def run_server(server, name, project, cases, mode, args, out_dir, label):
     repo = S.repo_of(name)
     state = S.WORK / "state" / name / server
@@ -385,35 +560,39 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
     probe = next(c for c in cases.CASES if c["name"] == cases.PROBE)
 
     start = time.monotonic()
-    with open(log, "ab") as err:
-        proc = subprocess.Popen(spec["cmd"], cwd=repo, env=spec["env"], stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=err, start_new_session=True)
-    client = BenchClient(proc, spec["settings"])
-    sampler = M.Sampler(proc.pid, before).start()
+    client = launch(spec, repo, name, log)
+    sampler = M.Sampler(client._proc.pid, before).start()
     try:
-        init = client.request("initialize", {
-            "processId": os.getpid(),
-            "rootUri": repo.as_uri(),
-            "rootPath": str(repo),
-            "workspaceFolders": [{"uri": repo.as_uri(), "name": name}],
-            "capabilities": CLIENT_CAPABILITIES,
-            "initializationOptions": spec["init_options"],
-        }, timeout=args.ready_timeout)
-        client.notify("initialized", {})
+        init = initialize(client, spec, repo, name, args.ready_timeout)
         result["initialize_ms"] = (time.monotonic() - start) * 1000
         result["server_info"] = init.get("serverInfo")
-        provides = init.get("capabilities", {})
-        client.resolves_completion = bool((provides.get("completionProvider") or {}).get("resolveProvider"))
-        client.prepares_rename = isinstance(provides.get("renameProvider"), dict) \
-            and bool(provides["renameProvider"].get("prepareProvider"))
-        client.resolves_actions = isinstance(provides.get("codeActionProvider"), dict) \
-            and bool(provides["codeActionProvider"].get("resolveProvider"))
         open_files(client, repo, cases.CASES)
         ready_at = wait_ready(client, repo, probe, start, args.ready_timeout, args.request_timeout)
         result["ready_ms"] = (ready_at - start) * 1000
         imported_at = client.started_at()
         result["import_ms"] = (imported_at - start) * 1000 if server == "jdtls" and imported_at else None
         result["startup_peak_mb"] = sampler.peak_mb(until=ready_at)
+        if args.scenario == "branch":
+            def fresh_answers(checks):
+                """What a fresh start of the same server answers at the switched commit, once its answers
+                stop changing (its indexes warm up after it is ready)."""
+                fresh = launch(spec, repo, name, log)
+                try:
+                    initialize(fresh, spec, repo, name, args.ready_timeout)
+                    open_files(fresh, repo, [probe, checks["references"], {"file": checks["watched"]}])
+                    wait_ready(fresh, repo, probe, time.monotonic(), args.ready_timeout, args.request_timeout)
+                    answers, since = None, time.monotonic()
+                    while time.monotonic() - since < FRESH_STEADY_S:
+                        latest = switch_answers(fresh, repo, checks, args.request_timeout)
+                        if latest != answers:
+                            answers, since = latest, time.monotonic()
+                        time.sleep(SWITCH_POLL_S)
+                    return answers
+                finally:
+                    fresh.stop()
+            result["branch_switch"] = branch_switch(client, repo, project, cases, args, fresh_answers,
+                                                    lambda: S.SERVERS_BY_NAME[server]["edits"](name, project))
+            return result
         result["cases"] = run_cases(client, repo, cases.CASES, init.get("capabilities", {}), args.reps,
                                     args.request_timeout,
                                     lambda: thread_dumps(sampler.pids, out_dir, label),
@@ -504,7 +683,16 @@ def measured_run(server, name, project, cases, mode, args, out_dir, label):
     return result
 
 
+def seconds(ms):
+    return "never" if ms is None else "%.1fs" % (ms / 1000)
+
+
 def summary_line(result):
+    switch = result.get("branch_switch")
+    if switch:
+        return "branch switch: added type gone %s, deleted type found %s, references %s, errors %s  %s" % (
+            seconds(switch["added_type_ms"]), seconds(switch["deleted_type_ms"]), seconds(switch["references_ms"]),
+            seconds(switch["diagnostics_ms"]), result.get("error") or "")
     correct = sum(1 for c in result["cases"].values() if c.get("correct"))
     supported = sum(1 for c in result["cases"].values() if c.get("supported"))
     # Rows, not cases: a typed-error case reports two.
@@ -532,6 +720,8 @@ def main():
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
     parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
                         help="a jdtls setting changed from vscode-java's defaults: a labelled variant")
+    parser.add_argument("--scenario", choices=["branch"],
+                        help="run an outside-change scenario after the server is ready, instead of the queries")
     parser.add_argument("--compile-renames", action="store_true",
                         help="apply each rename case's edit to a copy of the project and compile it there")
     parser.add_argument("--baseline", action="store_true",

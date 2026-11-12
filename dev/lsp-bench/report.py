@@ -63,6 +63,31 @@ def disk_lines(runs):
                 "configuration, Lathe's `.lathe/`). Beside it:", ""] + lines if lines else []
 
 
+def branch_lines(runs):
+    """A branch switch's times, per run: until each answer matches a fresh start at that commit."""
+    def took(ms):
+        return "never" if ms is None else fmt(ms, " s", 1000, 1)
+
+    rows = []
+    for server, results in runs.items():
+        for r in results:
+            s = r.get("branch_switch")
+            if s:
+                cells = [took(s[k]) if s.get("changed", [True] * 4)[i] else "unchanged"
+                         for i, k in enumerate(("added_type_ms", "deleted_type_ms", "references_ms", "diagnostics_ms"))]
+                rows.append("| %s | %s | %s |" % (server, r["mode"], " | ".join(cells)))
+    if not rows:
+        return []
+    s = next(r["branch_switch"] for results in runs.values() for r in results if r.get("branch_switch"))
+    return ["", "## Branch switch to %s (from the checkout until each answer matches a fresh start there)" % s["ref"],
+            "", "Added type `%s`, deleted type `%s`, references to `%s`, errors in `%s`." % (
+                s["checks"]["added"], s["checks"]["deleted"], s["references_at"][2], s["checks"]["watched"]), "",
+            "A check marked unchanged answered the same before the switch as a fresh start does after it, so it "
+            "tells nothing.", "",
+            "| Server | Mode | Added type gone | Deleted type found | References | Changed file's errors |",
+            "|---|---|---|---|---|---|"] + rows
+
+
 def baseline_lines(out_dir, runs):
     """The build without Lathe, and Lathe's share of its cold build beside it."""
     path = out_dir / "baseline.json"
@@ -204,7 +229,7 @@ def main():
         "",
         "## Servers (medians; memory is the summed RSS of the server's processes)",
         "",
-    ] + server_table(runs) + baseline_lines(out_dir, runs) + disk_lines(runs) + [
+    ] + server_table(runs) + baseline_lines(out_dir, runs) + disk_lines(runs) + branch_lines(runs) + [
         "",
         "Build is what a cold run builds before the server starts: Lathe's first build as the README has a "
         "user run it, tests captured but not run, and for jdtls only where it needs the project installed "

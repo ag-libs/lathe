@@ -30,6 +30,8 @@ PROJECTS = {
         "jdk": CORRETTO_25,
         "cases": "dropwizard",
         "main_module": "dropwizard-core",
+        # The branch switch's older commit: 50 back along the main line (80 files, 38 Java).
+        "branch_ref": "e357826376",
         # Its pgpverify check rejects an unsigned artifact; Lathe's releases are signed, the pinned
         # local build is not, so Lathe's build allows its group unsigned and verifies all the rest.
         "lathe_appends": {"pgp-keys-map.list": "io.github.ag-libs = noSig\n"},
@@ -41,6 +43,8 @@ PROJECTS = {
         "jdk": CORRETTO_27,
         "cases": "helidon",
         "main_module": "webserver/webserver",
+        # The branch switch's older commit: 50 back along the main line (1,005 files, 354 Java).
+        "branch_ref": "c2fe76b86e",
         # jdtls's Maven integration resolves the compiler plugin's dependencies (Helidon's own
         # annotation processors) only from a repository, so its runs install Helidon first, into a
         # repository of their own; the install is timed as jdtls's build.
