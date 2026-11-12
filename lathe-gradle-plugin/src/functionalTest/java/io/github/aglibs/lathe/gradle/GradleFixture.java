@@ -93,7 +93,9 @@ final class GradleFixture {
 
   // Registers Lathe the personal way, as :LatheInit's init script does: from a repository, applied
   // only when the settings script has not applied it already, with compile errors kept from
-  // stopping the build before every project is captured.
+  // stopping the build before every project is captured. Incremental compilation is off too: after
+  // a compile with errors that Gradle counted as done, it would recompile only the changed sources
+  // and never write the classes the failed compile left out.
   GradleFixture latheInitScript(final String relative) throws IOException {
     return file(
         relative,
@@ -114,7 +116,10 @@ final class GradleFixture {
         }
 
         allprojects {
-          tasks.withType<JavaCompile>().configureEach { options.isFailOnError = false }
+          tasks.withType<JavaCompile>().configureEach {
+            options.isFailOnError = false
+            options.isIncremental = false
+          }
         }
         """
             .formatted(

@@ -129,9 +129,10 @@ class LatheSyncTaskFunctionalTest {
                 "rootProject.name = \"root\"\ninclude(\"core\", \"app\")\n%s"
                     .formatted(GradleFixture.latheRepositories()))
             .file("core/build.gradle", GradleFixture.JAVA)
+            // A parse error: javac writes no class for any source, whatever order it reads them in.
             .file(
                 "core/src/main/java/com/example/core/Broken.java",
-                "package com.example.core; public class Broken { int count = \"no\"; }\n")
+                "package com.example.core; public class Broken {\n")
             .file(
                 "core/src/main/java/com/example/core/Api.java",
                 "package com.example.core; public class Api {}\n")
@@ -146,14 +147,16 @@ class LatheSyncTaskFunctionalTest {
         fixture.runner("latheSync", "--init-script", "lathe.init.gradle.kts").build();
 
     assertThat(result.getOutput())
-        .contains("incompatible types", "compile failed; kept the last good capture");
+        .contains(
+            "reached end of file while parsing", "compile failed; kept the last good capture");
     assertThat(params("core", LatheLayout.CLASSES_DIR)).isRegularFile();
     assertThat(params("app", LatheLayout.CLASSES_DIR)).isRegularFile();
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
-    // core's compile failed: nothing recorded as built. Whether app's compiled depends on the JDK
-    // (some javac versions still write the Api it uses), so only core is checked here.
+    // Neither compile wrote its classes (app's has no Api to compile against): nothing is
+    // recorded as built.
     final String stamps = LatheLayout.compiledStampsFileName(LatheLayout.CLASSES_DIR);
     assertThat(lathe.resolve("core").resolve(stamps)).doesNotExist();
+    assertThat(lathe.resolve("app").resolve(stamps)).doesNotExist();
 
     final Path api = lathe.resolve("core/classes/com/example/core/Api.class");
     assertThat(api).doesNotExist();
