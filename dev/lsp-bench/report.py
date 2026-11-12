@@ -48,6 +48,21 @@ def first_answer_ms(result):
     return (result.get("build_ms") or 0) + result["ready_ms"]
 
 
+def disk_lines(runs):
+    """Each server's install, and what it wrote into the project's tree, from its last run."""
+    lines = []
+    for server, results in runs.items():
+        disk = next((r["disk"] for r in reversed(results) if r.get("disk")), None)
+        if disk:
+            tree = disk["tree"]
+            lines.append("- %s: install %s; in the project tree: %s" % (
+                server, fmt(disk["install_mb"], " MB"),
+                ", ".join("`%s`" % p for p in tree[:8]) + (" and %d more" % (len(tree) - 8) if len(tree) > 8 else "")
+                if tree else "nothing"))
+    return ["", "Disk is what a server keeps for the project after a run (jdtls's workspace data and "
+                "configuration, Lathe's `.lathe/`). Beside it:", ""] + lines if lines else []
+
+
 def baseline_lines(out_dir, runs):
     """The build without Lathe, and Lathe's share of its cold build beside it."""
     path = out_dir / "baseline.json"
@@ -62,13 +77,13 @@ def baseline_lines(out_dir, runs):
 
 
 def server_table(runs):
-    rows = ["| Server | Mode | Runs | Build | Import | Ready | First answer | Startup peak | Query peak | Idle | CPU | Failed |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| Server | Mode | Runs | Build | Import | Ready | First answer | Startup peak | Query peak | Idle | CPU | Disk | Failed |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for server, results in runs.items():
         for mode in ("cold", "warm"):
             done = [r for r in results if r["mode"] == mode]
             ok = [r for r in done if not r.get("error")]
-            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %d |" % (
+            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d |" % (
                 server, mode, len(done),
                 fmt(median([r.get("build_ms") for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("import_ms") for r in ok]), " s", 1000, 1),
@@ -78,6 +93,7 @@ def server_table(runs):
                 fmt(median([r.get("query_peak_mb") for r in ok]), " MB"),
                 fmt(median([r.get("idle_mb") for r in ok]), " MB"),
                 fmt(median([r.get("cpu_s") for r in ok]), " s", 1, 1),
+                fmt(median([(r.get("disk") or {}).get("state_mb") for r in ok]), " MB"),
                 len(done) - len(ok)))
     return rows
 
@@ -188,7 +204,7 @@ def main():
         "",
         "## Servers (medians; memory is the summed RSS of the server's processes)",
         "",
-    ] + server_table(runs) + baseline_lines(out_dir, runs) + [
+    ] + server_table(runs) + baseline_lines(out_dir, runs) + disk_lines(runs) + [
         "",
         "Build is what a cold run builds before the server starts: Lathe's first build as the README has a "
         "user run it, tests captured but not run, and for jdtls only where it needs the project installed "

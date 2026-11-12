@@ -211,9 +211,12 @@ def jdtls_repository(name):
 def jdtls_settings(name, project):
     # vscode-java's defaults where jdtls's own differ (signature help is off in jdtls itself). A
     # project with both a pom.xml and a Gradle build is imported through the build Lathe uses.
-    java = {"signatureHelp": {"enabled": True}}
+    # vscode-java keeps jdtls's Eclipse metadata (.project, .classpath, .settings/) in its workspace
+    # data; jdtls's own default writes it into the project's tree, as a Neovim user who does not set
+    # this gets it.
+    java = {"signatureHelp": {"enabled": True}, "import": {"generatesMetadataFilesAtProjectRoot": False}}
     if project["build"] == "maven":
-        java["import"] = {"gradle": {"enabled": False}}
+        java["import"]["gradle"] = {"enabled": False}
     if project.get("jdtls_install"):
         java["configuration"] = {"maven": {"userSettings": str(jdtls_repository(name)[1])}}
     return {"java": java}
@@ -296,6 +299,8 @@ def jdtls_spec(name, project, state, heap, overrides=None):
         "-XX:+UseParallelGC", "-XX:GCTimeRatio=4", "-XX:AdaptiveSizePolicyWeight=90",
         "-Dsun.zip.disableMemoryMapping=true",
         "-Xmx%s" % (heap or "2G"), "-Xms100m", "-Xlog:disable",
+        # vscode-java passes its metadata setting as a property too: jdtls needs it before it reads settings.
+        "-Djava.import.generatesMetadataFilesAtProjectRoot=false",
         "--add-modules=ALL-SYSTEM",
         "--add-opens", "java.base/java.util=ALL-UNNAMED",
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
@@ -314,11 +319,46 @@ def jdtls_spec(name, project, state, heap, overrides=None):
     return {"cmd": cmd, "env": env, "init_options": init_options, "settings": settings}
 
 
+def size_mb(path):
+    """A directory's or file's size on disk, in MB; 0 when it is not there."""
+    path = Path(path)
+    if path.is_file():
+        return path.stat().st_size / 1e6
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / 1e6 if path.is_dir() else 0
+
+
+# Build output and the benchmark's own edits (the Lathe extension, a project's appends): not a server's.
+NOT_SERVER_FILES = ("target/", "build/", ".gradle/", "bin/", ".mvn/", "pgp-keys-map.list")
+
+
+def tree_files(repo):
+    """What a server left in the project's tree, as git status lists it, outside build output."""
+    status = subprocess.run(["git", "status", "--porcelain", "--ignored", "--untracked-files=normal"], cwd=repo,
+                            capture_output=True, text=True).stdout.splitlines()
+    paths = [line[3:] for line in status]
+    return sorted(p for p in paths if not any(part in "/" + p for part in ["/" + n for n in NOT_SERVER_FILES]))
+
+
+def lathe_disk(name, state):
+    """Lathe's .lathe/ and the jars its launcher runs (shared by every project on one version)."""
+    repo = repo_of(name)
+    args = repo / ".lathe" / "lathe-server.args"
+    jars = {p for line in (args.read_text(encoding="utf-8").split() if args.exists() else [])
+            for p in line.split(os.pathsep) if p.endswith(".jar")}
+    return {"state_mb": size_mb(repo / ".lathe"), "install_mb": sum(size_mb(j) for j in jars),
+            "tree": tree_files(repo)}
+
+
+def jdtls_disk(name, state):
+    """jdtls's workspace data and configuration (its -data and the state beside it), and its install."""
+    return {"state_mb": size_mb(state), "install_mb": size_mb(JDTLS), "tree": tree_files(repo_of(name))}
+
+
 SERVERS_BY_NAME = {
     "lathe": {"prepare": lambda name, project, mode, state, log: lathe_prepare(name, project, mode, log),
-              "spec": lathe_spec},
+              "spec": lathe_spec, "disk": lathe_disk},
     "jdtls": {"prepare": jdtls_prepare,
-              "spec": jdtls_spec},
+              "spec": jdtls_spec, "disk": jdtls_disk},
 }
 
 

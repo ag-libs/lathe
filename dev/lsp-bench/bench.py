@@ -402,12 +402,12 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         client.notify("initialized", {})
         result["initialize_ms"] = (time.monotonic() - start) * 1000
         result["server_info"] = init.get("serverInfo")
-        server = init.get("capabilities", {})
-        client.resolves_completion = bool((server.get("completionProvider") or {}).get("resolveProvider"))
-        client.prepares_rename = isinstance(server.get("renameProvider"), dict) \
-            and bool(server["renameProvider"].get("prepareProvider"))
-        client.resolves_actions = isinstance(server.get("codeActionProvider"), dict) \
-            and bool(server["codeActionProvider"].get("resolveProvider"))
+        provides = init.get("capabilities", {})
+        client.resolves_completion = bool((provides.get("completionProvider") or {}).get("resolveProvider"))
+        client.prepares_rename = isinstance(provides.get("renameProvider"), dict) \
+            and bool(provides["renameProvider"].get("prepareProvider"))
+        client.resolves_actions = isinstance(provides.get("codeActionProvider"), dict) \
+            and bool(provides["codeActionProvider"].get("resolveProvider"))
         open_files(client, repo, cases.CASES)
         ready_at = wait_ready(client, repo, probe, start, args.ready_timeout, args.request_timeout)
         result["ready_ms"] = (ready_at - start) * 1000
@@ -433,6 +433,8 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         table = M.processes()
         M.kill(M.descendants(table, sampler.pids))
         M.stop_started(before)
+        # After the server stopped: what it keeps on disk, and anything it wrote into the tree.
+        result["disk"] = S.SERVERS_BY_NAME[server]["disk"](name, state)
     return result
 
 
