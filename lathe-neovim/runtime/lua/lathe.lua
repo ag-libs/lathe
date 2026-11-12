@@ -117,11 +117,9 @@ function M.warn_if_not_ready(bufnr)
   if not M._configured then
     msg = 'Lathe: plugin installed but not configured -- call `require("lathe").setup()`.'
   elseif root == nil then
-    msg = "Lathe: no `.lathe/` workspace -- Lathe is not set up for this project, or it is not "
-      .. "synced yet: "
+    msg = "Lathe: this project isn't set up yet (no `.lathe/` workspace): "
       .. require("lathe.sync").SETUP_HINT
-      .. " Then `:LatheSync` refreshes it."
-      .. " If a build already ran, its log says why: Lathe needs Maven 3.6.3+."
+      .. " Then `:LatheSync` keeps it synced."
   else
     msg = "Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. "
       .. "Update the Lathe build plugin (Maven: lathe-maven-extension 0.1.16 or later) and sync again: "
@@ -315,6 +313,10 @@ function M.setup(opts)
   -- refresh the .lathe/ mirror after build-file or structural changes. The server never runs the
   -- build itself.
   require("lathe.sync").setup()
+
+  -- Setup surface: :LatheInit sets Lathe up for the build around the current file, without changing
+  -- the project when the build does not register Lathe.
+  require("lathe.latheinit").setup()
 
   -- pom.xml surface: client-side XSD validation (diagnostics on open/save) and optional formatting,
   -- both via `xmllint`. No language server involvement -- Lathe is never attached to pom.xml. On by

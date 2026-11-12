@@ -12,8 +12,7 @@ local M = {}
 
 -- Before the first sync there is no script to run, so a setup or recovery message names each
 -- build front-end's first command (mirrors the server's SETUP_REMEDIATION).
-M.SETUP_HINT = "for Maven, add the lathe-maven-extension and run `mvn clean test -Dlathe.capture.only=true`; "
-  .. "for Gradle, apply the `io.github.ag-libs.lathe` settings plugin and run `./gradlew latheSync -Plathe.capture.only=true`; "
+M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project); "
   .. "for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`."
 
 -- Guard against overlapping syncs for the same root (a second prompt/command while one is running).
@@ -68,7 +67,7 @@ local function ensure_output_buf()
   pcall(vim.api.nvim_buf_set_name, out_buf, "Lathe Sync Output")
   vim.keymap.set("n", "r", function()
     if last_sync then
-      M.run(last_sync.root, last_sync.capture_tests, last_sync.modules)
+      M.run(last_sync.root, last_sync.capture_tests, last_sync.modules, last_sync.opts)
     end
   end, { buffer = out_buf, desc = "Lathe: re-run the last sync" })
   vim.keymap.set(
@@ -161,7 +160,10 @@ local SCRIPT = ".lathe/lathe-sync.sh"
 
 --- Runs `.lathe/lathe-sync.sh [--tests] [module ...]` at `root` as a background job, notifying on
 --- start and completion. `modules` (reactor-relative paths) scope it; empty/nil syncs everything.
-function M.run(root, capture_tests, modules)
+--- `opts.cmd` runs that command instead (`:LatheInit`'s first build, before there is a script), shown
+--- as `opts.label`; `opts.on_done(result)` runs after the build ends, on the main loop.
+function M.run(root, capture_tests, modules, opts)
+  opts = opts or {}
   if not root or root == "" then
     return
   end
@@ -170,22 +172,28 @@ function M.run(root, capture_tests, modules)
     return
   end
 
-  local script = vim.fs.joinpath(root, SCRIPT)
-  if vim.fn.executable(script) ~= 1 then
-    vim.notify(
-      "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the "
-        .. "Lathe build plugin and sync once: "
-        .. M.SETUP_HINT,
-      vim.log.levels.WARN
-    )
-    return
+  local cmd, cmd_str
+  if opts.cmd then
+    cmd, cmd_str = opts.cmd, opts.label or table.concat(opts.cmd, " ")
+  else
+    local script = vim.fs.joinpath(root, SCRIPT)
+    if vim.fn.executable(script) ~= 1 then
+      vim.notify(
+        "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the "
+          .. "Lathe build plugin and sync once: "
+          .. M.SETUP_HINT,
+        vim.log.levels.WARN
+      )
+      return
+    end
+
+    local args = vim.list_extend(capture_tests and { "--tests" } or {}, modules or {})
+    cmd = vim.list_extend({ script }, args)
+    cmd_str = table.concat(vim.list_extend({ SCRIPT }, args), " ")
   end
 
-  local args = vim.list_extend(capture_tests and { "--tests" } or {}, modules or {})
-  local cmd = vim.list_extend({ script }, args)
-  local cmd_str = table.concat(vim.list_extend({ SCRIPT }, args), " ")
   running[root] = true
-  last_sync = { root = root, capture_tests = capture_tests, modules = modules }
+  last_sync = { root = root, capture_tests = capture_tests, modules = modules, opts = opts }
 
   show_running(cmd_str, root) -- clear the console so an open split never shows the previous run
   local state = { started = vim.loop.hrtime(), cmd_str = cmd_str }
@@ -224,6 +232,10 @@ function M.run(root, capture_tests, modules)
           vim.log.levels.ERROR
         )
         show_failure(cmd_str, root, res.code, (res.stdout or "") .. (res.stderr or ""))
+      end
+
+      if opts.on_done then
+        opts.on_done(res)
       end
     end)
   end)

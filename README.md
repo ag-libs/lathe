@@ -40,6 +40,8 @@ See the full [feature list](docs/guide/features.md), or the [Neovim keymap refer
 You need Java 17+, and Maven 3.6.3+ or Gradle 8.8+ (see the requirements for
 [Maven](docs/guide/maven.md#requirements) and [Gradle](docs/guide/gradle.md#requirements)).
 
+In Neovim, `:LatheInit` does steps 1 and 2 for you, without changing your build files ([how](docs/guide/editors/neovim.md#set-up-a-project)).
+
 **1. Add Lathe to your build.**
 Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
 

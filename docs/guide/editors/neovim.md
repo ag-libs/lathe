@@ -17,10 +17,10 @@ mapping. The suggested keymaps are a coherent starting set, not defaults.
 
 ## Install
 
-Installing the client and building the project are **two independent steps**.
-The **server** is resolved and installed by your build — not by the plugin manager — so you also
-need the build wired up and run at least once (see the [installation guide](../installation.md)); until
-then the client nudges you to do so.
+Installing the client and setting up the project are **two independent steps**.
+The **server** is resolved and installed by your build — not by the plugin manager — so the project
+needs one Lathe build first: run [`:LatheInit`](#set-up-a-project) from any of its files, or wire the
+build yourself (see the [installation guide](../installation.md)); until then the client nudges you to.
 The **client** is the standalone [`ag-libs/lathe.nvim`](https://github.com/ag-libs/lathe.nvim)
 repository, installed like any other plugin — either way below (don't combine them; Lathe warns if it
 finds the client loaded from more than one place).
@@ -78,12 +78,32 @@ overrides `style` for that workspace — so `style` here is only the fallback fo
 
 See [Formatting & indentation](#formatting--indentation) below.
 
+### Set up a project
+
+`:LatheInit [maven|gradle|openjdk]` sets Lathe up for the build around the current file and attaches
+the server when the build ends:
+
+- It walks up from the current file (or `:pwd`) to the build's root, an OpenJDK checkout, the nearest
+  `settings.gradle(.kts)`, or a Maven root (a `pom.xml` with `.mvn/` or `mvnw` beside it, else the
+  topmost of the folders holding one), and asks you to confirm it: Enter accepts, or edit the path.
+  A kind given looks only for that kind's root.
+- A Maven or Gradle build that does not register Lathe gets it from outside, so **your project files
+  are not changed**: Maven through `-Dmaven.ext.class.path` (the jars fetched once per Lathe version
+  into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. Code that does not compile
+  still sets up. A build that registers Lathe just builds.
+- An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).
+- It runs the project's `mvnw`/`gradlew`, else `mvn`/`gradle` from `PATH`, and sets up this client's
+  Lathe version; a development checkout of the client needs `LATHE_VERSION` set.
+
+Afterwards `:LatheSync` refreshes the workspace; `:LatheInit` again moves it to this client's version.
+
 ### Updating
 
 The server and the client update separately:
 
 1. **Server**: bump the Lathe version in your build (the `lathe-maven-extension` version on Maven, the
-   `io.github.ag-libs.lathe` plugin version on Gradle) and build again.
+   `io.github.ag-libs.lathe` plugin version on Gradle) and build again; a project set up with
+   `:LatheInit` (Lathe not in its build files) gets the client's version by running `:LatheInit` again.
    Re-running the build without a new version reinstalls the same server.
 2. **Client**: update `lathe.nvim` through your plugin manager (`:Lazy update lathe.nvim` or `vim.pack.update({ "lathe.nvim" })`).
 
@@ -125,6 +145,7 @@ freely.
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` / convert to `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
+| Set Lathe up for the build around the current file ([below](#set-up-a-project)) | `:LatheInit [maven\|gradle\|openjdk]` | — | — |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |

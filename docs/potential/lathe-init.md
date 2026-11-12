@@ -11,8 +11,8 @@ Nothing here is approved for implementation; [What changes](#what-changes) needs
 **Agreed:**
 
 - **From personal to team** (2026-10-24): an explicit, previewed step that writes `.mvn/extensions.xml` pinned to the version the user already runs ([Team mode](#team-mode)).
-- **One command, `:LatheInit`, with a dialog** (2026-10-28), replacing `:LatheInitPlain` and Personal Setup's `:LatheSetup`: Plain Java, Maven personal, Maven team, Sync, OpenJDK, later Gradle.
-- **Detection walks up from the current file** (2026-11-11, replacing "only the opened folder" of 2026-10-28): from the current buffer's file, else `:pwd`, to the build's root, which the dialog names before anything runs ([Finding the build's root](#finding-the-builds-root)).
+- **One command, `:LatheInit`** (2026-10-28), replacing `:LatheInitPlain` and Personal Setup's `:LatheSetup`; its dialog became a kind argument and a root prompt, without Sync, on 2026-11-12 ([The `:LatheInit` command](#the-latheinit-command)).
+- **Detection walks up from the current file** (2026-11-11, replacing "only the opened folder" of 2026-10-28): from the current buffer's file, else `:pwd`, to the build's root, which a prompt shows before anything runs ([Finding the build's root](#finding-the-builds-root)).
 - **Personal activation is `-Dmaven.ext.class.path`** with `lathe-maven-extension` and its runtime dependencies at the client's version (2026-10-28; the dependencies added 2026-11-11), [spiked](#spike-results-2026-11-11) on Maven 3.6.3 and 3.9.11.
 - **Plain mode is personal mode on a generated `.lathe-pom.xml` that never mentions Lathe** (2026-10-28), run by a bundled Maven Wrapper, so the user installs only a JDK.
 - **`.lathe-pom.xml` is written once and then belongs to the user** (2026-10-29): release, formatter and dependencies are edited there.
@@ -31,7 +31,7 @@ Related designs:
 - [Run and Test in VS Code](../planned/lathe-vscode-run-test.md): what needs a test capture, and how a run reports a missing one.
 - [OpenJDK support](../done/lathe-openjdk-support.md): the coordinate-invoked front-end the OpenJDK mode runs.
 - [Pinned Formatters](../done/lathe-pinned-formatters.md): the formatter is a Spotless step Lathe already reads.
-- [Gradle support](../done/lathe-gradle-support.md): Gradle's personal (init script) and team (plugin) modes slot into the same dialog.
+- [Gradle support](../done/lathe-gradle-support.md): Gradle's personal (init script) and team (plugin) modes are kinds of the same command.
 - [Lessons from Metals v2](lathe-metals-v2-lessons.md): Lathe trusts the real build; here the build is generated or borrowed, but real.
 
 ## Problem / motivation
@@ -89,31 +89,29 @@ Team mode follows; plain mode follows once its blockers ([issues 2 and 4](#open-
 | **Gradle, personal** | the project's build | `--init-script` from the bootstrap directory | none |
 | **Gradle, team** (after v1) | the project's build | the settings plugin, a line the user adds | one line |
 
-### The `:LatheInit` dialog
+### The `:LatheInit` command
 
-Neovim `:LatheInit`; VS Code **Lathe: Initialize Workspace** (a quick pick).
-Detection finds the build's root ([below](#finding-the-builds-root)) and only proposes the default:
-
-| Found at the root | Default | Also offered |
-|---|---|---|
-| `.lathe/` | **Sync** (`.lathe/lathe-sync.sh`) | the mode-specific re-init |
-| `pom.xml`, Lathe registered (the client text-checks `.mvn/extensions.xml` and the POM for `lathe-maven-extension`) | **Sync** (a build of the project) | none |
-| `pom.xml`, not registered | **Maven, personal** | Maven, team; Plain Java anyway (with a warning) |
-| `settings.gradle(.kts)` / `build.gradle(.kts)`, Lathe registered (the client text-checks the settings file for `io.github.ag-libs.lathe`) | **Sync** (a build of the project) | none |
-| `settings.gradle(.kts)` / `build.gradle(.kts)`, not registered | **Gradle, personal** | Gradle, team; Plain Java anyway (with a warning) |
-| a built OpenJDK tree (`build/*/jdk/modules`) | **OpenJDK** | none |
-| nothing | **Plain Java** | none |
+**Agreed 2026-11-12,** replacing the dialog of 2026-10-28 for Neovim's first version.
+A menu that offered Sync beside the setup modes mixed two questions: how Lathe gets into a build (`:LatheInit`, run once and again to upgrade) and making `.lathe/` current (`:LatheSync`, run often, never changing how Lathe is brought in).
 
 ```
-Lathe: initialize ~/work/course-app
-  Found pom.xml
-> Maven (personal: your project files are not changed)
-  Maven (team: adds .mvn/extensions.xml)
-  Plain Java (ignore pom.xml)
+:LatheInit [maven|gradle|openjdk]
+Lathe: set up the Maven build in: ~/work/app█
 ```
 
-- Enter accepts the default, so the common case is one keystroke.
-- The choice can be passed directly: `:LatheInit plain|maven|maven-team|gradle|gradle-team|sync|openjdk`, with a directory to override the root (`:LatheInit maven ~/work/app`).
+- **No argument:** the kind and the root are detected ([below](#finding-the-builds-root)); a kind given looks only for that kind's root.
+- **The root is confirmed in a prompt**, pre-filled and editable, with folder completion: Enter accepts it, an edited root is taken as typed (no walking up), its kind read from its own files. Arguments mixing a kind and a folder were set aside as awkward to type and read.
+- **It never syncs:** with no build found but a `.lathe/` present, it says `:LatheSync` refreshes it.
+- **`plain`** joins the kinds when plain mode ships; team modes after it.
+
+| The build at the root | `:LatheInit` runs |
+|---|---|
+| Maven, Lathe not registered (the client text-checks `.mvn/extensions.xml` and the POM for `lathe-maven-extension`) | the bootstrap fetch if needed, then the build with the activation and `failOnError` off |
+| Gradle, Lathe not registered (the client text-checks the settings script for `io.github.ag-libs.lathe`) | the build with the init script |
+| Maven or Gradle that registers Lathe | a plain build (`process-test-classes`, `latheSync`) |
+| OpenJDK | Lathe's OpenJDK goal at the client's version, once the JDK is configured and built in exactly one configuration |
+
+When the build ends with a launcher, the client starts the server for the open Java buffers under the root; without one, it asks whether the root is the build's root.
 
 ### Finding the build's root
 
@@ -125,17 +123,17 @@ So `:LatheInit` walks up from the current buffer's file, else from `:pwd`:
 
 | Walking up finds | Root |
 |---|---|
-| `.lathe/` | that folder: **Sync**, the client's existing root lookup |
+| `configure`, `make/` and `src/java.base/` | that folder: an OpenJDK checkout, checked first |
 | `settings.gradle(.kts)` | the nearest one: Gradle's own rule for a build's root |
 | a folder with `pom.xml` and `.mvn/` or `mvnw` | that folder: the reactor root by Maven's own markers |
 | `pom.xml` without those | the topmost folder of the unbroken run of folders holding a `pom.xml` |
-| a Maven and a Gradle root | the dialog asks which |
+| a Maven and a Gradle root | the nearer one; at the same folder, Gradle; `:LatheInit maven` picks Maven |
 | nothing | `:pwd`, for **Plain Java** |
 
 - The Maven fallback is a heuristic: Lathe's own check, `ReactorProjects.isReactorRoot` in `lathe-maven-plugin`, reads each parent POM's `<modules>`, which the Lua client does not parse.
   When the client guesses a module, Maven gives the exact answer: `lathe:init` and `lathe:sync` skip a build that is not the reactor root.
   That skip logs at debug level today; it becomes a warning naming the reactor root (*"[lathe] … is a module of the reactor at …; run the build there"*), which the client shows as the reason no `.lathe/` appeared.
-- The dialog's header shows the root it found, so a wrong guess is visible before anything runs, and `:LatheInit <mode> <dir>` overrides it.
+- The prompt shows the root it found, so a wrong guess is visible before anything runs, and is corrected there.
 
 ### Personal activation
 
@@ -166,6 +164,7 @@ Gradle resolves the plugin itself, from the Gradle Plugin Portal named in the sc
 - **With `failOnError` off** (Maven `-Dmaven.compiler.failOnError=false`; Gradle `options.isFailOnError = false` on every `JavaCompile`), both builds succeeded, every module was captured, and the server reported only the real error once it had compiled the broken module itself.
 
 So personal builds always run with `failOnError` off, and every later sync replays it: Maven through the sync script, Gradle because the line lives in the client's init script.
+On Gradle the init script also turns incremental compilation off: after a compile with errors that Gradle counted as done, its incremental compiler recompiles only the changed sources, so the classes the failed compile left out are never written once the code is fixed (found by CI on PR #183, reproduced on a scratch build). A sync through the init script then recompiles a whole source set when its sources change.
 On Gradle `failOnError` is a task input, so a build run through the init script does not share compile cache entries with CI; the user's terminal builds without it are unaffected.
 The [Gradle guide](../guide/gradle.md)'s "Lathe never changes the inputs of your build's own tasks" holds for the plugin; the guide notes this exception for the personal init script.
 
@@ -186,7 +185,7 @@ The Gradle script already replays the `--init-script` files that registered Lath
 1. **Pinned at init.** `~/.cache/lathe/bootstrap/<v>/` holds the activation jars and the init script for one version and never changes; the sync script names those exact paths, so editor, terminal and MCP syncs all run one version.
    No pointer that follows the newest version: it would need a link ([Multi-OS](../done/lathe-multi-os.md) forbids them), and a sync would change versions under the user.
 2. **`:LatheInit` again upgrades.** On a personal workspace it re-runs the build at the client's version, which renders a new sync script.
-3. **Messages.** No registration found and `.lathe/` present means a personal workspace (the same text check as the dialog); there, the client's protocol-mismatch warning says "run `:LatheInit`" instead of "update the Lathe build plugin".
+3. **Messages.** No registration found and `.lathe/` present means a personal workspace (the same text check as `:LatheInit`); there, the client's protocol-mismatch warning says "run `:LatheInit`" instead of "update the Lathe build plugin".
    A different version with the same protocol stays silent, as today.
 4. **A missing bootstrap file fails the sync.** [Spiked](#spike-results-2026-11-11): Maven ignores a missing `maven.ext.class.path` jar and the build succeeds without Lathe, leaving `.lathe/` stale with no message; Gradle stops on a missing `--init-script`, in its own words.
    So the Maven sync script checks the activation jars before it runs, as it checks the tool, and asks to set Lathe up again when one is gone (editor-neutral wording: every client runs the script).
@@ -275,7 +274,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 
 #### Plain-mode steps
 
-1. **Check:** `.lathe/` with no `.lathe-pom.xml` belongs to another mode (the dialog defaults to Sync); an existing `.lathe-pom.xml` is a re-run, left as the user has it; no `src/` is explained ([issue 5](#open-issues)).
+1. **Check:** `.lathe/` with no `.lathe-pom.xml` belongs to another mode (`:LatheSync` refreshes it); an existing `.lathe-pom.xml` is a re-run, left as the user has it; no `src/` is explained ([issue 5](#open-issues)).
 2. **JDK:** `$LATHE_JAVA_HOME`, else `$JAVA_HOME` ([issue 4](#open-issues) proposes a `PATH` fallback); older than 17 is refused, a JDK without `lib/src.zip` gets a warning.
 3. **Write** `.lathe-pom.xml` (first run only; the release is the JDK's feature version) and the wrapper files.
 4. **Fetch** the activation jars if missing, and **run** `.lathe/build/mvnw -f .lathe-pom.xml -Dmaven.ext.class.path=… process-test-classes` with `JAVA_HOME` set, showing its output.
@@ -291,7 +290,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 
 ### Maven personal mode
 
-1. **Check:** a Maven root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else the dialog defaults to Sync).
+1. **Check:** a Maven root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else a plain build).
 2. **Pre-flight:** find Maven (project `mvnw`, else `mvn` on `PATH`, else the bundled wrapper); Maven 3.6.3+; Maven's JDK 17+ ([Detecting and explaining](#detecting-and-explaining)).
 3. **Fetch** the activation jars if missing.
 4. **Run** `<maven> -Dmaven.ext.class.path=… -Dmaven.compiler.failOnError=false process-test-classes` at the reactor root: editing first, no clean, no tests executed; tests are captured on demand.
@@ -299,7 +298,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 
 ### Gradle personal mode
 
-1. **Check:** a Gradle root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else the dialog defaults to Sync).
+1. **Check:** a Gradle root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else a plain build).
 2. **Pre-flight:** find Gradle (the project's `gradlew`, else `gradle` on `PATH` resolved to its full path); Gradle 8.8+ and JDK 17+ are checked inside the build, which stops with a message ([Gradle support](../done/lathe-gradle-support.md)).
 3. **Write** `~/.cache/lathe/bootstrap/<v>/lathe.init.gradle.kts` from the client's template if missing:
 
@@ -315,9 +314,13 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
        }
    }
 
-   // personal builds set up and sync on code that does not compile
+   // personal builds set up and sync on code that does not compile; incremental compilation off,
+   // or the classes a failed compile left out are never written once the code is fixed
    allprojects {
-       tasks.withType<JavaCompile>().configureEach { options.isFailOnError = false }
+       tasks.withType<JavaCompile>().configureEach {
+           options.isFailOnError = false
+           options.isIncremental = false
+       }
    }
    ```
 
@@ -349,7 +352,7 @@ For Gradle, team mode shows the settings-plugin line with a copy button and neve
 Passing the activation over a project registration would silently override the team's pin and make `.lathe/` flip between versions as editor syncs and terminal builds alternate.
 
 So the rule: **no activation when the project registers Lathe.**
-- The client checks before passing it (the same text check that picks the dialog's default).
+- The client checks before passing it (the same text check that picks what `:LatheInit` runs).
 - `MavenSyncScript` renders it only when the project does not register Lathe, so a sync after moving to team mode drops it.
   It must check the registration itself (`.mvn/extensions.xml`, the root POM's build extensions), not only render what was passed: a sync run with the activation would otherwise write it into the next script, and the team's pin would stay overridden for good.
 - An old sync script that still carries it after the project adds a registration then runs once at most, since that sync renders a new script without it.
