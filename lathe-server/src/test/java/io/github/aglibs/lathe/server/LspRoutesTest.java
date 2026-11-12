@@ -234,7 +234,9 @@ class LspRoutesTest extends ServiceTestBase {
   private static void awaitScratchFile(final Path dir, final boolean present) throws Exception {
     final var waited = Stopwatch.start();
     while (hasScratchFile(dir) != present) {
-      assertThat(waited.elapsedMs()).isLessThan(SCRATCH_WAIT_MS);
+      assertThat(waited.elapsedMs())
+          .as("the formatter's scratch file in %s %s", dir, present ? "appearing" : "going away")
+          .isLessThan(SCRATCH_WAIT_MS);
       Thread.sleep(10);
     }
   }
