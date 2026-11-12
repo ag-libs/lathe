@@ -14,10 +14,13 @@ settingsEvaluated {
 // Code that does not compile still sets up: every project is captured, and the server reports the
 // errors. Incremental compilation is off, as after a compile with errors that Gradle counted as
 // done it would recompile only the changed sources and never write the classes that compile left
-// out.
-allprojects {
-    tasks.withType<JavaCompile>().configureEach {
-        options.isFailOnError = false
-        options.isIncremental = false
+// out. The root build only, as the Lathe plugin: an init script reaches every build Gradle loads,
+// buildSrc and included build logic too, whose compile errors must still stop them.
+if (gradle.parent == null) {
+    gradle.lifecycle.beforeProject {
+        tasks.withType<JavaCompile>().configureEach {
+            options.isFailOnError = false
+            options.isIncremental = false
+        }
     }
 }

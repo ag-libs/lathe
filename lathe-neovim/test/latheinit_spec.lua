@@ -183,9 +183,15 @@ spec.check(
     ~= nil,
   true
 )
-write(boot .. "/lib/lathe-maven-extension-9.9.9.jar")
-write(boot .. "/lib/lathe-core-9.9.9.jar")
+spec.check(
+  "the fetch fills a temporary folder",
+  last_cmd()[#last_cmd()],
+  "-DoutputDirectory=" .. boot .. "/lib.fetching"
+)
+write(boot .. "/lib.fetching/lathe-maven-extension-9.9.9.jar")
+write(boot .. "/lib.fetching/lathe-core-9.9.9.jar")
 finish_build(0)
+spec.check("a finished fetch is renamed into place", vim.uv.fs_stat(boot .. "/lib.fetching"), nil)
 spec.check(
   "then the build, Lathe on the ext class path and compile errors kept",
   table.concat(last_cmd(), " "),
@@ -202,6 +208,34 @@ vim.bo[java].filetype = "java"
 executable(work .. "/multi/.lathe/lathe-launcher.sh")
 finish_build(0)
 spec.check("a build that wrote a launcher attaches the root's Java buffers", started[1], java)
+
+-- A fetch interrupted before it ended left no lib/: the next run fetches again.
+vim.fn.mkdir(work .. "/cache/bootstrap/8.8.8/lib.fetching", "p")
+vim.env.LATHE_VERSION = "8.8.8"
+run_from("/multi")
+spec.check(
+  "an interrupted fetch is fetched again",
+  last_cmd()[#last_cmd()],
+  "-DoutputDirectory=" .. work .. "/cache/bootstrap/8.8.8/lib.fetching"
+)
+finish_build(1)
+spec.check(
+  "a failed fetch builds nothing",
+  last_cmd()[#last_cmd()]:find("lib.fetching", 1, true) ~= nil,
+  true
+)
+
+-- A snapshot is fetched every time, for its newest build.
+vim.fn.mkdir(work .. "/cache/bootstrap/1.0-SNAPSHOT/lib", "p")
+vim.env.LATHE_VERSION = "1.0-SNAPSHOT"
+run_from("/multi")
+spec.check(
+  "a snapshot is fetched again",
+  last_cmd()[#last_cmd()],
+  "-DoutputDirectory=" .. work .. "/cache/bootstrap/1.0-SNAPSHOT/lib.fetching"
+)
+finish_build(1)
+vim.env.LATHE_VERSION = "9.9.9"
 
 local before = #calls
 run_from("/multi")
@@ -266,13 +300,18 @@ latheinit.run("ant")
 spec.check("an unknown kind runs nothing", #calls, before)
 
 -- A build that registers Lathe just builds.
+local team_java = vim.fn.bufadd(work .. "/team/src/Team.java")
+vim.fn.bufload(team_java)
+vim.bo[team_java].filetype = "java"
 run_from("/team")
 spec.check(
   "a registered Maven build is a plain build",
   table.concat(last_cmd(), " "),
   "/opt/bin/mvn -B process-test-classes"
 )
-finish_build(0)
+executable(work .. "/team/.lathe/lathe-launcher.sh")
+finish_build(1)
+spec.check("a failed build that wrote a launcher attaches", started[#started], team_java)
 run_from("/team-gradle")
 spec.check(
   "a registered Gradle build is a plain build",
@@ -317,6 +356,35 @@ spec.check(
   last_note_has("no Maven, Gradle or OpenJDK build found"),
   true
 )
+
+-- A root typed through a symlink is the same folder: the build runs, and its buffers attach.
+vim.uv.fs_symlink(work .. "/multi", work .. "/link")
+local attached_before = #started
+next_answer = work .. "/link"
+run_from("/multi/core")
+spec.check("a symlinked root builds at the real folder", calls[#calls].opts.cwd, work .. "/multi")
+finish_build(0)
+spec.check("and attaches the buffers under it", #started, attached_before + 1)
+
+-- From a buffer that is not a file (a terminal, the sync output), :pwd is where it looks.
+vim.cmd("enew")
+vim.bo.buftype = "nofile"
+vim.api.nvim_buf_set_name(0, "term://fake//1:sh")
+vim.cmd.cd(work .. "/gradle")
+latheinit.run()
+spec.check("a non-file buffer starts at :pwd", calls[#calls].opts.cwd, work .. "/gradle")
+finish_build(0)
+
+-- An install missing the init-script template says so instead of failing.
+local get_runtime_file = vim.api.nvim_get_runtime_file
+vim.api.nvim_get_runtime_file = function()
+  return {}
+end
+before = #calls
+run_from("/gradle")
+vim.api.nvim_get_runtime_file = get_runtime_file
+spec.check("a missing template runs nothing", #calls, before)
+spec.check("and says to reinstall", last_note_has("reinstall the plugin"), true)
 
 -- A development client sets up nothing without LATHE_VERSION.
 vim.env.LATHE_VERSION = nil

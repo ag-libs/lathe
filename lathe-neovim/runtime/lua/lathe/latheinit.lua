@@ -218,6 +218,14 @@ end
 
 local function write_init_script(dir, version)
   local template = vim.api.nvim_get_runtime_file(INIT_SCRIPT_TEMPLATE, false)[1]
+  if not template then
+    notify(
+      ("this install of lathe.nvim has no `%s`: reinstall the plugin."):format(INIT_SCRIPT_TEMPLATE),
+      vim.log.levels.ERROR
+    )
+    return nil
+  end
+
   local script = vim.fs.joinpath(dir, INIT_SCRIPT)
   vim.fn.mkdir(dir, "p")
   vim.fn.writefile(
@@ -227,29 +235,40 @@ local function write_init_script(dir, version)
   return script
 end
 
+-- The same folder whatever symlinks a path to it goes through.
+local function real(path)
+  return path and vim.uv.fs_realpath(path) or nil
+end
+
 local function java_buffers_under(root)
+  local wanted = real(root)
   return vim.tbl_filter(function(buf)
     return vim.api.nvim_buf_is_loaded(buf)
       and vim.bo[buf].filetype == "java"
-      and workspace.get_root(buf) == root
+      and real(workspace.get_root(buf)) == wanted
   end, vim.api.nvim_list_bufs())
 end
 
--- A build that succeeded without a launcher ran somewhere Lathe skipped: most often a module, as
--- Lathe sets up a build only from its root.
-local function attach(root)
-  if vim.fn.executable(workspace.launcher_path(root)) ~= 1 then
-    notify(
-      ("no `.lathe/` was written at %s; is it the build's root? Try `:LatheInit <dir>`."):format(
-        root
-      ),
-      vim.log.levels.WARN
-    )
+-- A build that failed may still have written the launcher (a compile error in a build that
+-- registers Lathe): attach, and the server reports the errors. One that succeeded without a
+-- launcher ran where Lathe set nothing up: most often a module, as Lathe sets up a build only from
+-- its root, or a build tool too old to load Lathe.
+local function attach(root, result)
+  if vim.fn.executable(workspace.launcher_path(root)) == 1 then
+    for _, buf in ipairs(java_buffers_under(root)) do
+      require("lathe").start(buf)
+    end
     return
   end
 
-  for _, buf in ipairs(java_buffers_under(root)) do
-    require("lathe").start(buf)
+  if result.code == 0 then
+    notify(
+      (
+        "no `.lathe/` was written at %s. Is it the build's root (`:LatheInit` asks for it)? Lathe "
+        .. "also needs Maven 3.6.3+ or Gradle 8.8+; the build log says why."
+      ):format(root),
+      vim.log.levels.WARN
+    )
   end
 end
 
@@ -259,9 +278,7 @@ local function build(root, cmd, label)
     cmd = cmd,
     label = label,
     on_done = function(result)
-      if result.code == 0 then
-        attach(root)
-      end
+      attach(root, result)
     end,
   })
 end
@@ -280,11 +297,15 @@ local function maven_personal(build_, tool, version)
       "process-test-classes",
     }, ("%s process-test-classes (Lathe %s)"):format(vim.fs.basename(tool), version))
   end
-  if exists(vim.fs.joinpath(lib, ("%s-%s.jar"):format(MAVEN_EXTENSION, version))) then
+  -- lib/ appears only whole: the fetch fills a temporary folder renamed into place when it ends, so
+  -- an interrupted one is fetched again. A snapshot is fetched every time, for its newest build.
+  if exists(lib) and not version:find("%-SNAPSHOT$") then
     run_build()
     return
   end
 
+  local fetching = lib .. ".fetching"
+  vim.fn.delete(fetching, "rf")
   write_bootstrap_pom(dir, version)
   require("lathe.sync").run(build_.root, false, nil, {
     cmd = {
@@ -295,13 +316,17 @@ local function maven_personal(build_, tool, version)
       vim.fs.joinpath(dir, POM),
       COPY_DEPENDENCIES,
       "-DincludeScope=runtime",
-      "-DoutputDirectory=" .. lib,
+      "-DoutputDirectory=" .. fetching,
     },
     label = "fetch Lathe " .. version,
     on_done = function(result)
-      if result.code == 0 then
-        run_build()
+      if result.code ~= 0 then
+        return
       end
+
+      vim.fn.delete(lib, "rf")
+      vim.uv.fs_rename(fetching, lib)
+      run_build()
     end,
   })
 end
@@ -388,6 +413,10 @@ local function set_up(found)
   end
 
   local script = write_init_script(bootstrap_dir(version), version)
+  if not script then
+    return
+  end
+
   build(
     found.root,
     { tool, "--init-script", script, "latheSync" },
@@ -395,9 +424,14 @@ local function set_up(found)
   )
 end
 
+-- A file buffer's folder; any other buffer (a terminal, the sync output, oil://) starts at :pwd.
 local function start_dir()
   local name = vim.api.nvim_buf_get_name(0)
-  return name ~= "" and vim.fs.dirname(vim.fs.normalize(name)) or vim.fn.getcwd()
+  if vim.bo.buftype ~= "" or name == "" or name:find("://", 1, true) then
+    return vim.fn.getcwd()
+  end
+
+  return vim.fs.dirname(vim.fs.normalize(name))
 end
 
 local function not_found(start, kind)
@@ -439,11 +473,12 @@ function M.run(kind)
       return
     end
 
-    local root = vim.fs.normalize(vim.fn.fnamemodify(vim.trim(answer), ":p")):gsub("/$", "")
-    local chosen = root == found.root and found or M.build_at(root, kind)
+    local typed = vim.fn.fnamemodify(vim.fn.expand(vim.trim(answer)), ":p")
+    local root = real(typed)
+    local chosen = root and (root == real(found.root) and found or M.build_at(root, kind))
     if not chosen then
       notify(
-        ("no %s build at %s."):format(kind and KINDS[kind] or "Maven, Gradle or OpenJDK", root),
+        ("no %s build at %s."):format(kind and KINDS[kind] or "Maven, Gradle or OpenJDK", typed),
         vim.log.levels.WARN
       )
       return

@@ -10,8 +10,9 @@
 
 local M = {}
 
--- Before the first sync there is no script to run, so a setup or recovery message names each
--- build front-end's first command (mirrors the server's SETUP_REMEDIATION).
+-- Before the first sync there is no script to run, so a setup or recovery message names :LatheInit
+-- (the server's SETUP_REMEDIATION, which other clients and MCP agents read, names each build's
+-- own first command).
 M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project); "
   .. "for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`."
 
