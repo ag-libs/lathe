@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
@@ -77,16 +76,18 @@ final class SessionHost {
 
     // On the loop, as the last thing it runs: connect() assigns the session there. The format
     // service comes back out, so its thread can be waited for off the loop.
-    final AtomicReference<FormatService> formats = new AtomicReference<>();
-    eventLoop.close(
-        () -> {
-          if (session != null) {
-            formats.set(session.formats());
-            session.close();
-          }
-        });
-    if (formats.get() != null) {
-      formats.get().awaitStopped();
+    final FormatService formats =
+        eventLoop.close(
+            () -> {
+              if (session == null) {
+                return null;
+              }
+
+              session.close();
+              return session.formats();
+            });
+    if (formats != null) {
+      formats.awaitStopped();
     }
   }
 

@@ -16,6 +16,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -168,19 +169,18 @@ final class ServerEventLoop {
   // before returning, so nothing queued behind it ever runs against what it closed. Then awaits
   // termination, so no in-flight task can outlive close() and race the caller's teardown -- the
   // fixed-rate change scan walks and writes under the workspace root, so a test's @TempDir delete
-  // would race a live scan.
-  void close(final Runnable last) {
+  // would race a live scan. Returns what `last` returns: joining its task makes the value safe to
+  // read on the caller's thread.
+  <T> T close(final Supplier<T> last) {
     try {
-      submit(
+      return submit(
               () -> {
                 try {
-                  last.run();
+                  return last.get();
                 } finally {
                   executor.shutdownNow();
                   List.copyOf(undelivered).forEach(this::runIfUndelivered);
                 }
-
-                return null;
               })
           .join();
     } finally {
