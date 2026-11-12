@@ -43,7 +43,8 @@ public final class TestProcess {
   // what reading stdin returns. spawn [exit|exit-destroying]: starts a sleeping child, prints its
   // pid, then sleeps, or exits (killing its children on exit first, as the servers do).
   // marked: prints output around the test runner's markers (one test, a gap, two at once).
-  // await gate file: waits until the gate file exists, then uppercases the file like upper.
+  // await gate file: creates gate.started, waits until the gate file exists, then uppercases the
+  // file like upper.
   // prop name: prints the system property's value.
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
@@ -110,11 +111,17 @@ public final class TestProcess {
 
   private static void await(final Path gate, final String file)
       throws IOException, InterruptedException {
+    Files.createFile(started(gate));
     while (!Files.exists(gate)) {
       Thread.sleep(10);
     }
 
     upper(new String[] {"upper", file});
+  }
+
+  // Created by await once it runs: a test waits on it to know the formatter really started.
+  public static Path started(final Path gate) {
+    return gate.resolveSibling("%s.started".formatted(gate.getFileName()));
   }
 
   private static void upper(final String[] args) throws IOException {

@@ -10,11 +10,13 @@ import io.github.aglibs.lathe.server.format.FormatEngine;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.MessageParams;
@@ -44,6 +46,8 @@ final class FormatService {
   private boolean formatFailureReported;
   // Formatting runs here, off the event loop: an external command waits on its process, a build
   // tool for up to a minute. One thread, so two formats never run a build in one module at once.
+  private static final Duration STOP_WAIT = Duration.ofSeconds(10);
+
   private final ExecutorService formatThread =
       Executors.newSingleThreadExecutor(FormatService::newFormatThread);
   // The formats queued or running there, so close() can cancel them: the thread's shutdown drops
@@ -74,6 +78,23 @@ final class FormatService {
   void close() {
     formatThread.shutdownNow();
     List.copyOf(formatsInFlight).forEach(format -> format.cancel(false));
+  }
+
+  // Off the loop, after close(): a running format stops its process and deletes its scratch file
+  // only once its thread sees the interrupt, and the JVM may exit right after shutdown, leaving the
+  // process running and the file in the user's sources. Bounded beyond FormatProcess's own wait
+  // for a killed process, so a stuck format cannot hold up the exit.
+  void awaitStopped() {
+    try {
+      if (!formatThread.awaitTermination(STOP_WAIT.toMillis(), TimeUnit.MILLISECONDS)) {
+        LOG.warning(
+            () ->
+                "[shutdown] format thread still running after %dms"
+                    .formatted(STOP_WAIT.toMillis()));
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   // Told of a format that changed a document, with the text it formatted, on the loop: a pending
