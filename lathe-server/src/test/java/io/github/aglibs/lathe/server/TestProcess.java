@@ -43,7 +43,8 @@ public final class TestProcess {
   // what reading stdin returns. spawn [exit|exit-destroying]: starts a sleeping child, prints its
   // pid, then sleeps, or exits (killing its children on exit first, as the servers do).
   // marked: prints output around the test runner's markers (one test, a gap, two at once).
-  // await gate file: waits until the gate file exists, then uppercases the file like upper.
+  // await gate file: writes its pid to gate.pid, waits until the gate file exists, then uppercases
+  // the file like upper.
   // prop name: prints the system property's value.
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
@@ -110,11 +111,17 @@ public final class TestProcess {
 
   private static void await(final Path gate, final String file)
       throws IOException, InterruptedException {
+    Files.writeString(pidFile(gate), Long.toString(ProcessHandle.current().pid()));
     while (!Files.exists(gate)) {
       Thread.sleep(10);
     }
 
     upper(new String[] {"upper", file});
+  }
+
+  // Where await announces its pid, so a test can wait for that one process among a parallel run's.
+  public static Path pidFile(final Path gate) {
+    return gate.resolveSibling("%s.pid".formatted(gate.getFileName()));
   }
 
   private static void upper(final String[] args) throws IOException {

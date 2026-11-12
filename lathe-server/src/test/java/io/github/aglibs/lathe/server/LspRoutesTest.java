@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.net.URI;
@@ -200,23 +201,41 @@ class LspRoutesTest extends ServiceTestBase {
   }
 
   // Closing the server while a command formatter runs answers the request (no edits) instead of
-  // leaving it waiting, and stops the formatter's process.
+  // leaving it waiting, and stops the formatter's process. The answer comes before the process has
+  // exited, so the test waits for it: on Windows a running process keeps its working directory,
+  // this test's temporary one, from being deleted.
   @Test
   void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
     final ShopFixture shop = openShop();
+    final Path gate = tmp.resolve("never");
     useFormatter(
         new FileCommandFormatEngine(
-            TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
+            TestProcess.command("await", gate.toString(), "%FILE%"),
             tmp,
             FileCommandFormatEngine.DEFAULT_TIMEOUT));
     final var formatting =
         service.formatting(
             new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
-    awaitWorkerIdle();
+    final ProcessHandle formatter = startedProcess(TestProcess.pidFile(gate));
 
     host.close();
 
     assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+    formatter.onExit().get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(formatter.isAlive()).isFalse();
+  }
+
+  // The process that announced its pid in the file, once it has; a process that has already exited
+  // is one with nothing left to stop.
+  private static ProcessHandle startedProcess(final Path pidFile) throws Exception {
+    final var waited = Stopwatch.start();
+    while (!Files.exists(pidFile) || Files.readString(pidFile).isBlank()) {
+      assertThat(waited.elapsedMs()).isLessThan(TimeUnit.SECONDS.toMillis(TIMEOUT_S));
+      Thread.sleep(10);
+    }
+
+    final long pid = Long.parseLong(Files.readString(pidFile).trim());
+    return ProcessHandle.of(pid).orElseThrow(() -> new AssertionError("formatter already gone"));
   }
 
   private static List<String> files(
