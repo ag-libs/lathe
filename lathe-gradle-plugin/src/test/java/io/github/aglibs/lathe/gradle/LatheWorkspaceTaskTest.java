@@ -73,6 +73,7 @@ class LatheWorkspaceTaskTest {
         List.of(),
         List.of(),
         List.of(),
-        runner);
+        runner,
+        false);
   }
 }

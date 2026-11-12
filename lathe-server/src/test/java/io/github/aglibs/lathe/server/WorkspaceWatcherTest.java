@@ -218,6 +218,32 @@ class WorkspaceWatcherTest {
     assertThat(editedWatcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
   }
 
+  // The style file is a sync input even when the last sync saw none: declaring a formatter there is
+  // reported like a build-file edit, deleting it again as restored, and a style file the sync
+  // fingerprinted only when its content changes.
+  @Test
+  void poll_styleFileCreatedAfterSync_reportedAsBuildFileChange() throws IOException {
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+    watcher.updateBuildFiles(List.of(), Map.of());
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+
+    final Path style = workspaceRoot.resolve(LatheLayout.STYLE_SHARED_FILE);
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"google\"}}");
+
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
+
+    Files.delete(style);
+
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_RESTORED);
+
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"google\"}}");
+    final var synced = new WorkspaceWatcher(workspaceRoot);
+    synced.updateBuildFiles(List.of(style), Map.of(style, FileUtil.fingerprint(style)));
+    Files.setLastModifiedTime(style, FileTime.fromMillis(PAST.toMillis() + 10_000L));
+
+    assertThat(synced.poll()).isEqualTo(PollResult.NO_CHANGE);
+  }
+
   private Path manifest() {
     return latheDir.resolve(LatheLayout.WORKSPACE_JSON);
   }

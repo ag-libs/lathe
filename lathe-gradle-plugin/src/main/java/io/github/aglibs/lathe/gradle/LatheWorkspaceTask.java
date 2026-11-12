@@ -4,14 +4,18 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.CapturePruner;
+import io.github.aglibs.lathe.install.FormatterSteps;
 import io.github.aglibs.lathe.install.JvmArgsWriter;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
+import io.github.aglibs.lathe.install.StyleWriter;
 import io.github.aglibs.lathe.install.SyncScript;
 import io.github.aglibs.lathe.install.WorkspaceSync;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
@@ -78,6 +82,27 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
 
   @Classpath
   public abstract ConfigurableFileCollection getMcpServerJars();
+
+  // The engine lathe-style.json declares, pinned or not; absent when it declares none.
+  @Input
+  @Optional
+  public abstract Property<String> getDeclaredEngine();
+
+  // The declared pinned formatter, completed from Spotless's defaults; absent when there is none.
+  @Input
+  @Optional
+  public abstract Property<String> getFormatter();
+
+  @Classpath
+  public abstract ConfigurableFileCollection getFormatterJars();
+
+  // Why some of the formatter's jars did not resolve; empty when all did.
+  @Input
+  public abstract Property<String> getFormatterUnresolved();
+
+  // Whether the declared formatter's version is the default of the Spotless Lathe pins.
+  @Input
+  public abstract Property<Boolean> getPinnedSpotlessDefaults();
 
   @Internal
   public abstract DirectoryProperty getWorkspaceRoot();
@@ -160,13 +185,88 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             resourceRoots,
             outputs,
             script));
+    final List<String> formatterGrants = writeStyle(root, facts);
     JvmArgsWriter.write(
         root,
-        Stream.concat(
+        Stream.of(
                 facts.stream().flatMap(fact -> fact.accessFlags().stream()),
-                Stream.of(getDaemonJvmArgs().getOrElse("").split("\\s+")))
+                Stream.of(getDaemonJvmArgs().getOrElse("").split("\\s+")),
+                formatterGrants.stream())
+            .flatMap(tokens -> tokens)
             .toList());
     CapturePruner.prune(root, currentTrees(root, facts));
+  }
+
+  // .lathe/style.json for the declared pinned formatter, with its resolved jars and the indent it
+  // implies; returns the javac access it needs. Without one, there is no generated style: the
+  // server reads any other declaration itself. Its warnings are the task's own, so a reused
+  // configuration cache still shows them.
+  private List<String> writeStyle(final Path root, final List<ProjectFacts> facts) {
+    if (!getFormatter().isPresent()) {
+      StyleWriter.delete(root);
+      warnUnformatted(facts);
+      return List.of();
+    }
+
+    final FormatterSpec completed = Json.fromJson(getFormatter().get(), FormatterSpec.class);
+    final List<String> classpath = paths(getFormatterJars()).stream().map(Path::toString).toList();
+    if (classpath.isEmpty() || !getFormatterUnresolved().get().isEmpty()) {
+      getLogger()
+          .warn(
+              "[lathe] formatter {} {}: not every jar resolved, formatting disabled: {}",
+              completed.engine(),
+              completed.version(),
+              getFormatterUnresolved().get());
+      StyleWriter.delete(root);
+      return List.of();
+    }
+
+    if (getPinnedSpotlessDefaults().get() && facts.stream().anyMatch(ProjectFacts::spotless)) {
+      getLogger()
+          .warn(
+              "[lathe] formatter {} {} is the default of the Spotless Lathe pins, which may not be"
+                  + " the one your build's Spotless runs; declare its version in {}",
+              completed.engine(),
+              completed.version(),
+              LatheLayout.STYLE_SHARED_FILE);
+    }
+
+    final FormatterSpec resolved = FormatterSteps.withClasspath(completed, classpath);
+    StyleWriter.write(root, new WorkspaceStyleData(resolved, FormatterSteps.indent(resolved)));
+    return FormatterSteps.javacGrants(resolved);
+  }
+
+  // A declared pinned formatter that could not be completed, or Spotless with no declaration:
+  // Gradle's Spotless keeps its settings out of reach, so the project must say what it formats
+  // with; declaring "none" silences this.
+  private void warnUnformatted(final List<ProjectFacts> facts) {
+    if (getDeclaredEngine().isPresent()) {
+      final String engine = getDeclaredEngine().get();
+      if (FormatterSteps.pinned(engine)) {
+        getLogger()
+            .warn(
+                "[lathe] formatter {} declared in {} could not be completed, formatting disabled;"
+                    + " see the warning when the build was configured",
+                engine,
+                LatheLayout.STYLE_SHARED_FILE);
+      }
+
+      return;
+    }
+
+    if (facts.stream().noneMatch(ProjectFacts::spotless)) {
+      return;
+    }
+
+    getLogger()
+        .warn(
+            "[lathe] Spotless formats this build, but Lathe cannot read its settings on Gradle, so"
+                + " the editor does not format. Declare the formatter Spotless runs in {} at the"
+                + " root, for example {}, or {} to keep formatting off",
+            LatheLayout.STYLE_SHARED_FILE,
+            "{\"formatter\": {\"engine\": \"google\", \"version\": \"<the google-java-format"
+                + " version Spotless runs>\"}}",
+            "{\"formatter\": {\"engine\": \"none\"}}");
   }
 
   // What the build has: each project's trees from its facts, and, for a project not built since it

@@ -1,9 +1,11 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngine;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
@@ -33,10 +35,10 @@ final class FormatService {
   private final WorkspaceState state;
   private final DocumentRegistry docs;
   private final Formatted onFormatted;
-  // The workspace's formatter, null for none, and whether the project pins one (whose jars a sync
-  // may not have resolved yet).
+  // The workspace's formatter, null for none, and the spec it was built from, null when the
+  // workspace names none: what says why there is no engine.
   private FormatEngine engine;
-  private boolean pinned;
+  private FormatterSpec spec;
 
   // Loop state like the rest: a format failure is reported to the user once, then only logged.
   private boolean formatFailureReported;
@@ -61,13 +63,12 @@ final class FormatService {
     this.onFormatted = onFormatted;
   }
 
-  // The formatter the client's settings or the workspace style file name, resolved off the loop,
-  // before the first format; pinned when the project names one (whose jars a sync may not have
-  // resolved yet, so engine is null).
-  void use(final FormatEngine engine, final boolean pinned) {
+  // The formatter the workspace style files name, resolved off the loop, before the first format.
+  // A pinned spec may have no engine yet: a sync has not resolved its jars.
+  void use(final FormatEngine engine, final FormatterSpec spec) {
     eventLoop.checkOnLoop();
     this.engine = engine;
-    this.pinned = pinned;
+    this.spec = spec;
   }
 
   void close() {
@@ -122,20 +123,35 @@ final class FormatService {
         uri, (content, target) -> JavaFormatter.formatRanges(engine, content, ranges));
   }
 
+  // Only a pinned formatter whose jars are missing is one a sync can supply; "none" is the
+  // project's own choice.
+  private String unavailable() {
+    if (spec != null && LatheFlags.PINNED_FORMATTERS.contains(spec.engine())) {
+      return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it), then restart Lathe."
+          .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
+    }
+
+    if (spec != null && LatheFlags.FORMATTER_NONE.equals(spec.engine())) {
+      return "Formatting is off for this workspace: %s declares the engine none."
+          .formatted(LatheLayout.STYLE_SHARED_FILE);
+    }
+
+    if (spec != null) {
+      return "The formatter %s declares cannot run: engine %s is unknown, or a command engine has no command."
+          .formatted(LatheLayout.STYLE_SHARED_FILE, spec.engine());
+    }
+
+    return "No formatter for this workspace: the project declares none (no formatter in %s, and on Maven no Spotless Java step); declare one there to format here."
+        .formatted(LatheLayout.STYLE_SHARED_FILE);
+  }
+
   // For the agent, which must tell a failure from an already formatted file: a refusal that
-  // carries the formatter's reason, or why there is no formatter. Only a pinned formatter whose
-  // jars are missing is one a sync can supply.
+  // carries the formatter's reason, or why there is no formatter.
   CompletableFuture<List<TextEdit>> formatOrRefuseFuture(final String uri) {
     eventLoop.checkOnLoop();
     final FormatEngine engine = this.engine;
     if (engine == null) {
-      final String reason =
-          pinned
-              ? "The project's formatter is not resolved yet: run `%s`."
-                  .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
-              : "No formatter for this workspace: the project pins none (no Spotless Java step), so a sync does not add one; name one in %s to format here."
-                  .formatted(LatheLayout.STYLE_SHARED_FILE);
-      return CompletableFuture.failedFuture(FeatureAnswers.refused(reason));
+      return CompletableFuture.failedFuture(FeatureAnswers.refused(unavailable()));
     }
 
     return formatted(uri, (content, target) -> JavaFormatter.format(engine, content, target))

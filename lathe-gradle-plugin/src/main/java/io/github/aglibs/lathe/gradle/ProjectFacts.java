@@ -7,11 +7,12 @@ import java.util.List;
 
 // What one project contributes to the workspace files. Each project writes its own, and the root's
 // latheWorkspace merges them, so no project reads another's model (Isolated Projects). javaHome is
-// the
-// JDK its main compile runs on, absent for a project without Java. The facts task adds the rest as
-// it runs: the source trees it has Java sources for, which the sync keeps in .lathe/; the external
-// libraries it compiles against; the classpath to compile their sources with; and what replays its
-// tests beside the test classpath (the test runner and the JUnit launcher).
+// the JDK its main compile runs on, absent for a project without Java. The facts task adds the rest
+// as it runs: the source trees it has Java sources for, which the sync keeps in .lathe/; the
+// external libraries it compiles against; the classpath to compile their sources with; and what
+// replays its tests beside the test classpath (the test runner and the JUnit launcher). spotless
+// says the project applies Spotless, whose formatter the sync cannot read, so the project must
+// declare it.
 record ProjectFacts(
     String module,
     List<OutputData> outputs,
@@ -22,7 +23,8 @@ record ProjectFacts(
     List<String> trees,
     List<DependencyFact> dependencies,
     List<String> dependencyClasspath,
-    List<String> runnerClasspath) {
+    List<String> runnerClasspath,
+    boolean spotless) {
 
   ProjectFacts {
     ValidCheck.check().notNull(module, "module").validate();
@@ -36,11 +38,12 @@ record ProjectFacts(
     runnerClasspath = runnerClasspath != null ? List.copyOf(runnerClasspath) : List.of();
   }
 
-  // A project without Java: its directory only.
-  static ProjectFacts of(final String module) {
+  // A project without Java: its directory, and whether it applies Spotless (a root formatting the
+  // whole build's sources often does).
+  static ProjectFacts of(final String module, final boolean spotless) {
     return new ProjectFacts(
         module, List.of(), List.of(), null, 0, List.of(), List.of(), List.of(), List.of(),
-        List.of());
+        List.of(), spotless);
   }
 
   // Known only when the facts task runs: after any task that generates sources, and resolved then.
@@ -59,6 +62,7 @@ record ProjectFacts(
         sourceTrees,
         libraries,
         libraryClasspath,
-        testRunner);
+        testRunner,
+        spotless);
   }
 }

@@ -1,17 +1,21 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
-import io.github.aglibs.lathe.core.schema.IndentSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
+import io.github.aglibs.lathe.install.FormatterSteps;
 import io.github.aglibs.lathe.install.StyleWriter;
+import io.github.aglibs.lathe.install.SyncException;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -20,15 +24,13 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-// Detects the workspace style for StyleWriter from the reactor's spotless-maven-plugin.
-// googleJavaFormat, palantirJavaFormat, and eclipse run in-process from the project's pinned jars;
-// any other formatter is disabled (none) rather than guessed at, so Lathe never fights the
-// project's own formatter. A committed lathe-style.json can still select an external command.
+// The workspace style for StyleWriter: the formatter a committed lathe-style.json declares, else
+// the one the reactor's spotless-maven-plugin runs. googleJavaFormat, palantirJavaFormat, and
+// eclipse run in-process from their resolved jars; any other Spotless formatter is disabled (none)
+// rather than guessed at, so Lathe never fights the project's own formatter.
 final class MavenStyle {
 
   private static final String SPOTLESS_PLUGIN_KEY = "com.diffplug.spotless:spotless-maven-plugin";
-  // Formatters whose indentation Lathe does not derive leave it to the project's .editorconfig.
-  private static final IndentSpec EDITORCONFIG_INDENT = new IndentSpec("editorconfig", 0, 0);
 
   private final FormatterResolver resolver;
   private final Log log;
@@ -42,6 +44,11 @@ final class MavenStyle {
   // Spotless Java formatter) so the caller can grant what the formatter needs.
   WorkspaceStyleData write(
       final Path workspaceRoot, final MavenProject rootProject, final List<MavenProject> projects) {
+    final Optional<FormatterSpec> declared = declared(workspaceRoot);
+    if (declared.isPresent() && FormatterSteps.pinned(declared.get().engine())) {
+      return writeDeclared(workspaceRoot, declared.get(), rootProject, projects);
+    }
+
     final Optional<MavenProject> styleSource = styleSource(rootProject, projects);
     if (styleSource.isEmpty()) {
       StyleWriter.delete(workspaceRoot);
@@ -50,43 +57,84 @@ final class MavenStyle {
 
     final Plugin spotless = spotlessPlugin(styleSource.get());
     final WorkspaceStyleData detected = detect(spotless);
+    // Another declaration (none, a command) replaces the detected formatter in the server, section
+    // by section: keep the indent Spotless implies, but resolve and grant nothing it never runs.
+    if (declared.isPresent()) {
+      StyleWriter.write(workspaceRoot, detected);
+      return null;
+    }
+
     if (LatheFlags.FORMATTER_NONE.equals(detected.formatter().engine())) {
       log.warn(
           "[sync] formatter Spotless java formatter has no in-process engine, formatting disabled;"
-              + " a committed lathe-style.json can run it as an external command");
+              + " declare the formatter Lathe should run in lathe-style.json");
     }
 
     final FormatterSpec formatter =
         withLocalProfile(detected.formatter(), styleSource.get().getBasedir().toPath())
-            .map(spec -> resolver.resolve(spec, spotless.getVersion()))
+            .map(spec -> resolver.resolve(spec, versionOf(spotless)))
             .orElse(detected.formatter());
     final var style = new WorkspaceStyleData(formatter, detected.indent());
     StyleWriter.write(workspaceRoot, style);
     return style;
   }
 
-  // The Eclipse profile as an absolute path, resolved against the root project as Spotless resolves
-  // it; empty when it is not a local file (Spotless also takes URLs and classpath resources), which
-  // leaves the formatter unresolved and so disabled.
-  private Optional<FormatterSpec> withLocalProfile(final FormatterSpec spec, final Path basedir) {
-    final String profile = spec.options().get(LatheFlags.FORMAT_FILE);
-    if (profile == null) {
-      return Optional.of(spec);
-    }
+  // The pinned formatter lathe-style.json declares, completed and resolved with the defaults of
+  // the build's Spotless, if it has one.
+  private WorkspaceStyleData writeDeclared(
+      final Path workspaceRoot,
+      final FormatterSpec declared,
+      final MavenProject rootProject,
+      final List<MavenProject> projects) {
+    final String spotlessVersion =
+        Stream.concat(Stream.of(rootProject), projects.stream())
+            .map(MavenStyle::spotlessPlugin)
+            .filter(Objects::nonNull)
+            .map(MavenStyle::versionOf)
+            .findFirst()
+            .orElse("");
+    final FormatterSpec formatter =
+        withLocalProfile(declared, workspaceRoot)
+            .map(spec -> resolver.resolve(spec, spotlessVersion))
+            .orElse(declared);
+    final var style = new WorkspaceStyleData(formatter, FormatterSteps.indent(formatter));
+    StyleWriter.write(workspaceRoot, style);
+    return style;
+  }
 
-    final Path file = basedir.resolve(profile).normalize();
+  // A plugin the POM declares without a version has none in the model; Lathe then takes the
+  // defaults of the Spotless it pins.
+  private static String versionOf(final Plugin spotless) {
+    return Objects.requireNonNullElse(spotless.getVersion(), "");
+  }
+
+  // The formatter section of the committed lathe-style.json; a malformed file declares none, and
+  // the server reports it when it reads the file.
+  private Optional<FormatterSpec> declared(final Path workspaceRoot) {
+    final Path file = workspaceRoot.resolve(LatheLayout.STYLE_SHARED_FILE);
     if (!Files.isRegularFile(file)) {
-      log.warn(
-          "[sync] formatter %s profile %s is not a local file, formatting disabled"
-              .formatted(spec.engine(), profile));
       return Optional.empty();
     }
 
-    final var options = new HashMap<>(spec.options());
-    options.put(LatheFlags.FORMAT_FILE, file.toString());
-    return Optional.of(
-        new FormatterSpec(
-            spec.engine(), spec.command(), spec.version(), options, spec.classpath()));
+    try {
+      return FormatterSteps.declared(Files.readString(file, StandardCharsets.UTF_8));
+    } catch (final IOException | SyncException e) {
+      log.warn("[sync] style %s unreadable: %s".formatted(file, e.getMessage()));
+      return Optional.empty();
+    }
+  }
+
+  // A profile that is not a local file (Spotless also takes URLs and classpath resources) leaves
+  // the formatter unresolved, and so disabled.
+  private Optional<FormatterSpec> withLocalProfile(final FormatterSpec spec, final Path basedir) {
+    final Optional<FormatterSpec> local = FormatterSteps.withLocalProfile(spec, basedir);
+    if (local.isEmpty()) {
+      log.warn(
+          "[sync] formatter %s profile %s is not a local file, formatting disabled"
+              .formatted(spec.engine(), spec.options().get(LatheFlags.FORMAT_FILE)));
+    }
+
+    return local;
   }
 
   // The project whose Spotless configuration is the workspace style: the root when it runs
@@ -154,47 +202,38 @@ final class MavenStyle {
           LatheFlags.FORMAT_STYLE_AOSP.equals(style)
               ? LatheFlags.FORMATTER_AOSP
               : LatheFlags.FORMATTER_GOOGLE,
-          googleJavaFormat,
-          style);
+          googleJavaFormat);
     }
 
     final Xpp3Dom palantirJavaFormat = java.getChild("palantirJavaFormat");
     if (palantirJavaFormat != null) {
-      return pinnedStyle(
-          LatheFlags.FORMATTER_PALANTIR,
-          palantirJavaFormat,
-          styleOf(palantirJavaFormat, LatheFlags.FORMAT_STYLE_PALANTIR));
+      return pinnedStyle(LatheFlags.FORMATTER_PALANTIR, palantirJavaFormat);
     }
 
     final Xpp3Dom eclipse = java.getChild("eclipse");
     if (eclipse != null) {
       final String profile = childValue(eclipse, LatheFlags.FORMAT_FILE);
-      return new WorkspaceStyleData(
+      return withIndent(
           new FormatterSpec(
               LatheFlags.FORMATTER_ECLIPSE,
               List.of(),
               childValue(eclipse, "version"),
               profile.isEmpty() ? Map.of() : Map.of(LatheFlags.FORMAT_FILE, profile),
-              List.of()),
-          EDITORCONFIG_INDENT);
+              List.of()));
     }
 
-    return new WorkspaceStyleData(
-        new FormatterSpec(LatheFlags.FORMATTER_NONE, List.of()), EDITORCONFIG_INDENT);
+    return withIndent(new FormatterSpec(LatheFlags.FORMATTER_NONE, List.of()));
   }
 
-  // A formatter run in-process from its pinned jars. Only GOOGLE style indents by 2; AOSP and
-  // PALANTIR indent by 4.
-  private static WorkspaceStyleData pinnedStyle(
-      final String engine, final Xpp3Dom step, final String style) {
-    final var formatter =
+  private static WorkspaceStyleData withIndent(final FormatterSpec formatter) {
+    return new WorkspaceStyleData(formatter, FormatterSteps.indent(formatter));
+  }
+
+  // A formatter run in-process from its pinned jars.
+  private static WorkspaceStyleData pinnedStyle(final String engine, final Xpp3Dom step) {
+    return withIndent(
         new FormatterSpec(
-            engine, List.of(), childValue(step, "version"), stepOptions(step), List.of());
-    return new WorkspaceStyleData(
-        formatter,
-        LatheFlags.FORMAT_STYLE_GOOGLE.equals(style)
-            ? new IndentSpec("google", 2, 4)
-            : new IndentSpec("google", 4, 8));
+            engine, List.of(), childValue(step, "version"), stepOptions(step), List.of()));
   }
 
   private static String styleOf(final Xpp3Dom step, final String defaultStyle) {

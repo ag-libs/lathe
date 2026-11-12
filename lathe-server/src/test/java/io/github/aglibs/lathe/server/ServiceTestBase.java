@@ -83,7 +83,7 @@ abstract class ServiceTestBase {
   }
 
   protected void useFormatter(final FormatEngine engine) {
-    host.execute(session -> session.formats().use(engine, false));
+    host.execute(session -> session.formats().use(engine, null));
   }
 
   protected void change(final Path file, final String content, final int version) {

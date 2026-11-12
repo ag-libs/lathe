@@ -1,7 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
@@ -63,7 +61,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   public CompletableFuture<InitializeResult> initialize(final InitializeParams params) {
     final var rootUri = rootUri(params);
     final Path rootPath = rootUri != null ? LatheUri.toPath(rootUri) : null;
-    final FormatEngine formatEngine = resolveFormatEngine(params, rootPath);
+    final FormatEngine formatEngine = resolveFormatEngine(rootPath);
     final boolean formattingEnabled = formatEngine != null;
     LOG.fine(
         () ->
@@ -74,7 +72,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     textDocumentService.setFileRenameSupported(fileRenameSupported(params));
     textDocumentService.setCodeActionResolveSupported(codeActionResolveSupported(params));
     // An editor's formatting answers no edits without a formatter; only the agent asks why.
-    host.execute(session -> session.formats().use(formatEngine, false));
+    host.execute(session -> session.formats().use(formatEngine, null));
     workspaceRoot = rootPath;
     if (rootPath == null) {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
@@ -188,64 +186,10 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return params.getRootUri();
   }
 
-  // The workspace style file wins when it declares a formatter; otherwise the client's
-  // initializationOptions.lathe.style.formatter. "none", unknown, or absent disables formatting.
-  private FormatEngine resolveFormatEngine(final InitializeParams params, final Path workingDir) {
+  // Formatting comes only from the project: its style files, never an editor-wide default.
+  private static FormatEngine resolveFormatEngine(final Path workingDir) {
     final FormatterSpec spec = FormatEngines.workspaceSpec(workingDir);
-    if (spec != null) {
-      return FormatEngines.forSpec(spec, workingDir);
-    }
-
-    return initOptionFormatEngine(params, workingDir);
-  }
-
-  // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,
-  // command} shape as the file, so it flows through FormatEngines.forSpec too.
-  private FormatEngine initOptionFormatEngine(
-      final InitializeParams params, final Path workingDir) {
-    final JsonObject formatter = initOptionFormatter(params);
-    if (formatter == null) {
-      return null;
-    }
-
-    final JsonElement engine = formatter.get(LatheFlags.FORMATTER_ENGINE_OPTION);
-    if (engine == null || !engine.isJsonPrimitive() || engine.getAsString().isBlank()) {
-      return null;
-    }
-
-    return FormatEngines.forSpec(
-        new FormatterSpec(engine.getAsString(), commandOf(formatter)), workingDir);
-  }
-
-  private static JsonObject initOptionFormatter(final InitializeParams params) {
-    if (!(params.getInitializationOptions() instanceof JsonObject options)) {
-      return null;
-    }
-
-    final JsonElement lathe = options.get(LatheFlags.INIT_OPTIONS_KEY);
-    if (lathe == null || !lathe.isJsonObject()) {
-      return null;
-    }
-
-    final JsonElement style = lathe.getAsJsonObject().get(LatheFlags.STYLE_OPTION);
-    if (style == null || !style.isJsonObject()) {
-      return null;
-    }
-
-    final JsonElement formatter = style.getAsJsonObject().get(LatheFlags.FORMATTER_OPTION);
-    return formatter != null && formatter.isJsonObject() ? formatter.getAsJsonObject() : null;
-  }
-
-  private static List<String> commandOf(final JsonObject formatter) {
-    final JsonElement command = formatter.get(LatheFlags.FORMATTER_COMMAND_OPTION);
-    if (command == null || !command.isJsonArray()) {
-      return List.of();
-    }
-
-    return command.getAsJsonArray().asList().stream()
-        .filter(JsonElement::isJsonPrimitive)
-        .map(JsonElement::getAsString)
-        .toList();
+    return spec != null ? FormatEngines.forSpec(spec, workingDir) : null;
   }
 
   private static boolean workDoneProgressSupported(final InitializeParams params) {

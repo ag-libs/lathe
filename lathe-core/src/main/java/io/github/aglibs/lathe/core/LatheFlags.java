@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class LatheFlags {
@@ -48,13 +49,6 @@ public final class LatheFlags {
   public static final List<String> UTF8_OUTPUT_JVM_ARGS =
       List.of("-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8");
 
-  // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
-  // the global-default style, same shape as the workspace style file; a project file overrides it.
-  public static final String INIT_OPTIONS_KEY = "lathe";
-  public static final String STYLE_OPTION = "style";
-  public static final String FORMATTER_OPTION = "formatter";
-  public static final String FORMATTER_ENGINE_OPTION = "engine";
-  public static final String FORMATTER_COMMAND_OPTION = "command";
   public static final String FORMATTER_GOOGLE = "google";
   public static final String FORMATTER_AOSP = "aosp";
   public static final String FORMATTER_PALANTIR = "palantir";
@@ -62,6 +56,9 @@ public final class LatheFlags {
   public static final String FORMATTER_NONE = "none";
   public static final String FORMATTER_COMMAND = "command";
   public static final String FORMATTER_COMMAND_FILE = "command-file";
+  // The formatters run in-process from jars a sync resolves, rather than an external command.
+  public static final Set<String> PINNED_FORMATTERS =
+      Set.of(FORMATTER_GOOGLE, FORMATTER_AOSP, FORMATTER_PALANTIR, FORMATTER_ECLIPSE);
   public static final String FORMAT_FILE_TOKEN = "%FILE%";
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
   public static final String FORMAT_MVN_TOKEN = "%MVN%";

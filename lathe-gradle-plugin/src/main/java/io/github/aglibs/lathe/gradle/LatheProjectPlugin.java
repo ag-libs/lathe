@@ -113,7 +113,15 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 LatheFactsTask.class,
                 task -> {
                   task.getFacts()
-                      .set(project.provider(() -> Json.toJson(ProjectFacts.of(module(project)))));
+                      .set(
+                          project.provider(
+                              () ->
+                                  Json.toJson(
+                                      ProjectFacts.of(
+                                          module(project),
+                                          project
+                                              .getPluginManager()
+                                              .hasPlugin(LatheFormatter.SPOTLESS_PLUGIN)))));
                   task.getFactsFile()
                       .set(
                           LatheWorkspaceTask.factsFile(
@@ -175,6 +183,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
           });
     }
 
+    final LatheFormatter formatter = LatheFormatter.of(project);
     final TaskProvider<LatheFactsTask> ownFacts =
         project.getTasks().named(FACTS_TASK, LatheFactsTask.class);
     final TaskProvider<LatheWorkspaceTask> workspace =
@@ -190,6 +199,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getModuleDirs().set(modulePaths.keySet().stream().sorted().toList());
                   task.getServerJars().from(lenient(server));
                   task.getMcpServerJars().from(lenient(mcpServer));
+                  task.getDeclaredEngine().set(project.provider(formatter::declaredEngine));
+                  task.getFormatter().set(project.provider(formatter::completedJson));
+                  task.getFormatterJars().from(formatter.jars());
+                  task.getFormatterUnresolved().set(formatter.unresolved());
+                  task.getPinnedSpotlessDefaults().set(project.provider(formatter::pinnedDefaults));
                   task.getWorkspaceRoot().set(project.getLayout().getProjectDirectory());
                   task.getBuildLogicDirs().set(project.provider(() -> buildLogicDirs(project)));
                   task.getGradleHome().set(project.getGradle().getGradleHomeDir().getPath());
@@ -291,7 +305,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
     return configuration;
   }
 
-  private static Configuration configuration(
+  static Configuration configuration(
       final Project project, final String name, final boolean resolvable) {
     return project
         .getConfigurations()
@@ -632,7 +646,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
         List.of(),
         List.of(),
         List.of(),
-        List.of());
+        List.of(),
+        project.getPluginManager().hasPlugin(LatheFormatter.SPOTLESS_PLUGIN));
   }
 
   // A source set's classes and resources, and its jar when it has one (test fixtures do): each a

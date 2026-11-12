@@ -216,13 +216,16 @@ A cache hit skips compilation, so Lathe would not see the real build and its cap
   module's `test-filter.json` (the Surefire include/exclude patterns, applied to package and module
   test runs).
 - `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
-  `spotless-maven-plugin`.
+  `spotless-maven-plugin`, or when a `lathe-style.json` at the root declares a formatter: a declared
+  `google`, `aosp`, `palantir` or `eclipse` engine takes precedence over Spotless and is resolved the
+  same way, so a project without Spotless gets one too.
   For `googleJavaFormat`, `palantirJavaFormat`, and `eclipse` it records the formatter release the
   project's Spotless pins, its options, and the resolved jars (`classpath`, paths into the local Maven
   repository), which the server loads in-process.
   For google-java-format and palantir it also adds the javac grants they need to `jvm.args`.
   Any other Spotless formatter writes `none`.
   See [Choosing, overriding, or opting out of the formatter](installation.md#choosing-overriding-or-opting-out-of-the-formatter)
+  and [Declaring it](installation.md#declaring-it),
   and [lathe-pinned-formatters.md](../done/lathe-pinned-formatters.md).
 - `lathe-junit` writes each module's `test-launch.json` from inside the Surefire fork during the `test`
   phase — so test run/debug needs a build that reaches `test` (see the table above and

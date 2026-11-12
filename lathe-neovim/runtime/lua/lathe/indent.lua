@@ -37,26 +37,50 @@ local function widths(indent)
 end
 
 -- Per-buffer indent: the workspace style file's `indent` (committed/generated, under the root the
--- existing get_root resolves) when present, else the global setup() fallback.
+-- existing get_root resolves) when present, else the global setup() fallback. The third value says
+-- the project owns the widths: its style pins them (a committed indent, or the one the sync derived
+-- from its formatter), so .editorconfig must not override them. An editorconfig profile, or only
+-- the personal setup() fallback, leaves them to the project's .editorconfig.
 local function resolve(bufnr)
   local style = require("lathe.style").read(buffer_root(bufnr))
-  local block, continuation = widths(style and style.indent)
+  local project = style and style.indent
+  local block, continuation = widths(project)
   if block then
-    return block, continuation
+    -- A project owns its widths when its style pins them: the google profile, or explicit widths.
+    local pinned = project.profile == "google"
+      or (project.block or 0) > 0
+      or (project.continuation or 0) > 0
+    return block, continuation, pinned
   end
 
-  return widths(M.config)
+  local fallback_block, fallback_continuation = widths(M.config)
+  return fallback_block, fallback_continuation, false
 end
 
--- Apply the resolved profile's baseline widths to a Java buffer. Called from ftplugin/java.lua at
--- FileType time; for editor_config, native EditorConfig applies afterward and takes precedence.
-function M.apply_buffer_options(bufnr)
-  local block, continuation = resolve(bufnr)
+local function set_widths(bufnr, block, continuation)
   vim.bo[bufnr].expandtab = true
   vim.bo[bufnr].shiftwidth = block
   vim.bo[bufnr].softtabstop = block
   vim.bo[bufnr].tabstop = block
   vim.b[bufnr].lathe_continuation = continuation
+end
+
+-- Apply the resolved profile's baseline widths to a Java buffer. Called from ftplugin/java.lua at
+-- FileType time; native EditorConfig applies afterward and takes precedence, until
+-- apply_project_indent restores what the project owns.
+function M.apply_buffer_options(bufnr)
+  local block, continuation = resolve(bufnr)
+  set_widths(bufnr, block, continuation)
+end
+
+-- Restore the project's own widths once native EditorConfig has run, so its formatter's indent
+-- wins over .editorconfig for Java, as format-on-save would rewrite anything else. EditorConfig
+-- keeps every other property, and the indent wherever the project leaves it open.
+function M.apply_project_indent(bufnr)
+  local block, continuation, project = resolve(bufnr)
+  if project then
+    set_widths(bufnr, block, continuation)
+  end
 end
 
 -- Block indent width, in display columns, for the current buffer: the effective 'shiftwidth',

@@ -11,8 +11,10 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,10 +70,15 @@ public final class WorkspaceManifestWriter {
   }
 
   // The content each POM had when Maven read it, so the server asks for a sync only when one
-  // really changed, not when it was merely touched or put back.
+  // really changed, not when it was merely touched or put back. lathe-style.json is one too: the
+  // sync resolves the formatter it declares.
   private static List<BuildFileData> fingerprinted(
       final Path workspaceRoot, final List<String> buildFiles) {
-    return buildFiles.stream()
+    final Stream<String> files =
+        Files.isRegularFile(workspaceRoot.resolve(LatheLayout.STYLE_SHARED_FILE))
+            ? Stream.concat(buildFiles.stream(), Stream.of(LatheLayout.STYLE_SHARED_FILE))
+            : buildFiles.stream();
+    return files
         .map(
             rel ->
                 new BuildFileData(
