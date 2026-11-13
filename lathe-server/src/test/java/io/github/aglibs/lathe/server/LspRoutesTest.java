@@ -3,6 +3,8 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.net.URI;
@@ -41,6 +43,8 @@ import org.junit.jupiter.api.condition.EnabledForJreRange;
 // Each textDocument request through the service and the event loop to its feature and back, over
 // a real workspace: the features are covered on their own, this covers the way to them.
 class LspRoutesTest extends ServiceTestBase {
+
+  private static final long START_WAIT_MS = 30_000;
 
   @Test
   void navigationRequests_onTheShop_eachAnswerComesFromTheWorkspace() throws Exception {
@@ -200,23 +204,38 @@ class LspRoutesTest extends ServiceTestBase {
   }
 
   // Closing the server while a command formatter runs answers the request (no edits) instead of
-  // leaving it waiting, and stops the formatter's process.
+  // leaving it waiting, and stops the formatter's process: once the close returns, the formatter's
+  // scratch file is gone from the sources, and its process no longer holds this test's directory.
   @Test
   void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
     final ShopFixture shop = openShop();
+    final List<Path> sources = FileUtil.filesIn(shop.use().getParent(), file -> true);
+    final Path gate = tmp.resolve("never");
     useFormatter(
         new FileCommandFormatEngine(
-            TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
+            TestProcess.command("await", gate.toString(), "%FILE%"),
             tmp,
             FileCommandFormatEngine.DEFAULT_TIMEOUT));
     final var formatting =
         service.formatting(
             new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
     awaitWorkerIdle();
+    awaitStarted(TestProcess.started(gate));
 
     host.close();
 
     assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+    assertThat(FileUtil.filesIn(shop.use().getParent(), file -> true))
+        .containsExactlyInAnyOrderElementsOf(sources);
+  }
+
+  // The formatter's JVM can take seconds to start on a loaded runner.
+  private static void awaitStarted(final Path marker) throws InterruptedException {
+    final var waited = Stopwatch.start();
+    while (!Files.exists(marker)) {
+      assertThat(waited.elapsedMs()).as("the formatter starting").isLessThan(START_WAIT_MS);
+      Thread.sleep(10);
+    }
   }
 
   private static List<String> files(

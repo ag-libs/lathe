@@ -28,7 +28,7 @@ class ServerEventLoopTest {
 
   @AfterEach
   void close() {
-    worker.close(() -> {});
+    worker.close(() -> null);
   }
 
   // The scan's pace reads it: a request makes the server busy, its own timers and the results its
@@ -205,21 +205,21 @@ class ServerEventLoopTest {
   @Test
   void close_runsLastOnTheLoop_droppingQueuedTasksButCompletingQueuedResults() {
     final var loop = new ServerEventLoop();
-    final var ranOn = new AtomicReference<String>();
     final var late = new AtomicInteger();
     final var result = new CompletableFuture<String>();
 
-    loop.close(
-        () -> {
-          ranOn.set(Thread.currentThread().getName());
-          // Queued while the final task runs, so behind it: neither may ever run.
-          loop.execute(late::incrementAndGet);
-          loop.schedule(URI, 0, late::incrementAndGet);
-          // A worker's result delivered meanwhile still completes, or its caller would wait.
-          loop.deliver(() -> result.complete("done"));
-        });
+    final String ranOn =
+        loop.close(
+            () -> {
+              // Queued while the final task runs, so behind it: neither may ever run.
+              loop.execute(late::incrementAndGet);
+              loop.schedule(URI, 0, late::incrementAndGet);
+              // A worker's result delivered meanwhile still completes, or its caller would wait.
+              loop.deliver(() -> result.complete("done"));
+              return Thread.currentThread().getName();
+            });
 
-    assertThat(ranOn.get()).isEqualTo(LOOP_THREAD);
+    assertThat(ranOn).isEqualTo(LOOP_THREAD);
     assertThat(late.get()).isZero();
     assertThat(result).isCompletedWithValue("done");
     assertThat(loop.submit(() -> 1)).isCancelled();
@@ -250,7 +250,7 @@ class ServerEventLoopTest {
           .isEqualTo(2);
       assertThat(statuses).containsExactly(1, 1);
     } finally {
-      loop.close(() -> {});
+      loop.close(() -> null);
     }
   }
 }

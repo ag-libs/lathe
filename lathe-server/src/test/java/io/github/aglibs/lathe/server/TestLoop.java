@@ -25,6 +25,6 @@ final class TestLoop implements AutoCloseable {
 
   @Override
   public void close() {
-    eventLoop.close(() -> {});
+    eventLoop.close(() -> null);
   }
 }
