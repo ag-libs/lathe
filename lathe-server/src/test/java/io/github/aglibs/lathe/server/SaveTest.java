@@ -7,6 +7,7 @@ import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -24,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -51,6 +53,32 @@ class SaveTest extends ServiceTestBase {
                     isFor(p, note)
                         && hasMessage(p, "'marker'")
                         && !hasMessage(p, "noted by processor")));
+  }
+
+  // A sync that changes the build (here: drops the processor) reloads the workspace; what the last
+  // write reported came from the old build, and the buffer still holds the written content.
+  @Test
+  void didSave_syncReloadsWithAnotherBuild_writeReportGoneFromThePublish() throws Exception {
+    final Path processors = compileNoteProcessor();
+    final Path note = saveWithProcessor(List.of(), List.of(processors));
+    clearInvocations(client);
+
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        List.of(tmp.resolve("module/src/main/java")),
+        null,
+        List.of(),
+        List.of(),
+        List.of());
+    TestCompiler.recordBuildFiles(
+        tmp, List.of(Files.writeString(tmp.resolve("pom.xml"), "<project/>")));
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    verify(client, timeout(TIMEOUT_MS))
+        .publishDiagnostics(argThat(p -> isFor(p, note) && !hasMessage(p, "noted by processor")));
+    verify(client, never())
+        .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
   }
 
   // Without a processor path javac finds processors on the classpath, as Maven's build does.
