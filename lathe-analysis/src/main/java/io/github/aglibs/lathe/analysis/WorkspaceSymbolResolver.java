@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Predicate;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -30,17 +31,11 @@ public final class WorkspaceSymbolResolver {
     }
 
     final List<TypeIndexEntry> entries = mergedEntries(query, typeIndex, keep);
-    final var results = new ArrayList<SymbolInformation>();
     try (var parser = new SourceParser()) {
-      for (final TypeIndexEntry entry : entries) {
-        final SymbolInformation info = toSymbolInformation(entry, sourceDirs, parser);
-        if (info != null) {
-          results.add(info);
-        }
-      }
+      return entries.stream()
+          .flatMap(entry -> toSymbolInformation(entry, sourceDirs, parser).stream())
+          .toList();
     }
-
-    return List.copyOf(results);
   }
 
   // Exact prefix search over the symbol index covers everything (JDK, dependencies, reactor),
@@ -48,7 +43,7 @@ public final class WorkspaceSymbolResolver {
   // CamelCase-hump matching is a supplementary, reactor-only layer on top, so a type like
   // AbstractServerFactory is still reachable via "ServerFactory" or "ASF" even though it doesn't
   // start with either. Prefix matches win on overlap; the combined list stays capped at
-  // SEARCH_LIMIT so the per-entry declarationRange parse cost is unchanged from before.
+  // SEARCH_LIMIT so the per-entry parse cost is unchanged from before.
   private static List<TypeIndexEntry> mergedEntries(
       final String query,
       final WorkspaceTypeIndex typeIndex,
@@ -108,15 +103,14 @@ public final class WorkspaceSymbolResolver {
 
   // The declaration's name, matched by its nested name (Api$Response$Builder, not the file's first
   // Builder), else the file's start: the file is found but declares no such type by name.
-  private static SymbolInformation toSymbolInformation(
+  private static Optional<SymbolInformation> toSymbolInformation(
       final TypeIndexEntry entry, final List<Path> sourceDirs, final SourceParser parser) {
-    return TypeSourceLocator.findSourceFile(entry, sourceDirs)
-        .map(
-            file ->
-                TypeSourceLocator.locate(entry, sourceDirs, parser)
-                    .orElseGet(() -> new Location(LatheUri.fromPath(file), FILE_START)))
-        .map(location -> symbol(entry, location))
-        .orElse(null);
+    return TypeSourceLocator.locate(entry, sourceDirs, parser)
+        .or(
+            () ->
+                TypeSourceLocator.findSourceFile(entry, sourceDirs)
+                    .map(file -> new Location(LatheUri.fromPath(file), FILE_START)))
+        .map(location -> symbol(entry, location));
   }
 
   private static SymbolInformation symbol(final TypeIndexEntry entry, final Location location) {

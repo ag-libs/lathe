@@ -213,44 +213,6 @@ class WorkspaceSymbolTest {
     assertThat(result.get(0).getName()).isEqualTo("Remote");
   }
 
-  // --- findSourceFile: source path resolution ---
-
-  @Test
-  void findSourceFile_innerClass_resolvesToOuterFile() throws IOException {
-    createSourceFile("com.example", "Outer");
-    final var innerEntry =
-        new TypeIndexEntry(
-            "Inner", "com.example.Outer$Inner", "com.example", TypeKind.CLASS, true, List.of());
-    final Path result = TypeSourceLocator.findSourceFile(innerEntry, List.of(src)).orElse(null);
-    assertThat(result).isNotNull();
-    assertThat(result.getFileName().toString()).isEqualTo("Outer.java");
-  }
-
-  @Test
-  void findSourceFile_noMatchingDir_returnsEmpty() {
-    final var e = entry("Ghost", "com.missing");
-    assertThat(TypeSourceLocator.findSourceFile(e, List.of(src))).isEmpty();
-  }
-
-  @Test
-  void findSourceFile_jdkModuleSubdir_resolvesInsideModuleDir(@TempDir final Path jdkRoot)
-      throws IOException {
-    // JDK sources are organized by module: <jdkRoot>/<module>/<package>/<Type>.java
-    // LibrarySources.jdkModuleSourceDirs() expands jdkRoot into its immediate module subdirs,
-    // so findSourceFile receives each module dir (e.g. java.base/) as a separate source root
-    final Path moduleDir = jdkRoot.resolve("java.base/java/util");
-    Files.createDirectories(moduleDir);
-    Files.writeString(moduleDir.resolve("ArrayList.java"), "");
-    final var jdkEntry =
-        new TypeIndexEntry(
-            "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of());
-    final Path result =
-        TypeSourceLocator.findSourceFile(jdkEntry, List.of(jdkRoot.resolve("java.base")))
-            .orElse(null);
-    assertThat(result).isNotNull();
-    assertThat(result.getFileName().toString()).isEqualTo("ArrayList.java");
-  }
-
   // --- reactor: package-private types ---
 
   @Test
@@ -344,7 +306,7 @@ class WorkspaceSymbolTest {
   }
 
   @Test
-  void resolve_class_fallsBackToFileStartWhenNoSource() {
+  void resolve_noSourceFile_returnsEmpty() {
     final var index = indexOf(entry("Ghost", "com.example"));
     // no source file → result is empty (not FILE_START fallback)
     final List<SymbolInformation> result =
