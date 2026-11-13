@@ -56,6 +56,9 @@ jobs:
         with:
           phase: start
 
+      - name: Windows Defender off
+        uses: ./.github/actions/windows-defender
+
       - name: Set up build tools
         uses: ./.github/actions/build-tools
         with:
@@ -285,6 +288,9 @@ jobs:
         with:
           phase: start
 
+      - name: Windows Defender off
+        uses: ./.github/actions/windows-defender
+
       - name: Set up build tools
         uses: ./.github/actions/build-tools
         with:
@@ -328,13 +334,38 @@ jobs:
         # build rows, CI stays set and keeps Lathe out of this build; the fixtures run without it
         # (GradleFixture), so Lathe is enabled in them. An older Gradle's fixtures run on the row's
         # JDK (17 for the floor).
+        # The step takes 2-3 minutes; a hung one fails at 15, not at the job's 30. A minute before,
+        # the watchdog saves every JVM's threads (Maven, the Gradle client and daemons, the test
+        # JVM) to thread-dumps/, uploaded with the test reports, as a cancel or a timeout would end
+        # them without saying where they waited.
+        timeout-minutes: 15
         env:
           FIXTURES: ${{ matrix.gradle != '9.8.2' && format('-Dlathe.gradle.fixturesHome={0}/gradle-{1}', runner.temp, matrix.gradle) || '' }}
+          WATCHDOG_SECONDS: 840
         run: |
+          mkdir -p thread-dumps
+          # The watchdog stops its own sleep when stopped: a leftover sleep would hold the step's
+          # output open, and the step would wait for it.
+          (
+            trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM
+            sleep "$WATCHDOG_SECONDS" &
+            sleeper=$!
+            wait "$sleeper"
+            echo "::warning::Still running after ${WATCHDOG_SECONDS}s: saving every JVM's threads to thread-dumps/"
+            jps -lv > thread-dumps/jps.txt 2>&1 || true
+            for pid in $(jps -q); do
+              jcmd "$pid" Thread.print > "thread-dumps/$pid.txt" 2>&1 || true
+            done
+            cat thread-dumps/jps.txt
+          ) &
+          watchdog=$!
+          status=0
           mvn -B --no-transfer-progress verify -pl lathe-junit,lathe-gradle-plugin -am \
             -Dmaven.test.skip=true -Dspotless.check.skip=true \
             -Dlathe.gradle.skipUnitTests=${{ !matrix.unit }} $FIXTURES \
-            -Dlathe.gradle.fixturesJavaHome="$JAVA_HOME_${{ matrix.java }}_X64"
+            -Dlathe.gradle.fixturesJavaHome="$JAVA_HOME_${{ matrix.java }}_X64" || status=$?
+          kill "$watchdog" 2>/dev/null || true
+          exit "$status"
 
       - name: Slowest Gradle plugin tests
         # The per-test times, every run: comparing a slow run with a fast one shows whether the time
@@ -376,5 +407,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: gradle-reports-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ matrix.os }}
-          path: lathe-gradle-plugin/target/gradle/reports/tests/
+          path: |
+            lathe-gradle-plugin/target/gradle/reports/tests/
+            thread-dumps/
           retention-days: 7
