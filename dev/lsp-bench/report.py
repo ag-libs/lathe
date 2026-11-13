@@ -63,6 +63,30 @@ def disk_lines(runs):
                 "configuration, Lathe's `.lathe/`). Beside it:", ""] + lines if lines else []
 
 
+def build_change_lines(runs):
+    """A build-file change's times, per run, the user's step in them."""
+    def took(ms):
+        return "never" if ms is None else fmt(ms, " s", 1000, 1)
+
+    rows, change = [], None
+    for server, results in runs.items():
+        for r in results:
+            c = r.get("build_change")
+            if c:
+                change = c
+                step = ("Sync on the prompt, script %s" % took(c.get("step_ms")) if server == "lathe"
+                        else ":JdtUpdateConfig (no prompt shown)")
+                if c.get("step_exit"):
+                    step += ", exit %d" % c["step_exit"]
+                rows.append("| %s | %s | %s | %s | %s |" % (server, r["mode"], took(c.get("prompt_ms")) if server == "lathe" else "-",
+                                                           step, took(c.get("fixed_ms"))))
+    if not rows:
+        return []
+    return ["", "## Build-file change (from the change until the file using the new dependency has no error)", "",
+            "A dependency added to `%s` and one of its classes used in `%s`." % (change["build_file"], change["file"]),
+            "", "| Server | Mode | Prompt | User's step | No error |", "|---|---|---|---|---|"] + rows
+
+
 def branch_lines(runs):
     """A branch switch's times, per run: until each answer matches a fresh start at that commit."""
     def took(ms):
@@ -75,6 +99,7 @@ def branch_lines(runs):
             if s:
                 cells = [took(s[k]) if s.get("changed", [True] * 4)[i] else "unchanged"
                          for i, k in enumerate(("added_type_ms", "deleted_type_ms", "references_ms", "diagnostics_ms"))]
+                cells.append(took(s.get("back_ms")))
                 rows.append("| %s | %s | %s |" % (server, r["mode"], " | ".join(cells)))
     if not rows:
         return []
@@ -83,9 +108,10 @@ def branch_lines(runs):
             "", "Added type `%s`, deleted type `%s`, references to `%s`, errors in `%s`." % (
                 s["checks"]["added"], s["checks"]["deleted"], s["references_at"][2], s["checks"]["watched"]), "",
             "A check marked unchanged answered the same before the switch as a fresh start does after it, so it "
-            "tells nothing.", "",
-            "| Server | Mode | Added type gone | Deleted type found | References | Changed file's errors |",
-            "|---|---|---|---|---|---|"] + rows
+            "tells nothing. Back is from the checkout of the first commit until every answer is again what it "
+            "was before the switch; the server stops after it, so its saved state is the warm run's start.", "",
+            "| Server | Mode | Added type gone | Deleted type found | References | Changed file's errors | Back |",
+            "|---|---|---|---|---|---|---|"] + rows
 
 
 def baseline_lines(out_dir, runs):
@@ -229,7 +255,7 @@ def main():
         "",
         "## Servers (medians; memory is the summed RSS of the server's processes)",
         "",
-    ] + server_table(runs) + baseline_lines(out_dir, runs) + disk_lines(runs) + branch_lines(runs) + [
+    ] + server_table(runs) + baseline_lines(out_dir, runs) + disk_lines(runs) + branch_lines(runs) + build_change_lines(runs) + [
         "",
         "Build is what a cold run builds before the server starts: Lathe's first build as the README has a "
         "user run it, tests captured but not run, and for jdtls only where it needs the project installed "

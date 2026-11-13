@@ -32,6 +32,15 @@ PROJECTS = {
         "main_module": "dropwizard-core",
         # The branch switch's older commit: 50 back along the main line (80 files, 38 Java).
         "branch_ref": "e357826376",
+        # The build-file change: a dependency its BOM manages and the local repository holds, and
+        # a use of one of its classes.
+        "build_change": {"build_file": "dropwizard-core/pom.xml", "after": "    <dependencies>\n",
+                         "insert": "        <dependency>\n            <groupId>org.jdbi</groupId>\n"
+                                   "            <artifactId>jdbi3-core</artifactId>\n        </dependency>\n",
+                         "file": "dropwizard-core/src/main/java/io/dropwizard/core/Application.java",
+                         "anchor": "public abstract class Application<T extends Configuration> {\n",
+                         # Public and not null: its NullAway and unused-field checks fail the build otherwise.
+                         "use": "    public static final Class<?> BENCH_JDBI = org.jdbi.v3.core.Jdbi.class;\n"},
         # Its pgpverify check rejects an unsigned artifact; Lathe's releases are signed, the pinned
         # local build is not, so Lathe's build allows its group unsigned and verifies all the rest.
         "lathe_appends": {"pgp-keys-map.list": "io.github.ag-libs = noSig\n"},
@@ -57,6 +66,8 @@ PROJECTS = {
         "jdk": CORRETTO_25,
         "cases": "hibernate_orm",
         "main_module": "hibernate-core",
+        # 50 back along the main line (394 files, 255 Java); setup.sh fetches the history.
+        "branch_ref": "caa0158c",
     },
     "fineract": {
         "url": GIT_HOME / "fineract",
@@ -78,6 +89,8 @@ PROJECTS = {
         "cases": "openmetadata",
         "main_module": "openmetadata-service",
         "lombok": "1.18.36",
+        # 50 back along the main line (1,683 files, 260 Java); setup.sh fetches the blobs.
+        "branch_ref": "44ce7aa42b",
         # Through package, so the shaded module's jar exists; without the UI, distribution and
         # generated-client modules (README.md, Projects). Tests captured, not run, as the README's
         # first build; the baseline compiles the same modules without Lathe.

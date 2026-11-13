@@ -40,6 +40,21 @@ for name in "${projects[@]}"; do
 p = projects.PROJECTS['$name']; print(p['url'], p['commit'])")
   echo "== $name ${commit:0:10}"
   [ -d "$WORK/repos/$name" ] || git clone -q --no-checkout "$url" "$WORK/repos/$name"
-  git -C "$WORK/repos/$name" checkout -q --detach "$commit"
+  repo=$WORK/repos/$name
+  # The branch switch checks out an older commit: a shallow local clone lacks its history, a
+  # partial one its files, so both come from the local clone's own origin.
+  if [ -d "$url" ] && origin=$(git -C "$url" remote get-url origin 2>/dev/null); then
+    if [ "$(git -C "$url" rev-parse --is-shallow-repository)" = true ]; then
+      git -C "$repo" fetch -q --depth=120 "$origin" "$(git -C "$repo" rev-parse "$commit")"
+    fi
+    if [ -n "$(git -C "$url" config remote.origin.partialclonefilter || true)" ] \
+        && ! git -C "$repo" remote | grep -qx upstream; then
+      git -C "$repo" remote add upstream "$origin"
+      git -C "$repo" config remote.upstream.promisor true
+      git -C "$repo" config remote.upstream.partialclonefilter blob:none
+      git -C "$repo" config extensions.partialClone upstream
+    fi
+  fi
+  git -C "$repo" checkout -q --detach "$commit"
 done
 echo "Next, per project: python3 bench.py <project> --prime (downloads dependencies, not measured)."

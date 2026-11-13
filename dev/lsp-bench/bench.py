@@ -18,6 +18,7 @@ import os
 import platform
 import queue
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -100,9 +101,19 @@ class BenchClient(LspClient):
         self.wanted_import = None
         self.status = StampedQueue()
         self.diagnostics = StampedQueue()
+        # The server's prompts: a showMessageRequest is answered with the action of this title, as a
+        # user clicking it, else dismissed; jdtls's actionable notifications Neovim does not show.
+        self.prompt_answer = None
+        self.prompts = StampedQueue()
+        self.actionable = StampedQueue()
+        self.syncs = StampedQueue()
+        self.progress = StampedQueue()
         with self._notif_lock:
+            self._notifications["$/progress"] = self.progress
             self._notifications["language/status"] = self.status
             self._notifications["textDocument/publishDiagnostics"] = self.diagnostics
+            self._notifications["language/actionableNotification"] = self.actionable
+            self._notifications["lathe/sync"] = self.syncs
 
     def _send(self, msg):
         # Content-Length counts bytes: an opened file with non-ASCII text must not break the framing.
@@ -125,6 +136,10 @@ class BenchClient(LspClient):
             result = [self.setting(item.get("section")) for item in msg.get("params", {}).get("items", [])]
         elif msg["method"] == "workspace/executeClientCommand":
             result = self.client_command(msg.get("params", {}))
+        elif msg["method"] == "window/showMessageRequest":
+            self.prompts.put(msg)
+            result = next((a for a in msg.get("params", {}).get("actions") or [] if a.get("title") == self.prompt_answer),
+                          None)
         elif msg["method"] == "workspace/applyEdit":
             # Applied, as an editor answers; the case reads the edit from the action itself.
             self.applied_edits.append(msg.get("params", {}).get("edit"))
@@ -353,13 +368,14 @@ def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeo
         summary = Q.summarize(repo, case, answer)
         compiles = compile_check(answer) if compile_check and case["method"] == "textDocument/rename" and answer \
             else None
-        times = [timed(client, repo, case, request_timeout)[0] for _ in range(reps)]
+        # A failed repeat has no time; no repeats (--reps 0) leave the first answer alone.
+        times = [t for t in (timed(client, repo, case, request_timeout)[0] for _ in range(reps)) if t is not None]
         results[case["name"]] = {
             "method": case["method"],
             "supported": True,
             "first_ms": first_ms,
-            "median_ms": statistics.median(times),
-            "p95_ms": p95(times),
+            "median_ms": statistics.median(times) if times else None,
+            "p95_ms": p95(times) if times else None,
             "error": error,
             "correct": error is None and Q.check(case["expect"], summary) and compiles is not False,
             "answer": summary,
@@ -399,6 +415,11 @@ def initialize(client, spec, repo, name, timeout):
 # A branch switch: how long it may take to be right again, how often it is checked, and how long the
 # answers must stay unchanged before the poll stops.
 SWITCH_DEADLINE_S = 600
+BUILD_DEADLINE_S = 600
+# An outside change starts once the server has no work in progress and has sent nothing for this
+# long, as a user sees it go idle: jdtls answers queries while its first build still runs, and a
+# project update sent then is applied without revalidating the open files.
+QUIET_S = 5.0
 SWITCH_POLL_S = 1.0
 SWITCH_STEADY_S = 60
 # A fresh start's answers count once they stayed the same this long.
@@ -483,7 +504,9 @@ def switch_answers(client, repo, checks, timeout):
     return (finds_type(client, stem(checks["added"]), checks["added"], timeout) if checks["added"] else None,
             finds_type(client, stem(checks["deleted"]), checks["deleted"], timeout) if checks["deleted"] else None,
             references_count(client, repo, checks["references"], timeout),
-            errors_in(client, Q.uri(repo, checks["watched"])))
+            # None published reads as none, as an editor shows it: jdtls publishes nothing for a clean
+            # file it opened until the file changes.
+            errors_in(client, Q.uri(repo, checks["watched"])) or 0)
 
 
 def checkout(repo, rev, reapply):
@@ -493,6 +516,24 @@ def checkout(repo, rev, reapply):
     reapply()
 
 
+def reload(client, repo, opened, closed):
+    """The open buffers after a checkout, as Neovim reloads them: a file gone is closed, one back
+    reopened; returns the files now closed."""
+    now_closed = set()
+    for path in opened:
+        uri, exists = Q.uri(repo, path), (repo / path).exists()
+        if not exists:
+            if path not in closed:
+                client.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
+            now_closed.add(path)
+        elif path in closed:
+            client.notify("textDocument/didOpen", {"textDocument": {"uri": uri, "languageId": "java", "version": 1,
+                                                                      "text": (repo / path).read_text(encoding="utf-8")}})
+        else:
+            Q.change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
+    return now_closed
+
+
 def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
     """git checkout of the project's older commit while the server runs; the client reloads its open
     buffers, as Neovim does, sends no watched-file events (Neovim offers none on Linux) and answers no
@@ -500,21 +541,20 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
     at that commit; then the tree goes back."""
     ref, pin = project["branch_ref"], git(repo, "rev-parse", "HEAD").strip()
     checks = switch_checks(repo, project, ref, pin)
-    for path in (checks["watched"], checks["references"]["at"][0]):
-        client.notify("textDocument/didOpen", {"textDocument": {"uri": Q.uri(repo, path), "languageId": "java",
-                                                                  "version": 1, "text": (repo / path).read_text()}})
-    opened = Q.opened_files(cases.CASES) + [checks["watched"], checks["references"]["at"][0]]
+    opened = Q.opened_files(cases.CASES)
+    # Opened once: a second didOpen of an open document is a protocol error.
+    for path in dict.fromkeys((checks["watched"], checks["references"]["at"][0])):
+        if path not in opened:
+            client.notify("textDocument/didOpen", {"textDocument": {"uri": Q.uri(repo, path), "languageId": "java",
+                                                                      "version": 1, "text": (repo / path).read_text()}})
+            opened.append(path)
     # The answers just before the switch: a check whose answer does not change tells nothing.
     before = switch_answers(client, repo, checks, args.request_timeout)
     polls = []
     start = time.monotonic()
     checkout(repo, ref, reapply)
     try:
-        for path in opened:
-            if (repo / path).exists():
-                Q.change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
-            else:
-                client.notify("textDocument/didClose", {"textDocument": {"uri": Q.uri(repo, path)}})
+        closed = reload(client, repo, opened, set())
         while time.monotonic() - start < SWITCH_DEADLINE_S:
             # Stamped when the round of queries ends: the moment its answers were all there.
             answers = switch_answers(client, repo, checks, args.request_timeout)
@@ -527,6 +567,18 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
         expected = fresh_answers(checks)
     finally:
         checkout(repo, pin, reapply)
+    # Back at the pin, the server must catch up again before it stops: what it saves is the warm
+    # run's start, and a warm run that starts from the older commit's index measures nothing.
+    back = time.monotonic()
+    reload(client, repo, opened, closed)
+    back_ms, back_answers = None, None
+    while time.monotonic() - back < SWITCH_DEADLINE_S:
+        back_answers = switch_answers(client, repo, checks, args.request_timeout)
+        if back_answers == before:
+            back_ms = (time.monotonic() - back) * 1000
+            break
+        time.sleep(SWITCH_POLL_S)
+    wait_quiet(client, SWITCH_DEADLINE_S)
 
     def settled(index):
         """Ms from the switch to the poll after which every poll matches the fresh start; None if the
@@ -538,7 +590,104 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
             "references_at": checks["references"]["at"], "before": before, "expected": expected,
             "polls": len(polls), "changed": [b != e for b, e in zip(before, expected)],
             "added_type_ms": settled(1), "deleted_type_ms": settled(2), "references_ms": settled(3),
-            "diagnostics_ms": settled(4)}
+            "diagnostics_ms": settled(4), "back_ms": back_ms,
+            "back_answers": back_answers}
+
+
+def wait_quiet(client, deadline_s):
+    """Waits until no work-done progress is open and the server has been quiet for QUIET_S; ms waited."""
+    start = time.monotonic()
+    while time.monotonic() - start < deadline_s:
+        open_tokens = {}
+        for _, msg in list(client.progress.times):
+            open_tokens[msg["params"]["token"]] = msg["params"]["value"].get("kind") != "end"
+        stamps = [t for t, _ in client.status.times + client.diagnostics.times + client.progress.times]
+        if not any(open_tokens.values()) and time.monotonic() - max(stamps, default=start) >= QUIET_S:
+            break
+        time.sleep(0.5)
+    return (time.monotonic() - start) * 1000
+
+
+def until_errors(client, target, ok, deadline_s):
+    """Ms from now until the file's last published errors satisfy ok; None at the deadline."""
+    start = time.monotonic()
+    while time.monotonic() - start < deadline_s:
+        if ok(errors_in(client, target)):
+            return (time.monotonic() - start) * 1000
+        time.sleep(0.2)
+    return None
+
+
+def next_stamped(stamped, deadline_s):
+    """The next message of a stamped queue and when it arrived; (None, None) at the deadline."""
+    try:
+        msg = stamped.get(timeout=deadline_s)
+    except queue.Empty:
+        return None, None
+    return msg, next(t for t, m in stamped.times if m is msg)
+
+
+def lathe_update(client, repo, project, log):
+    """A Lathe user's step after a build-file change: "Sync" on the prompt the server shows, then
+    the client runs the sync script it asks for, as lathe.nvim does. Ms until the prompt, and the
+    script's own ms."""
+    start = time.monotonic()
+    client.prompt_answer = "Sync"
+    prompt, prompted = next_stamped(client.prompts, BUILD_DEADLINE_S)
+    sync, _synced = next_stamped(client.syncs, BUILD_DEADLINE_S) if prompt else (None, None)
+    if not sync:
+        return {"prompt_ms": None}
+    with open(log, "ab") as out:
+        ran = time.monotonic()
+        code = subprocess.run([str(repo / ".lathe" / "lathe-sync.sh")], cwd=repo, env=S.build_env(project),
+                              stdout=out, stderr=subprocess.STDOUT).returncode
+    return {"prompt_ms": (prompted - start) * 1000, "step_ms": (time.monotonic() - ran) * 1000, "step_exit": code}
+
+
+def jdtls_update(client, repo, project, log):
+    """An nvim-jdtls user's step after a build-file change: Neovim shows no prompt (nvim-jdtls does not
+    handle jdtls's actionable notification, and jdtls hears of a build file only through a save or a
+    watched-file event), so the user runs :JdtUpdateConfig and picks the main module's project."""
+    projects = client.request("workspace/executeCommand", {"command": "java.project.getAll", "arguments": []},
+                              timeout=BUILD_DEADLINE_S) or []
+    uri = next(u for u in projects if urllib.parse.unquote(u).rstrip("/").endswith("/" + project["main_module"]))
+    client.notify("java/projectConfigurationsUpdate", {"identifiers": [{"uri": uri}]})
+    return {"prompt_ms": None, "step_ms": 0}
+
+
+def build_change(client, repo, project, cases, update, log):
+    """A dependency added to the main module's build file, used in an open file: ms until that file
+    has no error, the user's step (the server's prompt answered yes, or the command a user runs) in
+    it, timed apart; then both files go back, and the same step again, untimed."""
+    change = project["build_change"]
+    build_file, path = repo / change["build_file"], change["file"]
+    target = Q.uri(repo, path)
+    built, original = build_file.read_text(encoding="utf-8"), (repo / path).read_text(encoding="utf-8")
+    if path not in Q.opened_files(cases.CASES):
+        client.notify("textDocument/didOpen", {"textDocument": {"uri": target, "languageId": "java", "version": 1,
+                                                                  "text": original}})
+    result = {"file": path, "build_file": change["build_file"]}
+    try:
+        Q.change(client, repo, path, original.replace(change["anchor"], change["anchor"] + change["use"], 1), save=True)
+        result["error_shown_ms"] = until_errors(client, target, lambda n: bool(n), BUILD_DEADLINE_S)
+        start = time.monotonic()
+        build_file.write_text(built.replace(change["after"], change["after"] + change["insert"], 1), encoding="utf-8")
+        result.update(update(client, repo, project, log))
+        # From the build file's change: the user's step is part of the wait.
+        fixed = until_errors(client, target, lambda n: n == 0, BUILD_DEADLINE_S)
+        result["fixed_ms"] = None if fixed is None else (time.monotonic() - start) * 1000
+        if fixed is None:
+            published = [m["params"] for _, m in client.diagnostics.times if m["params"].get("uri") == target]
+            result["errors_left"] = [d["message"] for d in published[-1]["diagnostics"] if d.get("severity") == 1]
+    finally:
+        build_file.write_text(built, encoding="utf-8")
+        Q.change(client, repo, path, original, save=True)
+    # The same step again, so the server stops in step with the pinned build, the next run's start;
+    # stopped before it is idle, jdtls abandons the update.
+    update(client, repo, project, log)
+    wait_quiet(client, BUILD_DEADLINE_S)
+    result["unshown_prompts"] = client.actionable.qsize()
+    return result
 
 
 def run_server(server, name, project, cases, mode, args, out_dir, label):
@@ -572,13 +721,20 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         imported_at = client.started_at()
         result["import_ms"] = (imported_at - start) * 1000 if server == "jdtls" and imported_at else None
         result["startup_peak_mb"] = sampler.peak_mb(until=ready_at)
+        if args.scenario:
+            result["quiet_ms"] = wait_quiet(client, args.ready_timeout)
         if args.scenario == "branch":
             def fresh_answers(checks):
                 """What a fresh start of the same server answers at the switched commit, once its answers
-                stop changing (its indexes warm up after it is ready)."""
-                fresh = launch(spec, repo, name, log)
+                stop changing (its indexes warm up after it is ready). Its own empty state: two jdtls
+                sharing one Eclipse workspace leave the running one's index broken."""
+                fresh_state = state.with_name("%s-fresh" % state.name)
+                shutil.rmtree(fresh_state, ignore_errors=True)
+                fresh_spec = S.SERVERS_BY_NAME[server]["spec"](name, project, fresh_state, args.heap,
+                                                               jdtls_overrides(args))
+                fresh = launch(fresh_spec, repo, name, log)
                 try:
-                    initialize(fresh, spec, repo, name, args.ready_timeout)
+                    initialize(fresh, fresh_spec, repo, name, args.ready_timeout)
                     open_files(fresh, repo, [probe, checks["references"], {"file": checks["watched"]}])
                     wait_ready(fresh, repo, probe, time.monotonic(), args.ready_timeout, args.request_timeout)
                     answers, since = None, time.monotonic()
@@ -592,6 +748,10 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
                     fresh.stop()
             result["branch_switch"] = branch_switch(client, repo, project, cases, args, fresh_answers,
                                                     lambda: S.SERVERS_BY_NAME[server]["edits"](name, project))
+            return result
+        if args.scenario == "build":
+            result["build_change"] = build_change(client, repo, project, cases,
+                                                  lathe_update if server == "lathe" else jdtls_update, log)
             return result
         result["cases"] = run_cases(client, repo, cases.CASES, init.get("capabilities", {}), args.reps,
                                     args.request_timeout,
@@ -693,6 +853,11 @@ def summary_line(result):
         return "branch switch: added type gone %s, deleted type found %s, references %s, errors %s  %s" % (
             seconds(switch["added_type_ms"]), seconds(switch["deleted_type_ms"]), seconds(switch["references_ms"]),
             seconds(switch["diagnostics_ms"]), result.get("error") or "")
+    build = result.get("build_change")
+    if build:
+        return "build-file change: error shown %s, prompt %s, step %s (exit %s), no error %s  %s" % (
+            seconds(build.get("error_shown_ms")), seconds(build.get("prompt_ms")), seconds(build.get("step_ms")),
+            build.get("step_exit", "-"), seconds(build.get("fixed_ms")), result.get("error") or "")
     correct = sum(1 for c in result["cases"].values() if c.get("correct"))
     supported = sum(1 for c in result["cases"].values() if c.get("supported"))
     # Rows, not cases: a typed-error case reports two.
@@ -720,7 +885,7 @@ def main():
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
     parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
                         help="a jdtls setting changed from vscode-java's defaults: a labelled variant")
-    parser.add_argument("--scenario", choices=["branch"],
+    parser.add_argument("--scenario", choices=["branch", "build"],
                         help="run an outside-change scenario after the server is ready, instead of the queries")
     parser.add_argument("--compile-renames", action="store_true",
                         help="apply each rename case's edit to a copy of the project and compile it there")
