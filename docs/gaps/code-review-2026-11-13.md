@@ -32,6 +32,7 @@ Both call-hierarchy locators search for the method name from the start of the wh
 
 - Where: `analysis/CallHierarchyIncomingLocator.java:124-126, 161-162`; `analysis/CallHierarchyOutgoingLocator.java:85-86, 125-126`; the fixed copy in `analysis/ReferenceLocator.java:415-441`.
 - Fix: move `addMatchAtIdentifier`/`identifierAnchor` to `SourceTreeLocator` and use it in all three locators (see CR-72).
+- Status: #188.
 
 ### CR-2 — "Implement missing method" adds imports the stub never writes (verified)
 
@@ -42,6 +43,7 @@ The override-completion stub renders the same text differently: 2-space indent i
 
 - Where: `analysis/refactor/MissingMethodImplProvider.java:163-181`; `analysis/completion/OverrideCompletionProvider.java:37, 68-73`; `analysis/internal/MethodStubRenderer.java`.
 - Fix: put the stub text and the list of types it writes into `MethodStubRenderer`; render through `SourceTypeNames` in both places.
+- Status: #190: stops importing thrown types; the stub text and indentation are still two copies.
 
 ### CR-3 — OpenJDK sync bypasses `WorkspaceSync` (verified)
 
@@ -51,6 +53,7 @@ It also builds `WorkspaceManifestData` positionally with nulls.
 
 - Where: `openjdk/OpenJdkSync.java:80-83, 271-291`; `install/WorkspaceSync.java:72-90`.
 - Fix: let `WorkspaceSync.Inputs` take what OpenJDK lacks (no `Caches`, unfingerprinted build files) and route OpenJDK through it; prune with module → `{classes}`.
+- Status: #198: writes `.gitignore` and prunes; routing through `WorkspaceSync.write` is still open.
 
 ### CR-4 — MCP `maxResults` accepts zero and negative values (verified)
 
@@ -59,6 +62,7 @@ A negative value reaches `Stream.limit`, which throws `IllegalArgumentException`
 
 - Where: `mcp/LatheMcpTools.java:770-773`; `server/LatheEngine.java:244, 472, 856`.
 - Fix: reject values below 1 as an argument error (and see CR-49 for the schema copies).
+- Status: #191.
 
 ### CR-5 — Neovim run and debug commands ask the first Lathe server, not the buffer's (verified)
 
@@ -68,6 +72,7 @@ With two workspaces open, a run can go to the wrong server.
 
 - Where: `nvim/run.lua:114, 198, 244, 358` (`lathe_client()`); `nvim/dap.lua:123, 209`; `nvim/stackdecorate.lua:120`; `nvim/resources.lua:80`; `nvim/neotest/common.lua:44-46`.
 - Fix: pass `bufnr` wherever there is one; keep the no-buffer lookup only for the run console and stack traces.
+- Status: #192; the neotest adapter's own lookup is still open.
 
 ### CR-6 — Maven main runs may use a different JDK from the server (verified)
 
@@ -77,16 +82,18 @@ A main run can start on a different JDK than the one the server analyses with; G
 
 - Where: `maven/MavenMainLaunch.java:41`; `maven/SyncCoordinator.java:69`; `install/JdkSourceResolver.java:33`.
 - Fix: pass `caches.jdk().home()` into `MavenMainLaunch`.
+- Status: #193.
 
-### CR-7 — The root module has two names
+### CR-7 — The root module has two names (not a behaviour bug)
 
 Maven writes `"."` for the root in `ResourceRootData`, `main-launch` and `test-filter`, but `""` in `OutputData`.
 Gradle writes `""` everywhere except `main-launch`, where it writes `"."`.
 The schema docs disagree too: `ResourceRootData` says `"."`, `OutputData` says `""`.
-The server normalises one way for display.
+Every reader resolves both spellings to the same directory, so nothing breaks; only the resource finder's origin label differs (`.` for a Maven root module, empty for a Gradle one).
 
 - Where: `maven/ReactorProjects.java:230, 345-348`; `gradle/LatheProjectPlugin.java:470, 684-686`; `server/SourceLayout.java:44-46`; `core/LatheLayout.java:270-273`.
 - Fix: one `LatheLayout.moduleRel(root, dir)` with one convention, used by all front-ends and the server.
+- Status: a consistency clean-up, to do with the build front-ends (section 8).
 
 ### CR-8 — Completion disagrees with itself on sealed classes and on importable types
 
@@ -96,6 +103,7 @@ A sealed non-abstract class can be instantiated.
 
 - Where: `analysis/completion/MemberAccessCompleter.java:244-249`; `analysis/completion/TypeReferenceCompleter.java:468-472, 525-538`; `ImportCandidates.java:74-86`; `TypeIndexValidator.java:30-41`.
 - Fix: one `instantiable(TypeElement)` helper; one import-validity rule (see CR-75).
+- Status: #197 for sealed classes; the import-validity rule needs a decision.
 
 ### CR-9 — Workspace symbols can resolve the wrong nested type
 
@@ -104,14 +112,16 @@ It also opens its own `SourceParser`.
 
 - Where: `analysis/WorkspaceSymbolResolver.java:39, 142-173`.
 - Fix: call `TypeSourceLocator.locate`.
+- Status: #194.
 
-### CR-10 — Type-hierarchy explorer lacks the null check its sibling has
+### CR-10 — Type-hierarchy explorer timing log is hand-written (not a bug)
 
-`typeHierarchyLevel` guards `TypeHierarchyItemDataCodec.decode(...) == null`; `typeHierarchyExplorerFuture` calls `data.routingUri()` without it.
-Its timing log is also hand-written where the siblings use `FeatureAnswers.logged`.
+The explorer skips the `decode(...) == null` guard its sibling `typeHierarchyLevel` has, but needs none: it reads only items its own `prepare` built, and `TypeHierarchyResolver`, the one place that builds them, always sets their data.
+The sibling's guard is for items that come back from the client.
+What remains is its timing log, hand-written where the siblings use `FeatureAnswers.logged`.
 
-- Where: `server/DocumentFeatures.java:261-264, 300-305`.
-- Fix: add the guard and use `FeatureAnswers.logged`.
+- Where: `server/DocumentFeatures.java:300-320`.
+- Fix: use `FeatureAnswers.logged`.
 
 ### CR-11 — Analysis builds file URIs outside `LatheUri`
 
@@ -120,6 +130,7 @@ Its timing log is also hand-written where the siblings use `FeatureAnswers.logge
 - Where (build): `analysis/DefinitionLocator.java:74-75, 106, 136`; `NavigationFeatures.java:206`; `WorkspaceSymbolResolver.java:122`; `TypeSourceLocator.java:95`; `CallHierarchyItemDataCodec.java:80`; `TextMentions.java:97, 117`.
 - Where (parse): `analysis/RenameBindingCheck.java:243, 381` use `Path.of(URI.create(..))`.
 - Fix: `LatheUri.fromPath` / `toPath` everywhere; `lathe-analysis` already depends on core.
+- Status: #195, and #194 for workspace symbols.
 
 ## 2. Across modules
 
