@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.IndexTypes;
 import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -192,13 +193,12 @@ final class TypeReferenceCompleter {
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var scope =
         analysis != null ? ReceiverResolver.resolveScope(analysis, req.cursorOffset()) : null;
-    final var validator = new TypeIndexValidator(analysis, scope);
     final SourceTypeNames names =
         analysis != null ? ReceiverResolver.typeNames(analysis, scope) : null;
     final List<CompletionCandidate> typeCandidates =
         candidates.stream()
             .sorted(typeCandidateComparator(injected.prefix(), req.typeIndex()))
-            .filter(validator::isResolvable)
+            .filter(entry -> IndexTypes.usable(entry, analysis, scope, req.typeIndex()))
             .filter(entry -> typeIndexRoleAllows(entry, analysis, scope, role))
             .limit(TYPE_INDEX_RESULT_LIMIT)
             .map(entry -> CandidateFactory.typeIndexCandidate(entry, analysis, names))

@@ -183,7 +183,7 @@ record ImportEdit(String qualifiedName, boolean isStatic) {}
 | `CandidateFactory` | Constructs candidates from `TypeElement`, `TypeIndexEntry`, and member `Element` values |
 | `KeywordProvider` | Context-valid keywords |
 | `ImportCompletionProvider` | Types and sub-packages inside import declarations |
-| `TypeIndexValidator` | Filters type-index entries to those resolvable in the current javac snapshot |
+| `IndexTypes` (`internal`) | Filters type-index entries to those usable in the current javac snapshot, the rule completion and the import fixes share |
 
 ---
 

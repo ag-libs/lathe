@@ -272,7 +272,7 @@ Map the discrepancy to the narrowest likely owner:
 | `CandidateGenerator` | Member candidates or nested type candidates are missing or invalid. |
 | `SimpleNameProvider` | Locals, fields, methods, parameters, or static imports are missing or invalid. |
 | `ImportCompletionProvider` | Package or import declaration candidates are wrong. |
-| `TypeIndexValidator` | Importable type candidates are too broad or too narrow. |
+| `IndexTypes` (`internal`) | Importable type candidates are too broad or too narrow, in completion or the import fixes. |
 | `CompletionCandidateRanker` | Filtering or sort order is wrong. |
 | `CompletionItemPresenter` | LSP item labels, snippets, edits, or imports are wrong. |
 

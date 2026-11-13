@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -381,8 +382,7 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
     // `requires`; here --add-modules puts it in the graph directly. Either way it is *observable*
     // (Elements.getTypeElement resolves javax.swing.JButton) but not *readable* by com.example.app
     // (a real `import javax.swing.JButton;` fails: "module com.example.app does not read it").
-    // TypeIndexValidator gates only on getTypeElement, so JButton currently leaks into completion;
-    // the correct gate is Trees.isAccessible(scope, typeElement).
+    // getTypeElement alone would let JButton in; IndexTypes also checks Trees.isAccessible.
     localFixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
@@ -409,7 +409,7 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
   void typeIndex_constructorSubtype_jpmsUnreadableModule_doesNotSuggestSubtype()
       throws IOException {
     // The `new X` / expected-type path resolves subtypes through
-    // TypeReferenceCompleter.instantiableSubtypeCandidates, not TypeIndexValidator. It must apply
+    // TypeReferenceCompleter.instantiableSubtypeCandidates, not IndexTypes. It must apply
     // the same JPMS readability gate: JButton is an observable-but-unreadable subtype of Object and
     // must not be offered as a constructor candidate.
     localFixture =
@@ -462,6 +462,40 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                       requires java.desktop;
                     }""")))
         .contains("JButton");
+  }
+
+  // A type just created or renamed is in the reactor index before it has a class file: offered,
+  // as the import quick fix offers it. A dependency type with no class file is not.
+  @Test
+  void typeIndex_typeWithoutClassFile_offeredOnlyFromTheReactor() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                List.of(
+                    CompletionFixture.typeEntry(
+                        "MyCustomError", "com.dep.MyCustomError", TypeKind.CLASS)),
+                List.of(
+                    CompletionFixture.typeEntry(
+                        "MyCustomException", "com.example.MyCustomException", TypeKind.CLASS))));
+
+    final List<CompletionItem> items =
+        localFixture.complete(
+            """
+            package com.other;
+            class Test {
+                MyCus§ field;
+            }""");
+
+    assertThat(labels(items)).contains("MyCustomException").doesNotContain("MyCustomError");
+    assertThat(
+            items.stream()
+                .filter(item -> item.getLabel().equals("MyCustomException"))
+                .findFirst()
+                .orElseThrow()
+                .getAdditionalTextEdits())
+        .extracting(TextEdit::getNewText)
+        .anyMatch(text -> text.contains("import com.example.MyCustomException;"));
   }
 
   // ── argument position: importable types ───────────────────────────────────────
