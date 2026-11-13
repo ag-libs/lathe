@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Properties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -91,6 +92,24 @@ class OpenJdkSyncTest {
         .extracting(SourceStamp::content)
         .isNull();
     assertThat(LatheLayout.reactorLockFile(latheDir)).doesNotExist();
+  }
+
+  @Test
+  void sync_moduleNoLongerBuilt_dropsItsCaptureKeepsTheRestAndIgnoresLatheDir() throws IOException {
+    OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
+    assertThat(capturedDirs()).containsExactlyInAnyOrder("java.base", "BUILD_TOOLS");
+
+    Files.delete(build.resolve("jdk/modules/java.base/_the.java.base_batch.cmdline"));
+    OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
+
+    assertThat(capturedDirs()).containsExactly("BUILD_TOOLS");
+    assertThat(latheDir.resolve(".gitignore")).hasContent("*");
+  }
+
+  private List<String> capturedDirs() throws IOException {
+    return FileUtil.walkFiles(latheDir, LatheLayout::isParamsFile).stream()
+        .map(params -> params.getParent().getFileName().toString())
+        .toList();
   }
 
   @Test

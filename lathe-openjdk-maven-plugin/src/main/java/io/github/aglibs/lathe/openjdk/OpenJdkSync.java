@@ -12,9 +12,11 @@ import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.install.CapturePruner;
 import io.github.aglibs.lathe.install.CompileCapture;
 import io.github.aglibs.lathe.install.SyncScript;
 import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
+import io.github.aglibs.lathe.install.WorkspaceSync;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,7 +27,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 // The OpenJDK-native .lathe/: per-module params and stamps (MODULE_SYSTEM), the build
@@ -81,9 +85,21 @@ public final class OpenJdkSync {
     writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
     WorkspaceManifestWriter.writeJavaHome(latheDir(workspaceRoot), explodedJdk);
     syncScript.write(workspaceRoot);
+    WorkspaceSync.writeGitignore(workspaceRoot);
+    // Every built module and tool is read on each sync, so one no longer built loses its capture.
+    CapturePruner.prune(workspaceRoot, captures(moduleCmdlines, toolCmdlines));
     log.accept(
         "[sync] %d module(s) + %d tool(s) -> %s"
             .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));
+  }
+
+  // Each captured module's and tool's directory in .lathe/, to its one source tree.
+  private static Map<Path, Set<String>> captures(
+      final List<Path> moduleCmdlines, final List<Path> toolCmdlines) {
+    return Stream.concat(
+            moduleCmdlines.stream().map(cmdline -> cmdline.getParent().getFileName()),
+            toolCmdlines.stream().map(cmdline -> Path.of(batchName(cmdline))))
+        .collect(Collectors.toUnmodifiableMap(dir -> dir, dir -> Set.of(SOURCE_TREE)));
   }
 
   // Runs the whole sync, the server install included, under .lathe/'s build lock, heartbeated so
