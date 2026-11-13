@@ -84,6 +84,7 @@ public final class TextMentions {
 
   static List<Location> literals(
       final Trees trees, final CompilationUnitTree cu, final Tree scope, final String name) {
+    final String uri = LatheUri.canonical(cu.getSourceFile().toUri().toString());
     final var found = new ArrayList<Location>();
     new TreeScanner<Void, Void>() {
       @Override
@@ -95,9 +96,7 @@ public final class TextMentions {
           }
 
           final Position at = Positions.offsetToPosition(cu, start);
-          found.add(
-              new Location(
-                  LatheUri.canonical(cu.getSourceFile().toUri().toString()), new Range(at, at)));
+          found.add(new Location(uri, new Range(at, at)));
         }
 
         return null;
