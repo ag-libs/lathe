@@ -111,7 +111,7 @@ end
 --- a missing client or an empty/failed discovery leaves the buffer without run signs rather
 --- than erroring.
 function M.refresh_signs(bufnr)
-  local client = lathe_client()
+  local client = lathe_client(bufnr)
   if not client then
     return
   end
@@ -241,7 +241,7 @@ end
 --- main). Files with no main defer to neotest for tests -- this surface is main-only.
 function M.run(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = lathe_client()
+  local client = lathe_client(bufnr)
   if not client then
     notify("server not attached to this buffer", vim.log.levels.WARN)
     return
@@ -355,7 +355,7 @@ end
 --- bang) replaces an existing entry instead of refusing.
 function M.save(name, overwrite)
   local bufnr = vim.api.nvim_get_current_buf()
-  local client = lathe_client()
+  local client = lathe_client(bufnr)
   if not client then
     notify("server not attached to this buffer", vim.log.levels.WARN)
     return
