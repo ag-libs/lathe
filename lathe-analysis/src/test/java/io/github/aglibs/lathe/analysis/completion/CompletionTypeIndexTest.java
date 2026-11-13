@@ -102,7 +102,8 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                 tmp.resolve("index.json"),
                 CompletionFixture.typeEntry("Dog", "Dog", TypeKind.CLASS, List.of("Animal")),
                 CompletionFixture.typeEntry("Puppy", "Puppy", TypeKind.CLASS, List.of("Dog")),
-                CompletionFixture.typeEntry("Pet", "Pet", TypeKind.CLASS, List.of("Animal"))));
+                CompletionFixture.typeEntry("Pet", "Pet", TypeKind.CLASS, List.of("Animal")),
+                CompletionFixture.typeEntry("Cat", "Cat", TypeKind.CLASS, List.of("Animal"))));
 
     final List<String> offered =
         labels(
@@ -112,6 +113,7 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                 sealed class Dog implements Animal permits Puppy {}
                 final class Puppy extends Dog {}
                 abstract class Pet implements Animal {}
+                class Cat implements Animal { private Cat() {} }
                 class Test {
                     void m() {
                         Animal a = new §
@@ -119,8 +121,9 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                 }"""));
 
     // The expected type leads, then its concrete subtypes; abstract Pet only comes later, among all
-    // types, for an anonymous class.
+    // types, for an anonymous class, and Cat, whose constructor Test may not call, not at all.
     assertThat(offered.subList(0, 3)).containsExactlyInAnyOrder("Animal", "Dog", "Puppy");
+    assertThat(offered).doesNotContain("Cat");
   }
 
   // A nested type completes by its simple name and is written as code there names it: from its
