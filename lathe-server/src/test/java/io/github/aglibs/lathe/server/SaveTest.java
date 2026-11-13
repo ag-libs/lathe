@@ -15,8 +15,6 @@ import static org.mockito.Mockito.verify;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.LatheLock;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
@@ -296,9 +294,7 @@ class SaveTest extends ServiceTestBase {
   // all: the first save's pass waits for the lock and every later save joins it, so they share one
   // pass however slowly this thread runs.
   private void whileWriteLockHeld(final IOUtil.IORunnable work) throws Exception {
-    final Closeable otherServer =
-        LatheLock.tryExclusive(LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR)))
-            .orElseThrow();
+    final Closeable otherServer = holdWriteLock();
     try {
       work.run();
       awaitWorkerIdle();

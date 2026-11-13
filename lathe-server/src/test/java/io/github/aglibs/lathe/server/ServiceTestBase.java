@@ -5,12 +5,17 @@ import static org.mockito.Mockito.mock;
 
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.format.FormatEngine;
+import java.io.Closeable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -45,6 +50,7 @@ abstract class ServiceTestBase {
   // How long a test waits for the server's answer: a deadline for a busy machine, not a delay.
   protected static final long TIMEOUT_S = 5;
   protected static final long TIMEOUT_MS = TimeUnit.SECONDS.toMillis(TIMEOUT_S);
+  private static final long WRITE_LOCK_POLL_MS = 20;
   // How long a test watches for a call that must not come, such as a duplicate publish: a fixed
   // wait, unlike TIMEOUT_MS, so as short as still catches a late one on a busy machine.
   protected static final long QUIET_WINDOW_MS = 1_500;
@@ -128,6 +134,27 @@ abstract class ServiceTestBase {
   // module's thread, whose publish then landed after the test's next step.
   protected void awaitWorkerIdle() throws Exception {
     host.onLoopFuture(WorkspaceSession::workersDrained).get(TIMEOUT_S, TimeUnit.SECONDS);
+  }
+
+  // .lathe/'s write lock, held as another server would. The server's own write pass, a save's or
+  // its
+  // change scan's, may hold it a moment, so a single try raced with it: wait for it to let go.
+  protected Closeable holdWriteLock() throws Exception {
+    final Path lock = LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR));
+    final var waited = Stopwatch.start();
+    while (true) {
+      final Optional<Closeable> held = LatheLock.tryExclusive(lock);
+      if (held.isPresent()) {
+        return held.get();
+      }
+
+      if (waited.elapsedMs() > TIMEOUT_MS) {
+        throw new AssertionError(
+            "the server still holds %s after %d ms".formatted(lock, TIMEOUT_MS));
+      }
+
+      IOUtil.sleep(WRITE_LOCK_POLL_MS);
+    }
   }
 
   // A reconcile pass runs after initialize on the event loop, so startup reconciliation is finished
