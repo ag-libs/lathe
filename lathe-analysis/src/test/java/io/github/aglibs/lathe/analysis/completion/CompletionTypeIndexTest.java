@@ -94,6 +94,35 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
     assertThat(items.get(0).getLabel()).isEqualTo("ArrayDeque");
   }
 
+  @Test
+  void constructorCall_expectedType_offersConcreteSubtypesSealedOrNot() throws IOException {
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"),
+                CompletionFixture.typeEntry("Dog", "Dog", TypeKind.CLASS, List.of("Animal")),
+                CompletionFixture.typeEntry("Puppy", "Puppy", TypeKind.CLASS, List.of("Dog")),
+                CompletionFixture.typeEntry("Pet", "Pet", TypeKind.CLASS, List.of("Animal"))));
+
+    final List<String> offered =
+        labels(
+            localFixture.complete(
+                """
+                interface Animal {}
+                sealed class Dog implements Animal permits Puppy {}
+                final class Puppy extends Dog {}
+                abstract class Pet implements Animal {}
+                class Test {
+                    void m() {
+                        Animal a = new §
+                    }
+                }"""));
+
+    // The expected type leads, then its concrete subtypes; abstract Pet only comes later, among all
+    // types, for an anonymous class.
+    assertThat(offered.subList(0, 3)).containsExactlyInAnyOrder("Animal", "Dog", "Puppy");
+  }
+
   // A nested type completes by its simple name and is written as code there names it: from its
   // top-level type, which is imported, never the nested type itself; by its simple name where the
   // file already sees it (an import of it, an inherited member type); fully qualified where the

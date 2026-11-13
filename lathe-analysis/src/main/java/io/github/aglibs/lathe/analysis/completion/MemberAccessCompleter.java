@@ -13,9 +13,7 @@ import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -241,10 +239,7 @@ final class MemberAccessCompleter {
       return null;
     }
 
-    final var kind = typeEl.getKind();
-    if ((kind != ElementKind.CLASS && kind != ElementKind.RECORD)
-        || typeEl.getModifiers().contains(Modifier.ABSTRACT)
-        || typeEl.getModifiers().contains(Modifier.SEALED)) {
+    if (!TypeReferenceCompleter.directlyInstantiable(typeEl)) {
       return null;
     }
 

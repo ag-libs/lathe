@@ -465,10 +465,12 @@ final class TypeReferenceCompleter {
     return entry.kind() == TypeKind.CLASS || entry.kind() == TypeKind.RECORD;
   }
 
-  private static boolean directlyInstantiable(final TypeElement typeEl) {
+  // `new X()` or `X::new` is legal: a concrete class or record. A sealed class may be concrete;
+  // only
+  // an anonymous subclass of it (`new X() {}`) is illegal.
+  static boolean directlyInstantiable(final TypeElement typeEl) {
     return (typeEl.getKind() == ElementKind.CLASS || typeEl.getKind() == ElementKind.RECORD)
-        && !typeEl.getModifiers().contains(Modifier.ABSTRACT)
-        && !typeEl.getModifiers().contains(Modifier.SEALED);
+        && !typeEl.getModifiers().contains(Modifier.ABSTRACT);
   }
 
   private static CompletionOutcome incompleteEmptyConstructorPrefix(
