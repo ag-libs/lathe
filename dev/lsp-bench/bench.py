@@ -442,11 +442,12 @@ def references_count(client, repo, case, timeout):
 
 
 def finds_type(client, name, path, timeout):
-    """Whether workspace symbol search finds the type declared in that file."""
+    """Whether workspace symbol search finds the type declared in that file; None when the search
+    fails, which matches neither answer (a timeout must not read as the type gone)."""
     try:
         found = client.request("workspace/symbol", {"query": name}, timeout=timeout) or []
-    except Exception:  # a refused or timed-out search finds nothing
-        return False
+    except Exception:  # a refused or timed-out search
+        return None
     return any(s.get("name") == name and urllib.parse.unquote((s.get("location") or {}).get("uri", "")).endswith(path)
                for s in found)
 
@@ -478,7 +479,7 @@ def switch_checks(repo, project, ref, pin):
 
     best = None
     for _main_first, path in modified[:40]:
-        declared = next((m.group(2) for m in map(TYPE_DECLARATION.match, (repo / path).read_text().splitlines()) if m),
+        declared = next((m.group(2) for m in map(TYPE_DECLARATION.match, (repo / path).read_text(encoding="utf-8").splitlines()) if m),
                         None)
         if declared:
             change = abs(uses(declared, ref) - uses(declared, pin))
@@ -486,7 +487,7 @@ def switch_checks(repo, project, ref, pin):
                 best = (change, path, declared)
     _change, used_path, used = best
     # Kind and name only: the rest of the declaration line may differ between the two commits.
-    kind = next(m.group(1) for m in map(TYPE_DECLARATION.match, (repo / used_path).read_text().splitlines())
+    kind = next(m.group(1) for m in map(TYPE_DECLARATION.match, (repo / used_path).read_text(encoding="utf-8").splitlines())
                 if m and m.group(2) == used)
     return {"added": added, "deleted": deleted, "watched": watched,
             "references": {"name": "references: %s" % used, "method": "textDocument/references",
@@ -516,22 +517,22 @@ def checkout(repo, rev, reapply):
     reapply()
 
 
-def reload(client, repo, opened, closed):
-    """The open buffers after a checkout, as Neovim reloads them: a file gone is closed, one back
-    reopened; returns the files now closed."""
-    now_closed = set()
-    for path in opened:
-        uri, exists = Q.uri(repo, path), (repo / path).exists()
-        if not exists:
-            if path not in closed:
-                client.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
-            now_closed.add(path)
-        elif path in closed:
+def reload(client, repo, texts):
+    """The open buffers after a checkout, as Neovim reloads them: only a file whose text changed, a
+    file gone closed, one back reopened. texts maps each buffer to its text (None: closed); updated."""
+    for path, text in texts.items():
+        uri, file = Q.uri(repo, path), repo / path
+        now = file.read_text(encoding="utf-8") if file.exists() else None
+        if now == text:
+            continue
+        if now is None:
+            client.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
+        elif text is None:
             client.notify("textDocument/didOpen", {"textDocument": {"uri": uri, "languageId": "java", "version": 1,
-                                                                      "text": (repo / path).read_text(encoding="utf-8")}})
+                                                                      "text": now}})
         else:
-            Q.change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
-    return now_closed
+            Q.change(client, repo, path, now)
+        texts[path] = now
 
 
 def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
@@ -546,15 +547,18 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
     for path in dict.fromkeys((checks["watched"], checks["references"]["at"][0])):
         if path not in opened:
             client.notify("textDocument/didOpen", {"textDocument": {"uri": Q.uri(repo, path), "languageId": "java",
-                                                                      "version": 1, "text": (repo / path).read_text()}})
+                                                                      "version": 1,
+                                                                      "text": (repo / path).read_text(encoding="utf-8")}})
             opened.append(path)
+    texts = {path: (repo / path).read_text(encoding="utf-8") for path in opened}
     # The answers just before the switch: a check whose answer does not change tells nothing.
     before = switch_answers(client, repo, checks, args.request_timeout)
     polls = []
-    start = time.monotonic()
     checkout(repo, ref, reapply)
+    # From the checkout's return, as the user sees it; the benchmark's own edits differ per server.
+    start = time.monotonic()
     try:
-        closed = reload(client, repo, opened, set())
+        reload(client, repo, texts)
         while time.monotonic() - start < SWITCH_DEADLINE_S:
             # Stamped when the round of queries ends: the moment its answers were all there.
             answers = switch_answers(client, repo, checks, args.request_timeout)
@@ -570,7 +574,7 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
     # Back at the pin, the server must catch up again before it stops: what it saves is the warm
     # run's start, and a warm run that starts from the older commit's index measures nothing.
     back = time.monotonic()
-    reload(client, repo, opened, closed)
+    reload(client, repo, texts)
     back_ms, back_answers = None, None
     while time.monotonic() - back < SWITCH_DEADLINE_S:
         back_answers = switch_answers(client, repo, checks, args.request_timeout)
@@ -591,7 +595,9 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
             "polls": len(polls), "changed": [b != e for b, e in zip(before, expected)],
             "added_type_ms": settled(1), "deleted_type_ms": settled(2), "references_ms": settled(3),
             "diagnostics_ms": settled(4), "back_ms": back_ms,
-            "back_answers": back_answers}
+            "back_answers": back_answers,
+            # Each poll's (s, answers), when an answer changed: what a "never" went through.
+            "changes": [(round(p[0], 1),) + p[1:] for i, p in enumerate(polls) if i == 0 or p[1:] != polls[i - 1][1:]]}
 
 
 def wait_quiet(client, deadline_s):
@@ -608,12 +614,20 @@ def wait_quiet(client, deadline_s):
     return (time.monotonic() - start) * 1000
 
 
-def until_errors(client, target, ok, deadline_s):
-    """Ms from now until the file's last published errors satisfy ok; None at the deadline."""
+def until_errors(client, target, ok, deadline_s, hold_s=0.0, origin=None):
+    """Ms from origin (default now) until the file's last published errors satisfy ok and keep doing
+    so for hold_s; None at the deadline."""
     start = time.monotonic()
+    origin = start if origin is None else origin
+    since = None
     while time.monotonic() - start < deadline_s:
-        if ok(errors_in(client, target)):
-            return (time.monotonic() - start) * 1000
+        now = time.monotonic()
+        if not ok(errors_in(client, target)):
+            since = None
+        elif since is None:
+            since = now
+        if since is not None and now - since >= hold_s:
+            return (since - origin) * 1000
         time.sleep(0.2)
     return None
 
@@ -670,13 +684,15 @@ def build_change(client, repo, project, cases, update, log):
     try:
         Q.change(client, repo, path, original.replace(change["anchor"], change["anchor"] + change["use"], 1), save=True)
         result["error_shown_ms"] = until_errors(client, target, lambda n: bool(n), BUILD_DEADLINE_S)
+        while not client.prompts.empty():  # a prompt from before the change is not its prompt
+            client.prompts.get_nowait()
         start = time.monotonic()
         build_file.write_text(built.replace(change["after"], change["after"] + change["insert"], 1), encoding="utf-8")
         result.update(update(client, repo, project, log))
-        # From the build file's change: the user's step is part of the wait.
-        fixed = until_errors(client, target, lambda n: n == 0, BUILD_DEADLINE_S)
-        result["fixed_ms"] = None if fixed is None else (time.monotonic() - start) * 1000
-        if fixed is None:
+        # From the build file's change: the user's step is part of the wait. Settled, as a typed
+        # error's: a server may clear a file's diagnostics before it compiles it again.
+        result["fixed_ms"] = until_errors(client, target, lambda n: n == 0, BUILD_DEADLINE_S, SETTLED_S, start)
+        if result["fixed_ms"] is None:
             published = [m["params"] for _, m in client.diagnostics.times if m["params"].get("uri") == target]
             result["errors_left"] = [d["message"] for d in published[-1]["diagnostics"] if d.get("severity") == 1]
     finally:
@@ -850,9 +866,10 @@ def seconds(ms):
 def summary_line(result):
     switch = result.get("branch_switch")
     if switch:
-        return "branch switch: added type gone %s, deleted type found %s, references %s, errors %s  %s" % (
-            seconds(switch["added_type_ms"]), seconds(switch["deleted_type_ms"]), seconds(switch["references_ms"]),
-            seconds(switch["diagnostics_ms"]), result.get("error") or "")
+        took = [seconds(switch[k]) if changed else "unchanged" for k, changed in
+                zip(("added_type_ms", "deleted_type_ms", "references_ms", "diagnostics_ms"), switch["changed"])]
+        return "branch switch: added type gone %s, deleted type found %s, references %s, errors %s, back %s  %s" % (
+            *took, seconds(switch["back_ms"]), result.get("error") or "")
     build = result.get("build_change")
     if build:
         return "build-file change: error shown %s, prompt %s, step %s (exit %s), no error %s  %s" % (
