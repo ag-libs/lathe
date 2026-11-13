@@ -10040,6 +10040,32 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-34 — After a sync, an open file keeps the error its last save reported against the old build — done
+
+**Status: done.**
+
+**Affects: diagnostics in the editor after a build-file change and its sync.**
+
+Found by the jdtls comparison harness (2026-11-13) on Dropwizard: a dependency added to `dropwizard-core/pom.xml` and one of its classes used in the open, saved `Application.java`.
+The prompted sync succeeded and the server reloaded, recompiling the file with no error, yet the client kept `package org.jdbi.v3.core does not exist` for the 10 minutes the harness waited: in the editor, until the file is edited.
+
+### Cause
+
+A save's write pass compiles the file into `.lathe/` and keeps what that compile reported and analysis cannot (an annotation processor's messages), keyed by the content written, to merge into each later publish of that content (`WorkspaceSession.withWriteDiagnostics`).
+The save's compile ran against the old classpath, so it reported the missing package.
+The sync's own build then compiled the file with the new dependency, so no later write pass found it stale and replaced the kept report, and the buffer still held the written content: every publish after the reload merged the old build's error back in.
+
+### Resolution
+
+A reload drops the kept write reports: the sync that changed the build compiled the sources against it, and the next save's write reports afresh.
+
+### Regression targets
+
+- `SaveTest.didSave_syncReloadsWithAnotherBuild_writeReportGoneFromThePublish` (fails without the fix: the reload republishes the old build's processor warning)
+- `dev/lsp-bench` `--scenario build` (the file using the new dependency has no error after the sync)
+
+---
+
 ## WS-26 — A second agent session can answer from stale state while the first one writes — done
 
 **Status: done.**

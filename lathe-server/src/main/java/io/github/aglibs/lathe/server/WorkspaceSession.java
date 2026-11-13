@@ -761,6 +761,9 @@ final class WorkspaceSession {
     }
 
     refreshReactorTypeIndex();
+    // What the last write reported came from the old build: the sync that changed the build also
+    // compiled the sources, so no later write replaces it.
+    writeDiagnostics.clear();
     refreshOpenDocuments();
     old.close();
     scheduleAllOpenFiles();
