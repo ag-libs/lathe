@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -212,43 +213,6 @@ class WorkspaceSymbolTest {
     assertThat(result.get(0).getName()).isEqualTo("Remote");
   }
 
-  // --- resolveSourcePath: source path resolution ---
-
-  @Test
-  void resolveSourcePath_innerClass_resolvesToOuterFile() throws IOException {
-    createSourceFile("com.example", "Outer");
-    final var innerEntry =
-        new TypeIndexEntry(
-            "Inner", "com.example.Outer$Inner", "com.example", TypeKind.CLASS, true, List.of());
-    final Path result = WorkspaceSymbolResolver.resolveSourcePath(innerEntry, List.of(src));
-    assertThat(result).isNotNull();
-    assertThat(result.getFileName().toString()).isEqualTo("Outer.java");
-  }
-
-  @Test
-  void resolveSourcePath_noMatchingDir_returnsNull() {
-    final var e = entry("Ghost", "com.missing");
-    assertThat(WorkspaceSymbolResolver.resolveSourcePath(e, List.of(src))).isNull();
-  }
-
-  @Test
-  void resolveSourcePath_jdkModuleSubdir_resolvesInsideModuleDir(@TempDir final Path jdkRoot)
-      throws IOException {
-    // JDK sources are organized by module: <jdkRoot>/<module>/<package>/<Type>.java
-    // LibrarySources.jdkModuleSourceDirs() expands jdkRoot into its immediate module subdirs,
-    // so resolveSourcePath receives each module dir (e.g. java.base/) as a separate source root
-    final Path moduleDir = jdkRoot.resolve("java.base/java/util");
-    Files.createDirectories(moduleDir);
-    Files.writeString(moduleDir.resolve("ArrayList.java"), "");
-    final var jdkEntry =
-        new TypeIndexEntry(
-            "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of());
-    final Path result =
-        WorkspaceSymbolResolver.resolveSourcePath(jdkEntry, List.of(jdkRoot.resolve("java.base")));
-    assertThat(result).isNotNull();
-    assertThat(result.getFileName().toString()).isEqualTo("ArrayList.java");
-  }
-
   // --- reactor: package-private types ---
 
   @Test
@@ -304,9 +268,47 @@ class WorkspaceSymbolTest {
   }
 
   @Test
-  void resolve_class_fallsBackToFileStartWhenNoSource() {
+  void resolve_nestedTypesSharingAName_rangesOnTheNamedOne() throws IOException {
+    final Path dir = src.resolve("com/example");
+    Files.createDirectories(dir);
+    Files.writeString(
+        dir.resolve("Api.java"),
+        """
+        package com.example;
+        class Api {
+          static class Request { static class Builder {} }
+          static class Response { static class Builder {} }
+        }
+        """);
+    final var index =
+        indexOf(
+            new TypeIndexEntry(
+                "Builder",
+                "com.example.Api$Request$Builder",
+                "com.example",
+                TypeKind.CLASS,
+                true,
+                List.of()),
+            new TypeIndexEntry(
+                "Builder",
+                "com.example.Api$Response$Builder",
+                "com.example",
+                TypeKind.CLASS,
+                true,
+                List.of()));
+
+    assertThat(WorkspaceSymbolResolver.resolve("Builder", index, List.of(src), entry -> true))
+        .extracting(
+            SymbolInformation::getContainerName,
+            symbol -> symbol.getLocation().getRange().getStart().getLine())
+        .containsExactlyInAnyOrder(
+            tuple("com.example.Api.Request", 2), tuple("com.example.Api.Response", 3));
+  }
+
+  @Test
+  void resolve_noSourceFile_returnsEmpty() {
     final var index = indexOf(entry("Ghost", "com.example"));
-    // no source file → resolveSourcePath returns null → result is empty (not FILE_START fallback)
+    // no source file → result is empty (not FILE_START fallback)
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Ghost", index, List.of(src), entry -> true);
     assertThat(result).isEmpty();

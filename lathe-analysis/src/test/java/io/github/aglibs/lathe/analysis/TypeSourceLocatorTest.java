@@ -84,6 +84,31 @@ class TypeSourceLocatorTest {
     assertThat(TypeSourceLocator.isNamedDeclaration(entry("com.example.Outer$1"))).isFalse();
   }
 
+  @Test
+  void findSourceFile_nestedType_resolvesToTheTopLevelFile() throws IOException {
+    final Path outer = write("com/example/Outer.java", "");
+
+    assertThat(
+            TypeSourceLocator.findSourceFile(entry("com.example.Outer$Inner"), List.of(sourceRoot)))
+        .contains(outer);
+    assertThat(TypeSourceLocator.findSourceFile(entry("com.missing.Ghost"), List.of(sourceRoot)))
+        .isEmpty();
+  }
+
+  // JDK sources are laid out by module (<jdkRoot>/<module>/<package>/<Type>.java), and each module
+  // dir (java.base/) is passed as a source root of its own.
+  @Test
+  void findSourceFile_jdkModuleDir_resolvesInsideIt(@TempDir final Path jdkRoot)
+      throws IOException {
+    final Path moduleDir = jdkRoot.resolve("java.base");
+    final Path arrayList = moduleDir.resolve("java/util/ArrayList.java");
+    Files.createDirectories(arrayList.getParent());
+    Files.writeString(arrayList, "");
+
+    assertThat(TypeSourceLocator.findSourceFile(entry("java.util.ArrayList"), List.of(moduleDir)))
+        .contains(arrayList);
+  }
+
   private Path write(final String relativePath, final String content) throws IOException {
     final var file = sourceRoot.resolve(relativePath);
     Files.createDirectories(file.getParent());

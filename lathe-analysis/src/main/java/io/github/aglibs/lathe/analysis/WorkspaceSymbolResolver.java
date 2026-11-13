@@ -1,16 +1,12 @@
 package io.github.aglibs.lathe.analysis;
 
-import com.sun.source.tree.ClassTree;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Optional;
 import java.util.function.Predicate;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -35,17 +31,11 @@ public final class WorkspaceSymbolResolver {
     }
 
     final List<TypeIndexEntry> entries = mergedEntries(query, typeIndex, keep);
-    final var results = new ArrayList<SymbolInformation>();
     try (var parser = new SourceParser()) {
-      for (final TypeIndexEntry entry : entries) {
-        final SymbolInformation info = toSymbolInformation(entry, sourceDirs, parser);
-        if (info != null) {
-          results.add(info);
-        }
-      }
+      return entries.stream()
+          .flatMap(entry -> toSymbolInformation(entry, sourceDirs, parser).stream())
+          .toList();
     }
-
-    return List.copyOf(results);
   }
 
   // Exact prefix search over the symbol index covers everything (JDK, dependencies, reactor),
@@ -53,7 +43,7 @@ public final class WorkspaceSymbolResolver {
   // CamelCase-hump matching is a supplementary, reactor-only layer on top, so a type like
   // AbstractServerFactory is still reachable via "ServerFactory" or "ASF" even though it doesn't
   // start with either. Prefix matches win on overlap; the combined list stays capped at
-  // SEARCH_LIMIT so the per-entry declarationRange parse cost is unchanged from before.
+  // SEARCH_LIMIT so the per-entry parse cost is unchanged from before.
   private static List<TypeIndexEntry> mergedEntries(
       final String query,
       final WorkspaceTypeIndex typeIndex,
@@ -111,15 +101,19 @@ public final class WorkspaceSymbolResolver {
     return container.equals(qualifier) || container.endsWith(".%s".formatted(qualifier));
   }
 
-  private static SymbolInformation toSymbolInformation(
+  // The declaration's name, matched by its nested name (Api$Response$Builder, not the file's first
+  // Builder), else the file's start: the file is found but declares no such type by name.
+  private static Optional<SymbolInformation> toSymbolInformation(
       final TypeIndexEntry entry, final List<Path> sourceDirs, final SourceParser parser) {
-    final Path file = resolveSourcePath(entry, sourceDirs);
-    if (file == null) {
-      return null;
-    }
+    return TypeSourceLocator.locate(entry, sourceDirs, parser)
+        .or(
+            () ->
+                TypeSourceLocator.findSourceFile(entry, sourceDirs)
+                    .map(file -> new Location(LatheUri.fromPath(file), FILE_START)))
+        .map(location -> symbol(entry, location));
+  }
 
-    final var range = declarationRange(file, entry.simpleName(), parser);
-    final var location = new Location(file.toUri().toString(), range);
+  private static SymbolInformation symbol(final TypeIndexEntry entry, final Location location) {
     final var info =
         new SymbolInformation(
             entry.simpleName(), SymbolKinds.fromTypeIndex(entry.kind()), location);
@@ -137,42 +131,5 @@ public final class WorkspaceSymbolResolver {
     }
 
     return binaryName.substring(0, lastNesting).replace('$', '.');
-  }
-
-  private static Range declarationRange(
-      final Path file, final String simpleName, final SourceParser parser) {
-    return parser
-        .parseFile(
-            file,
-            (trees, cu) -> {
-              final var path = classPath(cu, simpleName);
-              try {
-                return DeclarationNames.declarationNamePosition(trees, cu, path, simpleName)
-                    .map(pos -> new Range(pos, pos))
-                    .orElse(FILE_START);
-              } catch (final IOException e) {
-                return FILE_START;
-              }
-            })
-        .orElse(FILE_START);
-  }
-
-  private static TreePath classPath(final CompilationUnitTree cu, final String simpleName) {
-    final var result = new AtomicReference<TreePath>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitClass(final ClassTree tree, final Void unused) {
-        if (result.get() == null && tree.getSimpleName().contentEquals(simpleName)) {
-          result.set(getCurrentPath());
-        }
-
-        return super.visitClass(tree, unused);
-      }
-    }.scan(cu, null);
-    return result.get();
-  }
-
-  static Path resolveSourcePath(final TypeIndexEntry entry, final List<Path> sourceDirs) {
-    return TypeSourceLocator.findSourceFile(entry, sourceDirs).orElse(null);
   }
 }
