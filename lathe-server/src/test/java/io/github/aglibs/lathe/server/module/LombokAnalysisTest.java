@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.server.LombokFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
@@ -255,7 +256,7 @@ class LombokAnalysisTest {
               2,
               Positions.offsetToPosition(typing, typing.indexOf("p.get") + "p.get".length()),
               null,
-              WorkspaceTypeIndex.build(List.of(), List.of()),
+              WorkspaceTypeIndex.build(List.of(), Map.of()),
               List.of(),
               LearnedStaticImports.empty());
 

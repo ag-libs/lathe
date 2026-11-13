@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -82,7 +83,7 @@ final class ReactorTypeIndex {
     reactorLambdaShards.clear();
     scanReactorShards();
     typeIndex =
-        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), reactorShards.values())
+        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), shardsByTree())
             .withUsageCounts(reactorUsageCounts);
   }
 
@@ -98,15 +99,32 @@ final class ReactorTypeIndex {
   }
 
   // The index with the given types of open files added, for a code action that must see types no
-  // build has written yet.
-  CompletableFuture<WorkspaceTypeIndex> withOpenEntries(final List<TypeIndexEntry> openEntries) {
+  // build has written yet; they count as declared in `tree`, the tree asking.
+  CompletableFuture<WorkspaceTypeIndex> withOpenEntries(
+      final Path tree, final List<TypeIndexEntry> openEntries) {
     eventLoop.checkOnLoop();
     if (openEntries.isEmpty()) {
       return CompletableFuture.completedFuture(typeIndex);
     }
 
-    return buildOffLoop(
-        typeIndex, Stream.concat(reactorShards.values().stream(), Stream.of(openEntries)).toList());
+    final var shards = new LinkedHashMap<>(shardsByTree());
+    shards.merge(tree, openEntries, ReactorTypeIndex::concat);
+    return buildOffLoop(typeIndex, shards);
+  }
+
+  // The shards keyed by their tree's classes dir, as WorkspaceTypeIndex takes them; two configs on
+  // one classes dir share a shard.
+  private Map<Path, List<TypeIndexEntry>> shardsByTree() {
+    final var byTree = new LinkedHashMap<Path, List<TypeIndexEntry>>();
+    reactorShards.forEach(
+        (config, entries) ->
+            byTree.merge(config.latheClassesDir(), entries, ReactorTypeIndex::concat));
+    return Collections.unmodifiableMap(byTree);
+  }
+
+  private static List<TypeIndexEntry> concat(
+      final List<TypeIndexEntry> first, final List<TypeIndexEntry> second) {
+    return Stream.concat(first.stream(), second.stream()).toList();
   }
 
   // Binary names are unique within a compile, not across the workspace.
@@ -170,7 +188,8 @@ final class ReactorTypeIndex {
               .toList();
       if (!entries.isEmpty()) {
         final WorkspaceTypeIndex index =
-            WorkspaceTypeIndex.empty().withReactorEntries(List.of(entries));
+            WorkspaceTypeIndex.empty()
+                .withReactorEntries(Map.of(shard.getKey().latheClassesDir(), entries));
         results.addAll(
             WorkspaceSymbolResolver.resolve(
                 query, index, shard.getKey().searchRoots(), entry -> true));
@@ -357,7 +376,7 @@ final class ReactorTypeIndex {
     reactorIndexStale = false;
     reactorLambdaImplementors = mergeLambdaShards();
     final WorkspaceTypeIndex base = typeIndex;
-    final List<List<TypeIndexEntry>> shards = List.copyOf(reactorShards.values());
+    final Map<Path, List<TypeIndexEntry>> shards = shardsByTree();
     final long build = ++reactorIndexBuilds;
     final var rebuilt = new CompletableFuture<Void>();
     reactorIndexRebuilt = rebuilt;
@@ -377,7 +396,7 @@ final class ReactorTypeIndex {
   // Built off the loop, as a build takes 100-200ms on a large reactor, and back on the loop with
   // the result.
   private CompletableFuture<WorkspaceTypeIndex> buildOffLoop(
-      final WorkspaceTypeIndex base, final List<List<TypeIndexEntry>> shards) {
+      final WorkspaceTypeIndex base, final Map<Path, List<TypeIndexEntry>> shards) {
     return eventLoop.rejoin(CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards)));
   }
 

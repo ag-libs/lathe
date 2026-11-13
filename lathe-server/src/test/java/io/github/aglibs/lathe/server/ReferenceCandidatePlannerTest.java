@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -57,7 +58,8 @@ class ReferenceCandidatePlannerTest {
   }
 
   private static WorkspaceTypeIndex reactorIndex(final TypeIndexEntry... entries) {
-    return WorkspaceTypeIndex.empty().withReactorEntries(List.of(List.of(entries)));
+    return WorkspaceTypeIndex.empty()
+        .withReactorEntries(TempSourceCompiler.reactorShards(List.of(entries)));
   }
 
   private static TypeIndexEntry entry(final String binaryName, final String... directSupertypes) {
@@ -456,7 +458,7 @@ class ReferenceCandidatePlannerTest {
     final var typeIndex =
         WorkspaceTypeIndex.empty()
             .withReactorEntries(
-                List.of(
+                TempSourceCompiler.reactorShards(
                     List.of(
                         new TypeIndexEntry(
                             "Checks",

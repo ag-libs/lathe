@@ -6,6 +6,8 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.IndexTypes;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -35,11 +37,11 @@ public final class ImportCandidates {
             entry ->
                 entry.simpleName().equals(simpleName)
                     && entry.isTopLevel()
-                    && !entry.packageName().isEmpty())
-        .map(entry -> "%s.%s".formatted(entry.packageName(), entry.simpleName()))
+                    && !entry.packageName().isEmpty()
+                    && !alreadyImported.contains(entry.binaryName()))
+        .filter(entry -> IndexTypes.usable(entry, analysis, scope, typeIndex))
+        .map(TypeIndexEntry::binaryName)
         .distinct()
-        .filter(fqName -> !alreadyImported.contains(fqName))
-        .filter(fqName -> isImportable(fqName, scope, analysis, typeIndex))
         .toList();
   }
 
@@ -69,20 +71,6 @@ public final class ImportCandidates {
             Objects::nonNull,
             t -> t.getEnclosingElement() instanceof final TypeElement outer ? outer : null)
         .allMatch(t -> t.getModifiers().contains(Modifier.PUBLIC));
-  }
-
-  private static boolean isImportable(
-      final String fqName,
-      final Scope scope,
-      final AttributedFileAnalysis analysis,
-      final WorkspaceTypeIndex typeIndex) {
-    final var typeEl = analysis.elements().getTypeElement(fqName);
-    if (typeEl == null) {
-      // A reactor type may have no class file yet (created but not synced); trust the index entry.
-      return typeIndex.isReactorType(fqName);
-    }
-
-    return scope == null || analysis.trees().isAccessible(scope, typeEl);
   }
 
   // The scope at a diagnostic's position; none where javac has no path there.

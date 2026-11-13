@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.analysis.StaticImportCandidates;
 import io.github.aglibs.lathe.analysis.Strings;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.IndexTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -707,7 +708,6 @@ public final class CompletionEngine {
 
     final TypeMirror type = expectedType.type();
 
-    final var validator = new TypeIndexValidator(context.analysis(), scope);
     final Set<String> existingStaticImports =
         context.analysis().tree() != null
             ? context.analysis().tree().getImports().stream()
@@ -718,7 +718,7 @@ public final class CompletionEngine {
 
     final var result = new ArrayList<CompletionCandidate>();
     for (final var entry : typeIndex.search(prefix, 200)) {
-      if (!validator.isResolvable(entry)) {
+      if (!IndexTypes.usable(entry, context.analysis(), scope, typeIndex)) {
         continue;
       }
 

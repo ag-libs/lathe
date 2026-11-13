@@ -28,7 +28,7 @@ class TypeHierarchyTest {
     final var index =
         WorkspaceTypeIndex.build(
             List.of(),
-            List.of(
+            TempSourceCompiler.reactorShards(
                 List.of(
                     entry("Parent", TypeKind.INTERFACE),
                     entry("Service", TypeKind.INTERFACE, "Parent"),
@@ -68,7 +68,7 @@ class TypeHierarchyTest {
     final var index =
         WorkspaceTypeIndex.build(
             List.of(),
-            List.of(
+            TempSourceCompiler.reactorShards(
                 List.of(
                     entry("Parent", TypeKind.INTERFACE),
                     entry("Service", TypeKind.INTERFACE, "Parent"),
@@ -104,7 +104,7 @@ class TypeHierarchyTest {
     final var index =
         WorkspaceTypeIndex.build(
             List.of(),
-            List.of(
+            TempSourceCompiler.reactorShards(
                 List.of(
                     entry("Service", TypeKind.INTERFACE),
                     entry("Direct", TypeKind.CLASS, "Service"),

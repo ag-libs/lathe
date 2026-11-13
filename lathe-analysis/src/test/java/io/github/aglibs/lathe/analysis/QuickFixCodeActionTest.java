@@ -794,7 +794,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
             TypeKind.CLASS,
             true,
             List.of());
-    final var reactorIndex = WorkspaceTypeIndex.build(List.of(), List.of(List.of(reactorEntry)));
+    final var reactorIndex =
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(reactorEntry)));
 
     final var source =
         """

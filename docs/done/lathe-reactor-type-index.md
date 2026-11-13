@@ -211,7 +211,7 @@ javac sees the exact classpath/modulepath for that source tree.
 The module compiler also places `config.latheClassesDir()` on `CLASS_PATH`.
 `CLASS_OUTPUT` controls where javac writes fresh `.class` files,
 but it is not enough for later completion validation to resolve already-compiled reactor classes.
-Putting the Lathe classes directory on `CLASS_PATH` lets `TypeIndexValidator` resolve same-module reactor candidates.
+Putting the Lathe classes directory on `CLASS_PATH` lets `IndexTypes` resolve same-module reactor candidates.
 
 This respects:
 
