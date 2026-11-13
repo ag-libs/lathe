@@ -106,6 +106,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Input
   public abstract Property<Boolean> getInferModulePath();
 
+  // The compile's own: with it on, a compile with errors stopped the build before this task.
+  @Input
+  public abstract Property<Boolean> getFailOnError();
+
   @OutputDirectory
   public Provider<Directory> getClassesMirror() {
     return getModuleDir().dir(getSourceTree());
@@ -139,7 +143,7 @@ public abstract class LatheCaptureTask extends DefaultTask {
     LatheLock.acquire(lock);
     try {
       CompileCapture.writeParams(moduleDir, config);
-      if (!compiled(config)) {
+      if (!getFailOnError().get() && !compiled(config)) {
         getLogger()
             .lifecycle(
                 "[lathe] {} compile failed; kept the last good capture", getSourceTree().get());
@@ -153,15 +157,14 @@ public abstract class LatheCaptureTask extends DefaultTask {
     }
   }
 
-  // Whether the compile wrote a class for every source it compiled. A compile with errors writes
-  // none for what it compiled, and with failOnError off (a personal setup's init script) Gradle
-  // runs
-  // this task as after a good one, so the mirror would record sources as built that have no
-  // classes, and the server would never compile them: keep the last good capture, as Maven's shim
-  // does. The compile's own sources, excludes applied: a file the build leaves out has no class. A
-  // source declaring only a type of another name, or in a folder that is not its package, reads as
-  // failed too, which costs the server a compile of its own, never a wrong mirror. module-info and
-  // package-info may compile to no class.
+  // Whether the compile wrote a class for every source it compiled, asked only with failOnError off
+  // (a personal setup's init script). A compile with errors writes none for what it compiled, and
+  // Gradle then runs this task as after a good one, so the mirror would record sources as built
+  // that have no classes, and the server would never compile them: keep the last good capture, as
+  // Maven's shim does. The compile's own sources, excludes applied: a file the build leaves out has
+  // no class. A source declaring only a type of another name, or in a folder that is not its
+  // package, reads as failed too, which costs the server a compile of its own, never a wrong
+  // mirror. module-info and package-info may compile to no class.
   private boolean compiled(final ModuleConfigData config) {
     final Path classes = Path.of(config.outputDir());
     final List<Path> roots = config.sourceRoots().stream().map(Path::of).toList();

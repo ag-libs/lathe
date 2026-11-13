@@ -37,6 +37,11 @@ class LatheCaptureTaskFunctionalTest {
                 "settings.gradle",
                 SETTINGS + "buildCache { local { directory = file(\"build-cache\") } }\n")
             .file("build.gradle", GradleFixture.JAVA)
+            // A file declaring a type of another name: a normal build stops on a compile error, so
+            // the
+            // capture trusts it and mirrors, without asking for a class per source.
+            .file(
+                "src/main/java/com/example/Helpers.java", "package com.example; class Helper {}\n")
             .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
             .file(
                 "src/test/java/com/example/AppTest.java",
@@ -60,6 +65,7 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(refilled.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.UP_TO_DATE);
     assertThat(refilled.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
     assertThat(refilledClasses).isTrue();
+    assertThat(dir.resolve(".lathe/classes/com/example/Helper.class")).exists();
     assertThat(failed.task(":latheCaptureMain")).isNull();
     assertThat(dir.resolve(".lathe/classes/com/example/App.class")).exists();
     assertThat(dir.resolve(".lathe/test-classes/com/example/AppTest.class")).exists();
