@@ -1177,6 +1177,54 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_missingMethodImpl_writesTheThrowsClauseAndImportsWhatTheStubWrites() {
+    // close() throws IOException: the stub declares it, as the contract does, and imports it.
+    final var source =
+        """
+        package com.example;
+        class Test implements java.io.Closeable, java.util.function.Supplier<java.util.List<String>> { }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .contains("import java.util.List;")
+        .contains("public List<String> get()")
+        .contains("import java.io.IOException;")
+        .contains("public void close() throws IOException")
+        .doesNotContain("public List<String> get() throws");
+    assertCompilesClean(rewritten);
+  }
+
+  // A generic method declares its type variables; methods inherited with one signature take one
+  // stub, throwing only what both allow (Quiet.close() allows nothing).
+  @Test
+  void codeAction_missingMethodImpl_genericAndSharedSignatures_stubsCompile() {
+    final var source =
+        """
+        package com.example;
+        interface Task { <X extends Exception> void run() throws X; }
+        interface Quiet { void close(); }
+        class Test implements Task, Quiet, java.io.Closeable { }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .contains("public <X extends Exception> void run() throws X")
+        .contains("public void close() {")
+        .doesNotContain("IOException");
+    assertThat(count(rewritten, "void close()")).isEqualTo(2);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
   void codeAction_finalBlankField_multipleConstructors_bindsEach() {
     // One empty and one one-arg constructor cover both parameter-insertion forms (into an empty and
     // a non-empty list) plus the binding into each body, so no separate single-constructor case is

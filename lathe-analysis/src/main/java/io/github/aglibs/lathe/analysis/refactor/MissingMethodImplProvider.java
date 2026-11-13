@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
 import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,8 +23,6 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.ExecutableType;
-import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -57,7 +56,8 @@ public final class MissingMethodImplProvider {
       return List.of();
     }
 
-    final List<ExecutableElement> unimplemented = collectUnimplemented(classElement, analysis);
+    final List<List<ExecutableElement>> unimplemented =
+        collectUnimplemented(classElement, analysis);
     if (unimplemented.isEmpty()) {
       return List.of();
     }
@@ -81,7 +81,8 @@ public final class MissingMethodImplProvider {
 
     final List<TextEdit> importEdits =
         names.importEditsFor(
-            unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));
+            unimplemented.stream()
+                .flatMap(stub -> MethodStubRenderer.signatureTypes(stub, classType, types)));
 
     final List<TextEdit> allEdits =
         Stream.concat(Stream.of(stubEdit), importEdits.stream()).toList();
@@ -119,7 +120,9 @@ public final class MissingMethodImplProvider {
     return scanner.scan(cu, null);
   }
 
-  private static List<ExecutableElement> collectUnimplemented(
+  // The abstract methods to implement, one list per stub: methods inherited with one signature
+  // share it.
+  private static List<List<ExecutableElement>> collectUnimplemented(
       final TypeElement classElement, final AttributedFileAnalysis analysis) {
     final Set<String> ownSignatures =
         classElement.getEnclosedElements().stream()
@@ -133,6 +136,12 @@ public final class MissingMethodImplProvider {
         .filter(e -> e.getModifiers().contains(Modifier.ABSTRACT))
         .filter(e -> !e.getEnclosingElement().equals(classElement))
         .filter(e -> !ownSignatures.contains(signatureKey(e)))
+        .collect(
+            Collectors.groupingBy(
+                MissingMethodImplProvider::signatureKey, LinkedHashMap::new, Collectors.toList()))
+        .values()
+        .stream()
+        .map(List::copyOf)
         .toList();
   }
 
@@ -145,7 +154,7 @@ public final class MissingMethodImplProvider {
   }
 
   private static String buildStubs(
-      final List<ExecutableElement> methods,
+      final List<List<ExecutableElement>> methods,
       final TypeDisplayFormatter formatter,
       final Types types,
       final DeclaredType classType) {
@@ -156,7 +165,7 @@ public final class MissingMethodImplProvider {
   }
 
   private static String buildStub(
-      final ExecutableElement method,
+      final List<ExecutableElement> method,
       final TypeDisplayFormatter formatter,
       final Types types,
       final DeclaredType classType) {
@@ -168,15 +177,5 @@ public final class MissingMethodImplProvider {
                 throw new UnsupportedOperationException();
             }"""
         .formatted(MethodStubRenderer.signature(method, classType, types, formatter));
-  }
-
-  private static Stream<TypeMirror> signatureTypes(
-      final ExecutableElement method, final Types types, final DeclaredType classType) {
-    final ExecutableType exeType = (ExecutableType) types.asMemberOf(classType, method);
-    return Stream.of(
-            Stream.of(exeType.getReturnType()),
-            exeType.getParameterTypes().stream(),
-            exeType.getThrownTypes().stream())
-        .flatMap(stream -> stream);
   }
 }
