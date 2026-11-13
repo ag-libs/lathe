@@ -18,7 +18,6 @@ import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
@@ -457,18 +456,14 @@ final class TypeReferenceCompleter {
     final var subtypeEl = analysis.elements().getTypeElement(entry.qualifiedName());
     return subtypeEl != null
         && !subtypeEl.equals(expectedEl)
-        && directlyInstantiable(subtypeEl)
-        && (scope == null || analysis.trees().isAccessible(scope, subtypeEl));
+        && Instantiation.directlyInstantiable(subtypeEl)
+        && (scope == null || analysis.trees().isAccessible(scope, subtypeEl))
+        && !Instantiation.accessibleConstructors((DeclaredType) subtypeEl.asType(), analysis, scope)
+            .isEmpty();
   }
 
   private static boolean indexKindMaybeInstantiable(final TypeIndexEntry entry) {
     return entry.kind() == TypeKind.CLASS || entry.kind() == TypeKind.RECORD;
-  }
-
-  private static boolean directlyInstantiable(final TypeElement typeEl) {
-    return (typeEl.getKind() == ElementKind.CLASS || typeEl.getKind() == ElementKind.RECORD)
-        && !typeEl.getModifiers().contains(Modifier.ABSTRACT)
-        && !typeEl.getModifiers().contains(Modifier.SEALED);
   }
 
   private static CompletionOutcome incompleteEmptyConstructorPrefix(
@@ -537,26 +532,8 @@ final class TypeReferenceCompleter {
       return false;
     }
 
-    final var declaredType = (DeclaredType) typeEl.asType();
-    return typeEl.getEnclosedElements().stream()
-        .filter(el -> el.getKind() == ElementKind.CONSTRUCTOR)
-        .anyMatch(el -> accessibleConstructor(el, declaredType, analysis, scope));
-  }
-
-  private static boolean accessibleConstructor(
-      final Element el,
-      final DeclaredType declaredType,
-      final AttributedFileAnalysis analysis,
-      final Scope scope) {
-    if (scope == null) {
-      return true;
-    }
-
-    try {
-      return analysis.trees().isAccessible(scope, el, declaredType);
-    } catch (final IllegalArgumentException ignored) {
-      return true;
-    }
+    return !Instantiation.accessibleConstructors((DeclaredType) typeEl.asType(), analysis, scope)
+        .isEmpty();
   }
 
   private static boolean extendableClass(final TypeElement typeEl) {

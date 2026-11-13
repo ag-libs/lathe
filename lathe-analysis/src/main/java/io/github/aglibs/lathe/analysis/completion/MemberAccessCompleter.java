@@ -12,14 +12,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
-import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -226,8 +222,8 @@ final class MemberAccessCompleter {
         : Stream.concat(Stream.of(constructor), methods.stream()).toList();
   }
 
-  // `Type::new` is offered only for a directly-instantiable class/record with an accessible
-  // constructor — interfaces and abstract/sealed types are excluded.
+  // `Type::new` is offered only for a directly-instantiable class or record with a constructor the
+  // scope may call: interfaces and abstract classes are excluded, a concrete sealed class is not.
   private static CompletionCandidate constructorReference(
       final ResolvedReceiver resolved,
       final AttributedFileAnalysis snapshot,
@@ -241,17 +237,12 @@ final class MemberAccessCompleter {
       return null;
     }
 
-    final var kind = typeEl.getKind();
-    if ((kind != ElementKind.CLASS && kind != ElementKind.RECORD)
-        || typeEl.getModifiers().contains(Modifier.ABSTRACT)
-        || typeEl.getModifiers().contains(Modifier.SEALED)) {
+    if (!Instantiation.directlyInstantiable(typeEl)) {
       return null;
     }
 
     final List<ExecutableElement> constructors =
-        ElementFilter.constructorsIn(typeEl.getEnclosedElements()).stream()
-            .filter(ctor -> isAccessible(ctor, declaredType, snapshot, scope))
-            .toList();
+        Instantiation.accessibleConstructors(declaredType, snapshot, scope);
     if (constructors.isEmpty()) {
       return null;
     }
@@ -276,22 +267,6 @@ final class MemberAccessCompleter {
         declaredType,
         simpleName,
         null);
-  }
-
-  private static boolean isAccessible(
-      final Element element,
-      final DeclaredType declaredType,
-      final AttributedFileAnalysis snapshot,
-      final Scope scope) {
-    if (scope == null) {
-      return true;
-    }
-
-    try {
-      return snapshot.trees().isAccessible(scope, element, declaredType);
-    } catch (final IllegalArgumentException ignored) {
-      return true;
-    }
   }
 
   private static boolean isMethodChainReceiver(final ParsedSentinel parsed) {

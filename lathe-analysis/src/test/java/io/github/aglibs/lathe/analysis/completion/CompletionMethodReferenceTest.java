@@ -79,6 +79,23 @@ class CompletionMethodReferenceTest extends CompletionTestSupport {
   }
 
   @Test
+  void methodReference_sealedConcreteType_offersNewConstructorReference() {
+    final List<String> labels =
+        labels(
+            fixture.complete(
+                """
+                sealed class Shape permits Circle {}
+                final class Circle extends Shape {}
+                class Test {
+                    void m() {
+                        Shape::§
+                    }
+                }"""));
+
+    assertThat(labels).contains("new");
+  }
+
+  @Test
   void methodReference_abstractType_omitsNewConstructorReference() {
     final List<String> labels =
         labels(
