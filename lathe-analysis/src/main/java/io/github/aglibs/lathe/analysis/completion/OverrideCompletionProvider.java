@@ -71,7 +71,7 @@ final class OverrideCompletionProvider {
         public %s {
           throw new UnsupportedOperationException();
         }"""
-            .formatted(MethodStubRenderer.signature(method, classType, types, formatter));
+            .formatted(MethodStubRenderer.signature(List.of(method), classType, types, formatter));
     return new CompletionCandidate(
         name,
         name,
