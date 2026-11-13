@@ -12,12 +12,21 @@ REQUIREMENTS                                            *lathe-requirements*
 
   - Neovim 0.12+, on Linux or macOS
   - The Java Treesitter parser: `:TSInstall java`
-  - A Maven or Gradle project whose build enables Lathe, built once with
-    `mvn clean test -Dlathe.capture.only=true` (Maven) or
-    `./gradlew latheSync -Plathe.capture.only=true` (Gradle); this installs
-    the server and creates the `.lathe/` workspace.
+  - A Maven, Gradle or OpenJDK project set up once with |:LatheInit|; this
+    runs a Lathe build, which installs the server and creates the `.lathe/`
+    workspace.
 
-Installing this plugin alone is not enough — the build must run too.
+==============================================================================
+SETTING UP A PROJECT                                    *:LatheInit*
+
+:LatheInit [maven|gradle|openjdk]
+    Sets Lathe up for the build around the current file. Walks up to the
+    build's root and asks you to confirm it (edit the path to correct it). A
+    Maven or Gradle build that does not register Lathe gets it from outside,
+    without changing the project's files; one that does just builds. An
+    OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is built. The
+    server attaches when the build ends. Run it again to move the project to
+    this client's Lathe version; |:LatheSync| refreshes the workspace.
 
 ==============================================================================
 SETUP                                                   *lathe-setup*

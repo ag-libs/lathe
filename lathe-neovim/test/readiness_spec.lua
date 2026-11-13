@@ -63,7 +63,7 @@ lathe.setup({})
 lathe.warn_if_not_ready(vim.fn.bufadd(synced .. "/src/main/java/B.java"))
 spec.check("configured + workspace: silent", #notes, 1)
 
--- 3) Configured but no `.lathe/`: nudge naming both causes (not configured / not synced).
+-- 3) Configured but no `.lathe/`: nudge naming :LatheInit.
 lathe.warn_if_not_ready(vim.fn.bufadd(bare .. "/src/main/java/C.java"))
 spec.check("configured, no workspace: notify", #notes, 2)
 spec.check(
@@ -72,14 +72,9 @@ spec.check(
   true
 )
 spec.check(
-  "configured, no workspace: message names the not-synced cause",
-  notes[2] and notes[2]:find("synced", 1, true) ~= nil,
-  true
-)
-spec.check(
-  "configured, no workspace: message names each front-end's first command",
+  "configured, no workspace: message names :LatheInit and the OpenJDK command",
   notes[2]
-    and notes[2]:find("mvn clean test -Dlathe.capture.only=true", 1, true) ~= nil
+    and notes[2]:find(":LatheInit", 1, true) ~= nil
     and notes[2]:find("lathe-openjdk-maven-plugin:sync", 1, true) ~= nil,
   true
 )
