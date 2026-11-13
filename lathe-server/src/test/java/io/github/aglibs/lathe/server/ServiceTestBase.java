@@ -137,8 +137,7 @@ abstract class ServiceTestBase {
   }
 
   // .lathe/'s write lock, held as another server would. The server's own write pass, a save's or
-  // its
-  // change scan's, may hold it a moment, so a single try raced with it: wait for it to let go.
+  // its change scan's, may hold it a moment, so a single try raced with it: wait for it to let go.
   protected Closeable holdWriteLock() throws Exception {
     final Path lock = LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR));
     final var waited = Stopwatch.start();

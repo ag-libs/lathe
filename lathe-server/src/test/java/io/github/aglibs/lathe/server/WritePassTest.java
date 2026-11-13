@@ -472,8 +472,9 @@ class WritePassTest extends ServiceTestBase {
     writeStaleModule(1_000L, 1_000L);
     host.initialize(tmp);
     awaitStartup();
-    writeFoo(CHANGED_FOO, 5_000L);
+    // Taken before the change, so no pass of the server's own can write it first.
     final Closeable otherServer = holdWriteLock();
+    writeFoo(CHANGED_FOO, 5_000L);
     final CompletableFuture<Void> pass;
     try {
       pass = reconcileNow(true);
@@ -505,8 +506,9 @@ class WritePassTest extends ServiceTestBase {
     writeStaleModule(1_000L, 1_000L);
     host.initialize(tmp);
     awaitStartup();
-    writeFoo(CHANGED_FOO, 5_000L);
+    // Taken before the change, so no pass of the server's own can write it first.
     final Closeable otherServer = holdWriteLock();
+    writeFoo(CHANGED_FOO, 5_000L);
     final CompletableFuture<Void> tickPass;
     try {
       tickPass = reconcileNow(false);

@@ -176,14 +176,16 @@ class SaveTest extends ServiceTestBase {
       awaitWorkerIdle();
       assertRefreshedOnce(compiles, fx.users());
 
-      awaitWorkerIdle();
-      compiles.clear();
-      clearInvocations(client);
       // `:wa` after a rename saves every touched file back to back; the refresh waits for all of
       // their compiles, instead of every completing save refreshing every other open file.
       final var burst = new ArrayList<Path>(List.of(fx.dep()));
       burst.addAll(fx.users());
-      whileWriteLockHeld(() -> burst.forEach(this::save));
+      whileWriteLockHeld(
+          () -> {
+            compiles.clear();
+            clearInvocations(client);
+            burst.forEach(this::save);
+          });
       for (final Path user : fx.users()) {
         verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(argThat(p -> isFor(p, user)));
       }
@@ -252,13 +254,13 @@ class SaveTest extends ServiceTestBase {
       openDoc(file, Files.readString(file));
     }
 
-    awaitWorkerIdle();
-    clearInvocations(client);
     try (final var compiles = new CompileLog(tmp)) {
       // A Save All of hand-edited files: the saves arrive together and compile as one batch. The
       // edits are written under the lock too, so no change scan sees them before their saves.
       whileWriteLockHeld(
           () -> {
+            compiles.clear();
+            clearInvocations(client);
             for (final Path file : files) {
               Files.writeString(file, Files.readString(file) + "\n// edited\n");
             }
@@ -292,10 +294,12 @@ class SaveTest extends ServiceTestBase {
   // Runs the work (a burst of edits and saves, as `:wa` sends) holding .lathe/'s write lock, as
   // another server would (and as WritePassTest does), and lets it go once the server has taken it
   // all: the first save's pass waits for the lock and every later save joins it, so they share one
-  // pass however slowly this thread runs.
+  // pass however slowly this thread runs. The work starts once the server's own pass has let go of
+  // the lock and what it set off has run, so what the work counts is its own.
   private void whileWriteLockHeld(final IOUtil.IORunnable work) throws Exception {
     final Closeable otherServer = holdWriteLock();
     try {
+      awaitWorkerIdle();
       work.run();
       awaitWorkerIdle();
     } finally {
