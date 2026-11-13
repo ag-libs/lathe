@@ -82,12 +82,9 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
       final var sel = node.getMethodSelect();
       if (sel instanceof final MemberSelectTree mst) {
         final String name = mst.getIdentifier().toString();
-        final long startOff = nameStart(mst, name);
-        if (startOff >= 0) {
-          addCallSite(element, rangeFor(startOff, name));
-        }
+        nameRange(mst, name).ifPresent(range -> addCallSite(element, range));
       } else if (sel instanceof final IdentifierTree it) {
-        addCallSite(element, rangeFor(positions.getStartPosition(cu, it), it.getName().toString()));
+        nameRange(it, it.getName().toString()).ifPresent(range -> addCallSite(element, range));
       }
     }
     return super.visitMethodInvocation(node, ignored);
@@ -104,10 +101,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
               ? mst.getIdentifier().toString()
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
-        final long startOff = nameStart(id, name);
-        if (startOff >= 0) {
-          addCallSite(element, rangeFor(startOff, name));
-        }
+        nameRange(id, name).ifPresent(range -> addCallSite(element, range));
       }
     }
     return super.visitNewClass(node, ignored);
@@ -120,10 +114,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
     // `Box::new` calls Box's constructor; an array's (`int[]::new`) has none to list.
     if (element instanceof ExecutableElement && !arrayConstructor(node)) {
       final String name = DeclarationNames.referenceName(node);
-      final long startOff = nameStart(node, name);
-      if (startOff >= 0) {
-        addCallSite(element, rangeFor(startOff, name));
-      }
+      nameRange(node, name).ifPresent(range -> addCallSite(element, range));
     }
     return null;
   }
@@ -144,10 +135,6 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
     }
 
     callSites.computeIfAbsent(element, k -> new ArrayList<>()).add(range);
-  }
-
-  private Range rangeFor(final long startOff, final String name) {
-    return Positions.nameRange(Positions.offsetToPosition(cu, startOff), name);
   }
 
   private List<CallHierarchyOutgoingCall> buildResults(

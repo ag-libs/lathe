@@ -106,8 +106,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     if (!(parent instanceof MethodTree)
         && !(parent instanceof VariableTree)
         && !(parent instanceof ClassTree)) {
-      final long startOff = positions.getStartPosition(cu, node);
-      addCallSite(rangeFor(startOff, node.getName().toString()));
+      nameRange(node, node.getName().toString()).ifPresent(this::addCallSite);
     }
 
     return super.visitIdentifier(node, ignored);
@@ -120,11 +119,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     if (callReaches(element, new TreePath(getCurrentPath(), node.getExpression()))) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
-        final String idName = node.getIdentifier().toString();
-        final long startOff = nameStart(node, idName);
-        if (startOff >= 0) {
-          addCallSite(rangeFor(startOff, idName));
-        }
+        nameRange(node, node.getIdentifier().toString()).ifPresent(this::addCallSite);
       }
     }
     return null;
@@ -140,10 +135,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
               ? mst.getIdentifier().toString()
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
-        final long startOff = nameStart(id, name);
-        if (startOff >= 0) {
-          addCallSite(rangeFor(startOff, name));
-        }
+        nameRange(id, name).ifPresent(this::addCallSite);
       }
     }
     return super.visitNewClass(node, ignored);
@@ -155,10 +147,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     final var element = trees.getElement(getCurrentPath());
     if (callReaches(element, new TreePath(getCurrentPath(), node.getQualifierExpression()))) {
       final String name = DeclarationNames.referenceName(node);
-      final long startOff = nameStart(node, name);
-      if (startOff >= 0) {
-        addCallSite(rangeFor(startOff, name));
-      }
+      nameRange(node, name).ifPresent(this::addCallSite);
     }
     return null;
   }
@@ -246,10 +235,6 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
   private static TreePath enclosingMethod(final TreePath path) {
     return TreePaths.nearest(path.getParentPath(), MethodTree.class, TreePaths::isMemberBoundary);
-  }
-
-  private Range rangeFor(final long startOff, final String name) {
-    return Positions.nameRange(Positions.offsetToPosition(cu, startOff), name);
   }
 
   private List<CallHierarchyIncomingCall> buildResults(final String fileUri) {

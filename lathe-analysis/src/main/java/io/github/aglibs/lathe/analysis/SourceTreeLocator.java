@@ -7,8 +7,10 @@ import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.Trees;
 import java.io.IOException;
+import java.util.Optional;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import org.eclipse.lsp4j.Range;
 
 abstract class SourceTreeLocator extends WrittenSourceScanner {
 
@@ -49,16 +51,26 @@ abstract class SourceTreeLocator extends WrittenSourceScanner {
     return DeclarationNames.findIdentifierFrom(content, anchor, name);
   }
 
+  // The range of `name` as written at `node`, when found.
+  protected Optional<Range> nameRange(final Tree node, final String name) {
+    final long start = nameStart(node, name);
+    return start < 0
+        ? Optional.empty()
+        : Optional.of(Positions.nameRange(Positions.offsetToPosition(cu, start), name));
+  }
+
+  // The receiver's end, else the node's start: a receiver can lack an end position.
   private long nameAnchor(final Tree node) {
+    final long receiverEnd;
     if (node instanceof final MemberSelectTree ms) {
-      return positions.getEndPosition(cu, ms.getExpression());
+      receiverEnd = positions.getEndPosition(cu, ms.getExpression());
+    } else if (node instanceof final MemberReferenceTree mr) {
+      receiverEnd = positions.getEndPosition(cu, mr.getQualifierExpression());
+    } else {
+      receiverEnd = -1;
     }
 
-    if (node instanceof final MemberReferenceTree mr) {
-      return positions.getEndPosition(cu, mr.getQualifierExpression());
-    }
-
-    return positions.getStartPosition(cu, node);
+    return receiverEnd >= 0 ? receiverEnd : positions.getStartPosition(cu, node);
   }
 
   protected static String sourceContent(final AttributedFileAnalysis analysis) throws IOException {
