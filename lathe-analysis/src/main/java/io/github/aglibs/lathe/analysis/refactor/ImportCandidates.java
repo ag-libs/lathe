@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.internal.IndexTypes;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -36,11 +37,11 @@ public final class ImportCandidates {
             entry ->
                 entry.simpleName().equals(simpleName)
                     && entry.isTopLevel()
-                    && !entry.packageName().isEmpty())
+                    && !entry.packageName().isEmpty()
+                    && !alreadyImported.contains(entry.binaryName()))
         .filter(entry -> IndexTypes.usable(entry, analysis, scope, typeIndex))
-        .map(entry -> "%s.%s".formatted(entry.packageName(), entry.simpleName()))
+        .map(TypeIndexEntry::binaryName)
         .distinct()
-        .filter(fqName -> !alreadyImported.contains(fqName))
         .toList();
   }
 
