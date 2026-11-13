@@ -12,9 +12,11 @@ import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.install.CapturePruner;
 import io.github.aglibs.lathe.install.CompileCapture;
 import io.github.aglibs.lathe.install.SyncScript;
 import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
+import io.github.aglibs.lathe.install.WorkspaceSync;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,7 +27,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 // The OpenJDK-native .lathe/: per-module params and stamps (MODULE_SYSTEM), the build
@@ -53,11 +57,13 @@ public final class OpenJdkSync {
       throw new IOException("no built modules at %s — build the JDK first".formatted(modulesDir));
     }
 
+    final var modules = new ArrayList<String>();
     final var moduleCmdlines = new ArrayList<Path>();
     final var moduleRoots = new ArrayList<Path>();
     try (Stream<Path> dirs = Files.list(modulesDir)) {
       for (final Path moduleOut : dirs.filter(Files::isDirectory).sorted().toList()) {
         final var module = moduleOut.getFileName().toString();
+        modules.add(module);
         final Path cmdline = moduleOut.resolve("_the.%s%s".formatted(module, BATCH_SUFFIX));
         if (!Files.isRegularFile(cmdline)) {
           log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
@@ -81,9 +87,21 @@ public final class OpenJdkSync {
     writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
     WorkspaceManifestWriter.writeJavaHome(latheDir(workspaceRoot), explodedJdk);
     syncScript.write(workspaceRoot);
+    // Only a module whose output is gone loses its capture: one mid-rebuild has no .cmdline yet.
+    CapturePruner.prune(workspaceRoot, captures(modules, toolCmdlines));
     log.accept(
         "[sync] %d module(s) + %d tool(s) -> %s"
             .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));
+  }
+
+  // The module's and tool's directories in .lathe/ to keep, each to its one source tree. A name
+  // both a module and a tool use has one directory, so it is kept once.
+  private static Map<Path, Set<String>> captures(
+      final List<String> modules, final List<Path> toolCmdlines) {
+    return Stream.concat(modules.stream(), toolCmdlines.stream().map(OpenJdkSync::batchName))
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Path::of, name -> Set.of(SOURCE_TREE), (kept, duplicate) -> kept));
   }
 
   // Runs the whole sync, the server install included, under .lathe/'s build lock, heartbeated so
@@ -92,6 +110,7 @@ public final class OpenJdkSync {
   public static void underBuildLock(final Path workspaceRoot, final IOUtil.IORunnable sync)
       throws IOException {
     final Path latheDir = Files.createDirectories(latheDir(workspaceRoot));
+    WorkspaceSync.writeGitignore(workspaceRoot);
     final BuildLock lock =
         BuildLock.hold(latheDir)
             .orElseThrow(

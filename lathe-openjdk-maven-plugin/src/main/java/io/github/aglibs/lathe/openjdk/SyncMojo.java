@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
@@ -64,7 +65,7 @@ public final class SyncMojo extends AbstractMojo {
                 getLog()::info);
             installServer();
           });
-    } catch (final IOException e) {
+    } catch (final IOException | UncheckedIOException e) {
       throw new MojoExecutionException("lathe openjdk sync failed", e);
     } catch (final SyncException e) {
       throw new MojoExecutionException(e.getMessage(), e);
