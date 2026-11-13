@@ -146,16 +146,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
     LatheLock.acquire(lock);
     try {
       CompileCapture.writeParams(moduleDir, config);
-      if (!getFailOnError().get()) {
-        final java.util.Optional<String> missing = missingClass(Path.of(config.outputDir()));
-        if (missing.isPresent()) {
-          getLogger()
-              .lifecycle(
-                  "[lathe] {} has no class for {}: compile failed; kept the last good capture",
-                  getSourceTree().get(),
-                  missing.get());
-          return;
-        }
+      if (!getFailOnError().get() && !wroteEveryClass(Path.of(config.outputDir()))) {
+        return;
       }
 
       CompileCapture.mirror(
@@ -165,16 +157,16 @@ public abstract class LatheCaptureTask extends DefaultTask {
     }
   }
 
-  // The first source the compile wrote no class for, asked only with failOnError off (a personal
-  // setup's init script). A compile with errors writes none for what it compiled, and Gradle then
-  // runs this task as after a good one, so the mirror would record sources as built that have no
-  // classes, and the server would never compile them: keep the last good capture, as Maven's shim
-  // does. The compile task's own sources, as it compiled them, with each one's path from its source
-  // directory. A source declaring only a type of another name, or in a folder that is not its
-  // package, reads as failed too, which costs the server a compile of its own, never a wrong
-  // mirror; a failure in a second top-level class of a file whose first one compiled goes unseen.
-  // module-info and package-info may compile to no class.
-  private java.util.Optional<String> missingClass(final Path classes) {
+  // Whether the compile wrote a class for every source, asked only with failOnError off (a personal
+  // setup's init script); the first source without one is logged. A compile with errors writes
+  // none for what it compiled, and Gradle then runs this task as after a good one, so the mirror
+  // would record sources as built that have no classes, and the server would never compile them:
+  // keep the last good capture, as Maven's shim does. The compile task's own sources, as it
+  // compiled them, with each one's path from its source directory. A source declaring only a type
+  // of another name, or in a folder that is not its package, reads as failed too, which costs the
+  // server a compile of its own, never a wrong mirror; a failure in a second top-level class of a
+  // file whose first one compiled goes unseen. module-info and package-info may have no class.
+  private boolean wroteEveryClass(final Path classes) {
     final var missing = new AtomicReference<String>();
     getCompiledSources()
         .getAsFileTree()
@@ -199,7 +191,16 @@ public abstract class LatheCaptureTask extends DefaultTask {
                 source.stopVisiting();
               }
             });
-    return java.util.Optional.ofNullable(missing.get());
+    if (missing.get() == null) {
+      return true;
+    }
+
+    getLogger()
+        .lifecycle(
+            "[lathe] {} has no class for {}: compile failed; kept the last good capture",
+            getSourceTree().get(),
+            missing.get());
+    return false;
   }
 
   private ModuleConfigData moduleConfig() {
