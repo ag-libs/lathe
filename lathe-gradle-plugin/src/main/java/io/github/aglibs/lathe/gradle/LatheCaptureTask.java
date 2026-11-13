@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
@@ -42,6 +43,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   private static final String PROC = "-proc:";
   private static final String PROC_NONE = "none";
+  private static final String JAVA_SUFFIX = ".java";
+  private static final String CLASS_SUFFIX = ".class";
 
   @Input
   public abstract Property<String> getSourceTree();
@@ -63,6 +66,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   @Internal
   public abstract ConfigurableFileCollection getSourceRoots();
+
+  // The compile task's own sources, which a build may narrow or replace from the source set's.
+  @Internal
+  public abstract ConfigurableFileCollection getCompiledSources();
 
   @InputFiles
   @PathSensitive(PathSensitivity.RELATIVE)
@@ -102,6 +109,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Input
   public abstract Property<Boolean> getInferModulePath();
 
+  // The compile's own: with it on, a compile with errors stopped the build before this task.
+  @Input
+  public abstract Property<Boolean> getFailOnError();
+
   @OutputDirectory
   public Provider<Directory> getClassesMirror() {
     return getModuleDir().dir(getSourceTree());
@@ -135,11 +146,61 @@ public abstract class LatheCaptureTask extends DefaultTask {
     LatheLock.acquire(lock);
     try {
       CompileCapture.writeParams(moduleDir, config);
+      if (!getFailOnError().get() && !wroteEveryClass(Path.of(config.outputDir()))) {
+        return;
+      }
+
       CompileCapture.mirror(
           moduleDir, config, List.of(getResourcesDir().get().getAsFile().toPath()));
     } finally {
       LatheLock.release(lock);
     }
+  }
+
+  // Whether the compile wrote a class for every source, asked only with failOnError off (a personal
+  // setup's init script); the first source without one is logged. A compile with errors writes
+  // none for what it compiled, and Gradle then runs this task as after a good one, so the mirror
+  // would record sources as built that have no classes, and the server would never compile them:
+  // keep the last good capture, as Maven's shim does. The compile task's own sources, as it
+  // compiled them, with each one's path from its source directory. A source declaring only a type
+  // of another name, or in a folder that is not its package, reads as failed too, which costs the
+  // server a compile of its own, never a wrong mirror; a failure in a second top-level class of a
+  // file whose first one compiled goes unseen. module-info and package-info may have no class.
+  private boolean wroteEveryClass(final Path classes) {
+    final var missing = new AtomicReference<String>();
+    getCompiledSources()
+        .getAsFileTree()
+        .visit(
+            source -> {
+              final String name = source.getName();
+              if (source.isDirectory()
+                  || !name.endsWith(JAVA_SUFFIX)
+                  || name.equals(LatheLayout.MODULE_INFO_JAVA)
+                  || name.equals(LatheLayout.PACKAGE_INFO_JAVA)) {
+                return;
+              }
+
+              final String relative = source.getRelativePath().getPathString();
+              final String classFile =
+                  "%s%s"
+                      .formatted(
+                          relative.substring(0, relative.length() - JAVA_SUFFIX.length()),
+                          CLASS_SUFFIX);
+              if (!Files.isRegularFile(classes.resolve(classFile))) {
+                missing.set(relative);
+                source.stopVisiting();
+              }
+            });
+    if (missing.get() == null) {
+      return true;
+    }
+
+    getLogger()
+        .lifecycle(
+            "[lathe] {} has no class for {}: compile failed; kept the last good capture",
+            getSourceTree().get(),
+            missing.get());
+    return false;
   }
 
   private ModuleConfigData moduleConfig() {

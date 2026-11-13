@@ -713,6 +713,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getModuleDir().set(moduleDir.toFile());
                   task.getSources().from(sourceSet.getJava());
                   task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());
+                  task.getCompiledSources().from(javac.getSource());
                   task.getClassesDir().set(javac.getDestinationDirectory());
                   task.getResourcesDir().set(sourceSet.getOutput().getResourcesDir());
                   task.getGeneratedSourcesDir()
@@ -725,6 +726,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
                               () -> javac.getOptions().getAnnotationProcessorPath());
                   task.getCompilerArgs()
                       .set(project.provider(() -> javac.getOptions().getAllCompilerArgs()));
+                  task.getFailOnError()
+                      .set(project.provider(() -> javac.getOptions().isFailOnError()));
                   // Only a --release the compile used, as on Maven: one Gradle did not pass
                   // (it compiled with -source/-target) would forbid the --add-exports of JDK
                   // internals the compile may also pass.
