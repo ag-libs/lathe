@@ -472,10 +472,9 @@ class WritePassTest extends ServiceTestBase {
     writeStaleModule(1_000L, 1_000L);
     host.initialize(tmp);
     awaitStartup();
+    // Taken before the change, so no pass of the server's own can write it first.
+    final Closeable otherServer = holdWriteLock();
     writeFoo(CHANGED_FOO, 5_000L);
-    final Closeable otherServer =
-        LatheLock.tryExclusive(LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR)))
-            .orElseThrow();
     final CompletableFuture<Void> pass;
     try {
       pass = reconcileNow(true);
@@ -507,10 +506,9 @@ class WritePassTest extends ServiceTestBase {
     writeStaleModule(1_000L, 1_000L);
     host.initialize(tmp);
     awaitStartup();
+    // Taken before the change, so no pass of the server's own can write it first.
+    final Closeable otherServer = holdWriteLock();
     writeFoo(CHANGED_FOO, 5_000L);
-    final Closeable otherServer =
-        LatheLock.tryExclusive(LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR)))
-            .orElseThrow();
     final CompletableFuture<Void> tickPass;
     try {
       tickPass = reconcileNow(false);
