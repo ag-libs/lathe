@@ -77,6 +77,7 @@ class SaveTest extends ServiceTestBase {
 
     verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, note) && !hasMessage(p, "noted by processor")));
+    awaitWorkerIdle();
     verify(client, never())
         .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
   }

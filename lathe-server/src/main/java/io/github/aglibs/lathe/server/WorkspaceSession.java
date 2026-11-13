@@ -761,8 +761,9 @@ final class WorkspaceSession {
     }
 
     refreshReactorTypeIndex();
-    // What the last write reported came from the old build: the sync that changed the build also
-    // compiled the sources, so no later write replaces it.
+    // What the last write reported came from the old build, and the sync's own compile leaves no
+    // write pass to replace it. A module the sync did not compile loses a still-valid report (only
+    // a processor's) until its next save.
     writeDiagnostics.clear();
     refreshOpenDocuments();
     old.close();
