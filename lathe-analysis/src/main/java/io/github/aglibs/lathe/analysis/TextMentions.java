@@ -7,6 +7,7 @@ import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -83,6 +84,7 @@ public final class TextMentions {
 
   static List<Location> literals(
       final Trees trees, final CompilationUnitTree cu, final Tree scope, final String name) {
+    final String uri = LatheUri.canonical(cu.getSourceFile().toUri().toString());
     final var found = new ArrayList<Location>();
     new TreeScanner<Void, Void>() {
       @Override
@@ -94,7 +96,7 @@ public final class TextMentions {
           }
 
           final Position at = Positions.offsetToPosition(cu, start);
-          found.add(new Location(cu.getSourceFile().toUri().toString(), new Range(at, at)));
+          found.add(new Location(uri, new Range(at, at)));
         }
 
         return null;
@@ -114,7 +116,7 @@ public final class TextMentions {
   }
 
   private static List<Location> resourceMentions(final Path file, final String name) {
-    final String uri = file.toUri().toString();
+    final String uri = LatheUri.fromPath(file);
     if (file.getParent().endsWith(SERVICES_DIR)
         && file.getFileName().toString().endsWith(".%s".formatted(name))) {
       final var top = new Position(0, 0);

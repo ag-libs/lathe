@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -71,8 +72,8 @@ public final class DefinitionLocator {
       // language features. Fall back to the compilation unit only for generated/external sources.
       final String targetUri =
           findSourceFile(element, sourceRoots)
-              .map(file -> file.toUri().toString())
-              .orElseGet(() -> cu.getSourceFile().toUri().toString());
+              .map(LatheUri::fromPath)
+              .orElseGet(() -> LatheUri.canonical(cu.getSourceFile().toUri().toString()));
       try {
         final Optional<Position> position =
             DeclarationNames.declarationNamePosition(
@@ -103,7 +104,7 @@ public final class DefinitionLocator {
                               () ->
                                   "[definition] reactor %s %d:%d"
                                       .formatted(file, lspPos.getLine(), lspPos.getCharacter()));
-                          return new Location(file.toUri().toString(), new Range(lspPos, lspPos));
+                          return new Location(LatheUri.fromPath(file), new Range(lspPos, lspPos));
                         }));
   }
 
@@ -133,7 +134,7 @@ public final class DefinitionLocator {
 
     final long start = trees.getSourcePositions().getStartPosition(cu, module.getName());
     final var pos = start >= 0L ? Positions.offsetToPosition(cu, start) : new Position(0, 0);
-    return new Location(file.toUri().toString(), new Range(pos, pos));
+    return new Location(LatheUri.fromPath(file), new Range(pos, pos));
   }
 
   /**
