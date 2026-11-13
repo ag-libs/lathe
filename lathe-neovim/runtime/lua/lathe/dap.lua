@@ -206,7 +206,7 @@ function M.debug(bufnr)
     return
   end
 
-  local client = lathe_client()
+  local client = lathe_client(bufnr)
   if not client then
     notify("server not attached to this buffer", vim.log.levels.WARN)
     return
