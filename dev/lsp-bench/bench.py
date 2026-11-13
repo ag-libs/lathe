@@ -19,6 +19,7 @@ import platform
 import queue
 import re
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -706,6 +707,11 @@ def build_change(client, repo, project, cases, update, log):
     return result
 
 
+def tree_state(repo):
+    """The clone's commit and what git reports changed or new in it (ignored files aside)."""
+    return git(repo, "rev-parse", "HEAD").strip(), set(git(repo, "status", "--porcelain").splitlines())
+
+
 def run_server(server, name, project, cases, mode, args, out_dir, label):
     repo = S.repo_of(name)
     state = S.WORK / "state" / name / server
@@ -716,6 +722,11 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
     # What the build left running (Gradle's worker processes outlive it) is not the server's.
     M.stop_leftovers(before, str(repo))
     before = set(M.processes())
+    # A warm run starts from what the last run left; at another commit it would measure nothing.
+    tree = tree_state(repo)
+    if tree[0] != git(repo, "rev-parse", project["commit"]).strip():
+        result["error"] = "the clone is at %s, not the pinned commit" % tree[0][:10]
+        return result
     spec = S.SERVERS_BY_NAME[server]["spec"](name, project, state, args.heap, jdtls_overrides(args))
     if server == "lathe":
         result["server_version"] = S.lathe_server_version(repo)
@@ -790,6 +801,9 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         M.stop_started(before)
         # After the server stopped: what it keeps on disk, and anything it wrote into the tree.
         result["disk"] = S.SERVERS_BY_NAME[server]["disk"](name, state)
+        # The run must leave the clone as it found it: the next run starts from it.
+        after = tree_state(repo)
+        result["tree_changed"] = sorted(after[1] ^ tree[1]) + ([] if after[0] == tree[0] else ["HEAD %s" % after[0][:10]])
     return result
 
 
@@ -891,6 +905,8 @@ DEFAULT_HEAP = "2G"
 
 
 def main():
+    # Stopped, a run still goes back to the pinned commit and stops its server: its finally blocks run.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     parser = argparse.ArgumentParser()
     parser.add_argument("project", choices=sorted(P.PROJECTS))
     parser.add_argument("--servers", default="lathe,jdtls")
@@ -917,6 +933,9 @@ def main():
     cases = importlib.import_module("cases.%s" % project["cases"])
     if not S.repo_of(name).is_dir():
         raise SystemExit("no clone of %s: run setup.sh first" % name)
+    needs = {"branch": "branch_ref", "build": "build_change"}.get(args.scenario)
+    if needs and needs not in project:
+        raise SystemExit("%s has no %s in projects.py: no %s scenario" % (name, needs, args.scenario))
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = "-prime" if args.prime else "-heap" + args.heap if args.heap != DEFAULT_HEAP else ""
     if args.jdtls_setting:
@@ -940,6 +959,8 @@ def main():
                 result = measured_run(server, name, project, cases, mode, args, out_dir, label)
                 (out_dir / ("%s.json" % label)).write_text(json.dumps(result, indent=2))
                 print(summary_line(result), flush=True)
+                if result.get("tree_changed"):
+                    print("%-14s TREE CHANGED: %s" % ("", "; ".join(result["tree_changed"])), flush=True)
     print("results in", out_dir)
     subprocess.run([sys.executable, str(BENCH / "report.py"), str(out_dir)], check=True)
 

@@ -68,6 +68,13 @@ PROJECTS = {
         "main_module": "hibernate-core",
         # 50 back along the main line (394 files, 255 Java); setup.sh fetches the history.
         "branch_ref": "caa0158c",
+        # The build-file change: a library another of its modules uses (hibernate-hikaricp), so the
+        # Gradle cache holds it, and a use of one of its classes.
+        "build_change": {"build_file": "hibernate-core/hibernate-core.gradle", "after": "dependencies {\n",
+                         "insert": "    implementation libs.hikaricp\n",
+                         "file": "hibernate-core/src/main/java/org/hibernate/Version.java",
+                         "anchor": "public final class Version {\n",
+                         "use": "    public static final Class<?> BENCH_HIKARI = com.zaxxer.hikari.HikariConfig.class;\n"},
     },
     "fineract": {
         "url": GIT_HOME / "fineract",

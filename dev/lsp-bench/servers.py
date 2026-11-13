@@ -42,9 +42,10 @@ def repo_of(name):
     return REPOS / name
 
 
-def fresh_checkout(repo):
-    """The clone as a fresh clone has it: no build output, no server files, no local edits."""
-    subprocess.run(["git", "checkout", "-q", "--", "."], cwd=repo, check=True)
+def fresh_checkout(repo, commit):
+    """The clone as a fresh clone of the pinned commit has it: no build output, no server files, no
+    local edits, whatever an interrupted run left checked out."""
+    subprocess.run(["git", "checkout", "-q", "-f", "--detach", commit], cwd=repo, check=True)
     subprocess.run(["git", "clean", "-q", "-ffdx"], cwd=repo, check=True)
 
 
@@ -156,7 +157,7 @@ def apply_edits(text, edits):
 def baseline_build(name, project, log):
     """The baseline on a fresh checkout, timed in ms; the checkout carries no Lathe extension."""
     repo = repo_of(name)
-    fresh_checkout(repo)
+    fresh_checkout(repo, project["commit"])
     start = time.monotonic()
     with open(log, "ab") as out:
         subprocess.run(baseline_command(project, repo), cwd=repo, env=build_env(project),
@@ -188,7 +189,7 @@ def lathe_prepare(name, project, mode, log):
     repo = repo_of(name)
     if mode == "warm" and (repo / ".lathe" / "lathe-launcher.sh").exists():
         return None
-    fresh_checkout(repo)
+    fresh_checkout(repo, project["commit"])
     lathe_edits(name, project)
     start = time.monotonic()
     with open(log, "ab") as out:
@@ -250,7 +251,7 @@ def jdtls_prepare(name, project, mode, state, log):
         state.mkdir(parents=True, exist_ok=True)
         return None
     repo = repo_of(name)
-    fresh_checkout(repo)
+    fresh_checkout(repo, project["commit"])
     shutil.rmtree(state, ignore_errors=True)
     state.mkdir(parents=True, exist_ok=True)
     if not project.get("jdtls_install"):

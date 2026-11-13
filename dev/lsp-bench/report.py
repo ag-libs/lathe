@@ -230,6 +230,9 @@ def failures(runs):
         for result in results:
             if result.get("error"):
                 lines.append("- %s %s run: %s" % (server, result["mode"], result["error"]))
+            if result.get("tree_changed"):
+                lines.append("- %s %s run left the clone changed: %s" % (server, result["mode"],
+                                                                      "; ".join(result["tree_changed"])))
             for name, case in result["cases"].items():
                 if case.get("supported") and not case.get("correct"):
                     lines.append("- %s %s run, %s: %s" % (server, result["mode"], name,
