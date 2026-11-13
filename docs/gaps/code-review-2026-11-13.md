@@ -43,7 +43,7 @@ The override-completion stub renders the same text differently: 2-space indent i
 
 - Where: `analysis/refactor/MissingMethodImplProvider.java:163-181`; `analysis/completion/OverrideCompletionProvider.java:37, 68-73`; `analysis/internal/MethodStubRenderer.java`.
 - Fix: put the stub text and the list of types it writes into `MethodStubRenderer`; render through `SourceTypeNames` in both places.
-- Status: #190: stops importing thrown types; the stub text and indentation are still two copies.
+- Status: #190: both stubs copy the throws clause and the quick fix imports exactly what the stub writes; the stub text and indentation are still two copies, and override completion imports nothing (CR-139).
 
 ### CR-3 — OpenJDK sync bypasses `WorkspaceSync` (verified)
 
@@ -53,7 +53,7 @@ It also builds `WorkspaceManifestData` positionally with nulls.
 
 - Where: `openjdk/OpenJdkSync.java:80-83, 271-291`; `install/WorkspaceSync.java:72-90`.
 - Fix: let `WorkspaceSync.Inputs` take what OpenJDK lacks (no `Caches`, unfingerprinted build files) and route OpenJDK through it; prune with module → `{classes}`.
-- Status: #198: writes `.gitignore` and prunes; routing through `WorkspaceSync.write` is still open.
+- Status: #198: writes `.gitignore` and prunes. Routing through `WorkspaceSync.write` is left for the build front-end work (CR-108 to CR-111), where that API is revisited.
 
 ### CR-4 — MCP `maxResults` accepts zero and negative values (verified)
 
@@ -103,7 +103,7 @@ A sealed non-abstract class can be instantiated.
 
 - Where: `analysis/completion/MemberAccessCompleter.java:244-249`; `analysis/completion/TypeReferenceCompleter.java:468-472, 525-538`; `ImportCandidates.java:74-86`; `TypeIndexValidator.java:30-41`.
 - Fix: one `instantiable(TypeElement)` helper; one import-validity rule (see CR-75).
-- Status: #197 for sealed classes; the import-validity rule needs a decision.
+- Status: #197 for sealed classes; #200 for the import rule: both trust a reactor type with no class file yet.
 
 ### CR-9 — Workspace symbols can resolve the wrong nested type
 
@@ -1012,3 +1012,11 @@ Class names are anchored on `/src/<scope>/java/`, test files on `/src/test/`, an
 - `CompiledStamps.byPath` handles pre-slashed Windows files (`:121`).
 - `LauncherCopier.java:37` handles symlinks left by older versions.
 - Fix: drop them; bump `SCHEMA_VERSION` if needed.
+
+### CR-139 — Override completion adds no imports
+
+The override stub writes its return, parameter and thrown types by simple name but imports none of them, so a stub that names an unimported type does not compile.
+The implement-abstract-methods quick fix renders the same signature and imports what it writes.
+
+- Where: `analysis/completion/OverrideCompletionProvider.java:16-18, 60-87`; `analysis/refactor/MissingMethodImplProvider.java:71-84`.
+- Fix: render through `SourceTypeNames` and attach the import edits for `MethodStubRenderer.signatureTypes`, as the quick fix does.
