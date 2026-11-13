@@ -6,9 +6,11 @@ import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -151,28 +153,42 @@ public abstract class LatheCaptureTask extends DefaultTask {
     }
   }
 
-  // Whether the compile wrote a class for every source. A compile with errors writes none for what
-  // it compiled, and with failOnError off (a personal setup's init script) Gradle runs this task as
-  // after a good one, so the mirror would record sources as built that have no classes, and the
-  // server would never compile them: keep the last good capture, as Maven's shim does. A source
-  // declaring only a type of another name reads as failed too, which costs the server a compile
-  // of its own, never a wrong mirror. module-info and package-info may compile to no class.
-  private static boolean compiled(final ModuleConfigData config) throws IOException {
+  // Whether the compile wrote a class for every source it compiled. A compile with errors writes
+  // none for what it compiled, and with failOnError off (a personal setup's init script) Gradle
+  // runs
+  // this task as after a good one, so the mirror would record sources as built that have no
+  // classes, and the server would never compile them: keep the last good capture, as Maven's shim
+  // does. The compile's own sources, excludes applied: a file the build leaves out has no class. A
+  // source declaring only a type of another name, or in a folder that is not its package, reads as
+  // failed too, which costs the server a compile of its own, never a wrong mirror. module-info and
+  // package-info may compile to no class.
+  private boolean compiled(final ModuleConfigData config) {
     final Path classes = Path.of(config.outputDir());
-    for (final String sourceRoot : config.sourceRoots()) {
-      final Path root = Path.of(sourceRoot);
-      for (final Path source : FileUtil.walkFiles(root, LatheCaptureTask::compilesToItsClass)) {
-        final Path classFile =
-            classes
-                .resolve(root.relativize(source.getParent()))
-                .resolve("%s%s".formatted(FileUtil.javaTypeName(source), CLASS_SUFFIX));
-        if (!Files.isRegularFile(classFile)) {
-          return false;
-        }
+    final List<Path> roots = config.sourceRoots().stream().map(Path::of).toList();
+    for (final File file : getSources().getFiles()) {
+      final Path source = file.toPath();
+      final java.util.Optional<Path> root = sourceRoot(roots, source);
+      if (!compilesToItsClass(source) || root.isEmpty()) {
+        continue;
+      }
+
+      final Path classFile =
+          classes
+              .resolve(root.get().relativize(source.getParent()))
+              .resolve("%s%s".formatted(FileUtil.javaTypeName(source), CLASS_SUFFIX));
+      if (!Files.isRegularFile(classFile)) {
+        return false;
       }
     }
 
     return true;
+  }
+
+  // The deepest source root holding source, as source roots may nest.
+  private static java.util.Optional<Path> sourceRoot(final List<Path> roots, final Path source) {
+    return roots.stream()
+        .filter(source::startsWith)
+        .max(Comparator.comparingInt(Path::getNameCount));
   }
 
   private static boolean compilesToItsClass(final Path path) {

@@ -128,7 +128,12 @@ class LatheSyncTaskFunctionalTest {
                 "settings.gradle",
                 "rootProject.name = \"root\"\ninclude(\"core\", \"app\")\n%s"
                     .formatted(GradleFixture.latheRepositories()))
-            .file("core/build.gradle", GradleFixture.JAVA)
+            // A file the build excludes compiles to no class, which must not read as a failed
+            // compile.
+            .file(
+                "core/build.gradle",
+                GradleFixture.JAVA + "sourceSets.main.java.exclude '**/Legacy.java'\n")
+            .file("core/src/main/java/com/example/core/Legacy.java", "not Java at all\n")
             // A parse error: javac writes no class for any source, whatever order it reads them in.
             .file(
                 "core/src/main/java/com/example/core/Broken.java",
