@@ -1,6 +1,9 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.MemberReferenceTree;
+import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.Trees;
 import java.io.IOException;
@@ -31,6 +34,31 @@ abstract class SourceTreeLocator extends WrittenSourceScanner {
     this.target = target;
     this.types = types;
     this.elements = elements;
+  }
+
+  // The offset of `name` as written at `node`, or -1. Found by text from a reliable anchor instead
+  // of end-minus-name.length(): a node's end position can be approximate in generated sources,
+  // slicing the range onto a neighbouring identifier. Anchoring on the receiver's end also skips
+  // the name inside the receiver (`amount.amount()`, `b.add(1).add(2)`).
+  protected long nameStart(final Tree node, final String name) {
+    final long anchor = nameAnchor(node);
+    if (anchor < 0) {
+      return -1;
+    }
+
+    return DeclarationNames.findIdentifierFrom(content, anchor, name);
+  }
+
+  private long nameAnchor(final Tree node) {
+    if (node instanceof final MemberSelectTree ms) {
+      return positions.getEndPosition(cu, ms.getExpression());
+    }
+
+    if (node instanceof final MemberReferenceTree mr) {
+      return positions.getEndPosition(cu, mr.getQualifierExpression());
+    }
+
+    return positions.getStartPosition(cu, node);
   }
 
   protected static String sourceContent(final AttributedFileAnalysis analysis) throws IOException {

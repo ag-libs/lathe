@@ -12,6 +12,7 @@ import java.util.List;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -297,6 +298,41 @@ class CallHierarchyOutgoingLocatorTest {
               .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).noneMatch(c -> c.getTo().getName().isEmpty());
+    }
+  }
+
+  @Test
+  void outgoingCalls_receiverSpellsTheName_rangesOnTheCalledName() throws IOException {
+    final String content =
+        """
+        import java.util.function.IntFunction;
+        class Chain {
+            Chain add(int i) { return this; }
+            void use(Chain add) {
+                add.add(1).add(2);
+                IntFunction<Chain> f = add::add;
+            }
+        }
+        """;
+    Files.writeString(sourceRoot.resolve("Chain.java"), content);
+    final var request = request(content, SampleFixture.posOf(content, "void use", "use"));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+      final List<CallHierarchyOutgoingCall> calls =
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+
+      assertThat(calls).extracting(call -> call.getTo().getName()).containsExactly("add");
+      assertThat(calls.get(0).getFromRanges())
+          .extracting(Range::getStart)
+          .containsExactlyInAnyOrder(
+              SampleFixture.posOf(content, ".add(1)", "add"),
+              SampleFixture.posOf(content, ".add(2)", "add"),
+              SampleFixture.posOf(content, "::add", "add"));
     }
   }
 

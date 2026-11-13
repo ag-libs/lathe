@@ -121,9 +121,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
         final String idName = node.getIdentifier().toString();
-        final long startOff =
-            DeclarationNames.findIdentifierFrom(
-                content, positions.getStartPosition(cu, node), idName);
+        final long startOff = nameStart(node, idName);
         if (startOff >= 0) {
           addCallSite(rangeFor(startOff, idName));
         }
@@ -142,8 +140,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
               ? mst.getIdentifier().toString()
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
-        final long startOff =
-            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
+        final long startOff = nameStart(id, name);
         if (startOff >= 0) {
           addCallSite(rangeFor(startOff, name));
         }
@@ -158,8 +155,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     final var element = trees.getElement(getCurrentPath());
     if (callReaches(element, new TreePath(getCurrentPath(), node.getQualifierExpression()))) {
       final String name = DeclarationNames.referenceName(node);
-      final long startOff =
-          DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+      final long startOff = nameStart(node, name);
       if (startOff >= 0) {
         addCallSite(rangeFor(startOff, name));
       }

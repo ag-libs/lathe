@@ -82,8 +82,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
       final var sel = node.getMethodSelect();
       if (sel instanceof final MemberSelectTree mst) {
         final String name = mst.getIdentifier().toString();
-        final long startOff =
-            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, mst), name);
+        final long startOff = nameStart(mst, name);
         if (startOff >= 0) {
           addCallSite(element, rangeFor(startOff, name));
         }
@@ -105,8 +104,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
               ? mst.getIdentifier().toString()
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
-        final long startOff =
-            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
+        final long startOff = nameStart(id, name);
         if (startOff >= 0) {
           addCallSite(element, rangeFor(startOff, name));
         }
@@ -122,8 +120,7 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
     // `Box::new` calls Box's constructor; an array's (`int[]::new`) has none to list.
     if (element instanceof ExecutableElement && !arrayConstructor(node)) {
       final String name = DeclarationNames.referenceName(node);
-      final long startOff =
-          DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+      final long startOff = nameStart(node, name);
       if (startOff >= 0) {
         addCallSite(element, rangeFor(startOff, name));
       }
