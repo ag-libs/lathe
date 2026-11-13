@@ -72,9 +72,9 @@ With two workspaces open, a run can go to the wrong server.
 
 - Where: `nvim/run.lua:114, 198, 244, 358` (`lathe_client()`); `nvim/dap.lua:123, 209`; `nvim/stackdecorate.lua:120`; `nvim/resources.lua:80`; `nvim/neotest/common.lua:44-46`.
 - Fix: pass `bufnr` wherever there is one; keep the no-buffer lookup only for the run console and stack traces.
-- Status: #192; the neotest adapter's own lookup is still open.
+- Status: #192: a buffer's own server only, the current buffer's then the first with none given. Still open: stopping a run and refreshing saved configs should ask the server that launched the run, and the neotest adapter keeps its own lookup.
 
-### CR-6 — Maven main runs may use a different JDK from the server (verified)
+### CR-6 — Maven main runs may use a different JDK from the server (not a bug)
 
 `MavenMainLaunch` records the JDK Maven runs on (`java.home`).
 The workspace JDK written to `.lathe/java-home` comes from `JdkSourceResolver`, which prefers `JAVA_HOME`.
@@ -82,7 +82,7 @@ A main run can start on a different JDK than the one the server analyses with; G
 
 - Where: `maven/MavenMainLaunch.java:41`; `maven/SyncCoordinator.java:69`; `install/JdkSourceResolver.java:33`.
 - Fix: pass `caches.jdk().home()` into `MavenMainLaunch`.
-- Status: #193.
+- Status: not a bug. Test runs record the JDK Maven runs on (the Surefire fork's `java.home`), so main runs doing the same keep main and test runs on one JDK; `JAVA_HOME` can even be older than the bytecode. #193 was closed.
 
 ### CR-7 — The root module has two names (not a behaviour bug)
 
@@ -103,7 +103,7 @@ A sealed non-abstract class can be instantiated.
 
 - Where: `analysis/completion/MemberAccessCompleter.java:244-249`; `analysis/completion/TypeReferenceCompleter.java:468-472, 525-538`; `ImportCandidates.java:74-86`; `TypeIndexValidator.java:30-41`.
 - Fix: one `instantiable(TypeElement)` helper; one import-validity rule (see CR-75).
-- Status: #197 for sealed classes; #200 for the import rule: both trust a reactor type with no class file yet.
+- Status: #197 for sealed classes (and a subtype offered only with a callable constructor); #200 for the import rule: both trust a reactor type with no class file yet, declared in a tree the file sees.
 
 ### CR-9 — Workspace symbols can resolve the wrong nested type
 
@@ -112,7 +112,7 @@ It also opens its own `SourceParser`.
 
 - Where: `analysis/WorkspaceSymbolResolver.java:39, 142-173`.
 - Fix: call `TypeSourceLocator.locate`.
-- Status: #194.
+- Status: #194. A local class (`Outer$1Helper`) now resolves to its file's start, as `TypeSourceLocator.locate` deliberately skips local classes; whether to locate them is open.
 
 ### CR-10 — Type-hierarchy explorer timing log is hand-written (not a bug)
 
