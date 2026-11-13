@@ -329,8 +329,9 @@ final class DocumentFeatures {
 
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
-    final var indexSnapshot = reactorIndex.current();
     final var route = router.routeCompiler(uri);
+    // Narrowed on the loop to the trees the file sees: a value, as the snapshot is.
+    final var indexSnapshot = reactorIndex.current().seenFrom(route.seenTrees());
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.openDocFeature(
         "completion",
@@ -362,9 +363,12 @@ final class DocumentFeatures {
     }
 
     final CompilerRoute route = router.routeCompiler(uri);
-    if (route instanceof CompilerRoute.External) {
+    if (!(route instanceof final CompilerRoute.Module module)) {
       return CompletableFuture.completedFuture(List.of());
     }
+
+    final Path tree = module.config().latheClassesDir();
+    final Set<Path> seenTrees = route.seenTrees();
 
     final List<CodeActionRequest> requests =
         context.getDiagnostics().stream()
@@ -385,7 +389,8 @@ final class DocumentFeatures {
         moduleWorker ->
             moduleWorker
                 .submit(session -> session.cachedTypeEntries(neededTypeNames))
-                .thenCompose(reactorIndex::withOpenEntries)
+                .thenCompose(entries -> reactorIndex.withOpenEntries(tree, entries))
+                .thenApply(index -> index.seenFrom(seenTrees))
                 .thenCompose(
                     enriched ->
                         moduleWorker.submit(

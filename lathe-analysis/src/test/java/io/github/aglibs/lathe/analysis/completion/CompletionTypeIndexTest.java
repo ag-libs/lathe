@@ -2,10 +2,13 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
@@ -496,6 +499,31 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                 .getAdditionalTextEdits())
         .extracting(TextEdit::getNewText)
         .anyMatch(text -> text.contains("import com.example.MyCustomException;"));
+  }
+
+  // The trust holds only for a tree the file sees (its own, or one on its class path): a type of
+  // another module, or of the test tree seen from main, would not compile there once built.
+  @Test
+  void typeIndex_typeWithoutClassFile_offeredOnlyFromATreeTheFileSees() throws IOException {
+    final WorkspaceTypeIndex index =
+        CompletionFixture.typeIndex(
+            tmp.resolve("index.json"),
+            List.of(),
+            List.of(
+                CompletionFixture.typeEntry(
+                    "MyCustomException", "com.example.MyCustomException", TypeKind.CLASS)));
+    final String source =
+        """
+        package com.other;
+        class Test {
+            MyCus§ field;
+        }""";
+
+    try (var seen = new CompletionFixture(index.seenFrom(Set.of(Path.of("tree0"))));
+        var unseen = new CompletionFixture(index.seenFrom(Set.of(Path.of("other-module"))))) {
+      assertThat(labels(seen.complete(source))).contains("MyCustomException");
+      assertThat(labels(unseen.complete(source))).doesNotContain("MyCustomException");
+    }
   }
 
   // ── argument position: importable types ───────────────────────────────────────

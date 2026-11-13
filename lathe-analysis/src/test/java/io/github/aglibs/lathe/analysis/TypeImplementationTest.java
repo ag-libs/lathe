@@ -26,7 +26,7 @@ class TypeImplementationTest {
     final var index =
         WorkspaceTypeIndex.build(
             List.of(),
-            List.of(
+            TempSourceCompiler.reactorShards(
                 List.of(
                     entry("Service"),
                     entry("Direct", "Service"),

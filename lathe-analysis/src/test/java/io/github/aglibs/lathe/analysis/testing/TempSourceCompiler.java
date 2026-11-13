@@ -17,7 +17,10 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
@@ -74,6 +77,19 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
     }
   }
 
+  // Reactor shards as WorkspaceTypeIndex takes them, each under a tree of its own (tree0, tree1,
+  // ...), in order.
+  @SafeVarargs
+  public static Map<Path, List<TypeIndexEntry>> reactorShards(
+      final List<TypeIndexEntry>... shards) {
+    final var byTree = new LinkedHashMap<Path, List<TypeIndexEntry>>();
+    for (int i = 0; i < shards.length; i++) {
+      byTree.put(Path.of("tree%d".formatted(i)), List.copyOf(shards[i]));
+    }
+
+    return Collections.unmodifiableMap(byTree);
+  }
+
   public static WorkspaceTypeIndex typeIndex(final Path shardPath, final TypeIndexEntry... entries)
       throws IOException {
     Json.write(
@@ -98,7 +114,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
                 new DependencyTypeIndexOrigin("test:lib:1.0", "/lib.jar", 0L, 0L)),
             dependencyEntries),
         shardPath);
-    return WorkspaceTypeIndex.build(List.of(shardPath), List.of(reactorEntries));
+    return WorkspaceTypeIndex.build(List.of(shardPath), reactorShards(reactorEntries));
   }
 
   @Override

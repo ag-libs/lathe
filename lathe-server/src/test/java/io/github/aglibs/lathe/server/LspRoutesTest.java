@@ -11,6 +11,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
@@ -96,6 +97,46 @@ class LspRoutesTest extends ServiceTestBase {
                 .get(TIMEOUT_S, TimeUnit.SECONDS))
         .extracting(TypeHierarchyItem::getName)
         .contains("Api");
+  }
+
+  // A type with no class file yet is offered only where a tree that sees it asks: app does not
+  // compile against lib, so lib's new Fresh is not app's to complete.
+  @Test
+  void completion_typeNotBuiltInAModuleTheFileDoesNotSee_notOffered() throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "lib",
+        Map.of("com/lib/Old.java", "package com.lib;\npublic class Old {}\n"),
+        List.of(),
+        1_000L);
+    final Path use =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of("com/app/Use.java", "package com.app;\nclass Use {\n  Object field;\n}\n"),
+                List.of(),
+                1_000L)
+            .get(0);
+    Files.writeString(
+        tmp.resolve("lib/src/main/java/com/lib/Fresh.java"),
+        "package com.lib;\npublic class Fresh {}\n");
+    final String edited = "package com.app;\nclass Use {\n  Fres field;\n}\n";
+    Files.writeString(use, edited);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(use, edited);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    awaitWorkerIdle();
+
+    final Position afterPrefix = positionOf(use, " field");
+    final Either<List<CompletionItem>, CompletionList> items =
+        service
+            .completion(new CompletionParams(documentOf(use), afterPrefix))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(items.isLeft() ? items.getLeft() : items.getRight().getItems())
+        .extracting(CompletionItem::getLabel)
+        .doesNotContain("Fresh");
   }
 
   @Test

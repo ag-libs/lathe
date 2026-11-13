@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
@@ -25,7 +26,7 @@ class WorkspaceSymbolTest {
   }
 
   private WorkspaceTypeIndex indexOf(final TypeIndexEntry... entries) {
-    return WorkspaceTypeIndex.build(List.of(), List.of(List.of(entries)));
+    return WorkspaceTypeIndex.build(List.of(), TempSourceCompiler.reactorShards(List.of(entries)));
   }
 
   private void createSourceFile(final String pkg, final String simpleName) throws IOException {

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -273,7 +274,9 @@ class WorkspaceTypeIndexTest {
     final var shard = writeShard(tmp, "shard.json", shard(entry("Alpha", "com.a")));
 
     final var index =
-        WorkspaceTypeIndex.build(List.of(shard), List.of(List.of(entry("Beta", "com.reactor"))));
+        WorkspaceTypeIndex.build(
+            List.of(shard),
+            TempSourceCompiler.reactorShards(List.of(entry("Beta", "com.reactor"))));
 
     assertThat(index.search("Al", 10)).extracting(TypeIndexEntry::simpleName).contains("Alpha");
     assertThat(index.search("Be", 10)).extracting(TypeIndexEntry::simpleName).contains("Beta");
@@ -285,7 +288,9 @@ class WorkspaceTypeIndexTest {
         new TypeIndexEntry(
             "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of());
 
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(packagePrivate)));
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(packagePrivate)));
 
     assertThat(index.search("FooTest", 10))
         .extracting(TypeIndexEntry::simpleName)
@@ -313,7 +318,8 @@ class WorkspaceTypeIndexTest {
         writeShard(tmp, "dep.json", shard(entry("TaskManagerDependency", "com.dep")));
     final var index =
         WorkspaceTypeIndex.build(
-            List.of(shardPath), List.of(List.of(entry("TaskManager", "com.example"))));
+            List.of(shardPath),
+            TempSourceCompiler.reactorShards(List.of(entry("TaskManager", "com.example"))));
 
     assertThat(index.searchCamelCase("Mgr", 10))
         .extracting(TypeIndexEntry::binaryName)
@@ -324,7 +330,9 @@ class WorkspaceTypeIndexTest {
   void searchCamelCase_abbreviatedHump_findsReactorMatch() {
     final var index =
         WorkspaceTypeIndex.build(
-            List.of(), List.of(List.of(entry("AbstractServerFactory", "com.example"))));
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                List.of(entry("AbstractServerFactory", "com.example"))));
 
     assertThat(index.searchCamelCase("ASF", 10))
         .extracting(TypeIndexEntry::binaryName)
@@ -336,7 +344,7 @@ class WorkspaceTypeIndexTest {
     final var index =
         WorkspaceTypeIndex.build(
             List.of(),
-            List.of(
+            TempSourceCompiler.reactorShards(
                 List.of(
                     entry("TaskManagerOne", "com.example"),
                     entry("TaskManagerTwo", "com.example"),
@@ -355,7 +363,9 @@ class WorkspaceTypeIndexTest {
     final var object = graphEntry("java.lang.Object", true);
     final var base = graphEntry("com.example.Base", true, "java.lang.Object");
     final var child = graphEntry("com.example.Child", true, "com.example.Base");
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(object, base, child)));
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(object, base, child)));
 
     assertThat(index.directSupertypes("com.example.Child"))
         .extracting(TypeIndexEntry::binaryName)
@@ -373,7 +383,9 @@ class WorkspaceTypeIndexTest {
     final var base = graphEntry("com.example.Base", true);
     final var internal = graphEntry("com.example.Internal", false, "com.example.Base");
     final var leaf = graphEntry("com.example.Leaf", true, "com.example.Internal");
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(base, internal, leaf)));
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(base, internal, leaf)));
 
     assertThat(index.transitiveSubtypes("com.example.Base"))
         .extracting(TypeIndexEntry::binaryName)
@@ -385,7 +397,8 @@ class WorkspaceTypeIndexTest {
     final var a = graphEntry("com.example.A", true, "com.example.C");
     final var b = graphEntry("com.example.B", true, "com.example.A");
     final var c = graphEntry("com.example.C", true, "com.example.B");
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a, b, c)));
+    final var index =
+        WorkspaceTypeIndex.build(List.of(), TempSourceCompiler.reactorShards(List.of(a, b, c)));
 
     assertThat(index.transitiveSubtypes("com.example.A"))
         .extracting(TypeIndexEntry::binaryName)
@@ -400,7 +413,8 @@ class WorkspaceTypeIndexTest {
     final var right = graphEntry("com.example.Right", true, "com.example.Base");
     final var leaf = graphEntry("com.example.Leaf", true, "com.example.Left", "com.example.Right");
     final var index =
-        WorkspaceTypeIndex.build(List.of(), List.of(List.of(base, left, right, leaf)));
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(base, left, right, leaf)));
 
     assertThat(index.transitiveSupertypes("com.example.Leaf"))
         .extracting(TypeIndexEntry::binaryName)
@@ -412,7 +426,8 @@ class WorkspaceTypeIndexTest {
     final var a = graphEntry("com.example.A", true, "com.example.C");
     final var b = graphEntry("com.example.B", true, "com.example.A");
     final var c = graphEntry("com.example.C", true, "com.example.B");
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a, b, c)));
+    final var index =
+        WorkspaceTypeIndex.build(List.of(), TempSourceCompiler.reactorShards(List.of(a, b, c)));
 
     assertThat(index.transitiveSupertypes("com.example.A"))
         .extracting(TypeIndexEntry::binaryName)
@@ -432,7 +447,9 @@ class WorkspaceTypeIndexTest {
   void graph_duplicateBinaryName_withinShard_keepsFirst() {
     final var first = graphEntry("com.example.Duplicate", true, "com.example.ParentA");
     final var second = graphEntry("com.example.Duplicate", true, "com.example.ParentB");
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(first, second)));
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(first, second)));
 
     assertThat(index.findType("com.example.Duplicate"))
         .hasValueSatisfying(
@@ -444,7 +461,8 @@ class WorkspaceTypeIndexTest {
     final var fromShardA = graphEntry("com.example.Dup", true, "com.example.ParentA");
     final var fromShardB = graphEntry("com.example.Dup", true, "com.example.ParentB");
     final var index =
-        WorkspaceTypeIndex.build(List.of(), List.of(List.of(fromShardA), List.of(fromShardB)));
+        WorkspaceTypeIndex.build(
+            List.of(), TempSourceCompiler.reactorShards(List.of(fromShardA), List.of(fromShardB)));
 
     assertThat(index.findType("com.example.Dup"))
         .hasValueSatisfying(
@@ -455,10 +473,13 @@ class WorkspaceTypeIndexTest {
   void withReactorEntries_replacesReactorEntriesAndPreservesSnapshot() throws IOException {
     final var shard = writeShard(tmp, "shard.json", shard(entry("Alpha", "com.static")));
     final var original =
-        WorkspaceTypeIndex.build(List.of(shard), List.of(List.of(entry("Beta", "com.reactor"))));
+        WorkspaceTypeIndex.build(
+            List.of(shard),
+            TempSourceCompiler.reactorShards(List.of(entry("Beta", "com.reactor"))));
 
     final var refreshed =
-        original.withReactorEntries(List.of(List.of(entry("Gamma", "com.reactor"))));
+        original.withReactorEntries(
+            TempSourceCompiler.reactorShards(List.of(entry("Gamma", "com.reactor"))));
 
     assertThat(refreshed.search("Alpha", 10)).hasSize(1);
     assertThat(refreshed.search("Beta", 10)).isEmpty();
@@ -473,7 +494,7 @@ class WorkspaceTypeIndexTest {
     final var original = WorkspaceTypeIndex.build(List.of(shard));
     writeShard(tmp, "shard.json", shard(entry("Delta", "com.static")));
 
-    final var refreshed = original.withReactorEntries(List.of());
+    final var refreshed = original.withReactorEntries(Map.of());
     final var reloaded = WorkspaceTypeIndex.build(List.of(shard));
 
     assertThat(refreshed.search("Alpha", 10)).hasSize(1);
@@ -487,7 +508,9 @@ class WorkspaceTypeIndexTest {
     final var depShard = writeShard(tmp, "dep.json", shard(entry("Application", "com.dep")));
     final var reactorEntry = entry("Application", "com.reactor");
 
-    final var index = WorkspaceTypeIndex.build(List.of(depShard), List.of(List.of(reactorEntry)));
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(depShard), TempSourceCompiler.reactorShards(List.of(reactorEntry)));
 
     final List<TypeIndexEntry> results = index.search("Application", 10);
     assertThat(results).hasSize(2);
@@ -500,7 +523,8 @@ class WorkspaceTypeIndexTest {
     final var a = graphEntry("io.helidon.health.HealthCheck", true);
     final var b = graphEntry("io.helidon.health.spi.HealthCheckProvider", true);
     final var c = graphEntry("io.helidon.config.Config", true);
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a, b, c)));
+    final var index =
+        WorkspaceTypeIndex.build(List.of(), TempSourceCompiler.reactorShards(List.of(a, b, c)));
 
     final List<String> result = index.searchByBinaryPrefix("io.helidon.", 10);
 
@@ -510,7 +534,8 @@ class WorkspaceTypeIndexTest {
   @Test
   void searchByBinaryPrefix_noMatch_returnsEmpty() {
     final var a = graphEntry("com.other.Foo", true);
-    final var index = WorkspaceTypeIndex.build(List.of(), List.of(List.of(a)));
+    final var index =
+        WorkspaceTypeIndex.build(List.of(), TempSourceCompiler.reactorShards(List.of(a)));
 
     assertThat(index.searchByBinaryPrefix("io.helidon.", 10)).isEmpty();
   }

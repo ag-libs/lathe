@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -35,7 +36,12 @@ public final class WorkspaceTypeIndex {
   private static final Logger LOG = Logger.getLogger(WorkspaceTypeIndex.class.getName());
 
   private final List<TypeIndexEntry> staticEntries;
-  private final Set<String> reactorBinaryNames;
+  // Each reactor type's declaring source trees, by their classes dir: binary names are unique
+  // within
+  // a compile, not across the workspace.
+  private final Map<String, Set<Path>> reactorTrees;
+  // The trees the asking file compiles against, its own included; every tree unless narrowed.
+  private final Predicate<Path> seenTree;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
   // Like bySimpleNameLower but with no visibility filter: every top-level type, including
   // package-private ones. Backs searchSymbols() (workspace/symbol + stack-frame navigation), which
@@ -48,14 +54,16 @@ public final class WorkspaceTypeIndex {
 
   private WorkspaceTypeIndex(
       final List<TypeIndexEntry> staticEntries,
-      final Set<String> reactorBinaryNames,
+      final Map<String, Set<Path>> reactorTrees,
+      final Predicate<Path> seenTree,
       final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
       final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower,
       final NavigableMap<String, TypeIndexEntry> byBinaryName,
       final Map<String, List<TypeIndexEntry>> directSubtypesByParent,
       final Map<String, Integer> usageCounts) {
     this.staticEntries = staticEntries;
-    this.reactorBinaryNames = reactorBinaryNames;
+    this.reactorTrees = reactorTrees;
+    this.seenTree = seenTree;
     this.bySimpleNameLower = bySimpleNameLower;
     this.symbolsBySimpleNameLower = symbolsBySimpleNameLower;
     this.byBinaryName = byBinaryName;
@@ -66,7 +74,8 @@ public final class WorkspaceTypeIndex {
   public static WorkspaceTypeIndex empty() {
     return new WorkspaceTypeIndex(
         List.of(),
-        Set.of(),
+        Map.of(),
+        tree -> true,
         Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
@@ -75,11 +84,12 @@ public final class WorkspaceTypeIndex {
   }
 
   public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
-    return build(shardPaths, List.of());
+    return build(shardPaths, Map.of());
   }
 
+  // reactorEntries: each source tree's types, by the tree's classes dir.
   public static WorkspaceTypeIndex build(
-      final List<Path> shardPaths, final Collection<List<TypeIndexEntry>> reactorEntries) {
+      final List<Path> shardPaths, final Map<Path, List<TypeIndexEntry>> reactorEntries) {
     final var t = Stopwatch.start();
     final List<TypeIndexFile> files =
         shardPaths.stream()
@@ -106,7 +116,8 @@ public final class WorkspaceTypeIndex {
   public WorkspaceTypeIndex withUsageCounts(final Map<String, Integer> usageCounts) {
     return new WorkspaceTypeIndex(
         staticEntries,
-        reactorBinaryNames,
+        reactorTrees,
+        seenTree,
         bySimpleNameLower,
         symbolsBySimpleNameLower,
         byBinaryName,
@@ -114,8 +125,22 @@ public final class WorkspaceTypeIndex {
         Map.copyOf(usageCounts));
   }
 
+  // The same index for one file, which sees only the given trees: its own and those it compiles
+  // against. Only isVisibleReactorType narrows; search and ranking span the workspace.
+  public WorkspaceTypeIndex seenFrom(final Set<Path> trees) {
+    return new WorkspaceTypeIndex(
+        staticEntries,
+        reactorTrees,
+        Set.copyOf(trees)::contains,
+        bySimpleNameLower,
+        symbolsBySimpleNameLower,
+        byBinaryName,
+        directSubtypesByParent,
+        usageCounts);
+  }
+
   public WorkspaceTypeIndex withReactorEntries(
-      final Collection<List<TypeIndexEntry>> reactorEntries) {
+      final Map<Path, List<TypeIndexEntry>> reactorEntries) {
     final var t = Stopwatch.start();
     // Usage counts carry over: they are refreshed only on a full build, not on an incremental save.
     final var index = create(staticEntries, reactorEntries, usageCounts);
@@ -132,20 +157,25 @@ public final class WorkspaceTypeIndex {
 
   private static WorkspaceTypeIndex create(
       final List<TypeIndexEntry> staticEntries,
-      final Collection<List<TypeIndexEntry>> reactorEntries,
+      final Map<Path, List<TypeIndexEntry>> reactorEntries,
       final Map<String, Integer> usageCounts) {
-    final Set<String> reactorBinaryNames =
-        reactorEntries.stream()
-            .flatMap(List::stream)
-            .map(TypeIndexEntry::binaryName)
-            .collect(Collectors.toUnmodifiableSet());
-    final List<TypeIndexEntry> deduped = deduplicate(staticEntries, reactorEntries);
+    final Map<String, Set<Path>> reactorTrees =
+        reactorEntries.entrySet().stream()
+            .flatMap(
+                shard ->
+                    shard.getValue().stream()
+                        .map(entry -> Map.entry(entry.binaryName(), shard.getKey())))
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableSet())));
+    final List<TypeIndexEntry> deduped = deduplicate(staticEntries, reactorEntries.values());
     final TreeMap<String, List<TypeIndexEntry>> mutable =
         deduped.stream()
             .filter(
                 e ->
                     e.typeNameCandidate()
-                        || (reactorBinaryNames.contains(e.binaryName()) && e.isTopLevel()))
+                        || (reactorTrees.containsKey(e.binaryName()) && e.isTopLevel()))
             .collect(
                 Collectors.groupingBy(
                     e -> e.simpleName().toLowerCase(),
@@ -184,7 +214,8 @@ public final class WorkspaceTypeIndex {
                         Collectors.collectingAndThen(Collectors.toList(), List::copyOf))));
     return new WorkspaceTypeIndex(
         staticEntries,
-        reactorBinaryNames,
+        Map.copyOf(reactorTrees),
+        tree -> true,
         map,
         symbolMap,
         Collections.unmodifiableNavigableMap(byBinaryName),
@@ -300,7 +331,7 @@ public final class WorkspaceTypeIndex {
       return 1;
     }
 
-    return reactorBinaryNames.contains(entry.binaryName()) ? 2 : 3;
+    return reactorTrees.containsKey(entry.binaryName()) ? 2 : 3;
   }
 
   // CamelCase-hump matching (e.g. "TaskMgr" -> TaskManager, "ASF" -> AbstractServerFactory) is
@@ -310,7 +341,7 @@ public final class WorkspaceTypeIndex {
   public List<TypeIndexEntry> searchCamelCase(final String query, final int limit) {
     return bySimpleNameLower.values().stream()
         .flatMap(List::stream)
-        .filter(entry -> reactorBinaryNames.contains(entry.binaryName()))
+        .filter(entry -> reactorTrees.containsKey(entry.binaryName()))
         .filter(entry -> CamelCaseMatcher.matches(query, entry.simpleName()))
         .limit(limit)
         .toList();
@@ -345,7 +376,13 @@ public final class WorkspaceTypeIndex {
   }
 
   public boolean isReactorType(final String binaryName) {
-    return reactorBinaryNames.contains(binaryName);
+    return reactorTrees.containsKey(binaryName);
+  }
+
+  // A reactor type declared in a tree the asking file sees (seenFrom), so it may name it before the
+  // type has a class file.
+  public boolean isVisibleReactorType(final String binaryName) {
+    return reactorTrees.getOrDefault(binaryName, Set.of()).stream().anyMatch(seenTree);
   }
 
   public Optional<TypeIndexEntry> findType(final String binaryName) {

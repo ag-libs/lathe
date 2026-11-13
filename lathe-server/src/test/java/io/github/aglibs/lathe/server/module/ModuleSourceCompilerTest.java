@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.testing.JavacCrashFixtures;
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -748,7 +749,9 @@ class ModuleSourceCompilerTest {
     TestJavac.compileToDir(config.latheClassesDir(), reactorSource);
     final var typeIndex =
         WorkspaceTypeIndex.build(
-            List.of(), List.of(ClassFileTypeScanner.scanDirectory(config.latheClassesDir())));
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                ClassFileTypeScanner.scanDirectory(config.latheClassesDir())));
 
     final String content = "package example; class Test { ReactorOnlyT field; }";
     final String markedContent = "package example; class Test { ReactorOnlyT§ field; }";
