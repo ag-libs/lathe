@@ -9,6 +9,7 @@ ProxyProtocolData.Family.UNKNOWN; the base class is HttpRouteBase (6 subclasses)
 The other kinds sit in LoomServer, the server itself. The module calls no third-party library, so
 the library queries ask about the JDK, as the JDK method query does.
 """
+import queries as Q
 
 WS = "webserver/webserver/src/main/java/io/helidon/webserver/"
 LOOM = WS + "LoomServer.java"
@@ -151,3 +152,15 @@ CASES = [
         "expect": {"locations": ["ProxyProtocolHandler.java:case UNKNOWN, UNIX -> throw BAD_PROTOCOL_EXCEPTION;"]},
     },
 ]
+
+# The editing loop (2026-11-11 amendment), in the definition query's file. WebServerConfig is generated
+# from its blueprint by Helidon's processors.
+_PROBE_FILE = next(c for c in CASES if c["name"] == PROBE)["at"][0]
+CASES += Q.editing_cases(
+    _PROBE_FILE, "public boolean isRunning() {",
+    member=("        WebServerConfig latheBench = null; latheBench.", "port"),
+    unimported=("Htt", "HttpRouting", "io.helidon.webserver.http.HttpRouting"),
+    static=("        Math.", "max"),
+    lambda_line=("        java.util.function.Function<WebServerConfig, Object> latheBench = c -> c.", "port"),
+    removed_import="import io.helidon.common.context.Context;",
+    rename_at=next(c for c in CASES if c["name"] == "references: widely used method")["at"])

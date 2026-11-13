@@ -8,6 +8,7 @@ its occurrence on the line) or `file` or `query`, and `expect`, a hand-written c
 the answer summaries follow java-index's harness (benchmark/bench.py), so spring-petclinic's results
 compare with its published ones.
 """
+import re
 import urllib.parse
 from pathlib import Path
 
@@ -25,7 +26,16 @@ CAPABILITY = {
     "textDocument/signatureHelp": "signatureHelpProvider",
     "textDocument/documentSymbol": "documentSymbolProvider",
     "workspace/symbol": "workspaceSymbolProvider",
+    "textDocument/completion": "completionProvider",
+    "textDocument/rename": "renameProvider",
+    "textDocument/codeAction": "codeActionProvider",
+    # Not a request: the diagnostics a server publishes after an edit, which every server does.
+    "textDocument/publishDiagnostics": None,
 }
+# A completion's expected item must rank within this many, in the order Neovim shows them.
+COMPLETION_TOP = 20
+# The new name of a rename case.
+RENAMED = "latheRenamed"
 
 LOCATION_METHODS = ("textDocument/definition", "textDocument/typeDefinition", "textDocument/references",
                     "textDocument/implementation", "textDocument/documentHighlight")
@@ -51,11 +61,83 @@ def position(repo, at):
 
 
 def opened_files(cases):
-    return sorted({c["at"][0] for c in cases if "at" in c} | {c["file"] for c in cases if "file" in c})
+    return sorted({c["at"][0] for c in cases if "at" in c} | {c["file"] for c in cases if "file" in c}
+                  | {c["edit"][0] for c in cases if "edit" in c}
+                  | {c[k][0] for c in cases for k in ("upstream", "downstream", "import_removed") if k in c})
+
+
+def edited_text(repo, case):
+    """The file with the case's line typed in after its anchor line, and the position at its end."""
+    path, anchor, typed = case["edit"]
+    lines = (repo / path).read_text(encoding="utf-8").split("\n")
+    row = next(i for i, line in enumerate(lines) if anchor in line) + 1
+    return "\n".join(lines[:row] + [typed] + lines[row:]), {"line": row, "character": len(typed)}
+
+
+def change(client, repo, path, text, save=False):
+    """Sends the whole document, as one change, at its next version; saving writes it to disk first,
+    as an editor does, then sends didSave with its text. Returns the version."""
+    versions = client.__dict__.setdefault("versions", {})
+    versions[path] = versions.get(path, 1) + 1
+    if save:
+        (repo / path).write_text(text, encoding="utf-8")
+    client.notify("textDocument/didChange", {
+        "textDocument": {"uri": uri(repo, path), "version": versions[path]}, "contentChanges": [{"text": text}]})
+    if save:
+        client.notify("textDocument/didSave", {"textDocument": {"uri": uri(repo, path)}, "text": text})
+    return versions[path]
+
+
+def label_name(label):
+    """The name an item completes, without jdtls's ' - package' or a signature."""
+    match = re.match(r"[\w$]+", label.strip())
+    return match.group(0) if match else label
+
+
+def complete(client, repo, case, timeout):
+    """Types the case's line, asks for completion at its end, and resolves the expected item when the
+    server defers its details (jdtls does): the time a user waits for the item to apply."""
+    path = case["edit"][0]
+    text, pos = edited_text(repo, case)
+    change(client, repo, path, text)
+    try:
+        result = client.request("textDocument/completion", {"textDocument": {"uri": uri(repo, path)}, "position": pos},
+                                timeout=timeout)
+        items = result.get("items", []) if isinstance(result, dict) else result or []
+        items = sorted(items, key=lambda i: i.get("sortText") or i.get("label", ""))
+        wanted = next((i for i in items if label_name(i.get("label", "")) == case["expect"]["completion"]), None)
+        if wanted and "additionalTextEdits" not in wanted and client.__dict__.get("resolves_completion"):
+            wanted = client.request("completionItem/resolve", wanted, timeout=timeout)
+        return {"items": items, "resolved": wanted}
+    finally:
+        change(client, repo, path, (repo / path).read_text(encoding="utf-8"))
+
+
+def text_edits(edit):
+    """{uri: [TextEdit]} of a WorkspaceEdit, from its changes or its documentChanges."""
+    found = {}
+    for uri_, edits in (edit or {}).get("changes", {}).items():
+        found.setdefault(uri_, []).extend(edits)
+    for change_ in (edit or {}).get("documentChanges", []) or []:
+        if "textDocument" in change_:
+            found.setdefault(change_["textDocument"]["uri"], []).extend(change_.get("edits", []))
+    return found
+
+
+def rename(client, repo, case, timeout):
+    """prepareRename then rename, as Neovim asks them."""
+    params = {"textDocument": {"uri": uri(repo, case["at"][0])}, "position": position(repo, case["at"])}
+    if client.__dict__.get("prepares_rename"):
+        client.request("textDocument/prepareRename", params, timeout=timeout)
+    return client.request("textDocument/rename", dict(params, newName=RENAMED), timeout=timeout)
 
 
 def ask(client, repo, case, timeout):
     method = case["method"]
+    if method == "textDocument/completion":
+        return complete(client, repo, case, timeout)
+    if method == "textDocument/rename":
+        return rename(client, repo, case, timeout)
     if method == "workspace/symbol":
         return client.request(method, {"query": case["query"]}, timeout=timeout)
     if method == "textDocument/documentSymbol":
@@ -128,6 +210,15 @@ def summarize(repo, case, result):
         out["text"] = hover_text(result)
     elif method == "textDocument/signatureHelp":
         out["names"] = [s.get("label", "") for s in result.get("signatures", [])]
+    elif method == "textDocument/rename":
+        edits = text_edits(result)
+        out["names"] = sorted(urllib.parse.unquote(u)[len(repo.as_uri()) + 1:] for u in edits)
+        # Occurrences of the new name, not edits: jdtls sends one edit per file spanning every use in it.
+        out["text"] = "%d file(s), %d renamed" % (
+            len(edits), sum(e.get("newText", "").count(RENAMED) for file_edits in edits.values() for e in file_edits))
+    elif method == "textDocument/completion":
+        out["names"] = [label_name(i.get("label", "")) for i in result["items"]][:COMPLETION_TOP]
+        out["text"] = "\n".join(e.get("newText", "") for e in (result["resolved"] or {}).get("additionalTextEdits") or [])
     return out
 
 
@@ -147,6 +238,10 @@ def check(expect, summary):
     if "contains" in expect:
         return all(any(w == n or n.startswith(w + "(") or n.startswith(w + " ") or w == n.split(".")[-1]
                        for n in names) for w in expect["contains"])
+    if "rename_files" in expect:
+        return len(names) >= expect["rename_files"]
+    if "completion" in expect:
+        return expect["completion"] in names and ("import" not in expect or expect["import"] in summary["text"])
     if "signature_contains" in expect:
         return any(expect["signature_contains"] in n for n in names)
     return bool(names or locations or summary["text"])
@@ -155,3 +250,36 @@ def check(expect, summary):
 def location_keys(summary):
     """A set-valued answer's project locations as 'path:line', for comparing the servers."""
     return sorted({"%s:%d" % (loc["path"], loc["line"]) for loc in summary["locations"] if loc.get("project")})
+
+
+def editing_cases(path, anchor, member, unimported, static, lambda_line, removed_import=None, rename_at=None):
+    """The 2026-11-11 amendment's editing-loop cases for one file: four completions (a member of a
+    project type, an unimported project type, a JDK static member, a lambda parameter), an error typed
+    without and with a save, and, where given, the rename of the widely used method and an import
+    removed. Each line is typed after the anchor line, inside a method."""
+    member_line, member_name = member
+    prefix, type_name, fqn = unimported
+    static_line, static_name = static
+    lambda_text, lambda_name = lambda_line
+    typed_error = "        int latheBench = \"x\";"
+    cases = [
+        {"name": "completion: member of a project type", "method": "textDocument/completion",
+         "edit": (path, anchor, member_line), "expect": {"completion": member_name}},
+        {"name": "completion: an unimported project type", "method": "textDocument/completion",
+         "edit": (path, anchor, "        " + prefix), "expect": {"completion": type_name, "import": fqn}},
+        {"name": "completion: a JDK type's static member", "method": "textDocument/completion",
+         "edit": (path, anchor, static_line), "expect": {"completion": static_name}},
+        {"name": "completion: a lambda parameter", "method": "textDocument/completion",
+         "edit": (path, anchor, lambda_text), "expect": {"completion": lambda_name}},
+        {"name": "diagnostics: typing an error", "method": "textDocument/publishDiagnostics",
+         "edit": (path, anchor, typed_error)},
+        {"name": "diagnostics: typing an error, saved", "method": "textDocument/publishDiagnostics",
+         "edit": (path, anchor, typed_error), "save": True},
+    ]
+    if rename_at:
+        cases.append({"name": "rename: widely used method", "method": "textDocument/rename", "at": rename_at,
+                      "expect": {"rename_files": 2}})
+    if removed_import:
+        cases.append({"name": "code action: import a removed import", "method": "textDocument/codeAction",
+                      "import_removed": (path, removed_import)})
+    return cases

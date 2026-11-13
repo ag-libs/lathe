@@ -22,7 +22,7 @@ EXAMPLES = 10
 def load(out_dir):
     runs = {}
     for path in sorted(out_dir.glob("*.json")):
-        if path.name == "environment.json":
+        if path.name in ("environment.json", "baseline.json"):
             continue
         result = json.loads(path.read_text())
         runs.setdefault(result["server"], []).append(result)
@@ -40,22 +40,111 @@ def fmt(value, unit="", scale=1.0, digits=0):
     return "%.*f%s" % (digits, value / scale, unit)
 
 
+def first_answer_ms(result):
+    """What a user waits for a first answer: the run's build (Lathe's; jdtls's install where it needs
+    one) and the server's ready time, which holds jdtls's import."""
+    if result.get("ready_ms") is None:
+        return None
+    return (result.get("build_ms") or 0) + result["ready_ms"]
+
+
+def disk_lines(runs):
+    """Each server's install, and what it wrote into the project's tree, from its last run."""
+    lines = []
+    for server, results in runs.items():
+        disk = next((r["disk"] for r in reversed(results) if r.get("disk")), None)
+        if disk:
+            tree = disk["tree"]
+            lines.append("- %s: install %s; in the project tree: %s" % (
+                server, fmt(disk["install_mb"], " MB"),
+                ", ".join("`%s`" % p for p in tree[:8]) + (" and %d more" % (len(tree) - 8) if len(tree) > 8 else "")
+                if tree else "nothing"))
+    return ["", "Disk is what a server keeps for the project after a run (jdtls's workspace data and "
+                "configuration, Lathe's `.lathe/`). Beside it:", ""] + lines if lines else []
+
+
+def build_change_lines(runs):
+    """A build-file change's times, per run, the user's step in them."""
+    def took(ms):
+        return "never" if ms is None else fmt(ms, " s", 1000, 1)
+
+    rows, change = [], None
+    for server, results in runs.items():
+        for r in results:
+            c = r.get("build_change")
+            if c:
+                change = c
+                step = ("Sync on the prompt, script %s" % took(c.get("step_ms")) if server == "lathe"
+                        else ":JdtUpdateConfig (no prompt shown)")
+                if c.get("step_exit"):
+                    step += ", exit %d" % c["step_exit"]
+                rows.append("| %s | %s | %s | %s | %s |" % (server, r["mode"], took(c.get("prompt_ms")) if server == "lathe" else "-",
+                                                           step, took(c.get("fixed_ms"))))
+    if not rows:
+        return []
+    return ["", "## Build-file change (from the change until the file using the new dependency has no error)", "",
+            "A dependency added to `%s` and one of its classes used in `%s`." % (change["build_file"], change["file"]),
+            "", "| Server | Mode | Prompt | User's step | No error |", "|---|---|---|---|---|"] + rows
+
+
+def branch_lines(runs):
+    """A branch switch's times, per run: until each answer matches a fresh start at that commit."""
+    def took(ms):
+        return "never" if ms is None else fmt(ms, " s", 1000, 1)
+
+    rows = []
+    for server, results in runs.items():
+        for r in results:
+            s = r.get("branch_switch")
+            if s:
+                cells = [took(s[k]) if s.get("changed", [True] * 4)[i] else "unchanged"
+                         for i, k in enumerate(("added_type_ms", "deleted_type_ms", "references_ms", "diagnostics_ms"))]
+                cells.append(took(s.get("back_ms")))
+                rows.append("| %s | %s | %s |" % (server, r["mode"], " | ".join(cells)))
+    if not rows:
+        return []
+    s = next(r["branch_switch"] for results in runs.values() for r in results if r.get("branch_switch"))
+    return ["", "## Branch switch to %s (from the checkout until each answer matches a fresh start there)" % s["ref"],
+            "", "Added type `%s`, deleted type `%s`, references to `%s`, errors in `%s`." % (
+                s["checks"]["added"], s["checks"]["deleted"], s["references_at"][2], s["checks"]["watched"]), "",
+            "A check marked unchanged answered the same before the switch as a fresh start does after it, so it "
+            "tells nothing. Back is from the checkout of the first commit until every answer is again what it "
+            "was before the switch; the server stops after it, so its saved state is the warm run's start.", "",
+            "| Server | Mode | Added type gone | Deleted type found | References | Changed file's errors | Back |",
+            "|---|---|---|---|---|---|---|"] + rows
+
+
+def baseline_lines(out_dir, runs):
+    """The build without Lathe, and Lathe's share of its cold build beside it."""
+    path = out_dir / "baseline.json"
+    if not path.exists():
+        return []
+    baseline = json.loads(path.read_text())
+    lathe = median([r.get("build_ms") for r in runs.get("lathe", []) if r["mode"] == "cold" and not r.get("error")])
+    share = "; Lathe's cold build %s, so its share %s" % (
+        fmt(lathe, " s", 1000, 1), fmt(lathe - baseline["build_ms"], " s", 1000, 1)) if lathe else ""
+    return ["", "Build without Lathe (`%s`, fresh checkout): %s%s." % (
+        baseline["command"], fmt(baseline["build_ms"], " s", 1000, 1), share)]
+
+
 def server_table(runs):
-    rows = ["| Server | Mode | Runs | Build | Import | Ready | Startup peak | Query peak | Idle | CPU | Failed |",
-            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| Server | Mode | Runs | Build | Import | Ready | First answer | Startup peak | Query peak | Idle | CPU | Disk | Failed |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for server, results in runs.items():
         for mode in ("cold", "warm"):
             done = [r for r in results if r["mode"] == mode]
             ok = [r for r in done if not r.get("error")]
-            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %d |" % (
+            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d |" % (
                 server, mode, len(done),
                 fmt(median([r.get("build_ms") for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("import_ms") for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("ready_ms") for r in ok]), " s", 1000, 1),
+                fmt(median([first_answer_ms(r) for r in ok]), " s", 1000, 1),
                 fmt(median([r.get("startup_peak_mb") for r in ok]), " MB"),
                 fmt(median([r.get("query_peak_mb") for r in ok]), " MB"),
                 fmt(median([r.get("idle_mb") for r in ok]), " MB"),
                 fmt(median([r.get("cpu_s") for r in ok]), " s", 1, 1),
+                fmt(median([(r.get("disk") or {}).get("state_mb") for r in ok]), " MB"),
                 len(done) - len(ok)))
     return rows
 
@@ -141,6 +230,9 @@ def failures(runs):
         for result in results:
             if result.get("error"):
                 lines.append("- %s %s run: %s" % (server, result["mode"], result["error"]))
+            if result.get("tree_changed"):
+                lines.append("- %s %s run left the clone changed: %s" % (server, result["mode"],
+                                                                      "; ".join(result["tree_changed"])))
             for name, case in result["cases"].items():
                 if case.get("supported") and not case.get("correct"):
                     lines.append("- %s %s run, %s: %s" % (server, result["mode"], name,
@@ -166,12 +258,13 @@ def main():
         "",
         "## Servers (medians; memory is the summed RSS of the server's processes)",
         "",
-    ] + server_table(runs) + [
+    ] + server_table(runs) + baseline_lines(out_dir, runs) + disk_lines(runs) + branch_lines(runs) + build_change_lines(runs) + [
         "",
-        "Build is what a cold run builds before the server starts: Lathe's build and sync (on Gradle with "
-        "its test capture), and for jdtls only where it needs the project installed first. Import is "
-        "jdtls's own project import, inside its ready time. Ready runs from the server's start to the "
-        "first right answer to the probe query.",
+        "Build is what a cold run builds before the server starts: Lathe's first build as the README has a "
+        "user run it, tests captured but not run, and for jdtls only where it needs the project installed "
+        "first. Import is jdtls's own project import, inside its ready time. Ready runs from the server's "
+        "start to the first right answer to the probe query. First answer is build plus ready: what a user "
+        "waits for on a fresh checkout.",
         "",
         "## Queries (warm runs, medians)",
         "",

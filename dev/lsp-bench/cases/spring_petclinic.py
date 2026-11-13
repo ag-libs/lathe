@@ -132,3 +132,69 @@ CASES = [
         "expect": {"contains": ["PetValidator"]},
     },
 ]
+
+# Completion, pre-registered in the 2026-11-11 amendment: a line typed into the definition query's file
+# (after the anchor line, inside a method), completed at its end; the expected item must rank within
+# the first 20, and the unimported type's must add its import. These are Lathe's own, not java-index's.
+CREATION_FORM = "public String initCreationForm() {"
+CASES += [
+    {
+        "name": "completion: member of a project type",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, "\t\tOwner latheBench = new Owner(); latheBench."),
+        "expect": {"completion": "getPets"},
+    },
+    {
+        "name": "completion: an unimported project type",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, "\t\tSpe"),
+        "expect": {"completion": "Specialty", "import": "org.springframework.samples.petclinic.vet.Specialty"},
+    },
+    {
+        "name": "completion: a JDK type's static member",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, "\t\tList."),
+        "expect": {"completion": "of"},
+    },
+    {
+        "name": "completion: a lambda parameter",
+        "method": "textDocument/completion",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM,
+                 "\t\tjava.util.function.Function<Owner, String> latheBench = o -> o."),
+        "expect": {"completion": "getLastName"},
+    },
+]
+
+# Errors while typing (2026-11-11 amendment): a line that does not compile typed as the method's first
+# statement, then undone; the time until its error shows and until it is gone, without and with a save.
+TYPED_ERROR = "\t\tint latheBench = \"x\";"
+CASES += [
+    {
+        "name": "diagnostics: typing an error",
+        "method": "textDocument/publishDiagnostics",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, TYPED_ERROR),
+    },
+    {
+        "name": "diagnostics: typing an error, saved",
+        "method": "textDocument/publishDiagnostics",
+        "edit": (OWNER_CONTROLLER, CREATION_FORM, TYPED_ERROR),
+        "save": True,
+    },
+]
+
+# Rename and imports (2026-11-11 amendment): the widely used method (java-index's getId query) renamed,
+# its edit applied to a copy that must compile (--compile-renames); and an import the file uses
+# removed, until the error shows and an action importing it is offered and resolved.
+CASES += [
+    {
+        "name": "rename: widely used method",
+        "method": "textDocument/rename",
+        "at": (PKG + "model/BaseEntity.java", "public Integer getId()", "getId"),
+        "expect": {"rename_files": 2},
+    },
+    {
+        "name": "code action: import a removed import",
+        "method": "textDocument/codeAction",
+        "import_removed": (OWNER_CONTROLLER, "import org.springframework.data.domain.Pageable;"),
+    },
+]

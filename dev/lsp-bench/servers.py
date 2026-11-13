@@ -12,12 +12,15 @@ import platform
 import shutil
 import subprocess
 import time
+import urllib.parse
 from pathlib import Path
 
 import projects as P
+import queries as Q
 
 BENCH = Path(__file__).resolve().parent
-WORK = BENCH / ".work"
+# BENCH_WORK: another checkout's work directory, so a worktree needs no copy of the clones and servers.
+WORK = Path(os.environ.get("BENCH_WORK", str(BENCH / ".work")))
 REPOS = WORK / "repos"
 SERVERS = WORK / "servers"
 LATHE_VERSION = os.environ.get("BENCH_LATHE_VERSION", "0.3.99-c15d3a55")
@@ -39,9 +42,10 @@ def repo_of(name):
     return REPOS / name
 
 
-def fresh_checkout(repo):
-    """The clone as a fresh clone has it: no build output, no server files, no local edits."""
-    subprocess.run(["git", "checkout", "-q", "--", "."], cwd=repo, check=True)
+def fresh_checkout(repo, commit):
+    """The clone as a fresh clone of the pinned commit has it: no build output, no server files, no
+    local edits, whatever an interrupted run left checked out."""
+    subprocess.run(["git", "checkout", "-q", "-f", "--detach", commit], cwd=repo, check=True)
     subprocess.run(["git", "clean", "-q", "-ffdx"], cwd=repo, check=True)
 
 
@@ -87,8 +91,97 @@ def lathe_build_command(project, repo):
     if project["build"] == "gradle":
         return ["./gradlew", "--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process",
                 "--init-script", str(gradle_init_script(project)), "latheSync", "-Plathe.capture.only=true"]
-    maven = "./mvnw" if (repo / "mvnw").exists() else MAVEN
-    return [maven, "-B", "-q"] + project.get("maven_goals", ["process-test-classes"])
+    # The README's first build: tests captured (in a dry run), not run (the 2026-11-11 amendment).
+    return maven_command(repo) + project.get("maven_goals", ["clean", "test", "-Dlathe.capture.only=true"])
+
+
+def maven_command(repo):
+    return ["./mvnw" if (repo / "mvnw").exists() else MAVEN, "-B", "-q"]
+
+
+def baseline_command(project, repo):
+    """What compiles the code and its tests with no Lathe loaded: the build a project costs anyway."""
+    if project["build"] == "gradle":
+        return ["./gradlew", "--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process", "testClasses"]
+    return maven_command(repo) + project.get("baseline_goals", ["clean", "test-compile"])
+
+
+# A rename's edit must compile; whether the renamed lines still match a project's formatting or lint
+# rules is no part of that (a longer name rewraps a line spring-javaformat then rejects).
+MAVEN_CHECKS_OFF = ["-Dspotless.check.skip=true", "-Dspring-javaformat.skip=true", "-Dcheckstyle.skip=true",
+                    "-Denforcer.skip=true", "-Drat.skip=true", "-Dpmd.skip=true", "-Dspotbugs.skip=true",
+                    "-Dlicense.skip=true", "-Dmaven.javadoc.skip=true"]
+
+
+def compiles_with(name, project, edit):
+    """Applies a WorkspaceEdit to a copy of the project at its commit and builds it there, offline, with
+    no Lathe loaded: whether its main and test code still compile."""
+    repo = repo_of(name)
+    copy = WORK / "rename-check" / name
+    subprocess.run(["git", "worktree", "remove", "--force", str(copy)], cwd=repo, capture_output=True)
+    subprocess.run(["git", "worktree", "add", "--detach", "-q", str(copy), "HEAD"], cwd=repo, check=True)
+    try:
+        prefix = repo.as_uri() + "/"
+        for target, edits in Q.text_edits(edit).items():
+            target = urllib.parse.unquote(target)
+            if not target.startswith(prefix):
+                continue
+            path = copy / target[len(prefix):]
+            path.write_text(apply_edits(path.read_text(encoding="utf-8"), edits), encoding="utf-8")
+        command = baseline_command(project, copy) + (["--offline"] if project["build"] == "gradle" else
+                                                     ["-o"] + MAVEN_CHECKS_OFF)
+        build = subprocess.run(command, cwd=copy, env=build_env(project), capture_output=True, text=True)
+        # Why it did not compile, for the run's reader: the build's own output.
+        (WORK / ("rename-check-%s.log" % name)).write_text(build.stdout + build.stderr, encoding="utf-8")
+        return build.returncode == 0
+    finally:
+        subprocess.run(["git", "worktree", "remove", "--force", str(copy)], cwd=repo, capture_output=True)
+
+
+def apply_edits(text, edits):
+    """The text with LSP TextEdits applied, last first, so earlier ranges stay right (UTF-16 columns
+    taken as characters: the projects' sources are ASCII where they are renamed)."""
+    lines = text.split("\n")
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line) + 1)
+
+    def at(pos):
+        return offsets[pos["line"]] + pos["character"]
+
+    for e in sorted(edits, key=lambda e: at(e["range"]["start"]), reverse=True):
+        text = text[:at(e["range"]["start"])] + e["newText"] + text[at(e["range"]["end"]):]
+    return text
+
+
+def baseline_build(name, project, log):
+    """The baseline on a fresh checkout, timed in ms; the checkout carries no Lathe extension."""
+    repo = repo_of(name)
+    fresh_checkout(repo, project["commit"])
+    start = time.monotonic()
+    with open(log, "ab") as out:
+        subprocess.run(baseline_command(project, repo), cwd=repo, env=build_env(project),
+                       stdout=out, stderr=subprocess.STDOUT, check=True)
+    return (time.monotonic() - start) * 1000
+
+
+def lathe_edits(name, project):
+    """What the benchmark changes in a checkout for Lathe: its Maven extension and a project's appended
+    lines. Safe to repeat, so a branch switch re-applies it to the commit it checks out."""
+    repo = repo_of(name)
+    if project["build"] == "maven" and "lathe-maven-extension" not in (
+            (repo / ".mvn" / "extensions.xml").read_text(encoding="utf-8")
+            if (repo / ".mvn" / "extensions.xml").exists() else ""):
+        enable_lathe_maven(repo)
+    for path, line in project.get("lathe_appends", {}).items():
+        target = repo / path
+        if line not in (target.read_text(encoding="utf-8") if target.exists() else ""):
+            with open(target, "a", encoding="utf-8") as f:
+                f.write(line)
+
+
+def no_edits(name, project):
+    """jdtls needs no change to a checkout."""
 
 
 def lathe_prepare(name, project, mode, log):
@@ -96,12 +189,8 @@ def lathe_prepare(name, project, mode, log):
     repo = repo_of(name)
     if mode == "warm" and (repo / ".lathe" / "lathe-launcher.sh").exists():
         return None
-    fresh_checkout(repo)
-    if project["build"] == "maven":
-        enable_lathe_maven(repo)
-    for path, line in project.get("lathe_appends", {}).items():
-        with open(repo / path, "a", encoding="utf-8") as f:
-            f.write(line)
+    fresh_checkout(repo, project["commit"])
+    lathe_edits(name, project)
     start = time.monotonic()
     with open(log, "ab") as out:
         subprocess.run(lathe_build_command(project, repo), cwd=repo, env=build_env(project),
@@ -138,9 +227,12 @@ def jdtls_repository(name):
 def jdtls_settings(name, project):
     # vscode-java's defaults where jdtls's own differ (signature help is off in jdtls itself). A
     # project with both a pom.xml and a Gradle build is imported through the build Lathe uses.
-    java = {"signatureHelp": {"enabled": True}}
+    # vscode-java keeps jdtls's Eclipse metadata (.project, .classpath, .settings/) in its workspace
+    # data; jdtls's own default writes it into the project's tree, as a Neovim user who does not set
+    # this gets it.
+    java = {"signatureHelp": {"enabled": True}, "import": {"generatesMetadataFilesAtProjectRoot": False}}
     if project["build"] == "maven":
-        java["import"] = {"gradle": {"enabled": False}}
+        java["import"]["gradle"] = {"enabled": False}
     if project.get("jdtls_install"):
         java["configuration"] = {"maven": {"userSettings": str(jdtls_repository(name)[1])}}
     return {"java": java}
@@ -159,7 +251,7 @@ def jdtls_prepare(name, project, mode, state, log):
         state.mkdir(parents=True, exist_ok=True)
         return None
     repo = repo_of(name)
-    fresh_checkout(repo)
+    fresh_checkout(repo, project["commit"])
     shutil.rmtree(state, ignore_errors=True)
     state.mkdir(parents=True, exist_ok=True)
     if not project.get("jdtls_install"):
@@ -196,6 +288,17 @@ def merge(settings, overrides):
     return settings
 
 
+# What nvim-jdtls (lua/jdtls/capabilities.lua at 6e9d953f) tells jdtls its client handles, the Neovim
+# user's jdtls client: with them jdtls offers its import actions as commands the client carries out.
+NVIM_JDTLS_CAPABILITIES = {
+    "classFileContentsSupport": True, "generateToStringPromptSupport": True, "hashCodeEqualsPromptSupport": True,
+    "advancedExtractRefactoringSupport": True, "advancedOrganizeImportsSupport": True,
+    "generateConstructorsPromptSupport": True, "generateDelegateMethodsPromptSupport": True,
+    "moveRefactoringSupport": True, "overrideMethodsPromptSupport": True, "executeClientCommandSupport": True,
+    "inferSelectionSupport": ["extractMethod", "extractVariable", "extractConstant", "extractVariableAllOccurrence"],
+}
+
+
 def jdtls_spec(name, project, state, heap, overrides=None):
     settings = merge(jdtls_settings(name, project), overrides or {})
     launcher = glob.glob(str(JDTLS / "plugins" / "org.eclipse.equinox.launcher_*.jar"))[0]
@@ -212,6 +315,8 @@ def jdtls_spec(name, project, state, heap, overrides=None):
         "-XX:+UseParallelGC", "-XX:GCTimeRatio=4", "-XX:AdaptiveSizePolicyWeight=90",
         "-Dsun.zip.disableMemoryMapping=true",
         "-Xmx%s" % (heap or "2G"), "-Xms100m", "-Xlog:disable",
+        # vscode-java passes its metadata setting as a property too: jdtls needs it before it reads settings.
+        "-Djava.import.generatesMetadataFilesAtProjectRoot=false",
         "--add-modules=ALL-SYSTEM",
         "--add-opens", "java.base/java.util=ALL-UNNAMED",
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
@@ -226,16 +331,50 @@ def jdtls_spec(name, project, state, heap, overrides=None):
         "-data", str(state / "workspace"),
     ]
     env = {**os.environ, "JAVA_HOME": JDTLS_JAVA_HOME}
-    init_options = {"settings": settings,
-                    "extendedClientCapabilities": {"classFileContentsSupport": True}}
+    init_options = {"settings": settings, "extendedClientCapabilities": NVIM_JDTLS_CAPABILITIES}
     return {"cmd": cmd, "env": env, "init_options": init_options, "settings": settings}
+
+
+def size_mb(path):
+    """A directory's or file's size on disk, in MB; 0 when it is not there."""
+    path = Path(path)
+    if path.is_file():
+        return path.stat().st_size / 1e6
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / 1e6 if path.is_dir() else 0
+
+
+# Build output and the benchmark's own edits (the Lathe extension, a project's appends): not a server's.
+NOT_SERVER_FILES = ("target/", "build/", ".gradle/", "bin/", ".mvn/", "pgp-keys-map.list")
+
+
+def tree_files(repo):
+    """What a server left in the project's tree, as git status lists it, outside build output."""
+    status = subprocess.run(["git", "status", "--porcelain", "--ignored", "--untracked-files=normal"], cwd=repo,
+                            capture_output=True, text=True).stdout.splitlines()
+    paths = [line[3:] for line in status]
+    return sorted(p for p in paths if not any(part in "/" + p for part in ["/" + n for n in NOT_SERVER_FILES]))
+
+
+def lathe_disk(name, state):
+    """Lathe's .lathe/ and the jars its launcher runs (shared by every project on one version)."""
+    repo = repo_of(name)
+    args = repo / ".lathe" / "lathe-server.args"
+    jars = {p for line in (args.read_text(encoding="utf-8").split() if args.exists() else [])
+            for p in line.split(os.pathsep) if p.endswith(".jar")}
+    return {"state_mb": size_mb(repo / ".lathe"), "install_mb": sum(size_mb(j) for j in jars),
+            "tree": tree_files(repo)}
+
+
+def jdtls_disk(name, state):
+    """jdtls's workspace data and configuration (its -data and the state beside it), and its install."""
+    return {"state_mb": size_mb(state), "install_mb": size_mb(JDTLS), "tree": tree_files(repo_of(name))}
 
 
 SERVERS_BY_NAME = {
     "lathe": {"prepare": lambda name, project, mode, state, log: lathe_prepare(name, project, mode, log),
-              "spec": lathe_spec},
+              "spec": lathe_spec, "disk": lathe_disk, "edits": lathe_edits},
     "jdtls": {"prepare": jdtls_prepare,
-              "spec": jdtls_spec},
+              "spec": jdtls_spec, "disk": jdtls_disk, "edits": no_edits},
 }
 
 

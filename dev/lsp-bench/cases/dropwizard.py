@@ -11,6 +11,7 @@ DefaultServerFactory.build, for library and JDK calls.
 Corrected after the priming run, where both servers answered alike: setHandler is Jetty's
 Handler.Wrapper's (Server inherits it), and MigrationsBundle does not override run.
 """
+import queries as Q
 
 CORE = "dropwizard-core/src/main/java/io/dropwizard/core/"
 APP = "dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java"
@@ -141,3 +142,40 @@ CASES = [
         "expect": {"locations": ["Environment.java:return name;"]},
     },
 ]
+
+# An error in another module (2026-11-11 amendment): the widely used method of the queries gains a
+# parameter, saved; the open caller in another module must show the error at its call, then settle
+# without it after the revert.
+CASES += [
+    {
+        "name": "diagnostics: an error in another module",
+        "method": "textDocument/publishDiagnostics",
+        "upstream": (ENVIRONMENT, "public JerseyEnvironment jersey() {", "public JerseyEnvironment jersey(int latheBench) {"),
+        "downstream": ("dropwizard-e2e/src/main/java/com/example/app1/App1.java", ".jersey()"),
+    },
+]
+
+# Rename and imports (2026-11-11 amendment), as in the other projects' case files.
+CASES += [
+    {
+        "name": "rename: widely used method",
+        "method": "textDocument/rename",
+        "at": (ENVIRONMENT, "public JerseyEnvironment jersey()", "jersey"),
+        "expect": {"rename_files": 2},
+    },
+    {
+        "name": "code action: import a removed import",
+        "method": "textDocument/codeAction",
+        "import_removed": (ENVIRONMENT, "import io.dropwizard.health.HealthEnvironment;"),
+    },
+]
+
+# The editing loop's completions and typed errors (2026-11-11 amendment), in the definition query's file.
+_PROBE_FILE = next(c for c in CASES if c["name"] == PROBE)["at"][0]
+CASES += Q.editing_cases(
+    _PROBE_FILE, "public String getName() {",
+    member=("        Bootstrap<HelloWorldConfiguration> latheBench = null; latheBench.", "addBundle"),
+    unimported=("Jer", "JerseyEnvironment", "io.dropwizard.jersey.setup.JerseyEnvironment"),
+    static=("        Math.", "max"),
+    lambda_line=("        java.util.function.Function<Bootstrap<HelloWorldConfiguration>, Object> latheBench = b -> b.",
+                 "addBundle"))
