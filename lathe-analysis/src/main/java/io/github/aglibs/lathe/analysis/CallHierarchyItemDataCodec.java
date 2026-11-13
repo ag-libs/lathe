@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -77,7 +78,7 @@ public final class CallHierarchyItemDataCodec {
               final var pos =
                   definitionLocator.parsePosition(file, element).orElse(new Position(0, 0));
               final var point = new Range(pos, pos);
-              return buildItem(element, file.toUri().toString(), point, point, types, elements);
+              return buildItem(element, LatheUri.fromPath(file), point, point, types, elements);
             });
   }
 

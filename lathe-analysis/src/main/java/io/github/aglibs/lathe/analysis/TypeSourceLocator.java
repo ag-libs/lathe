@@ -5,6 +5,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -92,7 +93,7 @@ public final class TypeSourceLocator {
         return null;
       }
 
-      return new Location(sourceFile.toUri().toString(), Positions.nameRange(start, name));
+      return new Location(LatheUri.fromPath(sourceFile), Positions.nameRange(start, name));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

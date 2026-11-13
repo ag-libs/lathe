@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.nio.file.Path;
 import java.util.List;
@@ -203,7 +204,7 @@ public final class NavigationFeatures {
                           .map(
                               lspPos ->
                                   new Location(
-                                      file.toUri().toString(), new Range(lspPos, lspPos))));
+                                      LatheUri.fromPath(file), new Range(lspPos, lspPos))));
     }
 
     return result;

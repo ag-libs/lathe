@@ -3,12 +3,11 @@ package io.github.aglibs.lathe.analysis;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.URI;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -239,8 +238,7 @@ public final class RenameBindingCheck {
   private static Optional<EditedFile> editedFile(final CheckedFile file, final RenameCheck check) {
     final String open = check.openContents().get(file.uri());
     try {
-      final String content =
-          open != null ? open : Files.readString(Path.of(URI.create(file.uri())));
+      final String content = open != null ? open : Files.readString(LatheUri.toPath(file.uri()));
       return Optional.of(
           EditedFile.of(file.compiledUri(), content, file.renamed(), check.newName()));
     } catch (final IOException e) {
@@ -378,7 +376,7 @@ public final class RenameBindingCheck {
 
   private static String place(final EditedFile file, final int offset) {
     final var position = Positions.offsetToPosition(file.content(), offset);
-    return "%s:%d".formatted(Path.of(URI.create(file.uri())).getFileName(), position.getLine() + 1);
+    return "%s:%d".formatted(LatheUri.toPath(file.uri()).getFileName(), position.getLine() + 1);
   }
 
   private static String describe(final Element element) {
