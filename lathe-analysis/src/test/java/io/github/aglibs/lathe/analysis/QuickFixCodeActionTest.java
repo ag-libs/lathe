@@ -1177,8 +1177,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
-  void codeAction_missingMethodImpl_importsOnlyTheTypesTheStubWrites() {
-    // close() throws IOException, which the stub does not declare: no import for it.
+  void codeAction_missingMethodImpl_writesTheThrowsClauseAndImportsWhatTheStubWrites() {
+    // close() throws IOException: the stub declares it, as the contract does, and imports it.
     final var source =
         """
         package com.example;
@@ -1193,8 +1193,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(rewritten)
         .contains("import java.util.List;")
         .contains("public List<String> get()")
-        .contains("public void close()")
-        .doesNotContain("IOException");
+        .contains("import java.io.IOException;")
+        .contains("public void close() throws IOException")
+        .doesNotContain("public List<String> get() throws");
     assertCompilesClean(rewritten);
   }
 
