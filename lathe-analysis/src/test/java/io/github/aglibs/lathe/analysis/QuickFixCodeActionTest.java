@@ -1177,6 +1177,28 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_missingMethodImpl_importsOnlyTheTypesTheStubWrites() {
+    // close() throws IOException, which the stub does not declare: no import for it.
+    final var source =
+        """
+        package com.example;
+        class Test implements java.io.Closeable, java.util.function.Supplier<java.util.List<String>> { }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .contains("import java.util.List;")
+        .contains("public List<String> get()")
+        .contains("public void close()")
+        .doesNotContain("IOException");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
   void codeAction_finalBlankField_multipleConstructors_bindsEach() {
     // One empty and one one-arg constructor cover both parameter-insertion forms (into an empty and
     // a non-empty list) plus the binding into each body, so no separate single-constructor case is

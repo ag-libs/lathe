@@ -22,8 +22,6 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.ExecutableType;
-import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -81,7 +79,8 @@ public final class MissingMethodImplProvider {
 
     final List<TextEdit> importEdits =
         names.importEditsFor(
-            unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));
+            unimplemented.stream()
+                .flatMap(m -> MethodStubRenderer.signatureTypes(m, classType, types)));
 
     final List<TextEdit> allEdits =
         Stream.concat(Stream.of(stubEdit), importEdits.stream()).toList();
@@ -168,15 +167,5 @@ public final class MissingMethodImplProvider {
                 throw new UnsupportedOperationException();
             }"""
         .formatted(MethodStubRenderer.signature(method, classType, types, formatter));
-  }
-
-  private static Stream<TypeMirror> signatureTypes(
-      final ExecutableElement method, final Types types, final DeclaredType classType) {
-    final ExecutableType exeType = (ExecutableType) types.asMemberOf(classType, method);
-    return Stream.of(
-            Stream.of(exeType.getReturnType()),
-            exeType.getParameterTypes().stream(),
-            exeType.getThrownTypes().stream())
-        .flatMap(stream -> stream);
   }
 }

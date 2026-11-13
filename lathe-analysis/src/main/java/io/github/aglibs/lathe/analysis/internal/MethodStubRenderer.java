@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis.internal;
 
 import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
 import java.util.List;
+import java.util.stream.Stream;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
@@ -40,5 +41,13 @@ public final class MethodStubRenderer {
     }
 
     return "%s %s(%s)".formatted(returnType, method.getSimpleName(), params);
+  }
+
+  // The types `signature` writes, so a stub imports exactly those; it writes no throws clause.
+  public static Stream<TypeMirror> signatureTypes(
+      final ExecutableElement method, final DeclaredType classType, final Types types) {
+    final var executableType = (ExecutableType) types.asMemberOf(classType, method);
+    return Stream.concat(
+        Stream.of(executableType.getReturnType()), executableType.getParameterTypes().stream());
   }
 }
