@@ -86,6 +86,7 @@ Lathe and jdtls are measured in the same session on the same machine, never from
 Every run records the machine (CPU, memory, operating system), the system load before and after, and every JDK, server and project version.
 No other heavy work runs on the machine during a run; a run whose load average exceeds the core count is discarded and repeated.
 Gradle and Kotlin daemons started by a run are stopped after it.
+Before a run, `python3 -I selfcheck.py` checks the harness's scenario logic against a fake client, without servers, in seconds.
 
 ## What is published
 
