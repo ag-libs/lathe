@@ -12,6 +12,7 @@ import javax.lang.model.element.ElementKind;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -351,6 +352,46 @@ class CallHierarchyIncomingLocatorTest {
           .extracting(
               call -> "%s.%s".formatted(call.getFrom().getDetail(), call.getFrom().getName()))
           .containsExactlyInAnyOrder("Base.boot", "Callers.viaBase", "Callers.viaLifecycle");
+    }
+  }
+
+  @Test
+  void searchIncomingCalls_receiverSpellsTheName_rangesOnTheCalledName() {
+    final String content =
+        """
+        import java.util.function.IntFunction;
+        class Chain {
+            Chain add(int i) { return this; }
+            void use(Chain add) {
+                add.add(1).add(2);
+                IntFunction<Chain> f = add::add;
+            }
+        }
+        """;
+    final var targetRequest = request(content, SampleFixture.posOf(content, "add(int", "add"));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyIncomingCall> calls =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  itemData(items.get(0)),
+                  Set.of())
+              .hits();
+
+      assertThat(calls).hasSize(1);
+      assertThat(calls.get(0).getFrom().getName()).isEqualTo("use");
+      assertThat(calls.get(0).getFromRanges())
+          .extracting(Range::getStart)
+          .containsExactlyInAnyOrder(
+              SampleFixture.posOf(content, ".add(1)", "add"),
+              SampleFixture.posOf(content, ".add(2)", "add"),
+              SampleFixture.posOf(content, "::add", "add"));
     }
   }
 
