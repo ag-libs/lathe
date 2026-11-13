@@ -136,6 +136,17 @@ class LatheMcpToolsTest {
   }
 
   @Test
+  void searchSymbols_maxResultsBelowOne_returnsError() {
+    assertThat(List.of(0, -1))
+        .allSatisfy(
+            max ->
+                assertThat(text(call("search_symbols", Map.of("query", "Foo", "maxResults", max))))
+                    .isEqualTo("search_symbols 'maxResults' must be at least 1"));
+    assertThat(text(call("search_symbols", Map.of("query", "Foo", "maxResults", 1))))
+        .doesNotContain("maxResults");
+  }
+
+  @Test
   void callHierarchy_invalidDirectionOrScope_returnsError() {
     final String file = tmp.resolve("Any.java").toString();
 
