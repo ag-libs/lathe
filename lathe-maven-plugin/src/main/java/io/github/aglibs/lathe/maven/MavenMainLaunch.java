@@ -24,11 +24,16 @@ final class MavenMainLaunch {
 
   private final LocationManager locationManager;
   private final Map<String, String> reactorOutputByGa;
+  private final String javaHome;
 
+  // `javaHome` is the workspace JDK, so a main run starts on the JDK the server analyses with.
   MavenMainLaunch(
-      final LocationManager locationManager, final Map<String, String> reactorOutputByGa) {
+      final LocationManager locationManager,
+      final Map<String, String> reactorOutputByGa,
+      final Path javaHome) {
     this.locationManager = locationManager;
     this.reactorOutputByGa = Map.copyOf(reactorOutputByGa);
+    this.javaHome = javaHome.toString();
   }
 
   void write(final Path workspaceRoot, final MavenProject project) {
@@ -39,7 +44,6 @@ final class MavenMainLaunch {
     // The main run's working directory is the module basedir, where Maven/exec would run it.
     final String moduleRel = ReactorProjects.moduleRel(workspaceRoot, project);
     final List<String> runtimeElements = runtimeClasspath(project);
-    final String javaHome = System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
     final Path moduleInfo = moduleInfoSource(project);
     if (moduleInfo == null) {
       MainLaunchWriter.writeClasspath(workspaceRoot, moduleRel, javaHome, runtimeElements);

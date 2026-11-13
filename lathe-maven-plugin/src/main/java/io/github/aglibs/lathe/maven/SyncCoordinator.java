@@ -74,7 +74,10 @@ final class SyncCoordinator {
     final Path versionDir = serverInstaller.install();
     LauncherCopier.copyToWorkspace(workspaceRoot, versionDir);
     final var mainLaunch =
-        new MavenMainLaunch(new LocationManager(), ReactorProjects.reactorOutputDirs(projects));
+        new MavenMainLaunch(
+            new LocationManager(),
+            ReactorProjects.reactorOutputDirs(projects),
+            caches.jdk().home());
     projects.forEach(project -> mainLaunch.write(workspaceRoot, project));
     projects.forEach(project -> MavenTestFilter.write(workspaceRoot, project));
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
