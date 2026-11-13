@@ -136,14 +136,18 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void searchSymbols_maxResultsBelowOne_returnsError() {
-    assertThat(List.of(0, -1))
-        .allSatisfy(
-            max ->
-                assertThat(text(call("search_symbols", Map.of("query", "Foo", "maxResults", max))))
-                    .isEqualTo("search_symbols 'maxResults' must be at least 1"));
-    assertThat(text(call("search_symbols", Map.of("query", "Foo", "maxResults", 1))))
-        .doesNotContain("maxResults");
+  void maxResults_belowOne_returnsErrorFromEveryToolThatTakesIt() {
+    for (final String tool :
+        List.of("find_references", "find_implementations", "call_hierarchy", "search_symbols")) {
+      for (final int max : List.of(0, -1)) {
+        assertThat(text(call(tool, Map.of("maxResults", max))))
+            .isEqualTo("%s 'maxResults' must be at least 1".formatted(tool));
+      }
+    }
+
+    assertThat(text(call("find_references", Map.of("maxResults", 1))))
+        .as("a valid value reaches the tool's own argument check")
+        .startsWith("find_references requires 'file'");
   }
 
   @Test
