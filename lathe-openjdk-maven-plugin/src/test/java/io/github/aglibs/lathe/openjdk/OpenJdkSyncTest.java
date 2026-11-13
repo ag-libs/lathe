@@ -94,16 +94,21 @@ class OpenJdkSyncTest {
     assertThat(LatheLayout.reactorLockFile(latheDir)).doesNotExist();
   }
 
+  // A module mid-rebuild has its output but no .cmdline yet, so it keeps its capture; a module or
+  // tool whose output is gone loses it.
   @Test
-  void sync_moduleNoLongerBuilt_dropsItsCaptureKeepsTheRestAndIgnoresLatheDir() throws IOException {
+  void sync_outputGone_dropsItsCapture_moduleMidRebuildKeepsIt() throws IOException {
     OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
     assertThat(capturedDirs()).containsExactlyInAnyOrder("java.base", "BUILD_TOOLS");
 
     Files.delete(build.resolve("jdk/modules/java.base/_the.java.base_batch.cmdline"));
     OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
+    assertThat(capturedDirs()).containsExactlyInAnyOrder("java.base", "BUILD_TOOLS");
 
-    assertThat(capturedDirs()).containsExactly("BUILD_TOOLS");
-    assertThat(latheDir.resolve(".gitignore")).hasContent("*");
+    FileUtil.deleteDir(build.resolve("jdk/modules/java.base"));
+    FileUtil.deleteDir(build.resolve("buildtools/tools_classes"));
+    OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
+    assertThat(capturedDirs()).isEmpty();
   }
 
   private List<String> capturedDirs() throws IOException {
@@ -137,6 +142,21 @@ class OpenJdkSyncTest {
 
   // The whole sync runs under .lathe/'s build lock, which a first sync creates .lathe/ to hold,
   // and which is released after, the sync failing or not.
+  // .lathe/ is ignored from when it is first created, so a first sync that fails leaves no
+  // untracked files in the JDK checkout.
+  @Test
+  void underBuildLock_firstSyncFails_latheDirIsIgnored() {
+    assertThatThrownBy(
+            () ->
+                OpenJdkSync.underBuildLock(
+                    root,
+                    () -> {
+                      throw new IOException("bad cmdline");
+                    }))
+        .hasMessage("bad cmdline");
+    assertThat(latheDir.resolve(".gitignore")).hasContent("*");
+  }
+
   @Test
   void underBuildLock_firstSync_holdsTheLockThroughTheWorkAndReleasesIt() throws Exception {
     final Path lock = LatheLayout.reactorLockFile(root.resolve(LatheLayout.LATHE_DIR));
