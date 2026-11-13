@@ -1,6 +1,6 @@
 -- Verifies lathe.util.client: with two workspaces open, a command asks the server attached to its
--- buffer (the current one by default), and a buffer no server is attached to (a run's console)
--- still gets a Lathe client. Stubs vim.lsp.get_clients, so no server is started.
+-- buffer, and none when no server is attached to it; with no buffer, the current buffer's server,
+-- else (a run's console) the first. Stubs vim.lsp.get_clients, so no server is started.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -27,10 +27,12 @@ vim.lsp.get_clients = function(filter)
 end
 
 spec.check("given buffer -> its server", util.client(in_second), second)
+spec.check("given buffer no server attached to -> none", util.client(console), nil)
 
 vim.api.nvim_set_current_buf(in_second)
 spec.check("no buffer -> the current buffer's server", util.client(), second)
 
-spec.check("unattached buffer -> the first server", util.client(console), first)
+vim.api.nvim_set_current_buf(console)
+spec.check("no buffer, current one unattached -> the first server", util.client(), first)
 
 spec.finish("util_spec")

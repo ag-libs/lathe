@@ -6,12 +6,15 @@ function M.notify(message, level)
   vim.notify("Lathe: " .. message, level, { title = "Lathe" })
 end
 
---- The Lathe client attached to `bufnr` (default: the current buffer), so a command asks that
---- workspace's server when several are open; else the first Lathe client: a run's console or a
---- stack trace is no Java buffer, yet still has a workspace's server to ask.
+--- The Lathe client attached to `bufnr`, or nil. With no buffer: the current buffer's client, so a
+--- workspace-wide command asks that workspace's server when several are open; else the first Lathe
+--- client, as a run's console or a stack trace is no Java buffer yet has a server to ask.
 function M.client(bufnr)
-  local buf = bufnr or vim.api.nvim_get_current_buf()
-  return vim.lsp.get_clients({ name = "lathe", bufnr = buf })[1]
+  if bufnr then
+    return vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+  end
+
+  return vim.lsp.get_clients({ name = "lathe", bufnr = vim.api.nvim_get_current_buf() })[1]
     or vim.lsp.get_clients({ name = "lathe" })[1]
 end
 
