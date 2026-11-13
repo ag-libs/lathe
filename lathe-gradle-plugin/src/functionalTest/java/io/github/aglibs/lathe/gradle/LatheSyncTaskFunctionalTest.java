@@ -116,8 +116,7 @@ class LatheSyncTaskFunctionalTest {
   // in core from stopping the build, so app, which depends on it, is captured too. A compile that
   // wrote no classes mirrors nothing and records nothing as built, so the server compiles those
   // sources itself; once they compile, the next sync mirrors them. Every later sync replays the
-  // init
-  // script; .lathe/ keeps itself out of git.
+  // init script; .lathe/ keeps itself out of git.
   @Test
   void sync_initScriptOnCodeThatDoesNotCompile_capturesEveryProjectAndMirrorsOnlyGoodCompiles()
       throws Exception {
@@ -153,7 +152,9 @@ class LatheSyncTaskFunctionalTest {
 
     assertThat(result.getOutput())
         .contains(
-            "reached end of file while parsing", "compile failed; kept the last good capture");
+            "reached end of file while parsing",
+            "has no class for com/example/core/",
+            "compile failed; kept the last good capture");
     assertThat(params("core", LatheLayout.CLASSES_DIR)).isRegularFile();
     assertThat(params("app", LatheLayout.CLASSES_DIR)).isRegularFile();
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);

@@ -49,6 +49,11 @@ settingsEvaluated {
 
 A build that commits the plugin keeps its own version; the init script then steps aside.
 
+A build that turns `failOnError` off, so code that does not compile still syncs, must turn incremental
+compilation off with it, as the init script Neovim's `:LatheInit` writes does: with incremental compilation
+on, Gradle does not write the classes a failed compile left out once the code is fixed, and Lathe keeps the
+last good capture of that source set (the editor compiles it itself, more slowly).
+
 Then build once; this records your project's setup without running the tests (`.lathe/` keeps itself out of
 version control, as Lathe writes a `.gitignore` inside it; keep it out of any check that scans the whole project
 directory too, see [troubleshooting](troubleshooting.md)):

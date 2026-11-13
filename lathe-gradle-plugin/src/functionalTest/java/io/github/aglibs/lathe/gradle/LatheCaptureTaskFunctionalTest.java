@@ -37,9 +37,8 @@ class LatheCaptureTaskFunctionalTest {
                 "settings.gradle",
                 SETTINGS + "buildCache { local { directory = file(\"build-cache\") } }\n")
             .file("build.gradle", GradleFixture.JAVA)
-            // A file declaring a type of another name: a normal build stops on a compile error, so
-            // the
-            // capture trusts it and mirrors, without asking for a class per source.
+            // A file declaring a type of another name: a normal build stops on a compile error,
+            // so the capture trusts it and mirrors, without asking for a class per source.
             .file(
                 "src/main/java/com/example/Helpers.java", "package com.example; class Helper {}\n")
             .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")

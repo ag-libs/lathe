@@ -713,6 +713,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getModuleDir().set(moduleDir.toFile());
                   task.getSources().from(sourceSet.getJava());
                   task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());
+                  task.getCompiledSources().from(javac.getSource());
                   task.getClassesDir().set(javac.getDestinationDirectory());
                   task.getResourcesDir().set(sourceSet.getOutput().getResourcesDir());
                   task.getGeneratedSourcesDir()

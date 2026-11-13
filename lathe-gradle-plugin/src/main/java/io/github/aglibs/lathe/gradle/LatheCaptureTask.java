@@ -1,18 +1,16 @@
 package io.github.aglibs.lathe.gradle;
 
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
@@ -45,6 +43,7 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   private static final String PROC = "-proc:";
   private static final String PROC_NONE = "none";
+  private static final String JAVA_SUFFIX = ".java";
   private static final String CLASS_SUFFIX = ".class";
 
   @Input
@@ -67,6 +66,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   @Internal
   public abstract ConfigurableFileCollection getSourceRoots();
+
+  // The compile task's own sources, which a build may narrow or replace from the source set's.
+  @Internal
+  public abstract ConfigurableFileCollection getCompiledSources();
 
   @InputFiles
   @PathSensitive(PathSensitivity.RELATIVE)
@@ -143,11 +146,16 @@ public abstract class LatheCaptureTask extends DefaultTask {
     LatheLock.acquire(lock);
     try {
       CompileCapture.writeParams(moduleDir, config);
-      if (!getFailOnError().get() && !compiled(config)) {
-        getLogger()
-            .lifecycle(
-                "[lathe] {} compile failed; kept the last good capture", getSourceTree().get());
-        return;
+      if (!getFailOnError().get()) {
+        final java.util.Optional<String> missing = missingClass(Path.of(config.outputDir()));
+        if (missing.isPresent()) {
+          getLogger()
+              .lifecycle(
+                  "[lathe] {} has no class for {}: compile failed; kept the last good capture",
+                  getSourceTree().get(),
+                  missing.get());
+          return;
+        }
       }
 
       CompileCapture.mirror(
@@ -157,48 +165,41 @@ public abstract class LatheCaptureTask extends DefaultTask {
     }
   }
 
-  // Whether the compile wrote a class for every source it compiled, asked only with failOnError off
-  // (a personal setup's init script). A compile with errors writes none for what it compiled, and
-  // Gradle then runs this task as after a good one, so the mirror would record sources as built
-  // that have no classes, and the server would never compile them: keep the last good capture, as
-  // Maven's shim does. The compile's own sources, excludes applied: a file the build leaves out has
-  // no class. A source declaring only a type of another name, or in a folder that is not its
+  // The first source the compile wrote no class for, asked only with failOnError off (a personal
+  // setup's init script). A compile with errors writes none for what it compiled, and Gradle then
+  // runs this task as after a good one, so the mirror would record sources as built that have no
+  // classes, and the server would never compile them: keep the last good capture, as Maven's shim
+  // does. The compile task's own sources, as it compiled them, with each one's path from its source
+  // directory. A source declaring only a type of another name, or in a folder that is not its
   // package, reads as failed too, which costs the server a compile of its own, never a wrong
-  // mirror. module-info and package-info may compile to no class.
-  private boolean compiled(final ModuleConfigData config) {
-    final Path classes = Path.of(config.outputDir());
-    final List<Path> roots = config.sourceRoots().stream().map(Path::of).toList();
-    for (final File file : getSources().getFiles()) {
-      final Path source = file.toPath();
-      final java.util.Optional<Path> root = sourceRoot(roots, source);
-      if (!compilesToItsClass(source) || root.isEmpty()) {
-        continue;
-      }
+  // mirror; a failure in a second top-level class of a file whose first one compiled goes unseen.
+  // module-info and package-info may compile to no class.
+  private java.util.Optional<String> missingClass(final Path classes) {
+    final var missing = new AtomicReference<String>();
+    getCompiledSources()
+        .getAsFileTree()
+        .visit(
+            source -> {
+              final String name = source.getName();
+              if (source.isDirectory()
+                  || !name.endsWith(JAVA_SUFFIX)
+                  || name.equals(LatheLayout.MODULE_INFO_JAVA)
+                  || name.equals(LatheLayout.PACKAGE_INFO_JAVA)) {
+                return;
+              }
 
-      final Path classFile =
-          classes
-              .resolve(root.get().relativize(source.getParent()))
-              .resolve("%s%s".formatted(FileUtil.javaTypeName(source), CLASS_SUFFIX));
-      if (!Files.isRegularFile(classFile)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  // The deepest source root holding source, as source roots may nest.
-  private static java.util.Optional<Path> sourceRoot(final List<Path> roots, final Path source) {
-    return roots.stream()
-        .filter(source::startsWith)
-        .max(Comparator.comparingInt(Path::getNameCount));
-  }
-
-  private static boolean compilesToItsClass(final Path path) {
-    final String name = path.getFileName().toString();
-    return FileUtil.isJavaFile(path)
-        && !name.equals(LatheLayout.MODULE_INFO_JAVA)
-        && !name.equals(LatheLayout.PACKAGE_INFO_JAVA);
+              final String relative = source.getRelativePath().getPathString();
+              final String classFile =
+                  "%s%s"
+                      .formatted(
+                          relative.substring(0, relative.length() - JAVA_SUFFIX.length()),
+                          CLASS_SUFFIX);
+              if (!Files.isRegularFile(classes.resolve(classFile))) {
+                missing.set(relative);
+                source.stopVisiting();
+              }
+            });
+    return java.util.Optional.ofNullable(missing.get());
   }
 
   private ModuleConfigData moduleConfig() {
