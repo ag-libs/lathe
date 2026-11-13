@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -113,7 +114,7 @@ public final class WorkspaceSymbolResolver {
         .map(
             file ->
                 TypeSourceLocator.locate(entry, sourceDirs, parser)
-                    .orElseGet(() -> new Location(file.toUri().toString(), FILE_START)))
+                    .orElseGet(() -> new Location(LatheUri.fromPath(file), FILE_START)))
         .map(location -> symbol(entry, location))
         .orElse(null);
   }
