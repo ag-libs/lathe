@@ -386,6 +386,13 @@ final class LatheMcpTools {
       final CallToolRequest request,
       final String tool,
       final ToolHandler handler) {
+    // The schemas' minimum, which a client need not enforce; a negative value would make
+    // Stream.limit throw.
+    final Integer max = intArg(request, "maxResults");
+    if (max != null && max < 1) {
+      return McpText.error("%s 'maxResults' must be at least 1".formatted(tool));
+    }
+
     try {
       return handler.handle(engine.get(), request, tool);
     } catch (final NoWorkspaceException e) {
