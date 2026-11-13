@@ -56,9 +56,6 @@ jobs:
         with:
           phase: start
 
-      - name: Windows Defender off
-        uses: ./.github/actions/windows-defender
-
       - name: Set up build tools
         uses: ./.github/actions/build-tools
         with:
@@ -287,9 +284,6 @@ jobs:
         uses: ./.github/actions/runner-info
         with:
           phase: start
-
-      - name: Windows Defender off
-        uses: ./.github/actions/windows-defender
 
       - name: Set up build tools
         uses: ./.github/actions/build-tools
