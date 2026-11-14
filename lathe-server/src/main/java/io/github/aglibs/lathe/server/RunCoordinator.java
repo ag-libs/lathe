@@ -568,7 +568,12 @@ final class RunCoordinator {
                         .formatted(jdwpPort));
               }
 
-              return openDebugHost(moduleRel, token, jdwpPort, label);
+              try {
+                return openDebugHost(moduleRel, token, jdwpPort, label);
+              } catch (final RuntimeException e) {
+                spawned.session().cancel();
+                throw e;
+              }
             });
   }
 
