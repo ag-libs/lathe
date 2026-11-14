@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -393,11 +394,9 @@ final class LatheMcpTools {
       return McpText.error("%s 'maxResults' must be at least 1".formatted(tool));
     }
 
-    try {
-      return handler.handle(engine.get(), request, tool);
-    } catch (final NoWorkspaceException e) {
-      return McpText.error(e.getMessage());
-    }
+    // Guarded as a whole, so what fails before a handler's own guard (the engine's start, a path
+    // the OS rejects) still reaches the agent as an isError result, not a protocol error.
+    return guarded(tool, argsSummary(request), () -> handler.handle(engine.get(), request, tool));
   }
 
   // No engine to answer with: the server started where no .lathe/ is. The message says why, and
@@ -426,7 +425,7 @@ final class LatheMcpTools {
   // Compact "key=value" of the call arguments for the usage log; values are paths, positions,
   // identifiers, and queries — never source content — each capped defensively.
   private static String argsSummary(final CallToolRequest request) {
-    return request.arguments().entrySet().stream()
+    return args(request).entrySet().stream()
         .map(entry -> "%s=%s".formatted(entry.getKey(), capped(entry.getValue())))
         .collect(Collectors.joining(" "));
   }
@@ -754,7 +753,7 @@ final class LatheMcpTools {
       final String tool, final Object context, final Supplier<CallToolResult> body) {
     try {
       return body.get();
-    } catch (final LatheEngine.Refused e) {
+    } catch (final LatheEngine.Refused | NoWorkspaceException e) {
       LOG.fine(() -> "[%s] %s refused: %s".formatted(tool, context, e.getMessage()));
       return McpText.error(e.getMessage());
     } catch (final RuntimeException e) {
@@ -797,23 +796,28 @@ final class LatheMcpTools {
         : "%s is not a .java file".formatted(file);
   }
 
+  // A call may carry no arguments at all, which the SDK passes on as null.
+  private static Map<String, Object> args(final CallToolRequest request) {
+    return request.arguments() != null ? request.arguments() : Map.of();
+  }
+
   private static Path filePath(final CallToolRequest request) {
     final String file = stringArg(request, "file");
     return file == null ? null : FileUtil.absolute(file);
   }
 
   private static String stringArg(final CallToolRequest request, final String name) {
-    final Object value = request.arguments().get(name);
+    final Object value = args(request).get(name);
     return value == null ? null : value.toString();
   }
 
   private static Integer intArg(final CallToolRequest request, final String name) {
-    return request.arguments().get(name) instanceof Number n ? n.intValue() : null;
+    return args(request).get(name) instanceof Number n ? n.intValue() : null;
   }
 
   // Optional "files" array; absent or malformed means "detect the change set".
   private static List<Path> fileListArg(final CallToolRequest request) {
-    if (!(request.arguments().get("files") instanceof List<?> files)) {
+    if (!(args(request).get("files") instanceof List<?> files)) {
       return List.of();
     }
 

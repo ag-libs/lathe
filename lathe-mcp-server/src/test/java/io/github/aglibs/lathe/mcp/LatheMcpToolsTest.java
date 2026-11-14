@@ -395,6 +395,20 @@ class LatheMcpToolsTest {
     }
   }
 
+  // What fails before a tool's own checks still answers as a tool result: a call with no
+  // arguments at all, or a path the OS rejects.
+  @Test
+  void all_noArgumentsOrAnInvalidPath_answerAsAToolResult() {
+    assertThat(specs)
+        .allSatisfy(
+            spec ->
+                assertThat(
+                        spec.callHandler()
+                            .apply(null, CallToolRequest.builder(spec.tool().name()).build()))
+                    .isNotNull());
+    assertThat(call("get_diagnostics", Map.of("file", "Bad\0Name.java")).isError()).isTrue();
+  }
+
   private CallToolResult call(final String name, final Map<String, Object> arguments) {
     final var request = CallToolRequest.builder(name).arguments(arguments).build();
     return tool(name).callHandler().apply(null, request);
