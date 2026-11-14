@@ -1311,6 +1311,30 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_finalBlankField_delegatingIntoAConstructorThatSetsIt_leftAlone() {
+    final var source =
+        """
+        package com.example;
+        class Point {
+          private final int x;
+          Point() {
+            this(0);
+          }
+          Point(int start) {
+            this.x = start;
+          }
+          Point(String label) {
+          }
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 2, 20);
+
+    final String rewritten = applyEdits(source, addCtorEdits(actions));
+    assertThat(rewritten).contains("this(0);").contains("Point(String label, final int x)");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
   void codeAction_finalBlankField_noConstructor_generatesOne() {
     final var source =
         """

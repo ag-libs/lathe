@@ -21,6 +21,7 @@ import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -29,6 +30,7 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -41,8 +43,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // field's type to every constructor and bind it (`this.field = field;`), generating a constructor
 // when none exists. A blank `final` field must be assigned exactly once on every construction path,
 // so a delegating constructor (`this(...)`) forwards the value instead of binding, and a
-// constructor
-// that already assigns the field is left untouched. The parameter reuses the field's declared-type
+// constructor that already assigns the field, itself or through the constructor it delegates to, is
+// left untouched. The parameter reuses the field's declared-type
 // source text, which is already resolvable in the file, so no import is ever needed.
 public final class AddConstructorParameterProvider {
 
@@ -150,7 +152,7 @@ public final class AddConstructorParameterProvider {
 
     final List<MethodTree> toEdit =
         constructors.stream()
-            .filter(ctor -> !assignsField(new TreePath(classPath, ctor), fieldElement, trees))
+            .filter(ctor -> !setsField(ctor, classPath, cu, positions, trees, fieldElement))
             .toList();
     if (toEdit.isEmpty()) {
       return List.of();
@@ -206,6 +208,34 @@ public final class AddConstructorParameterProvider {
         .filter(member -> member.getReturnType() == null)
         .filter(ctor -> positions.getStartPosition(cu, ctor) > brace)
         .toList();
+  }
+
+  // Whether the constructor sets the field itself, or through the `this(...)` chain it starts: such
+  // a constructor needs no parameter, and one delegating into it must not forward one.
+  private static boolean setsField(
+      final MethodTree ctor,
+      final TreePath classPath,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final Trees trees,
+      final Element field) {
+    final var seen = new HashSet<MethodTree>();
+    MethodTree current = ctor;
+    while (current != null && seen.add(current)) {
+      if (assignsField(new TreePath(classPath, current), field, trees)) {
+        return true;
+      }
+
+      final MethodInvocationTree delegate = delegatingCall(current, cu, positions);
+      current =
+          delegate != null
+                  && trees.getElement(TreePath.getPath(cu, delegate))
+                      instanceof final ExecutableElement target
+              ? trees.getTree(target)
+              : null;
+    }
+
+    return false;
   }
 
   private static boolean assignsField(
