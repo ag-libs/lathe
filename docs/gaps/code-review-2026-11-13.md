@@ -20,6 +20,34 @@ Path shorthands:
 - `nvim/` — `lathe-neovim/runtime/lua/lathe/`
 - `vscode/` — `lathe-vscode/src/`
 
+## Status after the first round (2026-11-14)
+
+The first round fixed the bugs and a few refactors; the next review starts from this list, not from the findings below.
+A duplication is worth removing only when the copies have drifted or will drift into a bug, the shared version reads simpler than any one copy, or every change has to touch all the copies.
+A merge that needs a new record, a factory or a helper with many parameters, and meets none of those, stays duplicated: CR-61 was closed for that reason.
+The open findings below have not been checked against that rule yet.
+
+Done:
+
+- Bugs: CR-1 (#188), CR-2 (#190), CR-3 (#198), CR-4 (#191), CR-5 (#192), CR-8 (#197, #200), CR-9 (#194, #207), CR-11 (#195).
+- CR-19, CR-22, CR-28: the existing file, position and list helpers (#205).
+- CR-26: one rule for a searchable type name (#207).
+- CR-35, and CR-53's run/debug handlers and run token: one launch path for run and debug, tests and mains (#206, #210).
+- CR-122, CR-123: the Neovim client's runnables in one module (#209).
+- CR-139: override completion imports its types (#204).
+
+Partly done:
+
+- CR-3: the OpenJDK sync calls the shared helpers; routing it through `WorkspaceSync.write` waits for the build front-end work.
+- CR-5: still open are stopping a run and refreshing saved configs from the server that launched the run, and the neotest adapter's own client lookup.
+- CR-72: the call-hierarchy locators share the name range (#188); the `new X()` name extraction and the factories are still copies.
+
+Not bugs: CR-6, CR-7, CR-10 (see each).
+
+Closed as not worth it: CR-61 (#208, see above).
+
+Everything else is open.
+
 ## 1. Bugs found along the way
 
 Most of these are copies that drifted: one copy got a fix or a rule the others did not.
@@ -496,6 +524,7 @@ Each rewrites the module path and classpath, calls `baseJavaArgs`, adds the JDWP
 
 - Where: `server/run/LaunchPlan.java:24-58, 60-85, 95-121`.
 - Fix: JDWP into `baseJavaArgs`; one `runtimeArgs(...)`; each builder keeps only its entry point.
+- Status: closed as not worth it (#208): the builders are short and consistent, and merging them needed a record, two factories and a shared step.
 
 ### CR-62 — Launch notes travel as a text prefix
 
