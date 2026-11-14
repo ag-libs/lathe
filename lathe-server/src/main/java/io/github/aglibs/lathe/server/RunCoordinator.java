@@ -23,6 +23,7 @@ import io.github.aglibs.lathe.server.run.JdwpOptions;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.LaunchReader;
 import io.github.aglibs.lathe.server.run.LaunchSession;
+import io.github.aglibs.lathe.server.run.LaunchTarget;
 import io.github.aglibs.lathe.server.run.Launcher;
 import io.github.aglibs.lathe.server.run.MainClassScope;
 import io.github.aglibs.lathe.server.run.PortUtil;
@@ -96,38 +97,20 @@ final class RunCoordinator {
     this.reactorIndex = reactorIndex;
   }
 
-  CompletableFuture<LaunchOutcome> runTestFuture(
-      final String moduleRel, final List<TestSelection> selections, final String token) {
+  CompletableFuture<LaunchOutcome> runFuture(final LaunchTarget target, final String token) {
     eventLoop.checkOnLoop();
-    return startTestRun(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
-  }
-
-  CompletableFuture<LaunchOutcome> runMainFuture(
-      final String moduleRel, final String mainClass, final String token) {
-    eventLoop.checkOnLoop();
-    return startMainRun(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
+    return startRun(target, token, baselineOverlay(target.module(), target.kind()));
   }
 
   /**
-   * Launches the selected test suspended under a JDWP agent and opens an in-process DAP host wired
-   * to the module's source model, returning the ports the editor's debug client attaches to. The
-   * launched JVM is tracked by {@code token} so {@link #cancelRun} kills it, and the DAP host is
-   * closed when the debuggee exits.
+   * Launches the target suspended under a JDWP agent and opens an in-process DAP host wired to the
+   * module's source model, returning the ports the editor's debug client attaches to. The launched
+   * JVM is tracked by {@code token} so {@link #cancelRun} kills it, and the DAP host is closed when
+   * the debuggee exits.
    */
-  CompletableFuture<DebugStartResult> debugTestFuture(
-      final String moduleRel, final List<TestSelection> selections, final String token) {
+  CompletableFuture<DebugStartResult> debugFuture(final LaunchTarget target, final String token) {
     eventLoop.checkOnLoop();
-    return startDebugTest(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
-  }
-
-  /**
-   * Launches the module's {@code mainClass} suspended under a JDWP agent and opens a DAP host — the
-   * main-class twin of {@link #debugTestFuture}.
-   */
-  CompletableFuture<DebugStartResult> debugMainFuture(
-      final String moduleRel, final String mainClass, final String token) {
-    eventLoop.checkOnLoop();
-    return startDebugMain(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
+    return startDebug(target, token, baselineOverlay(target.module(), target.kind()));
   }
 
   void cancelRun(final String token) {
@@ -148,58 +131,42 @@ final class RunCoordinator {
     slot.session().cancel();
   }
 
-  private CompletableFuture<LaunchOutcome> startTestRun(
-      final String moduleRel,
-      final List<TestSelection> selections,
-      final String token,
-      final RunItem overlay) {
+  private CompletableFuture<LaunchOutcome> startRun(
+      final LaunchTarget target, final String token, final RunItem overlay) {
     final LaunchInputs inputs = launchInputs();
     return run(
-        moduleRel,
-        selectionLabel(selections),
+        target.module(),
+        target.label(),
         token,
         overlay,
-        () -> prepareTest(inputs, moduleRel, selections, overlay, JdwpOptions.NONE));
+        () -> prepare(inputs, target, overlay, JdwpOptions.NONE));
   }
 
-  private CompletableFuture<LaunchOutcome> startMainRun(
-      final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
-    final LaunchInputs inputs = launchInputs();
-    return run(
-        moduleRel,
-        mainClass,
-        token,
-        overlay,
-        () -> prepareMain(inputs, moduleRel, mainClass, overlay, JdwpOptions.NONE));
-  }
-
-  private CompletableFuture<DebugStartResult> startDebugTest(
-      final String moduleRel,
-      final List<TestSelection> selections,
-      final String token,
-      final RunItem overlay) {
+  private CompletableFuture<DebugStartResult> startDebug(
+      final LaunchTarget target, final String token, final RunItem overlay) {
     final LaunchInputs inputs = launchInputs();
     final var jdwp = new JdwpOptions(IOUtil.unchecked(PortUtil::free));
     return debug(
-        moduleRel,
-        selectionLabel(selections),
+        target.module(),
+        target.label(),
         token,
         overlay,
         jdwp,
-        () -> prepareTest(inputs, moduleRel, selections, overlay, jdwp));
+        () -> prepare(inputs, target, overlay, jdwp));
   }
 
-  private CompletableFuture<DebugStartResult> startDebugMain(
-      final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
-    final LaunchInputs inputs = launchInputs();
-    final var jdwp = new JdwpOptions(IOUtil.unchecked(PortUtil::free));
-    return debug(
-        moduleRel,
-        mainClass,
-        token,
-        overlay,
-        jdwp,
-        () -> prepareMain(inputs, moduleRel, mainClass, overlay, jdwp));
+  private static Replay prepare(
+      final LaunchInputs inputs,
+      final LaunchTarget target,
+      final RunItem overlay,
+      final JdwpOptions jdwp)
+      throws IOException {
+    if (target instanceof final LaunchTarget.Tests tests) {
+      return prepareTest(inputs, tests.module(), tests.selections(), overlay, jdwp);
+    }
+
+    final var main = (LaunchTarget.Main) target;
+    return prepareMain(inputs, main.module(), main.mainClass(), overlay, jdwp);
   }
 
   private LaunchInputs launchInputs() {
@@ -816,7 +783,7 @@ final class RunCoordinator {
     final RunItem overlay =
         baselineOverlay(moduleRel, RunKind.TEST)
             .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
-    return startTestRun(moduleRel, selections, "", overlay)
+    return startRun(new LaunchTarget.Tests(moduleRel, selections), "", overlay)
         .thenApply(outcome -> discovery(moduleRel, outcome));
   }
 
@@ -854,10 +821,6 @@ final class RunCoordinator {
 
   private static String sourceUri(final String path) {
     return path.isEmpty() ? "" : LatheUri.fromPath(Path.of(path));
-  }
-
-  private static String selectionLabel(final List<TestSelection> selections) {
-    return selections.stream().map(TestSelection::value).collect(Collectors.joining(", "));
   }
 
   /**
@@ -943,19 +906,13 @@ final class RunCoordinator {
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
     eventLoop.checkOnLoop();
     final RunItem config = resolveConfig(name);
-    return switch (config.kind()) {
-      case MAIN -> startMainRun(config.module(), config.mainClass(), token, config);
-      case TEST -> startTestRun(config.module(), config.selectors(), token, config);
-    };
+    return startRun(LaunchTarget.of(config), token, config);
   }
 
   CompletableFuture<DebugStartResult> debugNamedFuture(final String name, final String token) {
     eventLoop.checkOnLoop();
     final RunItem config = resolveConfig(name);
-    return switch (config.kind()) {
-      case MAIN -> startDebugMain(config.module(), config.mainClass(), token, config);
-      case TEST -> startDebugTest(config.module(), config.selectors(), token, config);
-    };
+    return startDebug(LaunchTarget.of(config), token, config);
   }
 
   List<RunConfigInfo> listRunConfigs() {
@@ -993,8 +950,7 @@ final class RunCoordinator {
   }
 
   private static RunConfigInfo toInfo(final RunItem config) {
-    final String target =
-        config.kind() == RunKind.MAIN ? config.mainClass() : selectionLabel(config.selectors());
+    final String target = LaunchTarget.of(config).label();
     return new RunConfigInfo(
         config.name(),
         config.kind().name(),

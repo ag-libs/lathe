@@ -29,6 +29,7 @@ import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
+import io.github.aglibs.lathe.server.run.LaunchTarget;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -579,9 +580,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 session ->
                     session
                         .runs()
-                        .runTestFuture(
-                            "app",
-                            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")),
+                        .runFuture(
+                            new LaunchTarget.Tests(
+                                "app",
+                                List.of(
+                                    new TestSelection(TestSelectionKind.CLASS, "com.example.Foo"))),
                             ""))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
 
@@ -676,7 +679,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(blockedReasons("com.example.BookIT"))
         .anyMatch(reason -> reason.contains(gone.toString()));
     final var main =
-        host.onLoopFuture(session -> session.runs().runMainFuture("app", "com.example.BookIT", ""))
+        host.onLoopFuture(
+                session ->
+                    session
+                        .runs()
+                        .runFuture(new LaunchTarget.Main("app", "com.example.BookIT"), ""))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(main.launched()).isFalse();
     assertThat(main.blockedReasons()).anyMatch(reason -> reason.contains(gone.toString()));
@@ -760,7 +767,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                         value))
             .toList();
     final var outcome =
-        host.onLoopFuture(session -> session.runs().runTestFuture("app", selections, ""))
+        host.onLoopFuture(
+                session -> session.runs().runFuture(new LaunchTarget.Tests("app", selections), ""))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(outcome.launched()).isFalse();
     return outcome.blockedReasons();
