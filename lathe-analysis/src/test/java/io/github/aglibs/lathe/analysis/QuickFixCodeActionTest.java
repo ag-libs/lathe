@@ -1014,6 +1014,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         .contains("try {")
         .contains("throw new java.io.IOException(\"x\");")
         .contains("catch (java.io.IOException e)");
+    assertCompilesClean(applyEdits(source, edits));
   }
 
   @Test
@@ -1074,6 +1075,38 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         .contains("throw new java.io.IOException(\"x\");")
         .contains("catch (java.io.IOException e)")
         .doesNotContain("throws");
+    assertCompilesClean(applyEdits(source, edits));
+  }
+
+  // The statement around the call is wrapped, never the method body block; the catch variable takes
+  // a name no local in scope has.
+  @Test
+  void codeAction_unreportedException_insideIfWithLocalE_wrapsTheIfAndRenamesTheCatch() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void method(boolean flag) {
+            String e = "taken";
+            if (flag) {
+              throw new java.io.IOException(e);
+            }
+          }
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final List<TextEdit> edits =
+        editsOf(actionTitled(diagnosticActions(source, diags), "Wrap in try/catch"::equals));
+    final String rewritten = applyEdits(source, edits);
+
+    assertThat(edits.get(0).getNewText())
+        .startsWith("try {")
+        .contains("if (flag)")
+        .contains("catch (java.io.IOException e1)");
+    assertThat(rewritten).contains("void method(boolean flag) {").contains("String e = \"taken\";");
+    assertCompilesClean(rewritten);
   }
 
   @Test
