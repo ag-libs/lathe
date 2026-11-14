@@ -106,6 +106,37 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
   }
 
   @Test
+  void typeReference_inFileTypesNotInScope_writtenQualifiedOrLeftOut() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void other() {
+                            class LocalHelper {}
+                        }
+                        void m() {
+                            Local§
+                        }
+                    }""")))
+        .doesNotContain("LocalHelper");
+    assertThat(
+            insertTextOf(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            HelperOf§
+                        }
+                    }
+                    class Other {
+                        static class HelperOfOther {}
+                    }"""),
+                "HelperOfOther"))
+        .isEqualTo("Other.HelperOfOther");
+  }
+
+  @Test
   void typeReference_dottedOuterClass_innerTypeSuggested() {
     assertThat(labels(fixture.complete("class Test { void m(java.util.Map.En§ entry) {} }")))
         .anyMatch(l -> l.startsWith("Entry"));
