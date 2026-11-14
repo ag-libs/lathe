@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -85,14 +86,13 @@ public final class TryWithResourcesProvider {
     // still consume it from the source. Within the resource's own block its name is unambiguous.
     final List<? extends StatementTree> following = statementsAfter(block, decl);
     final boolean dropClose =
-        !following.isEmpty()
-            && isResourceClose(following.get(following.size() - 1), decl.getName());
+        !following.isEmpty() && isResourceClose(CollectionUtil.last(following), decl.getName());
     final List<? extends StatementTree> body =
         dropClose ? following.subList(0, following.size() - 1) : following;
     final long spanEnd =
         following.isEmpty()
             ? declEnd
-            : positions.getEndPosition(cu, following.get(following.size() - 1));
+            : positions.getEndPosition(cu, CollectionUtil.last(following));
     if (declStart < 0 || declEnd < 0 || spanEnd < 0) {
       return List.of();
     }
@@ -176,7 +176,7 @@ public final class TryWithResourcesProvider {
     }
 
     final long bodyStart = positions.getStartPosition(cu, body.get(0));
-    final long bodyEnd = positions.getEndPosition(cu, body.get(body.size() - 1));
+    final long bodyEnd = positions.getEndPosition(cu, CollectionUtil.last(body));
     return source.substring((int) bodyStart, (int) bodyEnd);
   }
 

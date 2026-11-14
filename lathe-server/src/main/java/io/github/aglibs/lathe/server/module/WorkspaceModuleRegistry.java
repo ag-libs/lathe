@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
@@ -80,9 +81,11 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     }
 
     final var moduleSources = new ArrayList<ModuleSourceConfig>();
-    try (final Stream<Path> stream = Files.walk(latheDir)) {
+    try {
       for (final var paramsFile :
-          stream.filter(LatheLayout::isParamsFile).sorted(TREE_ORDER).toList()) {
+          FileUtil.walkFiles(latheDir, LatheLayout::isParamsFile).stream()
+              .sorted(TREE_ORDER)
+              .toList()) {
         final Path moduleRel = latheDir.relativize(paramsFile.getParent());
         if (isNestedWorkspace(workspaceRoot, moduleRel)) {
           LOG.fine(() -> "[workspace] %s ignored — nested workspace".formatted(moduleRel));

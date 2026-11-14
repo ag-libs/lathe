@@ -128,7 +128,7 @@ public final class ReactorProjects {
     for (final MavenProject project : projects) {
       final var projectClasspath =
           project.getArtifacts().stream()
-              .filter(a -> a.getFile() != null && a.getFile().getName().endsWith(".jar"))
+              .filter(a -> a.getFile() != null && FileUtil.isJarFile(a.getFile().toPath()))
               .filter(a -> !reactorGAs.contains(ga(a)))
               .filter(a -> isCompileClasspathScope(a.getScope()))
               .map(a -> a.getFile().toPath())
@@ -145,7 +145,7 @@ public final class ReactorProjects {
     return projects.stream()
         .flatMap(project -> project.getArtifacts().stream())
         .filter(artifact -> artifact.getFile() != null)
-        .filter(artifact -> artifact.getFile().getName().endsWith(".jar"))
+        .filter(artifact -> FileUtil.isJarFile(artifact.getFile().toPath()))
         .filter(artifact -> !reactorProjects.contains(ga(artifact)))
         .collect(
             Collectors.toMap(

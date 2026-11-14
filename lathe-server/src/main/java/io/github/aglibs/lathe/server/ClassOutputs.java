@@ -34,15 +34,14 @@ final class ClassOutputs {
     }
 
     final var classDir = classDirOf(config, source);
-    if (classDir == null || !Files.isDirectory(classDir)) {
+    if (classDir == null) {
       return 0;
     }
 
-    try (final var stream = Files.list(classDir)) {
+    try {
       // A source at the tree's root (module-info.java) shares its directory with the packages.
       final var deletedClassFiles =
-          stream
-              .filter(path -> path.getFileName().toString().endsWith(".class"))
+          FileUtil.filesIn(classDir, FileUtil::isClassFile).stream()
               .filter(
                   path ->
                       !keptBinaryNames.contains(
@@ -138,10 +137,6 @@ final class ClassOutputs {
   // class generated from another source names that source, so it is never matched.
   private static boolean classOutputOf(final Path source, final Path classFile) {
     final var name = classFile.getFileName().toString();
-    if (!name.endsWith(".class")) {
-      return false;
-    }
-
     final var typeName = FileUtil.javaTypeName(source);
     if (name.equals("%s.class".formatted(typeName)) || name.startsWith("%s$".formatted(typeName))) {
       return true;

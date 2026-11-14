@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Platform;
@@ -111,9 +112,11 @@ final class MavenSyncScript {
   }
 
   private static boolean isLatheExtensionJar(final Path entry) {
-    final String name = entry.getFileName().toString();
-    return name.startsWith("%s-".formatted(LatheLayout.Maven.EXTENSION_ARTIFACT_ID))
-        && name.endsWith(".jar");
+    return entry
+            .getFileName()
+            .toString()
+            .startsWith("%s-".formatted(LatheLayout.Maven.EXTENSION_ARTIFACT_ID))
+        && FileUtil.isJarFile(entry);
   }
 
   private static Stream<String> activationArgs(

@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -240,7 +241,7 @@ public final class ExtractFieldProvider {
   private static String elementTypeName(final TypeMirror type) {
     if (type instanceof final DeclaredType declared && !declared.getTypeArguments().isEmpty()) {
       final List<? extends TypeMirror> args = declared.getTypeArguments();
-      return CodeActionSupport.typeSimpleName(args.get(args.size() - 1));
+      return CodeActionSupport.typeSimpleName(CollectionUtil.last(args));
     }
 
     return null;

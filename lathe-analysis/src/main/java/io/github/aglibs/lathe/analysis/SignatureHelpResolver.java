@@ -12,6 +12,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -122,7 +123,7 @@ final class SignatureHelpResolver {
     final CompilationUnitTree cu = analysis.tree();
     final boolean unclosed =
         positions.getEndPosition(cu, callPath.getLeaf())
-            == positions.getEndPosition(cu, args.get(args.size() - 1));
+            == positions.getEndPosition(cu, CollectionUtil.last(args));
     return errorTyped || unclosed;
   }
 

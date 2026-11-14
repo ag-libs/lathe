@@ -7,6 +7,7 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.CompilerTrees;
 import io.github.aglibs.lathe.analysis.SourceParser;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Modifier;
@@ -517,7 +518,7 @@ final class SentinelParser {
     if (type instanceof ParameterizedTypeTree parameterized
         && !parameterized.getTypeArguments().isEmpty()) {
       final var args = parameterized.getTypeArguments();
-      return simpleTypeName(args.get(args.size() - 1));
+      return simpleTypeName(CollectionUtil.last(args));
     }
 
     return null;

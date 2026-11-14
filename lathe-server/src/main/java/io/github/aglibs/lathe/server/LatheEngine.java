@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.TextMentions;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
@@ -608,12 +609,11 @@ public final class LatheEngine {
     final var results = new ArrayList<Location>();
     for (final Location mention : mentions) {
       final Position at = mention.getRange().getStart();
-      final int before = Positions.toOffset(original, at.getLine(), at.getCharacter());
+      final int before = Positions.toOffset(original, at);
       int after = before;
       for (final TextEdit edit : edits) {
         final Range range = edit.getRange();
-        final int end =
-            Positions.toOffset(original, range.getEnd().getLine(), range.getEnd().getCharacter());
+        final int end = Positions.toOffset(original, range.getEnd());
         if (end <= before) {
           final int start =
               Positions.toOffset(
@@ -664,7 +664,7 @@ public final class LatheEngine {
         new LatheFormat(
             writeFile(file, uri, edits),
             firstLine(edits.get(0)),
-            lastLine(edits.get(edits.size() - 1))));
+            lastLine(CollectionUtil.last(edits))));
   }
 
   // Adds the imports that have one candidate; the rest are the agent's to choose (ambiguous) or

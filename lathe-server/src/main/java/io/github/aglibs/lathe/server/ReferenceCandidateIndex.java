@@ -153,8 +153,8 @@ final class ReferenceCandidateIndex {
   }
 
   private void indexRoot(final Path root, final boolean synced) {
-    try (final var stream = Files.walk(root)) {
-      final List<Path> files = stream.filter(FileUtil::isJavaFile).toList();
+    try {
+      final List<Path> files = FileUtil.walkFiles(root, FileUtil::isJavaFile);
       files.forEach(this::indexFromDisk);
       if (!synced) {
         files.forEach(diskMtimes::remove);
