@@ -765,7 +765,9 @@ final class WorkspaceSession {
     // compiled the sources, so no later write replaces it.
     writeDiagnostics.clear();
     refreshOpenDocuments();
-    old.close();
+    // Not waited for, which would hold the loop behind a batch write: the old workers finish their
+    // queued work and close, and a pass still writing through them ends before the next starts.
+    old.closeAsync();
     scheduleAllOpenFiles();
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
