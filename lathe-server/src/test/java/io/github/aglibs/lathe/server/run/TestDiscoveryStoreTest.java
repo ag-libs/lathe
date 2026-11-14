@@ -60,6 +60,25 @@ class TestDiscoveryStoreTest {
     assertThat(launches).hasValue(2);
   }
 
+  // A blocked or failed discovery is not kept: the next request finds it again, though the test
+  // classes are unchanged.
+  @Test
+  void discovery_blockedOrFailed_foundAgainOnTheNextRequest() {
+    final var blocked = new TestDiscovery("app", List.of("no capture"), List.of());
+    final var found =
+        new TestDiscovery("app", List.of(), List.of(new DiscoveredTest("a.T#t()", "t", "")));
+    final var store = new TestDiscoveryStore();
+
+    store.discovery(tmp, "app", () -> CompletableFuture.completedFuture(blocked));
+    store.discovery(
+        tmp, "failed", () -> CompletableFuture.failedFuture(new IllegalStateException()));
+
+    assertThat(store.discovery(tmp, "app", () -> CompletableFuture.completedFuture(found)))
+        .isCompletedWithValue(found);
+    assertThat(store.discovery(tmp, "failed", () -> CompletableFuture.completedFuture(found)))
+        .isCompletedWithValue(found);
+  }
+
   private static CompletableFuture<TestDiscovery> discovered(
       final AtomicInteger launches, final TestDiscovery found) {
     launches.incrementAndGet();
