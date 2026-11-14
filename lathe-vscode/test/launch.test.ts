@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LAUNCHER, findWorkspaceRoot, launcherCommand } from '../src/launch';
+import { LAUNCHER, findWorkspaceRoot, javaSelector, launcherCommand } from '../src/launch';
 
 // Starts a stub launcher the way the language client does (cp.spawn with the command's options),
 // from a directory whose name has a space, as on the Windows CI row's cmd /d /s /c path. The stub
@@ -56,4 +56,16 @@ test('findWorkspaceRoot walks up from a module folder to the nearest .lathe', ()
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+// A root's client takes only the Java files under it, with forward slashes on every OS; a root path
+// holding glob syntax falls back to every Java file.
+test('javaSelector scopes a root to its own files unless its path holds glob syntax', () => {
+  assert.deepEqual(javaSelector('/home/dev/shop'), {
+    scheme: 'file',
+    language: 'java',
+    pattern: '/home/dev/shop/**/*',
+  });
+  assert.equal(javaSelector('C:\\work\\shop').pattern, 'C:/work/shop/**/*');
+  assert.deepEqual(javaSelector('/home/dev/shop [old]'), { scheme: 'file', language: 'java' });
 });
