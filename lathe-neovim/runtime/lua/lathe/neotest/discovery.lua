@@ -256,7 +256,7 @@ end
 -- A file nobody opened: its tests from the server's discovery of its whole module, which runs no
 -- test and is cached server-side, so neotest's project sweep costs one discovery per module.
 local function discovered_targets(file_path)
-  local client = common.client()
+  local client = common.client(file_path)
   local module_rel = client and M.module_of(client, file_path)
   if not module_rel then
     return nil
@@ -275,7 +275,7 @@ end
 --- Asks the server for `file_path`'s runnables, or nil when there is no client or no targets; also
 --- returns the buffer's changedtick as of the request (nil for an unloaded file).
 local function request_targets(file_path, bufnr)
-  local client = common.client()
+  local client = common.client(file_path)
   if not client then
     common.debug_log("[discover] " .. file_path .. " client=absent → nil")
     return nil
@@ -313,7 +313,7 @@ end
 function M.discover_positions(file_path)
   -- Gate on workspace readiness so an early discovery suspends until the server has loaded, rather
   -- than racing it and caching "no tests" (D1).
-  readiness.await_ready()
+  readiness.await_ready(file_path)
 
   local bufnr = vim.fn.bufadd(file_path)
   local tick = vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_changedtick(bufnr) or nil

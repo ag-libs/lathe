@@ -162,7 +162,7 @@ end
 
 function M.build_spec(args)
   local pos = args.tree:data()
-  local client = common.client()
+  local client = common.client(pos.path)
   if not client then
     return nil
   end

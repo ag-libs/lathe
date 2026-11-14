@@ -1479,4 +1479,27 @@ do
   package.loaded["neotest.types"] = nil
 end
 
+-- With several projects open, a file asks the server of the project that holds it, and none while
+-- that one is still starting; a lone server answers for every file.
+do
+  local common = require("lathe.neotest.common")
+  local shop = { id = 1, root_dir = "/work/shop" }
+  local shopping = { id = 2, root_dir = "/work/shopping" }
+  local attached = { shop, shopping }
+  package.loaded["nio"] = {
+    lsp = {
+      get_clients = function()
+        return attached
+      end,
+    },
+  }
+
+  spec.check("client: the file's own project", common.client("/work/shopping/src/A.java"), shopping)
+  spec.check("client: not a prefix match", common.client("/work/shop/src/A.java"), shop)
+  spec.check("client: none for another project", common.client("/work/other/src/A.java"), nil)
+  attached = { shop }
+  spec.check("client: a lone server answers", common.client("/work/other/src/A.java"), shop)
+  package.loaded["nio"] = nil
+end
+
 spec.finish()
