@@ -425,7 +425,7 @@ final class DocumentFeatures {
       return CompletableFuture.completedFuture(MissingImportsResult.empty());
     }
 
-    final var indexSnapshot = reactorIndex.current();
+    final var indexSnapshot = reactorIndex.current().seenFrom(route.seenTrees());
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.routeFeature(
         "missingImports",
