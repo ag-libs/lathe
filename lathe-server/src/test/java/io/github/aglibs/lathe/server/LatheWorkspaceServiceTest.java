@@ -352,6 +352,44 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         .anyMatch(text -> text.contains("import com.example.Shop;"));
   }
 
+  // A type with no class file yet is offered for import only where a tree that sees it asks: app
+  // does not compile against lib, so lib's new Fresh is not app's to import.
+  @Test
+  void executeCommand_missingImports_typeNotBuiltInAModuleTheFileDoesNotSee_notOffered()
+      throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "lib",
+        Map.of("com/lib/Old.java", "package com.lib;\npublic class Old {}\n"),
+        List.of(),
+        1_000L);
+    final Path use =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of("com/app/Use.java", "package com.app;\nclass Use {\n  Object field;\n}\n"),
+                List.of(),
+                1_000L)
+            .get(0);
+    Files.writeString(
+        tmp.resolve("lib/src/main/java/com/lib/Fresh.java"),
+        "package com.lib;\npublic class Fresh {}\n");
+    final String edited = "package com.app;\nclass Use {\n  Fresh field;\n}\n";
+    Files.writeString(use, edited);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(use, edited);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    awaitWorkerIdle();
+
+    assertThat(command(LatheCommands.IMPORTS_MISSING, json("uri", use.toUri().toString())))
+        .asInstanceOf(InstanceOfAssertFactories.type(MissingImportsResult.class))
+        .extracting(MissingImportsResult::items)
+        .asInstanceOf(InstanceOfAssertFactories.list(MissingImport.class))
+        .flatExtracting(MissingImport::candidates)
+        .doesNotContain("com.lib.Fresh");
+  }
+
   // A saved configuration is listed and runs by name; a name nothing saved is refused with the
   // reason. Nothing launches: the workspace has no runner, so a run says what blocks it.
   @Test
