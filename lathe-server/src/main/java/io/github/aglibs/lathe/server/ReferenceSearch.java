@@ -240,7 +240,7 @@ final class ReferenceSearch {
   }
 
   // A field Lombok generated accessors from is used through them too: their calls join its own
-  // matches. The progress already ended with the field's search; the accessors' run quietly.
+  // matches, and their searches' work joins its progress.
   private CompletableFuture<List<ReferenceMatch>> withGeneratedAccessors(
       final List<ReferenceMatch> fieldMatches,
       final OpenDocument openFile,

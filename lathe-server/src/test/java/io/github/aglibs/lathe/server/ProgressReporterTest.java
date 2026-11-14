@@ -67,6 +67,28 @@ class ProgressReporterTest {
   }
 
   @Test
+  void task_secondSearchBegunWhileRunning_addsToTheTotal() {
+    final LanguageClient client = mock(LanguageClient.class);
+    final var reporter = new ProgressReporter(client, 0);
+    final var task =
+        reporter.open(Either.<String, Integer>forLeft("request-token"), new CompletableFuture<>());
+
+    task.begin("field", 2);
+    task.advance(false, 0);
+    task.advance(false, 0);
+    task.begin("getter", 2);
+    task.advance(false, 0);
+
+    final var captor = ArgumentCaptor.forClass(ProgressParams.class);
+    verify(client, times(4)).notifyProgress(captor.capture());
+    assertThat(
+            ((WorkDoneProgressReport)
+                    CollectionUtil.last(captor.getAllValues()).getValue().getLeft())
+                .getMessage())
+        .startsWith("3 / 4 ");
+  }
+
+  @Test
   void task_rapidUpdates_throttlesReports() {
     final LanguageClient client = mock(LanguageClient.class);
     final var reporter = new ProgressReporter(client, Long.MAX_VALUE);
