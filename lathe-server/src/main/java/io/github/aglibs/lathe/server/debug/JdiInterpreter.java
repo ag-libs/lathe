@@ -45,6 +45,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.logging.Logger;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
@@ -222,12 +223,19 @@ final class JdiInterpreter {
   }
 
   private Value memberSelect(final TreePath path, final MemberSelectTree select) {
-    if ("length".contentEquals(select.getIdentifier())
-        && eval(child(path, select.getExpression())) instanceof final ArrayReference array) {
-      return vm.mirrorOf(array.length());
+    // Decided by the receiver's type, not its value: evaluating it here and again in readSymbol
+    // would run a call twice, and a type name (SomeType.length) has no value.
+    final TreePath receiver = child(path, select.getExpression());
+    if (!"length".contentEquals(select.getIdentifier())
+        || typeOf(receiver).getKind() != TypeKind.ARRAY) {
+      return readSymbol(path, select.getExpression());
     }
 
-    return readSymbol(path, select.getExpression());
+    if (!(eval(receiver) instanceof final ArrayReference array)) {
+      throw new EvaluationException("cannot read the length of null");
+    }
+
+    return vm.mirrorOf(array.length());
   }
 
   private Value identifier(final TreePath path, final IdentifierTree identifier) {
@@ -314,7 +322,8 @@ final class JdiInterpreter {
           "cannot read field '%s' of a non-object".formatted(field.name()));
     }
 
-    return object.getValue(object.referenceType().fieldByName(field.name()));
+    // The field javac resolved, not one of the same name a subclass declares and hides it with.
+    return object.getValue(jdiField);
   }
 
   private Value arrayAccess(final TreePath path, final ArrayAccessTree array) {
@@ -385,8 +394,15 @@ final class JdiInterpreter {
     }
 
     final ObjectReference receiver = invocationReceiver(path, call.getMethodSelect());
-    return invoker.invoke(
-        () -> receiver.invokeMethod(thread(), method, arguments, SINGLE_THREADED));
+    final int options =
+        isSuperCall(call) ? SINGLE_THREADED | ObjectReference.INVOKE_NONVIRTUAL : SINGLE_THREADED;
+    return invoker.invoke(() -> receiver.invokeMethod(thread(), method, arguments, options));
+  }
+
+  private static boolean isSuperCall(final MethodInvocationTree call) {
+    return call.getMethodSelect() instanceof final MemberSelectTree select
+        && select.getExpression() instanceof final IdentifierTree receiver
+        && receiver.getName().contentEquals("super");
   }
 
   private Value newInstance(final TreePath path, final NewClassTree construction) {
@@ -480,10 +496,11 @@ final class JdiInterpreter {
     return switch (binary.getKind()) {
       case EQUAL_TO -> vm.mirrorOf(equalValues(left, right));
       case NOT_EQUAL_TO -> vm.mirrorOf(!equalValues(left, right));
-      case LESS_THAN -> vm.mirrorOf(asDouble(left) < asDouble(right));
-      case LESS_THAN_EQUAL -> vm.mirrorOf(asDouble(left) <= asDouble(right));
-      case GREATER_THAN -> vm.mirrorOf(asDouble(left) > asDouble(right));
-      case GREATER_THAN_EQUAL -> vm.mirrorOf(asDouble(left) >= asDouble(right));
+      case LESS_THAN -> vm.mirrorOf(compare(left, right, (a, b) -> a < b, (a, b) -> a < b));
+      case LESS_THAN_EQUAL -> vm.mirrorOf(compare(left, right, (a, b) -> a <= b, (a, b) -> a <= b));
+      case GREATER_THAN -> vm.mirrorOf(compare(left, right, (a, b) -> a > b, (a, b) -> a > b));
+      case GREATER_THAN_EQUAL ->
+          vm.mirrorOf(compare(left, right, (a, b) -> a >= b, (a, b) -> a >= b));
       case PLUS -> arithmetic(path, left, right, Double::sum, Long::sum);
       case MINUS -> arithmetic(path, left, right, (a, b) -> a - b, (a, b) -> a - b);
       case MULTIPLY -> arithmetic(path, left, right, (a, b) -> a * b, (a, b) -> a * b);
@@ -622,7 +639,11 @@ final class JdiInterpreter {
         return asBoolean(l) == asBoolean(r);
       }
 
-      return asDouble(l) == asDouble(r);
+      return compare(
+          l,
+          r,
+          (a, b) -> a.doubleValue() == b.doubleValue(),
+          (a, b) -> a.longValue() == b.longValue());
     }
 
     if (left == null || right == null) {
@@ -630,6 +651,22 @@ final class JdiInterpreter {
     }
 
     return left.equals(right);
+  }
+
+  // As javac compares: in double when either operand is floating, else exactly, in long.
+  private static boolean compare(
+      final Value left,
+      final Value right,
+      final BiPredicate<Double, Double> floating,
+      final BiPredicate<Long, Long> integral) {
+    return isFloating(left) || isFloating(right)
+        ? floating.test(asDouble(left), asDouble(right))
+        : integral.test(asLong(left), asLong(right));
+  }
+
+  private static boolean isFloating(final Value value) {
+    final Value unboxed = unbox(value);
+    return unboxed instanceof DoubleValue || unboxed instanceof FloatValue;
   }
 
   private ReferenceType resolveType(final String binaryName) {
