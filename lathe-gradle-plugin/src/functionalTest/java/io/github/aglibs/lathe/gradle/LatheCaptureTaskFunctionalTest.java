@@ -81,6 +81,25 @@ class LatheCaptureTaskFunctionalTest {
         .contains(fixture.path("build/classes/java/main"));
   }
 
+  // The capture is best-effort, as Maven's: a module lock it cannot take skips it, never the build.
+  @Test
+  void capture_moduleLockUnavailable_buildSucceedsWithoutACapture() throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file("settings.gradle", SETTINGS)
+            .file("build.gradle", GradleFixture.JAVA)
+            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n");
+    // A directory where the lock file goes: writing the lock fails.
+    Files.createDirectories(
+        dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.MODULE_LOCK_FILE));
+
+    final var result = fixture.runner("classes").build();
+
+    assertThat(result.getOutput()).contains("skipping .lathe/ capture");
+    assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.paramsFileName("classes")))
+        .doesNotExist();
+  }
+
   // A build that points every compile, the test one too, at one generated-sources directory, as
   // Apache Fineract does. The compiles stand in for a processor, each writing a source there; the
   // test compile cleans the directory on a full compile, so the main capture must copy it first.

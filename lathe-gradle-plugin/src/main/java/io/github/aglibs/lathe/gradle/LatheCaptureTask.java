@@ -143,7 +143,14 @@ public abstract class LatheCaptureTask extends DefaultTask {
     final Path moduleDir = getModuleDir().get().getAsFile().toPath();
     final ModuleConfigData config = moduleConfig();
     final Path lock = LatheLayout.moduleLockFile(moduleDir);
-    LatheLock.acquire(lock);
+    // Best-effort, as Maven's compile shim: the build goes on and keeps the last capture.
+    try {
+      LatheLock.acquire(lock);
+    } catch (final IOException e) {
+      getLogger().warn("[lathe] {} skipping .lathe/ capture — lock unavailable", moduleDir, e);
+      return;
+    }
+
     try {
       CompileCapture.writeParams(moduleDir, config);
       if (!getFailOnError().get() && !wroteEveryClass(Path.of(config.outputDir()))) {
