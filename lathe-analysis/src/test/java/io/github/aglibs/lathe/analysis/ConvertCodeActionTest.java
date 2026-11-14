@@ -60,6 +60,27 @@ class ConvertCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_variableRef_valueVarCannotTake_offersNoDeclaration() {
+    for (final String value : List.of("null", "() -> {}", "String::length")) {
+      final var source =
+          """
+          package com.example;
+          class Test {
+            void method() { x = %s; }
+          }
+          """
+              .formatted(value);
+
+      final List<Diagnostic> diags =
+          session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+      assertThat(rightTitles(diagnosticActions(source, diags)))
+          .as(value)
+          .noneMatch(t -> t.startsWith("Declare local variable"));
+    }
+  }
+
+  @Test
   void codeAction_variableRef_rhsOfLocalDecl_returnsEmpty() {
     final var source =
         """
