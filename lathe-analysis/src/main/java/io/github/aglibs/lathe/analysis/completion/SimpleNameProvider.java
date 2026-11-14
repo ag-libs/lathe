@@ -144,23 +144,29 @@ final class SimpleNameProvider {
       return;
     }
 
-    boolean staticOnly = staticMethod;
-    TypeElement inner = scope.getEnclosingClass();
-    addClassMembers(inner, staticOnly);
-    // Outwards to the top-level class: an inner, local or anonymous class reaches the enclosing
-    // instance's members, unless a static nested class, method or field lies between them.
-    for (Element owner = inner.getEnclosingElement();
-        owner != null && owner.getKind() != ElementKind.PACKAGE;
-        owner = owner.getEnclosingElement()) {
-      if (!(owner instanceof final TypeElement type)) {
-        staticOnly = staticOnly || owner.getModifiers().contains(Modifier.STATIC);
-        continue;
-      }
+    addMembersOutwards(scope.getEnclosingClass(), staticMethod);
+  }
 
-      staticOnly = staticOnly || !hasEnclosingInstance(inner);
-      addClassMembers(type, staticOnly);
-      inner = type;
+  // The class's members, then its enclosing classes' out to the top level: an inner, local or
+  // anonymous class reaches the enclosing instance's members, unless a static nested class, method
+  // or field lies between them.
+  private void addMembersOutwards(final TypeElement type, final boolean staticOnly) {
+    addClassMembers(type, staticOnly);
+    addOwnerMembers(type.getEnclosingElement(), staticOnly || !hasEnclosingInstance(type));
+  }
+
+  private void addOwnerMembers(final Element owner, final boolean staticOnly) {
+    if (owner == null || owner.getKind() == ElementKind.PACKAGE) {
+      return;
     }
+
+    if (owner instanceof final TypeElement type) {
+      addMembersOutwards(type, staticOnly);
+      return;
+    }
+
+    addOwnerMembers(
+        owner.getEnclosingElement(), staticOnly || owner.getModifiers().contains(Modifier.STATIC));
   }
 
   private static boolean hasEnclosingInstance(final TypeElement type) {
