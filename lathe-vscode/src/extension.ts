@@ -2,9 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ExtensionContext, WorkspaceFolder, window, workspace } from 'vscode';
 import { Executable, LanguageClient, LanguageClientOptions } from 'vscode-languageclient/node';
-import { LAUNCHER, findWorkspaceRoot, launcherCommand } from './launch';
+import { LAUNCHER, findWorkspaceRoot, javaSelector, launcherCommand } from './launch';
 
-const clients = new Map<string, LanguageClient>();
+// One client per workspace root, shared by every open folder of that reactor (keyed by URI).
+const clients = new Map<string, { client: LanguageClient; folders: Set<string> }>();
 let warnedMissing = false;
 
 export function activate(context: ExtensionContext): void {
@@ -18,7 +19,7 @@ export function activate(context: ExtensionContext): void {
 }
 
 export async function deactivate(): Promise<void> {
-  await Promise.all([...clients.values()].map((client) => client.stop()));
+  await Promise.all([...clients.values()].map(({ client }) => client.stop()));
   clients.clear();
 }
 
@@ -35,12 +36,13 @@ function launchFor(folder: WorkspaceFolder): { launcher: string; root: string } 
 }
 
 function startClient(folder: WorkspaceFolder): void {
-  const key = folder.uri.toString();
-  if (clients.has(key)) {
+  const { launcher, root } = launchFor(folder);
+  const running = clients.get(root);
+  if (running) {
+    running.folders.add(folder.uri.toString());
     return;
   }
 
-  const { launcher, root } = launchFor(folder);
   if (!fs.existsSync(launcher)) {
     if (!warnedMissing) {
       warnedMissing = true;
@@ -56,22 +58,22 @@ function startClient(folder: WorkspaceFolder): void {
   // passes the options to spawn, so windowsVerbatimArguments reaches it.
   const serverOptions: Executable = launcherCommand(launcher, root);
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: 'file', language: 'java' }],
+    documentSelector: [javaSelector(root)],
     workspaceFolder: folder,
   };
 
   const client = new LanguageClient('lathe', 'Lathe for Java', serverOptions, clientOptions);
   client.start();
-  clients.set(key, client);
+  clients.set(root, { client, folders: new Set([folder.uri.toString()]) });
 }
 
+// The root's client stops with the last of its folders.
 function stopClient(folder: WorkspaceFolder): void {
   const key = folder.uri.toString();
-  const client = clients.get(key);
-  if (!client) {
-    return;
+  for (const [root, running] of clients) {
+    if (running.folders.delete(key) && running.folders.size === 0) {
+      clients.delete(root);
+      void running.client.stop();
+    }
   }
-
-  clients.delete(key);
-  void client.stop();
 }

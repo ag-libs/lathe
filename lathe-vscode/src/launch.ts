@@ -19,6 +19,16 @@ export function findWorkspaceRoot(dir: string): string | undefined {
   }
 }
 
+// The Java files a workspace root's client takes: those under the root, so a second root's client
+// does not take them too. A root whose path holds glob syntax gets every Java file, as no escape
+// works on every platform's glob.
+export function javaSelector(root: string): { scheme: string; language: string; pattern?: string } {
+  const filter = { scheme: 'file', language: 'java' };
+  return /[*?[\]{}]/.test(root)
+    ? filter
+    : { ...filter, pattern: `${root.replace(/\\/g, '/')}/**/*` };
+}
+
 export interface LauncherCommand {
   command: string;
   args: string[];
