@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.core.schema.SourceStatus;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class LibrarySourcesTest extends SampleFixture {
@@ -51,16 +52,26 @@ class LibrarySourcesTest extends SampleFixture {
   }
 
   @Test
-  void originLabel_reactorClass_returnsModuleName() throws Exception {
-    final Path classDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("mymodule");
-    Files.createDirectories(classDir);
+  void originLabel_reactorClass_returnsModulePathOrWorkspaceName() throws Exception {
     final Path sampleSrc = Path.of(compiled.cu().getSourceFile().toUri());
-    TestJavac.compileToDir(classDir, sampleSrc);
+    final Path workspace = tmp.resolve("shop");
+    final Map<String, String> labels =
+        Map.of(
+            "mymodule/classes", "mymodule",
+            "parent/child/test-classes", "parent/child",
+            "classes", "shop");
+    for (final var entry : labels.entrySet()) {
+      final Path classDir = workspace.resolve(LatheLayout.LATHE_DIR).resolve(entry.getKey());
+      Files.createDirectories(classDir);
+      TestJavac.compileToDir(classDir, sampleSrc);
 
-    try (final var parsed = TestJavac.parseWithClasspath(sampleSrc, classDir)) {
-      final var sampleType = parsed.task().getElements().getTypeElement("Sample");
+      try (final var parsed = TestJavac.parseWithClasspath(sampleSrc, classDir)) {
+        final var sampleType = parsed.task().getElements().getTypeElement("Sample");
 
-      assertThat(LibrarySources.none().originLabel(sampleType, parsed.fm())).hasValue("mymodule");
+        assertThat(LibrarySources.none().originLabel(sampleType, parsed.fm()))
+            .as(entry.getKey())
+            .hasValue(entry.getValue());
+      }
     }
   }
 
