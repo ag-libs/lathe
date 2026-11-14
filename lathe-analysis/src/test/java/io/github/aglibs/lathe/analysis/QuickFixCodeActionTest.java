@@ -1210,7 +1210,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         package com.example;
         interface Task { <X extends Exception> void run() throws X; }
         interface Quiet { void close(); }
-        class Test implements Task, Quiet, java.io.Closeable { }
+        interface Sink<T> { void accept(T value); }
+        interface TextSink { void accept(String value); }
+        class Test implements Task, Quiet, java.io.Closeable, Sink<String>, TextSink { }
         """;
 
     final List<Diagnostic> diags =
@@ -1223,6 +1225,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         .contains("public void close() {")
         .doesNotContain("IOException");
     assertThat(count(rewritten, "void close()")).isEqualTo(2);
+    assertThat(count(rewritten, "public void accept(String")).isEqualTo(1);
     assertCompilesClean(rewritten);
   }
 
