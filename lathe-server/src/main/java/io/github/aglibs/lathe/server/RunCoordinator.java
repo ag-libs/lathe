@@ -767,15 +767,27 @@ final class RunCoordinator {
     return result;
   }
 
+  // The module's test tree is walked off the loop, which it would hold for as long as the tree is
+  // big; the launch starts back on the loop.
   private CompletableFuture<TestDiscovery> launchDiscovery(final String moduleRel) {
-    final List<TestSelection> selections =
-        state.layout().moduleRun(moduleRel).selections().stream()
-            .map(
-                selector ->
-                    new TestSelection(
-                        TestSelectionKind.valueOf(selector.selectorKind()),
-                        selector.selectorValue()))
-            .toList();
+    final SourceLayout layout = state.layout();
+    return eventLoop
+        .rejoin(CompletableFuture.supplyAsync(() -> testSelections(layout, moduleRel)))
+        .thenCompose(selections -> discover(moduleRel, selections));
+  }
+
+  private static List<TestSelection> testSelections(
+      final SourceLayout layout, final String moduleRel) {
+    return layout.moduleRun(moduleRel).selections().stream()
+        .map(
+            selector ->
+                new TestSelection(
+                    TestSelectionKind.valueOf(selector.selectorKind()), selector.selectorValue()))
+        .toList();
+  }
+
+  private CompletableFuture<TestDiscovery> discover(
+      final String moduleRel, final List<TestSelection> selections) {
     if (selections.isEmpty()) {
       return CompletableFuture.completedFuture(new TestDiscovery(moduleRel, List.of(), List.of()));
     }

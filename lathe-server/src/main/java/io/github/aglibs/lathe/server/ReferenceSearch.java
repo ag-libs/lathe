@@ -947,7 +947,7 @@ final class ReferenceSearch {
             .flatMap(stream -> stream)
             .filter(entry -> seesDeclaration(target, declaring, entry.getKey()))
             .collect(
-                Collectors.toMap(
+                Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, Map.Entry::getValue, ReferenceSearch::unionNames));
     return filesQueryFuture(
         candidatesByFile.keySet(),
@@ -1084,7 +1084,9 @@ final class ReferenceSearch {
     // A file listed twice under two spellings of its path is read once, under the first.
     final Map<String, Path> byUri =
         chunk.stream()
-            .collect(Collectors.toMap(LatheUri::fromPath, file -> file, (first, second) -> first));
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    LatheUri::fromPath, file -> file, (first, second) -> first));
     return eventLoop
         .rejoin(
             CompletableFuture.supplyAsync(

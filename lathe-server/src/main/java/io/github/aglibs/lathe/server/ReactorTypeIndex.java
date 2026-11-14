@@ -109,7 +109,7 @@ final class ReactorTypeIndex {
 
     final var shards = new LinkedHashMap<>(shardsByTree());
     shards.merge(tree, openEntries, ReactorTypeIndex::concat);
-    return buildOffLoop(typeIndex, shards);
+    return buildOffLoop(typeIndex, Collections.unmodifiableMap(shards));
   }
 
   // The shards keyed by their tree's classes dir, as WorkspaceTypeIndex takes them; two configs on

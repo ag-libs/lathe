@@ -930,7 +930,7 @@ final class WorkspaceSession {
     state
         .registry()
         .workerFor(config)
-        .compileOpenBatch(requests)
+        .compileOpenBatch(List.copyOf(requests))
         .whenComplete(
             (responses, failure) -> {
               if (failure == null) {

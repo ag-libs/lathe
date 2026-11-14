@@ -76,6 +76,7 @@ final class WorkspaceQueries {
       return args.name();
     }
 
+    // Walks one module's sources on the loop: only a module-info created without a name asks.
     final String base = state.layout().basePackage(args.moduleRel());
     if (base.isEmpty()) {
       throw new IllegalArgumentException(
