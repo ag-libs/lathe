@@ -649,7 +649,8 @@ public final class CompletionEngine {
     }
 
     final List<CompletionItem> items =
-        AnnotationCompletionProvider.completeArgumentValue(parsed, injected, analysis);
+        AnnotationCompletionProvider.completeArgumentValue(
+            parsed, injected, analysis, req.cursorOffset());
     if (!AnnotationCompletionProvider.isClassValuedElement(parsed, analysis)) {
       return new CompletionOutcome(items, req.cached() == null ? analysis : null);
     }
