@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
@@ -166,7 +167,7 @@ public final class ExtractConstantProvider {
         expr instanceof final LiteralTree literal && literal.getValue() instanceof String text
             ? Strings.screamingSnake(text)
             : DEFAULT_NAME;
-    return uniquify(base.isEmpty() ? DEFAULT_NAME : base, existingFieldNames(cls));
+    return uniquify(SourceVersion.isName(base) ? base : DEFAULT_NAME, existingFieldNames(cls));
   }
 
   private static Set<String> existingFieldNames(final ClassTree cls) {
