@@ -323,7 +323,8 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, "11", config.proc()), new CompilationAdmission(1))) {
+            withOptions(config, "11", config.proc(), config.encoding()),
+            new CompilationAdmission(1))) {
       assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN)))
           .singleElement()
           .asString()
@@ -332,8 +333,31 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, null, config.proc()), new CompilationAdmission(1))) {
+            withOptions(config, null, config.proc(), config.encoding()),
+            new CompilationAdmission(1))) {
       assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN))).isEmpty();
+    }
+  }
+
+  // The editor's text is compiled from a temp copy javac reads in the module's -encoding: a
+  // non-ASCII character before an error must not shift where the error is reported.
+  @Test
+  void compile_moduleNotInUtf8_errorAfterANonAsciiCharacterAtItsOffset() throws Exception {
+    final var config = TestCompiler.mainTreeConfig(td, "module");
+    final Path sourceRoot = config.sourceRoots().get(0);
+    Files.createDirectories(sourceRoot);
+    final String uri = sourceRoot.resolve("Accents.java").toUri().toString();
+    final String source = "class Accents { String s = \"é\"; int n = \"oops\"; }";
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            withOptions(config, config.release(), config.proc(), "ISO-8859-1"),
+            new CompilationAdmission(1))) {
+      assertThat(compiler.compile(uri, source, CompileMode.OPEN).diagnostics())
+          .filteredOn(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+          .singleElement()
+          .extracting(Diagnostic::getStartPosition)
+          .isEqualTo((long) source.indexOf("\"oops\""));
     }
   }
 
@@ -629,7 +653,7 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, config.release(), LatheFlags.PROC_NONE),
+            withOptions(config, config.release(), LatheFlags.PROC_NONE, config.encoding()),
             new CompilationAdmission(1))) {
       final BatchWrite write = compiler.compileBatch(sources, () -> {});
 
@@ -654,7 +678,10 @@ class ModuleSourceCompilerTest {
   }
 
   private static ModuleSourceConfig withOptions(
-      final ModuleSourceConfig config, final String release, final String proc) {
+      final ModuleSourceConfig config,
+      final String release,
+      final String proc,
+      final String encoding) {
     return new ModuleSourceConfig(
         config.moduleDir(),
         config.sourceTree(),
@@ -665,7 +692,7 @@ class ModuleSourceCompilerTest {
         config.modulepath(),
         config.processorPath(),
         release,
-        config.encoding(),
+        encoding,
         config.parameters(),
         config.enablePreview(),
         proc,
