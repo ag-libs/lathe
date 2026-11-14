@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.Stream;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.BuildSuccess;
@@ -119,13 +118,8 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   }
 
   private static void recordBuiltIn(final Path moduleDir) {
-    if (!Files.isDirectory(moduleDir)) {
-      return;
-    }
-
-    try (final Stream<Path> files = Files.list(moduleDir)) {
-      files
-          .filter(LatheLayout::isParamsFile)
+    try {
+      FileUtil.filesIn(moduleDir, LatheLayout::isParamsFile)
           .forEach(
               params ->
                   IOUtil.unchecked(

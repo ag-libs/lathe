@@ -23,7 +23,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -76,12 +75,8 @@ public final class RenameBindingCheck {
     }
 
     private static Span span(final String content, final Range range) {
-      final int start = offset(content, range.getStart());
-      return new Span(start, offset(content, range.getEnd()) - start);
-    }
-
-    private static int offset(final String content, final Position position) {
-      return Positions.toOffset(content, position.getLine(), position.getCharacter());
+      final int start = Positions.toOffset(content, range.getStart());
+      return new Span(start, Positions.toOffset(content, range.getEnd()) - start);
     }
   }
 
@@ -300,11 +295,7 @@ public final class RenameBindingCheck {
       return ReferenceLocator.references(analysis, renamed, file.uri(), true).stream()
           .collect(
               Collectors.toMap(
-                  match ->
-                      Positions.toOffset(
-                          file.content(),
-                          match.range().getStart().getLine(),
-                          match.range().getStart().getCharacter()),
+                  match -> Positions.toOffset(file.content(), match.range().getStart()),
                   ReferenceMatch::role,
                   (first, second) -> first));
     } catch (final IOException e) {
@@ -343,9 +334,7 @@ public final class RenameBindingCheck {
       try {
         return DeclarationNames.declarationNamePosition(
                 trees, path.getCompilationUnit(), path, newName)
-            .map(
-                position ->
-                    Positions.toOffset(file.content(), position.getLine(), position.getCharacter()))
+            .map(position -> Positions.toOffset(file.content(), position))
             .filter(file.renamedStarts()::contains)
             .isPresent();
       } catch (final IOException e) {

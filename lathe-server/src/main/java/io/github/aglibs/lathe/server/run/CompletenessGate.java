@@ -71,7 +71,7 @@ public final class CompletenessGate {
       final List<String> paths, final ReactorRewrite reactorRewrite) {
     return paths.stream()
         .map(path -> Path.of(path).normalize())
-        .filter(path -> path.toString().endsWith(".jar"))
+        .filter(FileUtil::isJarFile)
         .filter(path -> !reactorRewrite.mirrors().containsKey(path))
         .filter(path -> !Files.exists(path))
         .distinct()

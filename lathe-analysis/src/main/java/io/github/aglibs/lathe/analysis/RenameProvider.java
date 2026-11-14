@@ -40,7 +40,7 @@ public final class RenameProvider {
   // The identifier token under the cursor — the range prepareRename returns for the client to
   // pre-fill and highlight. Null when the cursor is not on an identifier.
   public static Range identifierRange(final String content, final Position pos) {
-    final int offset = Positions.toOffset(content, pos.getLine(), pos.getCharacter());
+    final int offset = Positions.toOffset(content, pos);
     final int start = DeclarationNames.identifierStart(content, offset);
     final int end = DeclarationNames.identifierEnd(content, offset);
     if (start >= end) {

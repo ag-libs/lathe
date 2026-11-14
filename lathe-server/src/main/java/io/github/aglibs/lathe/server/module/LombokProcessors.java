@@ -70,7 +70,7 @@ final class LombokProcessors implements AutoCloseable {
 
   private static boolean listsLombokProcessors(final Path path) {
     return Files.isRegularFile(path)
-        && path.getFileName().toString().endsWith(".jar")
+        && FileUtil.isJarFile(path)
         && IOUtil.unchecked(() -> FileUtil.readEntry(path, PROCESSOR_SERVICES))
             .map(
                 services ->

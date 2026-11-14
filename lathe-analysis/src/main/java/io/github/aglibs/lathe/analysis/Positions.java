@@ -73,7 +73,7 @@ public final class Positions {
     final List<TextEdit> ordered =
         edits.stream()
             .map(TextEdit.class::cast)
-            .sorted(Comparator.comparingInt(e -> offset(content, e.getRange().getStart())))
+            .sorted(Comparator.comparingInt(e -> toOffset(content, e.getRange().getStart())))
             .toList();
     return IntStream.rangeClosed(0, ordered.size())
         .mapToObj(i -> segment(content, ordered, i))
@@ -82,17 +82,17 @@ public final class Positions {
 
   private static String segment(
       final String content, final List<TextEdit> ordered, final int index) {
-    final int from = index == 0 ? 0 : offset(content, ordered.get(index - 1).getRange().getEnd());
+    final int from = index == 0 ? 0 : toOffset(content, ordered.get(index - 1).getRange().getEnd());
     if (index == ordered.size()) {
       return content.substring(from); // the untouched tail after the last edit
     }
 
     final TextEdit edit = ordered.get(index);
-    final int to = offset(content, edit.getRange().getStart());
+    final int to = toOffset(content, edit.getRange().getStart());
     return "%s%s".formatted(content.substring(from, to), edit.getNewText());
   }
 
-  private static int offset(final String content, final Position position) {
+  public static int toOffset(final String content, final Position position) {
     return toOffset(content, position.getLine(), position.getCharacter());
   }
 

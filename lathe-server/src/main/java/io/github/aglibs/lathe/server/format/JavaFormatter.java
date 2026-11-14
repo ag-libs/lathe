@@ -5,7 +5,6 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
@@ -53,11 +52,8 @@ public final class JavaFormatter {
   }
 
   private static TextRange toTextRange(final String content, final Range range) {
-    return new TextRange(offsetOf(content, range.getStart()), offsetOf(content, range.getEnd()));
-  }
-
-  private static int offsetOf(final String content, final Position position) {
-    return Positions.toOffset(content, position.getLine(), position.getCharacter());
+    return new TextRange(
+        Positions.toOffset(content, range.getStart()), Positions.toOffset(content, range.getEnd()));
   }
 
   // Replaces only the region that actually changed (between the common leading and trailing text),

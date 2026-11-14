@@ -30,7 +30,7 @@ public record CompletionRequest(
   }
 
   int cursorOffset() {
-    return Positions.toOffset(content, pos.getLine(), pos.getCharacter());
+    return Positions.toOffset(content, pos);
   }
 
   boolean noDiff() {

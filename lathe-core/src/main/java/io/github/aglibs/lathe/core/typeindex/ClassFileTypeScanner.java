@@ -84,16 +84,9 @@ public final class ClassFileTypeScanner {
   }
 
   private static List<ClassMetadata> readDirectory(final Path root) throws IOException {
-    if (!Files.isDirectory(root)) {
-      return List.of();
-    }
-
-    try (final Stream<Path> files = Files.walk(root)) {
-      return files
-          .filter(Files::isRegularFile)
-          .flatMap(file -> readClassFile(root, file).stream())
-          .toList();
-    }
+    return FileUtil.walkFiles(root, file -> true).stream()
+        .flatMap(file -> readClassFile(root, file).stream())
+        .toList();
   }
 
   private static Stream<JarEntry> entries(final JarFile jarFile) {

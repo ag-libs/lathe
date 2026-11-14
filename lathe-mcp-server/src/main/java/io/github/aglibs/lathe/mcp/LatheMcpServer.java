@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.mcp;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -258,15 +259,7 @@ public final class LatheMcpServer {
   // for names that start with a sortable timestamp.
   static void deleteAllButLast(final Path dir, final Predicate<Path> matching, final int count)
       throws IOException {
-    if (!Files.isDirectory(dir)) {
-      return;
-    }
-
-    final List<Path> files;
-    try (final var list = Files.list(dir)) {
-      files = list.filter(Files::isRegularFile).filter(matching).sorted().toList();
-    }
-
+    final List<Path> files = FileUtil.filesIn(dir, matching);
     for (final Path file : files.subList(0, Math.max(0, files.size() - count))) {
       Files.deleteIfExists(file);
     }
