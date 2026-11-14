@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis.refactor;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParameterizedTypeTree;
@@ -15,14 +16,15 @@ import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
-import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
@@ -78,7 +80,9 @@ public final class ConvertToVarProvider {
     }
 
     final ExpressionTree init = varTree.getInitializer();
-    if (init == null || !isVarLegalInitializer(init)) {
+    if (init == null
+        || !isVarLegalInitializer(init)
+        || typedByTarget(init, trees.getElement(new TreePath(varPath, init)))) {
       return List.of();
     }
 
@@ -103,7 +107,7 @@ public final class ConvertToVarProvider {
     final var edits = new ArrayList<TextEdit>();
     edits.add(replaceEdit(cu, typeStart, typeEnd, VAR));
     if (!diamondArgs.isEmpty()) {
-      edits.add(diamondFill((NewClassTree) init, diamondArgs, cu, positions, analysis));
+      edits.addAll(diamondFill((NewClassTree) init, diamondArgs, cu, positions, analysis, varPath));
     }
 
     final var action = new CodeAction();
@@ -124,6 +128,17 @@ public final class ConvertToVarProvider {
       case LAMBDA_EXPRESSION, MEMBER_REFERENCE, NULL_LITERAL -> false;
       default -> !(init instanceof final NewArrayTree array && array.getType() == null);
     };
+  }
+
+  // A generic call with no type arguments of its own may take them from the declared type
+  // (`List<String> x = Collections.emptyList()`, `List<Number> x = List.of(1)`), which `var` lacks,
+  // so it would infer another type. Refused for every such call, `List.of("a")` too: telling them
+  // apart needs the call attributed with no target.
+  private static boolean typedByTarget(final ExpressionTree init, final Element called) {
+    return init instanceof final MethodInvocationTree call
+        && call.getTypeArguments().isEmpty()
+        && called instanceof final ExecutableElement method
+        && !method.getTypeParameters().isEmpty();
   }
 
   // `int a = 1, b = 2;` is two VariableTrees sharing one type token; `var` cannot spell a multi-
@@ -172,18 +187,25 @@ public final class ConvertToVarProvider {
     return declaredInit.getTypeArguments();
   }
 
-  private static TextEdit diamondFill(
+  // The diamond spelled out as the file names its types, with the imports those names need.
+  private static List<TextEdit> diamondFill(
       final NewClassTree newClass,
       final List<? extends TypeMirror> args,
       final CompilationUnitTree cu,
       final SourcePositions positions,
-      final AttributedFileAnalysis analysis) {
+      final AttributedFileAnalysis analysis,
+      final TreePath varPath) {
     final var parameterized = (ParameterizedTypeTree) newClass.getIdentifier();
     final long nameEnd = positions.getEndPosition(cu, parameterized.getType());
     final long idEnd = positions.getEndPosition(cu, parameterized);
-    final var formatter = new TypeDisplayFormatter(analysis.types());
-    final String rendered = args.stream().map(formatter::format).collect(Collectors.joining(", "));
-    return replaceEdit(cu, nameEnd, idEnd, "<%s>".formatted(rendered));
+    final List<CodeActionSupport.SourceType> written =
+        args.stream().map(arg -> CodeActionSupport.sourceType(analysis, varPath, arg)).toList();
+    final String rendered =
+        written.stream().map(CodeActionSupport.SourceType::text).collect(Collectors.joining(", "));
+    return Stream.concat(
+            Stream.of(replaceEdit(cu, nameEnd, idEnd, "<%s>".formatted(rendered))),
+            written.stream().flatMap(type -> type.imports().stream()).distinct())
+        .toList();
   }
 
   private static TextEdit replaceEdit(

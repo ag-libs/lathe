@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import static io.github.aglibs.lathe.analysis.Positions.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -228,6 +229,28 @@ class ConvertCodeActionTest extends CodeActionTestBase {
         .containsExactlyInAnyOrder("var", "<String, Integer>");
   }
 
+  // A diamond's type arguments are written as the file names them, imported when it does not.
+  @Test
+  void codeAction_diamondOfAnUnimportedType_fillsAndImportsIt() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            java.util.List<java.time.Instant> xs = new java.util.ArrayList<>();
+          }
+        }
+        """;
+
+    final List<TextEdit> edits = convertVarEdits(replaceVarActionsAt(source, 3, 38));
+    final String rewritten = applyEdits(source, edits);
+
+    assertThat(rewritten)
+        .contains("import java.time.Instant;")
+        .contains("var xs = new java.util.ArrayList<Instant>();");
+    assertCompilesClean(rewritten);
+  }
+
   @Test
   void codeAction_losslessAndWideningLocals_convertToVar() {
     // A same-type primitive local and a reference-widening local both convert to a single `var`
@@ -254,7 +277,8 @@ class ConvertCodeActionTest extends CodeActionTestBase {
   @Test
   void codeAction_ineligibleDeclarations_offerNoConvertToVar() {
     // Field (`var` illegal), primitive mismatch (`long` <- `int`), multi-declarator, lambda (no
-    // standalone type), and an already-`var` local must all decline the conversion.
+    // standalone type), an already-`var` local, and a generic call typed by its target (`var`
+    // would infer `List<Object>`) must all decline the conversion.
     final var source =
         """
         package com.example;
@@ -265,11 +289,12 @@ class ConvertCodeActionTest extends CodeActionTestBase {
             int a = 1, b = 2;
             Runnable r = () -> {};
             var already = 3;
+            java.util.List<String> empty = java.util.Collections.emptyList();
           }
         }
         """;
 
-    for (final int[] at : new int[][] {{2, 9}, {4, 9}, {5, 8}, {6, 13}, {7, 8}}) {
+    for (final int[] at : new int[][] {{2, 9}, {4, 9}, {5, 8}, {6, 13}, {7, 8}, {8, 28}}) {
       assertThat(rightTitles(replaceVarActionsAt(source, at[0], at[1])))
           .as("line %d col %d", at[0], at[1])
           .noneMatch(title -> title.equals("Convert to 'var'"));
