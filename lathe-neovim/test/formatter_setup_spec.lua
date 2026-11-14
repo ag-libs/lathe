@@ -80,4 +80,25 @@ lathe.format(java_buf)
 spec.check("format(): .java routes to the fold path", fold_called, java_buf)
 spec.check("format(): .java skips the pom path", pom_called, nil)
 
+-- A re-attach (:lsp restart) replaces the buffer's format-on-save hooks rather than adding more,
+-- so a save formats once.
+do
+  require("lathe.format").setup(true)
+  local real_get_client_by_id = vim.lsp.get_client_by_id
+  vim.lsp.get_client_by_id = function(id)
+    return { id = id, name = "lathe", server_capabilities = { documentFormattingProvider = true } }
+  end
+  local buf = vim.api.nvim_create_buf(true, false)
+  for client_id = 1, 2 do
+    vim.api.nvim_exec_autocmds("LspAttach", { buffer = buf, data = { client_id = client_id } })
+  end
+  vim.lsp.get_client_by_id = real_get_client_by_id
+
+  spec.check(
+    "re-attach: one format hook per buffer",
+    #vim.api.nvim_get_autocmds({ group = "LatheFormatOnSave", event = "BufWritePre", buffer = buf }),
+    1
+  )
+end
+
 spec.finish()

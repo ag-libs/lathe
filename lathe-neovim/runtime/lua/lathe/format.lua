@@ -36,6 +36,10 @@ function M.setup(format_on_save)
           return
         end
 
+        -- A re-attach (:lsp restart) replaces the buffer's hooks: added again, the buffer would
+        -- format once per attach, the old ones through a client that is gone.
+        vim.api.nvim_clear_autocmds({ group = augroup, buffer = args.buf })
+
         -- Format-on-save rewrites the buffer, which reopens ufo's imports fold on every save
         -- (NV-3). Snapshot the fold's state before the format, then restore it after ufo settles.
         local imports_were_closed = false
