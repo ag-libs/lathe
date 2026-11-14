@@ -64,13 +64,13 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
 
   @Override
   public Void visitMethod(final MethodTree node, final Void ignored) {
+    // Every body is walked, as a local or anonymous class's method may be the target; a method
+    // nested in the target's body makes its own calls, not the target's.
     final var element = trees.getElement(getCurrentPath());
-    if (target.matches(element, types, elements) && node.getBody() != null) {
-      inTarget = true;
-      scan(node.getBody(), null);
-      inTarget = false;
-    }
-
+    final boolean enclosing = inTarget;
+    inTarget = target.matches(element, types, elements);
+    scan(node.getBody(), null);
+    inTarget = enclosing;
     return null;
   }
 
