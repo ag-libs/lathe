@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.InsertTextFormat;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -45,6 +46,18 @@ final class LatheCompletionsMappingTest {
     assertThat(dap.sortText).isEqualTo("0007");
     assertThat(dap.start).isEqualTo(6);
     assertThat(dap.number).isEqualTo(3);
+  }
+
+  @Test
+  void toDapItem_snippet_dropsTabStops_plainTextKeepsDollars() {
+    final var snippet = lspItem("add", CompletionItemKind.Method);
+    snippet.setInsertText("add($1)");
+    snippet.setInsertTextFormat(InsertTextFormat.Snippet);
+    final var plain = lspItem("Outer$1", CompletionItemKind.Class);
+    plain.setInsertText("Outer$1");
+
+    assertThat(LatheCompletionsProvider.toDapItem(snippet, 4, 0, 0).text).isEqualTo("add()");
+    assertThat(LatheCompletionsProvider.toDapItem(plain, 4, 0, 0).text).isEqualTo("Outer$1");
   }
 
   @Test
