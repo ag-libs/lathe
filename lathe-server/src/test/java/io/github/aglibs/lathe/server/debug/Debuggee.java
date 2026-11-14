@@ -9,9 +9,12 @@ import com.sun.jdi.event.BreakpointEvent;
 import com.sun.jdi.event.ClassPrepareEvent;
 import com.sun.jdi.event.EventSet;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 // A small fixture program launched under JDI with the test JDK's own java and stopped at a
 // breakpoint, for tests of what the debugger computes against a real suspended frame. Its source
@@ -111,8 +114,12 @@ final class Debuggee implements AutoCloseable {
     return thread;
   }
 
-  Path sourceRoot() {
-    return sourceRoot;
+  // The debug session's view of this program's source, routed to one worker as a module's would be.
+  FrameSources frameSources(final CompilationWorker worker) {
+    return new FrameSources(
+        task -> CompletableFuture.runAsync(task, Runnable::run),
+        file -> Optional.of(worker),
+        List.of(sourceRoot));
   }
 
   // A local of run(), read from a fresh frame.
