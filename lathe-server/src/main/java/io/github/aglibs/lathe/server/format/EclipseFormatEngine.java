@@ -46,8 +46,7 @@ final class EclipseFormatEngine implements FormatEngine {
   @Override
   public String format(final String source, final FormatTarget target) throws Exception {
     final Jdt loaded = jdt();
-    final boolean moduleInfo = MODULE_INFO.equals(target.file().getFileName().toString());
-    final int kind = moduleInfo ? loaded.moduleInfoKind() : loaded.compilationUnitKind();
+    final int kind = kind(loaded, target);
     return FormatEngine.converge(
         source,
         current -> loaded.format(kind, current, List.of(new TextRange(0, current.length()))));
@@ -59,9 +58,18 @@ final class EclipseFormatEngine implements FormatEngine {
   }
 
   @Override
-  public String formatRanges(final String source, final List<TextRange> ranges) throws Exception {
+  public String formatRanges(
+      final String source, final FormatTarget target, final List<TextRange> ranges)
+      throws Exception {
     final Jdt loaded = jdt();
-    return loaded.format(loaded.compilationUnitKind(), source, ranges);
+    return loaded.format(kind(loaded, target), source, ranges);
+  }
+
+  // module-info.java parses as a module declaration, not a compilation unit.
+  private static int kind(final Jdt loaded, final FormatTarget target) {
+    return MODULE_INFO.equals(target.file().getFileName().toString())
+        ? loaded.moduleInfoKind()
+        : loaded.compilationUnitKind();
   }
 
   private synchronized Jdt jdt() throws Exception {

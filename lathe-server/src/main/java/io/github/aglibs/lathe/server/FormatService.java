@@ -141,7 +141,7 @@ final class FormatService {
     }
 
     return formatDocument(
-        uri, (content, target) -> JavaFormatter.formatRanges(engine, content, ranges));
+        uri, (content, target) -> JavaFormatter.formatRanges(engine, content, target, ranges));
   }
 
   // Only a pinned formatter whose jars are missing is one a sync can supply; "none" is the

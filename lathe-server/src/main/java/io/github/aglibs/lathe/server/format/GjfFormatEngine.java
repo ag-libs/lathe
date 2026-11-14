@@ -51,7 +51,9 @@ final class GjfFormatEngine implements FormatEngine {
 
   // GJF's partial formatting: only the given spans change, and imports are left alone.
   @Override
-  public String formatRanges(final String source, final List<TextRange> ranges) throws Exception {
+  public String formatRanges(
+      final String source, final FormatTarget target, final List<TextRange> ranges)
+      throws Exception {
     final Gjf loaded = gjf();
     final List<Object> spans = ranges.stream().map(loaded::span).toList();
     final var replacements =

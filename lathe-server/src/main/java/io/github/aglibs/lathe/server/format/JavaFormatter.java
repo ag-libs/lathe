@@ -23,13 +23,19 @@ public final class JavaFormatter {
 
   // Formats only the given ranges (LSP positions) of content; text outside them is not touched.
   public static List<TextEdit> formatRanges(
-      final FormatEngine engine, final String content, final List<Range> ranges) throws Exception {
+      final FormatEngine engine,
+      final String content,
+      final FormatTarget target,
+      final List<Range> ranges)
+      throws Exception {
     return edits(
         engine,
         content,
         () ->
             engine.formatRanges(
-                content, ranges.stream().map(range -> toTextRange(content, range)).toList()));
+                content,
+                target,
+                ranges.stream().map(range -> toTextRange(content, range)).toList()));
   }
 
   private static List<TextEdit> edits(
