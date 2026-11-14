@@ -81,7 +81,9 @@ public final class ExtractFieldProvider {
     }
 
     final TreePath classPath = TreePaths.enclosingClass(exprPath);
-    if (classPath == null || !holdsInstanceField(((ClassTree) classPath.getLeaf()))) {
+    if (classPath == null
+        || !holdsInstanceField(((ClassTree) classPath.getLeaf()))
+        || !reads.stream().allMatch(read -> settledAtConstruction(read, classPath, trees))) {
       return List.of();
     }
 
@@ -178,6 +180,27 @@ public final class ExtractFieldProvider {
         "Extract field '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
         ExtractKinds.FIELD_KIND,
         ExtractionSupport.editList(insert, replaces, imports));
+  }
+
+  // The new field's initializer runs once, before the constructor body: it may read only a field
+  // that holds its last value by then, a final one initialized where it is declared or by a
+  // superclass. A field the constructor assigns would not compile; a mutable one would be frozen.
+  private static boolean settledAtConstruction(
+      final Element read, final TreePath classPath, final Trees trees) {
+    if (!read.getModifiers().contains(Modifier.FINAL)) {
+      return false;
+    }
+
+    if (!read.getEnclosingElement().equals(trees.getElement(classPath))) {
+      return true;
+    }
+
+    return ((ClassTree) classPath.getLeaf())
+        .getMembers().stream()
+            .filter(VariableTree.class::isInstance)
+            .map(VariableTree.class::cast)
+            .filter(variable -> variable.getInitializer() != null)
+            .anyMatch(variable -> read.equals(trees.getElement(new TreePath(classPath, variable))));
   }
 
   private static boolean isStatic(final TreePath methodPath, final Trees trees) {

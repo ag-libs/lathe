@@ -581,6 +581,34 @@ class ExtractCodeActionTest extends CodeActionTestBase {
     assertThat(insertLine(edits)).isEqualTo(2);
   }
 
+  // A field initializer runs before the constructor body: a final field the constructor assigns is
+  // unset then (the field would not compile), and a mutable one would be read once, not on each
+  // call.
+  @Test
+  void codeAction_expressionReadingAFieldTheConstructorSetsOrAMutableOne_offersNoField() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          private final String name;
+          private int count;
+          Test(String name) { this.name = name; }
+          int m() {
+            return name.length();
+          }
+          int n() {
+            return count * 2;
+          }
+        }
+        """;
+
+    assertThat(rightTitles(extractActionsSpanning(source, 6, 11, 6, 24)))
+        .anyMatch(t -> t.startsWith("Extract variable"))
+        .noneMatch(t -> t.startsWith("Extract field"));
+    assertThat(rightTitles(extractActionsSpanning(source, 9, 11, 9, 20)))
+        .noneMatch(t -> t.startsWith("Extract field"));
+  }
+
   @Test
   void codeAction_wholeStatementExpression_offersNoField() {
     // Extracting the whole expression of an expression-statement into a field would replace the
