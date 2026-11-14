@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.DependencyData;
@@ -351,14 +352,37 @@ public record LibrarySources(
       return Optional.empty();
     }
 
+    // .lathe/<module path>/<tree>/...: the module path is empty for the root module, which is named
+    // after the workspace directory.
     final var path = Path.of(uri);
-    for (int i = 0; i < path.getNameCount() - 1; i++) {
+    for (int i = 1; i < path.getNameCount(); i++) {
       if (LatheLayout.LATHE_DIR.equals(path.getName(i).toString())) {
-        return Optional.of(path.getName(i + 1).toString());
+        final int tree = treeIndex(path, i + 1);
+        if (tree < 0) {
+          return Optional.empty();
+        }
+
+        return Optional.of(
+            tree == i + 1
+                ? path.getName(i - 1).toString()
+                : FileUtil.slashed(path.subpath(i + 1, tree)));
       }
     }
 
     return Optional.empty();
+  }
+
+  private static int treeIndex(final Path path, final int from) {
+    for (int i = from; i < path.getNameCount(); i++) {
+      final String name = path.getName(i).toString();
+      if (LatheLayout.CLASSES_DIR.equals(name)
+          || LatheLayout.TEST_CLASSES_DIR.equals(name)
+          || name.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX)) {
+        return i;
+      }
+    }
+
+    return -1;
   }
 
   private static Optional<Path> extractJarPath(final URI uri) {
