@@ -41,6 +41,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedExpression;
 import java.util.Arrays;
 import java.util.List;
@@ -49,6 +50,9 @@ import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -131,7 +135,66 @@ final class JdiInterpreter {
   }
 
   Value evaluate() {
+    final String unresolved = new UnresolvedScanner().scan(attr.expression(), null);
+    if (unresolved != null) {
+      throw new EvaluationException(unresolved);
+    }
+
     return eval(attr.expression());
+  }
+
+  // The first part of the expression javac could not resolve, said as what is wrong with it: a name
+  // that is not in scope (an unimported type, a misspelt local), or a call no method matches. A
+  // call's receiver and arguments are checked first, so the message names the innermost cause.
+  private final class UnresolvedScanner extends TreePathScanner<String, Void> {
+
+    @Override
+    public String visitIdentifier(final IdentifierTree node, final Void unused) {
+      return resolves(getCurrentPath()) ? null : "cannot resolve '%s'".formatted(node.getName());
+    }
+
+    @Override
+    public String visitMemberSelect(final MemberSelectTree node, final Void unused) {
+      final String inner = super.visitMemberSelect(node, unused);
+      if (inner != null) {
+        return inner;
+      }
+
+      return resolves(getCurrentPath()) ? null : "cannot resolve '%s'".formatted(node);
+    }
+
+    @Override
+    public String visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+      final String inner =
+          reduce(
+              node.getMethodSelect() instanceof final MemberSelectTree select
+                  ? scan(select.getExpression(), unused)
+                  : null,
+              scan(node.getArguments(), unused));
+      if (inner != null) {
+        return inner;
+      }
+
+      return attr.trees().getElement(getCurrentPath()) instanceof ExecutableElement
+          ? null
+          : "no method %s takes these arguments".formatted(methodName(node));
+    }
+
+    @Override
+    public String reduce(final String first, final String second) {
+      return first != null ? first : second;
+    }
+
+    private boolean resolves(final TreePath path) {
+      final Element element = attr.trees().getElement(path);
+      return element != null && element.asType().getKind() != TypeKind.ERROR;
+    }
+  }
+
+  private static Name methodName(final MethodInvocationTree call) {
+    return call.getMethodSelect() instanceof final MemberSelectTree select
+        ? select.getIdentifier()
+        : ((IdentifierTree) call.getMethodSelect()).getName();
   }
 
   private Value eval(final TreePath path) {

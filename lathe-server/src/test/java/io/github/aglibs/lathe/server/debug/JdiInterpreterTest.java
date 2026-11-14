@@ -225,6 +225,18 @@ final class JdiInterpreterTest {
     assertThat(evaluate("null")).isNull();
   }
 
+  // A name or call that does not compile is refused with what is wrong with it: here List is not
+  // imported, as in the file the debuggee stopped in.
+  @Test
+  void evaluate_unresolvedNamesAndCalls_refusedWithWhatDoesNotResolve() {
+    assertThatThrownBy(() -> evaluate("List.of(1)")).hasMessage("cannot resolve 'List'");
+    assertThatThrownBy(() -> evaluate("missing + 1")).hasMessage("cannot resolve 'missing'");
+    assertThatThrownBy(() -> evaluate("java.util.List.copyOf(1)"))
+        .hasMessage("no method copyOf takes these arguments");
+    assertThatThrownBy(() -> evaluate("holder.nope()"))
+        .hasMessage("no method nope takes these arguments");
+  }
+
   // What Java refuses at run time, the evaluator refuses with the reason.
   @Test
   void evaluate_runtimeFailures_refusedWithTheReason() {
