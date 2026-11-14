@@ -1,5 +1,5 @@
 -- What the neotest adapter's modules share: neotest and nio loaded lazily, the debug log, the
--- client lookup, the runnable kinds, and how a test id or a source path names a class.
+-- client lookup, and how a test id or a source path names a class.
 local M = {}
 
 -- Required lazily (inside functions, not here at module load) so that
@@ -25,20 +25,6 @@ function M.debug_log(msg)
     vim.lsp.log.info("[lathe.neotest] " .. msg)
   end
 end
-
--- RunnableKind ordinal -> neotest position type / TestSelectionKind. lsp4j's Gson layer
--- serializes Java enums by ordinal, matching the LSP convention that kind fields like
--- SymbolKind/DiagnosticSeverity are integers (see dev/explore.py's identical handling).
--- Ordinals match RunnableKind's declaration order in lathe-server: MAIN, TEST_METHOD,
--- TEST_CLASS, TEST_PACKAGE, MAIN_CLASS. MAIN(0) and MAIN_CLASS(4) have no entry: a main is
--- not a test, so it stays out of the neotest tree and is handled by lathe.run's gutter
--- instead. TEST_PACKAGE(3) has no entry either: a package spans multiple files, so nesting
--- it as a child of whichever single file's discovery happened to report it puts it at
--- the wrong level in the tree (file contains package, not the other way around).
--- Package-level running is instead bound to the directory node neotest's own tree walk
--- already creates at the right level -- see build_spec's "dir" handling in lathe.neotest.spec.
-M.TEST_METHOD_KIND = 1
-M.TEST_CLASS_KIND = 2
 
 -- The Lathe client, looked up through nio for the adapter's async callers.
 function M.client()

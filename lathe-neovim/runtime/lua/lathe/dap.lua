@@ -14,26 +14,12 @@ local stackdecorate = require("lathe.stackdecorate")
 
 local M = {}
 
--- RunnableKind ordinals (lsp4j serializes the enum by ordinal), mirroring lathe.run's map. The
--- TEST_* kinds map to the server's TestSelectionKind names that lathe.debug.test expects; a
--- METHOD range wins over its enclosing CLASS, which wins over the PACKAGE, so debugging from a
--- method, class, or package line all resolve to the innermost target under the cursor.
-local TEST_METHOD = 1
-local TEST_CLASS = 2
-local TEST_PACKAGE = 3
-local SELECTOR_KIND = {
-  [TEST_METHOD] = "METHOD",
-  [TEST_CLASS] = "CLASS",
-  [TEST_PACKAGE] = "PACKAGE",
-}
--- Innermost first: the first kind whose range contains the cursor is the one to debug.
-local PRECEDENCE = { TEST_METHOD, TEST_CLASS, TEST_PACKAGE }
-
 -- Run tokens of in-flight Lathe debug sessions, so :LatheRunStop can cancel their replay JVMs.
 local active_tokens = {}
 
 local util = require("lathe.util")
 local commands = require("lathe.commands")
+local runnables = require("lathe.runnables")
 local lathe_client = util.client
 
 local notify = util.notify
@@ -44,25 +30,6 @@ local notify = util.notify
 local function neotest_available()
   local ok, neotest = pcall(require, "neotest")
   return ok and neotest.run ~= nil
-end
-
-local function in_range(range, line)
-  return range ~= nil and line >= range.start.line and line <= range["end"].line
-end
-
---- The TEST runnable to debug for a cursor position: the innermost target (method, then class,
---- then package) whose range contains `cursor_line` (0-based); else nil. Pure over the raw
---- lathe.runnables.file targets, so it is unit-testable without a live client.
-function M._test_target_for(targets, cursor_line)
-  for _, kind in ipairs(PRECEDENCE) do
-    for _, t in ipairs(targets) do
-      if t.kind == kind and in_range(t.range, cursor_line) then
-        return t
-      end
-    end
-  end
-
-  return nil
 end
 
 --- The nvim-dap `attach` config for a module + test selections. Carries the module and selections the
@@ -84,7 +51,7 @@ end
 --- The attach config for a resolved TEST target under the cursor, minting its own run token.
 function M._test_config_for(target)
   return M.attach_config(target.moduleRel, {
-    { selectorKind = SELECTOR_KIND[target.kind], selectorValue = target.id },
+    { selectorKind = runnables.SELECTOR_KIND[target.kind], selectorValue = target.id },
   }, target.label, output.next_token())
 end
 
@@ -212,37 +179,20 @@ function M.debug(bufnr)
     return
   end
 
-  local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
-  local function debug_target(targets)
-    targets = targets or {}
-    local test = M._test_target_for(targets, cursor_line)
-    local main = not test and require("lathe.run").main_target_for(targets, cursor_line) or nil
-    vim.schedule(function()
-      local route = M._debug_route(test ~= nil, main ~= nil, neotest_available())
-      if route == "neotest" then
-        require("neotest").run.run({ strategy = "dap" })
-      elseif route == "dap_test" then
-        dap.run(M._test_config_for(test))
-      elseif route == "dap_main" then
-        dap.run(M._main_config_for(main))
-      else
-        notify("no test or main here to debug", vim.log.levels.WARN)
-      end
-    end)
-  end
-
-  util.exec(
-    client,
-    bufnr,
-    commands.RUNNABLES_FILE,
-    { { uri = vim.uri_from_bufnr(bufnr) } },
-    debug_target,
-    {
-      on_error = function()
-        debug_target(nil)
-      end,
-    }
-  )
+  runnables.at_cursor(client, bufnr, function(targets, cursor_line)
+    local test = runnables.test_target_for(targets, cursor_line)
+    local main = not test and runnables.main_target_for(targets, cursor_line) or nil
+    local route = M._debug_route(test ~= nil, main ~= nil, neotest_available())
+    if route == "neotest" then
+      require("neotest").run.run({ strategy = "dap" })
+    elseif route == "dap_test" then
+      dap.run(M._test_config_for(test))
+    elseif route == "dap_main" then
+      dap.run(M._main_config_for(main))
+    else
+      notify("no test or main here to debug", vim.log.levels.WARN)
+    end
+  end)
 end
 
 --- Debugs a saved config selected by name (cursor-independent), via nvim-dap's attach flow. The
