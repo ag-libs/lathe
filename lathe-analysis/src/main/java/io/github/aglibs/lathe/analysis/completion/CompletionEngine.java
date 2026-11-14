@@ -184,16 +184,14 @@ public final class CompletionEngine {
       return outcome;
     }
 
-    final List<CompletionCandidate> overrides =
+    final List<CompletionItem> overrides =
         OverrideCompletionProvider.propose(analysis, req.cursorOffset(), injected.prefix());
     if (overrides.isEmpty()) {
       return outcome;
     }
 
     final List<CompletionItem> merged =
-        Stream.concat(
-                overrides.stream().map(CompletionItemPresenter::present), outcome.items().stream())
-            .toList();
+        Stream.concat(overrides.stream(), outcome.items().stream()).toList();
     return new CompletionOutcome(merged, outcome.freshAnalysis(), outcome.incomplete());
   }
 
