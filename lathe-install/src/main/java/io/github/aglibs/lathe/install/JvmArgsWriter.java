@@ -39,7 +39,7 @@ public final class JvmArgsWriter {
         LOG.info("[sync] jvm.args %d module-access flag(s)".formatted(flags.size()));
       }
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write jvm.args", e);
+      throw new SyncException("Lathe sync failed to write jvm.args", e);
     }
   }
 

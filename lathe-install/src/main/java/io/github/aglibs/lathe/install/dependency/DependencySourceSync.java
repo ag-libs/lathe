@@ -60,7 +60,7 @@ public final class DependencySourceSync {
               .formatted(
                   counts.getOrDefault(true, 0L), counts.getOrDefault(false, 0L), t.elapsedMs()));
     } catch (final UncheckedIOException e) {
-      throw new SyncException("lathe:sync failed to extract source artifacts", e);
+      throw new SyncException("Lathe sync failed to extract source artifacts", e);
     }
   }
 

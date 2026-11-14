@@ -30,7 +30,7 @@ public final class StyleWriter {
         LOG.info("[sync] style formatter=%s".formatted(style.formatter().engine()));
       }
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write style.json", e);
+      throw new SyncException("Lathe sync failed to write style.json", e);
     }
 
     unrunnable(workspaceRoot, style.formatter()).ifPresent(LOG::warn);
@@ -93,7 +93,7 @@ public final class StyleWriter {
         LOG.info("[sync] style removed, formatting off");
       }
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to delete style.json", e);
+      throw new SyncException("Lathe sync failed to delete style.json", e);
     }
   }
 }

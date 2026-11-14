@@ -88,7 +88,7 @@ public final class ServerInstaller {
           LatheLayout.MCP_LAUNCHER_SCRIPT,
           new LauncherScript(version, LatheLayout.MCP_ARGS_FILE).render());
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to install server files", e);
+      throw new SyncException("Lathe sync failed to install server files", e);
     }
 
     updateLatest();

@@ -39,7 +39,7 @@ public final class JdkSourceSync {
               () -> LOG.info("[sync] jdk sources waiting for another build extracting them"),
               () -> extractOnce(source, t)));
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to extract JDK sources", e);
+      throw new SyncException("Lathe sync failed to extract JDK sources", e);
     }
   }
 
