@@ -140,7 +140,8 @@ public interface JavaSourceCompiler extends AutoCloseable {
           collector.getDiagnostics().stream().noneMatch(JavaSourceCompiler::isError);
       analyzeSafely(task);
       final var trees = Trees.instance(task);
-      final List<SemanticToken> tokens = cu != null ? TokenScanner.scan(trees, cu) : null;
+      final List<SemanticToken> tokens =
+          cu != null ? TokenScanner.scan(trees, task.getElements(), cu) : null;
       return new CompilerResult(
           collector.getDiagnostics(),
           new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens),

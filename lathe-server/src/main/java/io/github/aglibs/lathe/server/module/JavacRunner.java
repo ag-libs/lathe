@@ -101,7 +101,11 @@ final class JavacRunner {
       for (final var cu : units) {
         analyses.add(
             new AttributedFileAnalysis(
-                trees, elements, types, cu, withTokens ? TokenScanner.scan(trees, cu) : null));
+                trees,
+                elements,
+                types,
+                cu,
+                withTokens ? TokenScanner.scan(trees, elements, cu) : null));
       }
 
       return new BatchAnalysis(analyses, collector.getDiagnostics(), parseFailed);

@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 // Sample.java (0-based lines):
 //  16:   @Retention(RetentionPolicy.RUNTIME)     RUNTIME=29
@@ -28,7 +30,7 @@ class SemanticTokensTest extends SampleFixture {
 
   @BeforeEach
   void scanTokens() throws IOException {
-    tokens = TokenScanner.scan(compiled.trees(), compiled.cu());
+    tokens = TokenScanner.scan(compiled.trees(), compiled.task().getElements(), compiled.cu());
   }
 
   @Test
@@ -111,6 +113,25 @@ class SemanticTokensTest extends SampleFixture {
   @Test
   void deprecated_method_usage_has_deprecated_modifier() {
     assertToken(111, 11, "method", "deprecated");
+  }
+
+  @Test
+  void javadocOnlyDeprecated_methodAndUsage_haveDeprecatedModifier(@TempDir final Path tmp)
+      throws IOException {
+    final List<SemanticToken> scanned =
+        TokenScannerTestHelper.scanFile(
+            tmp,
+            "Old.java",
+            """
+            class Old {
+              /** @deprecated use another */
+              void old() {}
+              void use() { old(); }
+            }
+            """);
+
+    assertThat(TokenScannerTestHelper.tokenAt(scanned, 2, 7).modifiers()).contains("deprecated");
+    assertThat(TokenScannerTestHelper.tokenAt(scanned, 3, 15).modifiers()).contains("deprecated");
   }
 
   @Test
