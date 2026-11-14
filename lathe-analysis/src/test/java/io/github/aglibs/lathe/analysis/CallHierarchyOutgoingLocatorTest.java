@@ -302,6 +302,43 @@ class CallHierarchyOutgoingLocatorTest {
   }
 
   @Test
+  void outgoingCalls_methodOfALocalOrAnonymousClass_listsItsCalls() throws IOException {
+    final String content =
+        """
+        class Task {
+            void outer() {
+                Runnable r = new Runnable() {
+                    public void run() { step(); }
+                };
+                class Helper {
+                    void help() { step(); }
+                }
+            }
+            void step() {}
+        }
+        """;
+    Files.writeString(sourceRoot.resolve("Task.java"), content);
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      for (final String method : List.of("run", "help")) {
+        final var request =
+            request(content, SampleFixture.posOf(content, "void " + method, method));
+        session.compile(request.uri(), content, 1, CompileMode.OPEN);
+        final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+        final List<CallHierarchyOutgoingCall> calls =
+            session
+                .hierarchy()
+                .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+
+        assertThat(calls)
+            .as(method)
+            .extracting(call -> call.getTo().getName())
+            .containsExactly("step");
+      }
+    }
+  }
+
+  @Test
   void outgoingCalls_receiverSpellsTheName_rangesOnTheCalledName() throws IOException {
     final String content =
         """
