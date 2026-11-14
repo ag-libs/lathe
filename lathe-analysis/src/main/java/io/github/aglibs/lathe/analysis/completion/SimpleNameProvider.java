@@ -1,10 +1,10 @@
 package io.github.aglibs.lathe.analysis.completion;
 
 import com.sun.source.tree.BindingPatternTree;
-import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -140,21 +139,32 @@ final class SimpleNameProvider {
   }
 
   private void addClassMembers(final boolean staticMethod) {
-    final var classEl = findScopeClassElement(context.enclosingClass());
-    if (classEl == null) {
+    final Scope scope = ReceiverResolver.resolveScope(snapshot, context.cursorOffset());
+    if (scope == null || scope.getEnclosingClass() == null) {
       return;
     }
 
-    addClassMembers(classEl, staticMethod);
-    addEnclosingStaticMembers(classEl);
+    boolean staticOnly = staticMethod;
+    TypeElement inner = scope.getEnclosingClass();
+    addClassMembers(inner, staticOnly);
+    // Outwards to the top-level class: an inner, local or anonymous class reaches the enclosing
+    // instance's members, unless a static nested class, method or field lies between them.
+    for (Element owner = inner.getEnclosingElement();
+        owner != null && owner.getKind() != ElementKind.PACKAGE;
+        owner = owner.getEnclosingElement()) {
+      if (!(owner instanceof final TypeElement type)) {
+        staticOnly = staticOnly || owner.getModifiers().contains(Modifier.STATIC);
+        continue;
+      }
+
+      staticOnly = staticOnly || !hasEnclosingInstance(inner);
+      addClassMembers(type, staticOnly);
+      inner = type;
+    }
   }
 
-  private void addEnclosingStaticMembers(final TypeElement classEl) {
-    for (Element owner = classEl.getEnclosingElement();
-        owner instanceof final TypeElement typeElement;
-        owner = owner.getEnclosingElement()) {
-      addClassMembers(typeElement, true);
-    }
+  private static boolean hasEnclosingInstance(final TypeElement type) {
+    return type.getKind() == ElementKind.CLASS && !type.getModifiers().contains(Modifier.STATIC);
   }
 
   private void addClassMembers(final TypeElement classEl, final boolean staticOnly) {
@@ -215,22 +225,5 @@ final class SimpleNameProvider {
       case METHOD, FIELD -> el.getModifiers().contains(Modifier.STATIC);
       default -> false;
     };
-  }
-
-  private TypeElement findScopeClassElement(final String simpleName) {
-    final var result = new AtomicReference<TypeElement>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitClass(final ClassTree node, final Void unused) {
-        if (simpleName.equals(node.getSimpleName().toString())) {
-          final var el = snapshot.trees().getElement(getCurrentPath());
-          if (el instanceof final TypeElement te) {
-            result.set(te);
-          }
-        }
-        return super.visitClass(node, unused);
-      }
-    }.scan(snapshot.tree(), null);
-    return result.get();
   }
 }
