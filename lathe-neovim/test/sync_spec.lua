@@ -119,4 +119,15 @@ spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
 
+-- :LatheSync from a file outside any workspace says so, and runs nothing.
+local before_outside = #calls
+vim.cmd.edit(vim.fn.tempname() .. "/Outside.java")
+vim.cmd("LatheSync")
+spec.check("outside a workspace: runs nothing", #calls, before_outside)
+spec.check(
+  "outside a workspace: says there is no workspace",
+  notes[#notes] and notes[#notes]:find("no .lathe/", 1, true) ~= nil,
+  true
+)
+
 spec.finish("lathe.sync")
