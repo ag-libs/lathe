@@ -111,6 +111,24 @@ class OpenJdkSyncTest {
     assertThat(capturedDirs()).isEmpty();
   }
 
+  // A source the last make listed but deleted since has no stamp; the sync still completes.
+  @Test
+  void sync_listedSourceDeletedSinceTheMake_syncsWithoutIt() throws IOException {
+    Files.delete(root.resolve("make/src/pkg/Tool.java"));
+
+    OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
+
+    final Path stamps =
+        FileUtil.walkFiles(
+                latheDir,
+                file ->
+                    file.getFileName()
+                        .toString()
+                        .equals(LatheLayout.compiledStampsFileName("classes")))
+            .get(0);
+    assertThat(CompiledStamps.load(stamps.getParent(), "classes")).isEmpty();
+  }
+
   private List<String> capturedDirs() throws IOException {
     return FileUtil.walkFiles(latheDir, LatheLayout::isParamsFile).stream()
         .map(params -> params.getParent().getFileName().toString())

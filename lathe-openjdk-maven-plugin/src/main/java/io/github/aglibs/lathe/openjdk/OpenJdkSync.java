@@ -250,13 +250,14 @@ public final class OpenJdkSync {
     CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots), Map.of());
   }
 
-  // filelist -> {sourceRoot-relative path -> stamp}, keyed as CompileCapture does.
+  // filelist -> {sourceRoot-relative path -> stamp}, keyed as CompileCapture does. A source deleted
+  // since the make that listed it has no stamp to take.
   private static Map<Path, SourceStamp> stampsFor(final List<Path> sources, final List<Path> roots)
       throws IOException {
     final var stamps = new HashMap<Path, SourceStamp>();
     for (final Path source : sources) {
       final Optional<Path> root = rootOf(source, roots);
-      if (root.isPresent()) {
+      if (root.isPresent() && Files.exists(source)) {
         stamps.put(
             root.get().relativize(source),
             new SourceStamp(Files.getLastModifiedTime(source).toMillis(), null));
