@@ -21,6 +21,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -494,7 +495,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   @Override
   public Void visitStartElement(final StartElementTree node, final Void unused) {
-    switch (node.getName().toString().toLowerCase()) {
+    switch (node.getName().toString().toLowerCase(Locale.ROOT)) {
       case "b", "strong" -> append("**");
       case "i", "em" -> append("*");
       case "code" -> append("`");
@@ -513,7 +514,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   @Override
   public Void visitEndElement(final EndElementTree node, final Void unused) {
-    switch (node.getName().toString().toLowerCase()) {
+    switch (node.getName().toString().toLowerCase(Locale.ROOT)) {
       case "b", "strong" -> append("**");
       case "i", "em" -> append("*");
       case "code" -> append("`");
