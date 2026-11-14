@@ -23,6 +23,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -124,10 +125,12 @@ public final class MissingMethodImplProvider {
   // share it.
   private static List<List<ExecutableElement>> collectUnimplemented(
       final TypeElement classElement, final AttributedFileAnalysis analysis) {
+    final var classType = (DeclaredType) classElement.asType();
+    final var types = analysis.types();
     final Set<String> ownSignatures =
         classElement.getEnclosedElements().stream()
             .filter(e -> e instanceof ExecutableElement && e.getKind() == ElementKind.METHOD)
-            .map(e -> signatureKey((ExecutableElement) e))
+            .map(e -> signatureKey((ExecutableElement) e, classType, types))
             .collect(Collectors.toUnmodifiableSet());
 
     return analysis.elements().getAllMembers(classElement).stream()
@@ -135,20 +138,24 @@ public final class MissingMethodImplProvider {
         .map(ExecutableElement.class::cast)
         .filter(e -> e.getModifiers().contains(Modifier.ABSTRACT))
         .filter(e -> !e.getEnclosingElement().equals(classElement))
-        .filter(e -> !ownSignatures.contains(signatureKey(e)))
+        .filter(e -> !ownSignatures.contains(signatureKey(e, classType, types)))
         .collect(
             Collectors.groupingBy(
-                MissingMethodImplProvider::signatureKey, LinkedHashMap::new, Collectors.toList()))
+                e -> signatureKey(e, classType, types), LinkedHashMap::new, Collectors.toList()))
         .values()
         .stream()
         .map(List::copyOf)
         .toList();
   }
 
-  private static String signatureKey(final ExecutableElement exe) {
+  // The method's erased parameters as the class sees them, so A<String>.f(T) and B.f(String) share
+  // one key, as they share one implementation.
+  private static String signatureKey(
+      final ExecutableElement exe, final DeclaredType classType, final Types types) {
+    final var member = (ExecutableType) types.asMemberOf(classType, exe);
     final String params =
-        exe.getParameters().stream()
-            .map(p -> p.asType().toString())
+        member.getParameterTypes().stream()
+            .map(type -> types.erasure(type).toString())
             .collect(Collectors.joining(","));
     return "%s(%s)".formatted(exe.getSimpleName(), params);
   }
