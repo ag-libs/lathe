@@ -1,13 +1,17 @@
 package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -61,12 +65,13 @@ public final class TryCatchWrapProvider {
         """
         try {
         %s
-        %s} catch (%s e) {
+        %s} catch (%s %s) {
         %s}"""
             .formatted(
                 CodeActionSupport.reindent(original, indent, step),
                 indent,
                 request.payload().name(),
+                catchName(analysis, statementPath),
                 indent);
 
     final var start = Positions.offsetToPosition(cu, statementStart);
@@ -82,5 +87,17 @@ public final class TryCatchWrapProvider {
 
     LOG.fine(() -> "[codeAction:tryCatch] %s".formatted(request.payload().name()));
     return List.of(Either.forRight(action));
+  }
+
+  // `e`, unless a local or parameter in scope at the statement already has that name.
+  private static String catchName(final AttributedFileAnalysis analysis, final TreePath statement) {
+    final Set<String> visible = new HashSet<>();
+    for (Scope scope = analysis.trees().getScope(statement);
+        scope != null;
+        scope = scope.getEnclosingScope()) {
+      scope.getLocalElements().forEach(element -> visible.add(element.getSimpleName().toString()));
+    }
+
+    return VariableNameSuggester.uniquify("e", Set.copyOf(visible));
   }
 }

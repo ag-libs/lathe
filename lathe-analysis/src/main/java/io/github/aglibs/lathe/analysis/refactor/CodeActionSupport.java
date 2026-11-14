@@ -107,19 +107,23 @@ public final class CodeActionSupport {
     return false;
   }
 
+  // The outermost statement around path inside its body (a method's, a lambda's): never the body
+  // block itself, which a try cannot replace.
   static TreePath enclosingStatementToWrap(final TreePath path) {
     TreePath current = path;
     TreePath statement = null;
     while (current != null) {
-      if (current.getLeaf() instanceof StatementTree) {
-        statement = current;
-      }
-
       if (TreePaths.isBodyBoundary(current)) {
         return statement;
       }
 
-      current = current.getParentPath();
+      final TreePath parent = current.getParentPath();
+      if (current.getLeaf() instanceof StatementTree
+          && !(parent != null && TreePaths.isBodyBoundary(parent))) {
+        statement = current;
+      }
+
+      current = parent;
     }
     return null;
   }
