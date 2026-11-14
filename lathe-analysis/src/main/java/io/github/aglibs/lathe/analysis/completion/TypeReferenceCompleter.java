@@ -19,8 +19,10 @@ import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
@@ -370,6 +372,7 @@ final class TypeReferenceCompleter {
     }
 
     final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
+    final SourceTypeNames names = ReceiverResolver.typeNames(analysis, scope);
     final var result = new ArrayList<CompletionCandidate>();
     new TreePathScanner<Void, Void>() {
       @Override
@@ -379,14 +382,28 @@ final class TypeReferenceCompleter {
         if (el instanceof final TypeElement te
             && !te.getSimpleName().isEmpty()
             && te.getSimpleName().toString().startsWith(prefix)
+            && (te.getNestingKind() != NestingKind.LOCAL || isLocalInScope(te, scope))
             && typeReferenceRoleAllows(te, analysis, scope, role)) {
-          result.add(CandidateFactory.typeElementCandidate(te));
+          result.add(CandidateFactory.typeElementCandidate(te, names));
         }
 
         return super.visitClass(node, unused);
       }
     }.scan(analysis.tree(), null);
     return List.copyOf(result);
+  }
+
+  // A local class is visible only in its own block, after its declaration.
+  private static boolean isLocalInScope(final TypeElement local, final Scope scope) {
+    for (Scope current = scope; current != null; current = current.getEnclosingScope()) {
+      for (final Element element : current.getLocalElements()) {
+        if (element.equals(local)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   private static List<CompletionCandidate> expectedConstructorTypeCandidates(
