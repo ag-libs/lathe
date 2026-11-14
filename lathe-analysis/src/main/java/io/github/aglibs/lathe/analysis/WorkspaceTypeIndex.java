@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
@@ -178,7 +179,7 @@ public final class WorkspaceTypeIndex {
                         || (reactorTrees.containsKey(e.binaryName()) && e.isTopLevel()))
             .collect(
                 Collectors.groupingBy(
-                    e -> e.simpleName().toLowerCase(),
+                    e -> e.simpleName().toLowerCase(Locale.ROOT),
                     TreeMap::new,
                     Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
     final NavigableMap<String, List<TypeIndexEntry>> map =
@@ -192,7 +193,7 @@ public final class WorkspaceTypeIndex {
             .filter(WorkspaceTypeIndex::isNamedSymbol)
             .collect(
                 Collectors.groupingBy(
-                    e -> e.simpleName().toLowerCase(),
+                    e -> e.simpleName().toLowerCase(Locale.ROOT),
                     TreeMap::new,
                     Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
     final NavigableMap<String, List<TypeIndexEntry>> symbolMap =
@@ -276,7 +277,7 @@ public final class WorkspaceTypeIndex {
   // completion. Import resolution needs every exact match; a limit-truncated prefix scan starves
   // common names (java.util.List) when many `List*` siblings sort ahead of them by binaryName.
   public List<TypeIndexEntry> searchExact(final String simpleName) {
-    return bySimpleNameLower.getOrDefault(simpleName.toLowerCase(), List.of()).stream()
+    return bySimpleNameLower.getOrDefault(simpleName.toLowerCase(Locale.ROOT), List.of()).stream()
         .sorted(ranking())
         .toList();
   }
@@ -298,7 +299,7 @@ public final class WorkspaceTypeIndex {
       return List.of();
     }
 
-    final String lower = prefix.toLowerCase();
+    final String lower = prefix.toLowerCase(Locale.ROOT);
     return index.subMap(lower, lower + "￿").values().stream()
         .flatMap(List::stream)
         .sorted(ranking())

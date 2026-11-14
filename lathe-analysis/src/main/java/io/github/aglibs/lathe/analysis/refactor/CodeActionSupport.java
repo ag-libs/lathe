@@ -17,6 +17,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -66,7 +67,7 @@ public final class CodeActionSupport {
 
     return switch (type.getKind()) {
       case BOOLEAN, BYTE, CHAR, DOUBLE, FLOAT, INT, LONG, SHORT ->
-          type.getKind().toString().toLowerCase();
+          type.getKind().toString().toLowerCase(Locale.ROOT);
       default -> null;
     };
   }
