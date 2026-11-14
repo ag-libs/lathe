@@ -87,10 +87,8 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<?> dispatch(final ExecuteCommandParams params) {
     return switch (params.getCommand()) {
-      case LatheCommands.RUN_TEST ->
-          launch(params, LatheWorkspaceService::testTarget, RunCoordinator::runFuture);
-      case LatheCommands.RUN_MAIN ->
-          launch(params, LatheWorkspaceService::mainTarget, RunCoordinator::runFuture);
+      case LatheCommands.RUN_TEST -> run(params, LatheWorkspaceService::testTarget);
+      case LatheCommands.RUN_MAIN -> run(params, LatheWorkspaceService::mainTarget);
       case LatheCommands.RUN_CANCEL -> cancelTest(params);
       case LatheCommands.RUNNABLES_FILE -> listRunnables(params);
       case LatheCommands.RUNNABLES_DIR -> dirRunnables(params);
@@ -101,10 +99,8 @@ final class LatheWorkspaceService implements WorkspaceService {
       case LatheCommands.RESOURCES_LIST -> host.onLoop(session -> session.queries().resources());
       case LatheCommands.RESOURCES_OPEN -> resourceOpen(params);
       case LatheCommands.RESOURCES_REFRESH -> refreshResource(params);
-      case LatheCommands.DEBUG_TEST ->
-          launch(params, LatheWorkspaceService::testTarget, RunCoordinator::debugFuture);
-      case LatheCommands.DEBUG_MAIN ->
-          launch(params, LatheWorkspaceService::mainTarget, RunCoordinator::debugFuture);
+      case LatheCommands.DEBUG_TEST -> debug(params, LatheWorkspaceService::testTarget);
+      case LatheCommands.DEBUG_MAIN -> debug(params, LatheWorkspaceService::mainTarget);
       case LatheCommands.RUN_NAMED -> runNamed(params);
       case LatheCommands.DEBUG_NAMED -> debugNamed(params);
       case LatheCommands.RUN_CONFIGS_LIST ->
@@ -124,20 +120,21 @@ final class LatheWorkspaceService implements WorkspaceService {
     };
   }
 
-  // A run or debug of the target the command's argument names, under the argument's token.
-  private <T> CompletableFuture<T> launch(
-      final ExecuteCommandParams params,
-      final Function<JsonObject, LaunchTarget> target,
-      final Launch<T> launch) {
+  // A run of the target the command's argument names, under the argument's token.
+  private CompletableFuture<?> run(
+      final ExecuteCommandParams params, final Function<JsonObject, LaunchTarget> target) {
     final var json = (JsonObject) params.getArguments().get(0);
     final LaunchTarget launched = target.apply(json);
     final String token = token(json);
-    return host.onLoopFuture(session -> launch.start(session.runs(), launched, token));
+    return host.onLoopFuture(session -> session.runs().runFuture(launched, token));
   }
 
-  @FunctionalInterface
-  private interface Launch<T> {
-    CompletableFuture<T> start(RunCoordinator runs, LaunchTarget target, String token);
+  private CompletableFuture<?> debug(
+      final ExecuteCommandParams params, final Function<JsonObject, LaunchTarget> target) {
+    final var json = (JsonObject) params.getArguments().get(0);
+    final LaunchTarget launched = target.apply(json);
+    final String token = token(json);
+    return host.onLoopFuture(session -> session.runs().debugFuture(launched, token));
   }
 
   private static LaunchTarget testTarget(final JsonObject json) {
