@@ -78,7 +78,7 @@ final class ResultsListener implements TestExecutionListener {
   }
 
   @Override
-  public void testPlanExecutionFinished(final TestPlan testPlan) {
+  public synchronized void testPlanExecutionFinished(final TestPlan testPlan) {
     if (out == null) {
       return;
     }
@@ -162,7 +162,9 @@ final class ResultsListener implements TestExecutionListener {
     }
   }
 
-  private void write(final TestRecord record) {
+  // JUnit's parallel execution reports from several threads: one record's line must not interleave
+  // with another's.
+  private synchronized void write(final TestRecord record) {
     if (out == null) {
       return;
     }
