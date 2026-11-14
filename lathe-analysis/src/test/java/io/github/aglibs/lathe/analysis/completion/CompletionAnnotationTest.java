@@ -3,7 +3,9 @@ package io.github.aglibs.lathe.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 
 class CompletionAnnotationTest extends CompletionTestSupport {
@@ -104,18 +106,24 @@ class CompletionAnnotationTest extends CompletionTestSupport {
   }
 
   @Test
-  void annotationArgumentValue_enumElement_offersEnumConstants() {
-    final List<String> items =
-        labels(
-            fixture.complete(
-                """
-                import java.lang.annotation.Retention;
+  void annotationArgumentValue_enumElement_offersQualifiedConstantsAndImportsTheEnum() {
+    final CompletionItem item =
+        itemLabeled(
+                fixture.complete(
+                    """
+                    import java.lang.annotation.Retention;
 
-                @Retention(§)
-                class Test {}
-                """));
+                    @Retention(§)
+                    class Test {}
+                    """),
+                "RetentionPolicy.RUNTIME")
+            .orElseThrow();
 
-    assertThat(items).contains("RUNTIME");
+    assertThat(item.getInsertText()).isEqualTo("RetentionPolicy.RUNTIME");
+    assertThat(item.getAdditionalTextEdits())
+        .extracting(TextEdit::getNewText)
+        .anySatisfy(
+            text -> assertThat(text).contains("import java.lang.annotation.RetentionPolicy;"));
   }
 
   @Test
@@ -130,7 +138,7 @@ class CompletionAnnotationTest extends CompletionTestSupport {
                 class Test {}
                 """));
 
-    assertThat(items).contains("FIELD", "PARAMETER");
+    assertThat(items).contains("ElementType.FIELD", "ElementType.PARAMETER");
   }
 
   @Test

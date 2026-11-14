@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.analysis.completion;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import java.util.List;
 import java.util.stream.Stream;
-import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
@@ -38,7 +37,8 @@ final class AnnotationCompletionProvider {
   static List<CompletionItem> completeArgumentValue(
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected,
-      final AttributedFileAnalysis analysis) {
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset) {
     final TypeMirror elementType =
         resolveAnnotationElementType(
             parsed.annotationTypeText(), parsed.enclosingMethodName(), analysis);
@@ -54,11 +54,16 @@ final class AnnotationCompletionProvider {
         Stream.concat(
                 KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context())
                     .stream(),
-                annotationEnumConstantCandidates(expectedType, injected.prefix()).stream())
+                enumConstantCandidates(expectedType, injected.prefix(), analysis, cursorOffset)
+                    .stream())
             .toList();
-    return CompletionCandidateRanker.rank(candidates, semanticContext).stream()
-        .map(CompletionItemPresenter::present)
-        .toList();
+    final List<RankedCompletionCandidate> ranked =
+        CompletionCandidateRanker.rank(candidates, semanticContext);
+    final List<CompletionItem> items =
+        ranked.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(
+        ranked.stream().map(RankedCompletionCandidate::candidate).toList(), items, analysis);
+    return items;
   }
 
   static boolean isClassValuedElement(
@@ -81,39 +86,19 @@ final class AnnotationCompletionProvider {
         : elementType;
   }
 
-  private static List<CompletionCandidate> annotationEnumConstantCandidates(
-      final TypeMirror expectedType, final String prefix) {
-    if (!(expectedType instanceof final DeclaredType declaredType)) {
-      return List.of();
-    }
-
-    final var typeElement = declaredType.asElement();
-    if (!(typeElement instanceof final TypeElement enumType)
+  private static List<CompletionCandidate> enumConstantCandidates(
+      final TypeMirror expectedType,
+      final String prefix,
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset) {
+    if (!(expectedType instanceof final DeclaredType declaredType)
+        || !(declaredType.asElement() instanceof final TypeElement enumType)
         || enumType.getKind() != ElementKind.ENUM) {
       return List.of();
     }
 
-    return enumType.getEnclosedElements().stream()
-        .filter(el -> el.getKind() == ElementKind.ENUM_CONSTANT)
-        .filter(el -> el.getSimpleName().toString().startsWith(prefix))
-        .map(el -> annotationEnumConstantCandidate(enumType, el))
-        .toList();
-  }
-
-  private static CompletionCandidate annotationEnumConstantCandidate(
-      final TypeElement enumType, final Element constant) {
-    final var name = constant.getSimpleName().toString();
-    return new CompletionCandidate(
-        name,
-        name,
-        CandidateKind.FIELD,
-        enumType.getSimpleName().toString(),
-        name,
-        false,
-        null,
-        enumType.asType(),
-        enumType.getQualifiedName().toString(),
-        null);
+    return new CandidateGenerator(analysis)
+        .proposeEnumConstantCandidates(enumType, prefix, cursorOffset);
   }
 
   private static TypeMirror resolveAnnotationElementType(
