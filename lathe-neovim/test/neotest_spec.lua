@@ -166,6 +166,11 @@ do
     adapter.is_test_file("/p/src/main/java/demo/TestData.java"),
     false
   )
+  spec.check(
+    "a Gradle source set's .java matches",
+    adapter.is_test_file("/p/src/integrationTest/java/demo/FooIT.java"),
+    true
+  )
 end
 
 -- _targets_from_discovery: a never-opened file's tree from its module's discovery. Only the tests
