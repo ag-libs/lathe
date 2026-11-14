@@ -147,8 +147,14 @@ public final class ProgressReporter {
     }
 
     // Dispatch stays under this task lock to preserve begin/report/end order across module workers.
+    // A search begun on a running task (a field's Lombok accessors after the field) adds its work.
     public synchronized void begin(final String title, final int total) {
-      if (token == null || state != State.PENDING) {
+      if (token == null || state == State.ENDED) {
+        return;
+      }
+
+      if (state == State.ACTIVE) {
+        this.total += total;
         return;
       }
 
