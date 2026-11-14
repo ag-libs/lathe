@@ -497,6 +497,23 @@ class ExtractCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_stringLiteralNotAName_extractsConstantWithDefaultName() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m() {
+            use("404");
+          }
+          void use(String s) {}
+        }
+        """;
+    final var actions = extractActionsSpanning(source, 3, 8, 3, 13);
+
+    assertThat(rightTitles(actions)).contains("Extract constant 'CONSTANT'");
+  }
+
+  @Test
   void codeAction_numericLiteral_extractsConstantWithDefaultName() {
     final var source =
         """
