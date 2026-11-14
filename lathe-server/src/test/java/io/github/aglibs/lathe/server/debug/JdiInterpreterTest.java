@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.jdi.BooleanValue;
-import com.sun.jdi.Bootstrap;
 import com.sun.jdi.ByteValue;
 import com.sun.jdi.CharValue;
 import com.sun.jdi.DoubleValue;
@@ -13,17 +12,9 @@ import com.sun.jdi.IntegerValue;
 import com.sun.jdi.LongValue;
 import com.sun.jdi.ShortValue;
 import com.sun.jdi.StringReference;
-import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
-import com.sun.jdi.VirtualMachine;
-import com.sun.jdi.connect.LaunchingConnector;
-import com.sun.jdi.event.BreakpointEvent;
-import com.sun.jdi.event.ClassPrepareEvent;
-import com.sun.jdi.event.EventSet;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
-import io.github.aglibs.lathe.analysis.testing.TestJavac;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -38,85 +29,12 @@ import org.junit.jupiter.api.io.TempDir;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 final class JdiInterpreterTest {
 
-  private static final String SOURCE =
-      """
-      class Base {
-        int hidden = 1;
-
-        String name() {
-          return "base";
-        }
-      }
-
-      class Sample extends Base {
-        int hidden = 2;
-        int calls;
-
-        @Override
-        String name() {
-          return "sample";
-        }
-
-        static int counter = 5;
-
-        int[] next() {
-          calls++;
-          return new int[3];
-        }
-
-        void run() {
-          int ten = 10;
-          long big = 9007199254740993L;
-          long near = 9007199254740992L;
-          int[] numbers = {4, 5, 6};
-          char letter = 'q';
-          byte small = 3;
-          short medium = 300;
-          float half = 0.5f;
-          boolean yes = true;
-          Integer boxed = 7;
-          String none = null;
-          Object holder = new Holder();
-          System.out.println(ten);
-        }
-
-        public static void main(String[] args) {
-          new Sample().run();
-        }
-      }
-
-      class Holder {
-        @Override
-        public String toString() {
-          return "holder";
-        }
-      }
-
-      // Never loaded by the debuggee until an evaluation names it.
-      class Unused {
-        static int answer() {
-          return 42;
-        }
-      }
-      """;
-
-  // The println line (1-based), where every local of run() is in scope.
-  private static final int LINE =
-      (int) SOURCE.lines().takeWhile(line -> !line.contains("System.out.println")).count() + 1;
-  private static final long EVENT_TIMEOUT_MS = 30_000;
-
-  private VirtualMachine vm;
-  private ThreadReference thread;
+  private Debuggee debuggee;
   private SourceAnalysisSession session;
 
   @BeforeAll
   void stopAtBreakpoint(@TempDir final Path dir) throws Exception {
-    final Path source = Files.writeString(dir.resolve("Sample.java"), SOURCE);
-    final Path classes = dir.resolve("classes");
-    // -g: without the local variable table JDI cannot read a local.
-    TestJavac.compileToDir(classes, List.of(), List.of("-g"), source);
-    vm = launch(classes);
-    thread = runToBreakpoint();
+    debuggee = Debuggee.start(dir);
     session = new SourceAnalysisSession(new TempSourceCompiler());
   }
 
@@ -126,8 +44,8 @@ final class JdiInterpreterTest {
       session.close();
     }
 
-    if (vm != null) {
-      vm.exit(0);
+    if (debuggee != null) {
+      debuggee.close();
     }
   }
 
@@ -288,9 +206,11 @@ final class JdiInterpreterTest {
     final var attributed =
         session
             .files()
-            .attributeExpression(TempSourceCompiler.TEST_URI, SOURCE, LINE, expression)
+            .attributeExpression(
+                TempSourceCompiler.TEST_URI, Debuggee.SOURCE, Debuggee.LINE, expression)
             .orElseThrow();
-    return new JdiInterpreter(attributed, thread.frame(0), 0, JdiInterpreterTest::run, Map.of())
+    return new JdiInterpreter(
+            attributed, debuggee.thread().frame(0), 0, JdiInterpreterTest::run, Map.of())
         .evaluate();
   }
 
@@ -299,47 +219,6 @@ final class JdiInterpreterTest {
       return body.run();
     } catch (final Exception e) {
       throw new IllegalStateException(e);
-    }
-  }
-
-  // The test JDK's own java, so the debuggee runs wherever the tests do.
-  private static VirtualMachine launch(final Path classes) throws Exception {
-    final LaunchingConnector connector = Bootstrap.virtualMachineManager().defaultConnector();
-    final var arguments = connector.defaultArguments();
-    arguments.get("home").setValue(System.getProperty("java.home"));
-    arguments.get("options").setValue("-cp \"%s\"".formatted(classes));
-    arguments.get("main").setValue("Sample");
-    return connector.launch(arguments);
-  }
-
-  // Runs the launched VM until Sample is loaded, sets the breakpoint, and runs to it; the thread
-  // then stays suspended for the evaluations.
-  private ThreadReference runToBreakpoint() throws Exception {
-    final var requests = vm.eventRequestManager();
-    final var prepare = requests.createClassPrepareRequest();
-    prepare.addClassFilter("Sample");
-    prepare.enable();
-    // Each event set is resumed once, the VM's start included: an extra resume could release the
-    // class-prepare suspension before the breakpoint is set, and the debuggee would run past it.
-    while (true) {
-      final EventSet events = vm.eventQueue().remove(EVENT_TIMEOUT_MS);
-      if (events == null) {
-        throw new IllegalStateException("the debuggee never reached line %d".formatted(LINE));
-      }
-
-      for (final var event : events) {
-        if (event instanceof final BreakpointEvent hit) {
-          return hit.thread();
-        }
-
-        if (event instanceof final ClassPrepareEvent prepared) {
-          requests
-              .createBreakpointRequest(prepared.referenceType().locationsOfLine(LINE).get(0))
-              .enable();
-        }
-      }
-
-      events.resume();
     }
   }
 }
