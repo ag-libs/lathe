@@ -7,7 +7,6 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
@@ -16,7 +15,6 @@ import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Logger;
@@ -100,7 +98,7 @@ public final class ExtractFieldProvider {
     final var cls = (ClassTree) classPath.getLeaf();
     final String exprSource = source.substring((int) exprStart, (int) exprEnd);
     final var written = CodeActionSupport.sourceType(analysis, exprPath, type);
-    final String name = fieldName(type, expr, cls, methodPath);
+    final String name = fieldName(type, expr, classPath);
     final TextEdit insert =
         insertFieldEdit(cls, cu, positions, source, written.text(), name, exprSource);
     if (insert == null) {
@@ -224,15 +222,12 @@ public final class ExtractFieldProvider {
   // ── name derivation (camelCase) ──────────────────────────────────────────────────────────────
 
   private static String fieldName(
-      final TypeMirror type,
-      final ExpressionTree expr,
-      final ClassTree cls,
-      final TreePath methodPath) {
+      final TypeMirror type, final ExpressionTree expr, final TreePath classPath) {
     return VariableNameSuggester.suggest(
             CodeActionSupport.typeSimpleName(type),
             elementTypeName(type),
             expr,
-            takenNames(cls, methodPath))
+            ExtractionSupport.namesIn(classPath))
         .get(0);
   }
 
@@ -245,23 +240,5 @@ public final class ExtractFieldProvider {
     }
 
     return null;
-  }
-
-  // Existing field names plus the enclosing method's locals/params, so the new field neither
-  // collides with a sibling field nor is shadowed at the replacement site.
-  private static Set<String> takenNames(final ClassTree cls, final TreePath methodPath) {
-    final var names = new HashSet<String>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitVariable(final VariableTree tree, final Void unused) {
-        names.add(tree.getName().toString());
-        return super.visitVariable(tree, unused);
-      }
-    }.scan(methodPath, null);
-    cls.getMembers().stream()
-        .filter(VariableTree.class::isInstance)
-        .map(member -> ((VariableTree) member).getName().toString())
-        .forEach(names::add);
-    return names;
   }
 }
