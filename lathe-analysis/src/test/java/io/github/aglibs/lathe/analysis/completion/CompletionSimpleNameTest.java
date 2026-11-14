@@ -19,6 +19,32 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(labels.indexOf("text")).isLessThan(labels.indexOf("fromConfig"));
   }
 
+  // An anonymous class has no name: completion inside it, or of a type in a file holding one, must
+  // still answer instead of failing on the empty name.
+  @Test
+  void simpleName_insideAnonymousClass_completesOuterMembers_fileWithOneCompletesTypes() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        int count;
+                        Runnable r = new Runnable() {
+                            public void run() { cou§ }
+                        };
+                    }""")))
+        .contains("count");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        Runnable r = new Runnable() { public void run() {} };
+                        void m() { Object o = new Tes§ }
+                    }""")))
+        .contains("Test");
+  }
+
   @Test
   void simpleName_uppercasePrefix_inRecoveredStatementsIncludesVisibleValuesAndTypes()
       throws Exception {
