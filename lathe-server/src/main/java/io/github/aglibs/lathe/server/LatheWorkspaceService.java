@@ -270,7 +270,9 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<?> packages(final ExecuteCommandParams params) {
     final String moduleRel = moduleRelArgument(params);
-    return host.onLoop(session -> session.layout().packages(moduleRel));
+    // The layout is read on the loop and its trees walked off it, which takes as long as the tree.
+    return host.onLoop(WorkspaceSession::layout)
+        .thenApplyAsync(layout -> layout.packages(moduleRel));
   }
 
   private CompletableFuture<?> typeDestinations(final ExecuteCommandParams params) {
@@ -296,7 +298,7 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<?> dirRunnables(final ExecuteCommandParams params) {
     final Path dir = LatheUri.toPath(uriArgument(params.getArguments().get(0)));
-    return host.onLoop(session -> session.layout().dirRun(dir));
+    return host.onLoop(WorkspaceSession::layout).thenApplyAsync(layout -> layout.dirRun(dir));
   }
 
   private CompletableFuture<?> discoverTests(final ExecuteCommandParams params) {

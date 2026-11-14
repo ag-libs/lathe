@@ -218,7 +218,7 @@ final class RenameService {
                     search.seesDeclaration(
                         target, search.declaringConfigFor(target, asking), entry.getKey()))
             .collect(
-                Collectors.toMap(
+                Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, Map.Entry::getValue, ReferenceSearch::unionNames));
     return search.filesQueryFuture(
         candidates.keySet(),
@@ -300,7 +300,7 @@ final class RenameService {
             .collect(
                 Collectors.groupingBy(
                     Map.Entry::getKey,
-                    Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableList())));
     final var check =
         new RenameBindingCheck.RenameCheck(
             target,
