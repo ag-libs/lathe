@@ -157,7 +157,7 @@ class FormattingTest {
         """;
     final Range range = lineRange(source, "int a(");
 
-    final List<TextEdit> edits = JavaFormatter.formatRanges(ENGINE, source, List.of(range));
+    final List<TextEdit> edits = JavaFormatter.formatRanges(ENGINE, source, FILE, List.of(range));
 
     assertThat(edits).hasSize(1);
     assertThat(apply(source, edits.get(0)))
@@ -205,7 +205,8 @@ class FormattingTest {
     // Spotless's palantir step always reorders imports and removes unused ones, then formats.
     final String formatted = apply(source, JavaFormatter.format(palantir, source, FILE).get(0));
     final Range range = lineRange(source, "int b(");
-    final List<TextEdit> ranged = JavaFormatter.formatRanges(palantir, source, List.of(range));
+    final List<TextEdit> ranged =
+        JavaFormatter.formatRanges(palantir, source, FILE, List.of(range));
 
     assertThat(formatted).isEqualTo(expected);
     assertThat(JavaFormatter.format(palantir, expected, FILE)).isEmpty();
@@ -269,7 +270,7 @@ class FormattingTest {
         """;
     final FormatEngine eclipse = FormatterFixtures.eclipseJdt(xml.toString());
     final Range range = lineRange(source, "int b(");
-    final List<TextEdit> ranged = JavaFormatter.formatRanges(eclipse, source, List.of(range));
+    final List<TextEdit> ranged = JavaFormatter.formatRanges(eclipse, source, FILE, List.of(range));
 
     assertThat(apply(source, JavaFormatter.format(eclipse, source, FILE).get(0)))
         .isEqualTo(expected);
@@ -295,6 +296,21 @@ class FormattingTest {
                    return 2;
                 }
                 """));
+  }
+
+  @Test
+  void formatRanges_eclipseJdtModuleInfo_formatsTheRange() throws Exception {
+    final String source = "module demo {\n  requires   java.base;\n}\n";
+    final FormatEngine eclipse = FormatterFixtures.eclipseJdt("");
+
+    final List<TextEdit> ranged =
+        JavaFormatter.formatRanges(
+            eclipse,
+            source,
+            FormatterFixtures.target(Path.of("module-info.java")),
+            List.of(lineRange(source, "requires")));
+
+    assertThat(apply(source, ranged.get(0))).contains("requires java.base;");
   }
 
   // The fixture's palantir reads a javac field JDK 27 removed (removing an unused import is one

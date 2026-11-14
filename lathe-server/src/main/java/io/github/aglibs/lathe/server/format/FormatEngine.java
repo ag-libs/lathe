@@ -25,7 +25,9 @@ public sealed interface FormatEngine
   }
 
   // Formats only the given spans of source, leaving everything else (imports included) alone.
-  default String formatRanges(final String source, final List<TextRange> ranges) throws Exception {
+  default String formatRanges(
+      final String source, final FormatTarget target, final List<TextRange> ranges)
+      throws Exception {
     throw new UnsupportedOperationException(
         "%s formats whole files only".formatted(getClass().getSimpleName()));
   }
