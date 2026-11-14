@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 
 class CompletionOverrideTest extends CompletionTestSupport {
@@ -25,6 +26,34 @@ class CompletionOverrideTest extends CompletionTestSupport {
             .orElseThrow();
 
     assertThat(item.getInsertText()).contains("@Override", "public void run()");
+  }
+
+  // The stub names its return and thrown types as the file can, and the item imports each.
+  @Test
+  void completion_stubNamingUnimportedTypes_importsEach() {
+    final CompletionItem item =
+        itemLabeled(
+                fixture.complete(
+                    """
+                    package com.example;
+                    interface Store { java.util.List<String> all() throws java.io.IOException; }
+                    class Test implements Store { al§ }"""),
+                "all")
+            .orElseThrow();
+
+    assertThat(item.getInsertText()).contains("public List<String> all() throws IOException");
+    assertThat(item.getAdditionalTextEdits())
+        .extracting(TextEdit::getNewText)
+        .anySatisfy(text -> assertThat(text).contains("import java.util.List;"))
+        .anySatisfy(text -> assertThat(text).contains("import java.io.IOException;"));
+  }
+
+  @Test
+  void completion_stubNamingOnlyVisibleTypes_importsNothing() {
+    final CompletionItem item =
+        itemLabeled(fixture.complete("class Test { toString§ }"), "toString").orElseThrow();
+
+    assertThat(item.getAdditionalTextEdits()).isNullOrEmpty();
   }
 
   @Test
