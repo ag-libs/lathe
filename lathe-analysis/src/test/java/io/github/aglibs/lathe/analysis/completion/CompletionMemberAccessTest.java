@@ -1046,6 +1046,41 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   }
 
   @Test
+  void memberAccess_typeReceiver_offersAccessibleNestedTypesWithoutImports() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            package com.example;
+            class Test {
+                void m() {
+                    Other.§
+                }
+            }
+            class Other {
+                private static class Hidden {}
+                static class Shown {}
+            }""");
+
+    assertThat(labels(items)).contains("Shown").doesNotContain("Hidden");
+
+    final CompletionItem inner =
+        itemLabeled(
+                fixture.complete(
+                    """
+                    package com.example;
+                    class Test {
+                        private static class Outer { static class Inner {} }
+
+                        void m() {
+                            Outer.§
+                        }
+                    }"""),
+                "Inner")
+            .orElseThrow();
+    assertThat(inner.getAdditionalTextEdits()).isNullOrEmpty();
+  }
+
+  @Test
   void memberAccess_staticReceiverInArgumentPosition_rankedByOuterArgumentExpectedType() {
     final var items =
         fixture.complete(

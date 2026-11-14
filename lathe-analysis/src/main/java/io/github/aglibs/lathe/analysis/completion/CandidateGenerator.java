@@ -122,7 +122,9 @@ final class CandidateGenerator {
     return membersOf(objectEl, (DeclaredType) objectEl.asType(), prefix, false, scope);
   }
 
-  List<CompletionCandidate> proposeNestedTypes(final TypeElement outer, final String prefix) {
+  List<CompletionCandidate> proposeNestedTypes(
+      final TypeElement outer, final String prefix, final Scope scope) {
+    final var outerType = (DeclaredType) outer.asType();
     return outer.getEnclosedElements().stream()
         .filter(
             el ->
@@ -131,6 +133,7 @@ final class CandidateGenerator {
                     || el.getKind() == ElementKind.ENUM
                     || el.getKind() == ElementKind.RECORD)
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .filter(el -> isAccessible(el, outerType, scope))
         .map(
             el -> CandidateFactory.typeElementCandidate((TypeElement) el).withSortText(sortKey(el)))
         .toList();
