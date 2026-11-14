@@ -119,16 +119,18 @@ final class ResultsListenerTest {
     assertThat(template.get("status").getAsString()).isEqualTo("failed");
   }
 
-  // Markers around each test on stdout, the stream its own output goes to, so the server can tell
-  // which test printed a line; containers get none.
+  // Markers around each test on both streams its own output goes to, so the server can tell which
+  // test printed a line on either; containers get none.
   @Test
   void execute_eachTest_printsStartedAndFinishedMarkersAroundItsOutput(@TempDir final Path dir) {
     final var stdout = new ByteArrayOutputStream();
+    final var stderr = new ByteArrayOutputStream();
     final var out = new PrintStream(stdout, true, StandardCharsets.UTF_8);
+    final var err = new PrintStream(stderr, true, StandardCharsets.UTF_8);
     final var original = System.out;
     System.setOut(out);
     try {
-      execute(PrintingFixture.class, new ResultsListener(dir.resolve("sink"), out, System.err));
+      execute(PrintingFixture.class, new ResultsListener(dir.resolve("sink"), out, err));
     } finally {
       System.setOut(original);
     }
@@ -138,6 +140,10 @@ final class ResultsListenerTest {
         .containsExactly(
             ResultsListener.TEST_STARTED_MARKER + fields,
             "printed by the test",
+            ResultsListener.TEST_FINISHED_MARKER + fields);
+    assertThat(stderr.toString(StandardCharsets.UTF_8).lines().toList())
+        .containsExactly(
+            ResultsListener.TEST_STARTED_MARKER + fields,
             ResultsListener.TEST_FINISHED_MARKER + fields);
   }
 

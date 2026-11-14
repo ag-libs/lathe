@@ -190,7 +190,8 @@ final class LaunchSessionTest {
   }
 
   // The runner's markers say which test is running; they are not output, and each line carries the
-  // test it belongs to, or none outside a test or while two run at once.
+  // test it belongs to, or none outside a test or while two run at once. A stderr line is told by
+  // the markers on stderr: its arrival against stdout's is a race.
   @Test
   void onExit_markedOutput_tagsEachLineWithTheTestRunningThen() throws Exception {
     final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
@@ -199,13 +200,16 @@ final class LaunchSessionTest {
 
     final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-    final var expected =
-        List.of(
+    assertThat(outcome.output())
+        .filteredOn(line -> line.stream() == TranscriptLine.Stream.STDOUT)
+        .containsExactly(
             new TranscriptLine(TranscriptLine.Stream.STDOUT, "in a", "pkg.T#a()"),
             new TranscriptLine(TranscriptLine.Stream.STDOUT, "between"),
             new TranscriptLine(TranscriptLine.Stream.STDOUT, "in both"));
-    assertThat(outcome.output()).containsExactlyElementsOf(expected);
-    assertThat(streamed).containsExactlyElementsOf(expected);
+    assertThat(outcome.output())
+        .filteredOn(line -> line.stream() == TranscriptLine.Stream.STDERR)
+        .containsExactly(new TranscriptLine(TranscriptLine.Stream.STDERR, "err in a", "pkg.T#a()"));
+    assertThat(streamed).containsExactlyInAnyOrderElementsOf(outcome.output());
   }
 
   // What the JVM started would otherwise outlive the cancel, holding its ports and files.

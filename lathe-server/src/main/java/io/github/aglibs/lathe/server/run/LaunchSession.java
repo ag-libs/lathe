@@ -39,10 +39,6 @@ public final class LaunchSession {
   private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> tailerDone = new CompletableFuture<>();
-  // The tests running now, from the runner's markers on stdout: touched by the stdout drain only.
-  private final Set<String> runningTests = new HashSet<>();
-  // The one running test, or null for none or several; volatile so the stderr drain sees it too.
-  private volatile String currentTest;
 
   // notes: the launch's own notes, sent before any process output and kept in the outcome, where an
   // MCP answer reads them.
@@ -172,11 +168,14 @@ public final class LaunchSession {
       final InputStream in,
       final TranscriptLine.Stream stream,
       final CompletableFuture<Void> drained) {
+    // Each stream is read in the order it was written but never against the other, so the runner
+    // marks each test on both, and each drain follows its own stream's markers.
+    final var running = new RunningTests();
     try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
-        if (stream != TranscriptLine.Stream.STDOUT || !trackTest(line)) {
-          final var tagged = new TranscriptLine(stream, line, currentTest);
+        if (!running.track(line)) {
+          final var tagged = new TranscriptLine(stream, line, running.current());
           output.add(tagged);
           onLine.accept(tagged);
         }
@@ -189,18 +188,29 @@ public final class LaunchSession {
     }
   }
 
-  // A marker line moves a test in or out of the running set and is not output; any other line is.
-  private boolean trackTest(final String line) {
-    final Optional<String> started = markedTest(line, LatheFlags.TEST_STARTED_MARKER);
-    final Optional<String> finished = markedTest(line, LatheFlags.TEST_FINISHED_MARKER);
-    if (started.isEmpty() && finished.isEmpty()) {
-      return false;
+  // The tests running now on one stream, from the runner's markers on it; confined to its drain.
+  private static final class RunningTests {
+
+    private final Set<String> tests = new HashSet<>();
+
+    // A marker line moves a test in or out of the running set and is not output; any other line
+    // is.
+    boolean track(final String line) {
+      final Optional<String> started = markedTest(line, LatheFlags.TEST_STARTED_MARKER);
+      final Optional<String> finished = markedTest(line, LatheFlags.TEST_FINISHED_MARKER);
+      if (started.isEmpty() && finished.isEmpty()) {
+        return false;
+      }
+
+      started.ifPresent(tests::add);
+      finished.ifPresent(tests::remove);
+      return true;
     }
 
-    started.ifPresent(runningTests::add);
-    finished.ifPresent(runningTests::remove);
-    currentTest = runningTests.size() == 1 ? runningTests.iterator().next() : null;
-    return true;
+    // The one running test, or null for none or several.
+    String current() {
+      return tests.size() == 1 ? tests.iterator().next() : null;
+    }
   }
 
   private static Optional<String> markedTest(final String line, final String marker) {

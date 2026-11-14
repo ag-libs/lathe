@@ -145,18 +145,21 @@ final class ResultsListener implements TestExecutionListener {
             List.of()));
   }
 
-  // On the stream the test's own output goes to, so the server reads them in the order they
-  // happened and can tell which test printed each line.
+  // On both streams a test's own output goes to: the server reads each in the order it was written
+  // but never one against the other, so each stream's own markers tell which test printed a line.
   private void mark(final String marker, final TestIdentifier id) {
     if (id.isContainer() || !(id.getSource().orElse(null) instanceof final MethodSource method)) {
       return;
     }
 
-    stdout.println(
+    final String line =
         "%s%s\t%s\t%s"
             .formatted(
-                marker, method.getClassName(), method.getMethodName(), parameterTypes(method)));
-    stdout.flush();
+                marker, method.getClassName(), method.getMethodName(), parameterTypes(method));
+    for (final PrintStream stream : List.of(stdout, err)) {
+      stream.println(line);
+      stream.flush();
+    }
   }
 
   private void write(final TestRecord record) {

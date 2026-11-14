@@ -42,7 +42,8 @@ public final class TestProcess {
   // echo out:text err:text ...: prints each text on a line of the stream it names. read: prints
   // what reading stdin returns. spawn [exit|exit-destroying]: starts a sleeping child, prints its
   // pid, then sleeps, or exits (killing its children on exit first, as the servers do).
-  // marked: prints output around the test runner's markers (one test, a gap, two at once).
+  // marked: prints output around the test runner's markers (one test, a gap, two at once), then a
+  // test's stderr line between its markers on stderr, as the runner marks both streams.
   // await gate file: creates gate.started, waits until the gate file exists, then uppercases the
   // file like upper.
   // prop name: prints the system property's value.
@@ -98,6 +99,9 @@ public final class TestProcess {
     System.out.println("in both");
     System.out.println(LatheFlags.TEST_FINISHED_MARKER + b);
     System.out.println(LatheFlags.TEST_FINISHED_MARKER + a);
+    System.err.println(LatheFlags.TEST_STARTED_MARKER + a);
+    System.err.println("err in a");
+    System.err.println(LatheFlags.TEST_FINISHED_MARKER + a);
   }
 
   private static void echo(final String[] args) {
