@@ -244,6 +244,14 @@ end
 
 local function sync_current(capture_tests)
   local root = require("lathe.workspace").get_root(vim.api.nvim_get_current_buf())
+  if not root then
+    vim.notify(
+      "Lathe: no .lathe/ at or above this file, so there is no workspace to sync",
+      vim.log.levels.WARN
+    )
+    return
+  end
+
   M.run(root, capture_tests)
 end
 
