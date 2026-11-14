@@ -185,8 +185,8 @@ public final class WorkspaceTypeIndex {
         Collections.unmodifiableNavigableMap(mutable);
     // No visibility filter: every named type -- top-level and nested, any visibility -- so
     // workspace/symbol can resolve package-private dependency classes (a stack frame's internal
-    // impl class) and nested types (Map.Entry, a reactor record nested in a test class). Synthetic
-    // anonymous/local classes (digit-started simple names) and blank obfuscator names are excluded.
+    // impl class) and nested types (Map.Entry, a reactor record nested in a test class). Anonymous
+    // and local classes and blank obfuscator names are excluded.
     final TreeMap<String, List<TypeIndexEntry>> symbolMutable =
         deduped.stream()
             .filter(WorkspaceTypeIndex::isNamedSymbol)
@@ -227,12 +227,11 @@ public final class WorkspaceTypeIndex {
     return usageCounts.getOrDefault(binaryName, 0);
   }
 
-  // A type a user could meaningfully search for by name: top-level or named nested, any visibility.
-  // Excludes synthetic anonymous/local classes (binary names like Foo$1, whose simple name starts
-  // with a digit) and blank obfuscator names.
+  // A type a user could meaningfully search for by name: top-level or a member type, any
+  // visibility. An anonymous (Foo$1) or local (Foo$1Helper) class has no name outside its method,
+  // as IntelliJ's Go to Class has it, and no blank obfuscator name is a name.
   private static boolean isNamedSymbol(final TypeIndexEntry entry) {
-    final String simpleName = entry.simpleName();
-    return !simpleName.isEmpty() && Character.isJavaIdentifierStart(simpleName.charAt(0));
+    return TypeSourceLocator.isNamedDeclaration(entry);
   }
 
   private static List<TypeIndexEntry> deduplicate(
