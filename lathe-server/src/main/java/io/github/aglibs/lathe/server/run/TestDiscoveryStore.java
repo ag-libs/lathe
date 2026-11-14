@@ -24,7 +24,8 @@ public final class TestDiscoveryStore {
   private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
 
   // The module's discovery for its current test classes: the one kept, else the one stored, else
-  // a new one from discover, stored once it completes.
+  // a new one from discover, stored once it completes. A kept one that failed or was blocked is
+  // found again: what blocked it (no capture yet) may be gone without the test classes changing.
   public CompletableFuture<TestDiscovery> discovery(
       final Path workspaceRoot,
       final String moduleRel,
@@ -32,7 +33,7 @@ public final class TestDiscoveryStore {
     final Path moduleDir = workspaceRoot.resolve(LatheLayout.moduleDir(moduleRel));
     final FileTime stamp = testClassesStamp(moduleDir);
     final CachedDiscovery cached = discoveries.get(moduleRel);
-    if (cached != null && Objects.equals(cached.stamp(), stamp)) {
+    if (cached != null && Objects.equals(cached.stamp(), stamp) && !spent(cached.result())) {
       return cached.result();
     }
 
@@ -43,6 +44,11 @@ public final class TestDiscoveryStore {
             .orElseGet(() -> discover.get().thenApply(found -> write(file, stamp, found)));
     discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
     return result;
+  }
+
+  private static boolean spent(final CompletableFuture<TestDiscovery> result) {
+    return result.isCompletedExceptionally()
+        || (result.isDone() && !result.getNow(null).blockedReasons().isEmpty());
   }
 
   // The stored discovery, when it was found for the module's current test classes.
