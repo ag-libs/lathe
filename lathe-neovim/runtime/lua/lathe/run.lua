@@ -256,8 +256,7 @@ end
 function M._save_target_for(targets, cursor_line)
   for _, t in ipairs(targets) do
     if
-      (t.kind == KIND.MAIN or t.kind == KIND.TEST_METHOD)
-      and runnables.in_range(t.range, cursor_line)
+      (t.kind == KIND.MAIN or t.kind == KIND.TEST_METHOD) and runnables.in_range(t.range, cursor_line)
     then
       return save_request(targets, t)
     end
