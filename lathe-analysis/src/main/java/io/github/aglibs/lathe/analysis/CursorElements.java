@@ -29,6 +29,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Types;
 
 // The tree path and element at a cursor: the element a position names, an enum constant, the
 // constructor of `new X()`, the parameter an argument binds to, statically imported members.
@@ -235,12 +236,13 @@ public final class CursorElements {
         .toList();
   }
 
-  public static VariableElement parameterElementAt(final Trees trees, final TreePath path) {
+  public static VariableElement parameterElementAt(
+      final Trees trees, final Types types, final TreePath path) {
     if (path == null) {
       return null;
     }
     final var leafElement = trees.getElement(path);
-    if (leafElement != null && masksParameterContext(leafElement)) {
+    if (leafElement != null && masksParameterContext(leafElement, types)) {
       return null;
     }
     TreePath argPath = path;
@@ -291,34 +293,43 @@ public final class CursorElements {
    * {@code PARAMETER}, so without this it would show the callee's parameter instead of the
    * component (as a backing-field read elsewhere in the record body already does).
    */
-  private static boolean masksParameterContext(final Element element) {
+  private static boolean masksParameterContext(final Element element, final Types types) {
     return switch (element.getKind()) {
       case ANNOTATION_TYPE, CLASS, ENUM, ENUM_CONSTANT, FIELD, INTERFACE, RECORD -> true;
-      case PARAMETER -> isRecordComponentParameter(element);
+      case PARAMETER -> isRecordComponentParameter(element, types);
       default -> false;
     };
   }
 
-  private static boolean isRecordComponentParameter(final Element parameter) {
-    final var constructor = parameter.getEnclosingElement();
-    if (constructor.getKind() != ElementKind.CONSTRUCTOR) {
+  // Inside a compact constructor a component reads as the parameter of its own name.
+  private static boolean isRecordComponentParameter(final Element parameter, final Types types) {
+    if (!isCanonicalConstructorParameter(parameter, types)) {
       return false;
     }
 
-    final var owner = constructor.getEnclosingElement();
-    if (owner.getKind() != ElementKind.RECORD) {
+    final var constructor = (ExecutableElement) parameter.getEnclosingElement();
+    final int index = constructor.getParameters().indexOf(parameter);
+    final var record = (TypeElement) constructor.getEnclosingElement();
+    return parameter
+        .getSimpleName()
+        .contentEquals(record.getRecordComponents().get(index).getSimpleName());
+  }
+
+  // A record's canonical constructor takes its components' types in order, whatever the names.
+  static boolean isCanonicalConstructorParameter(final Element parameter, final Types types) {
+    final var constructor = parameter.getEnclosingElement();
+    if (constructor.getKind() != ElementKind.CONSTRUCTOR
+        || constructor.getEnclosingElement().getKind() != ElementKind.RECORD) {
       return false;
     }
 
     final List<? extends RecordComponentElement> components =
-        ((TypeElement) owner).getRecordComponents();
+        ((TypeElement) constructor.getEnclosingElement()).getRecordComponents();
     final List<? extends VariableElement> params =
         ((ExecutableElement) constructor).getParameters();
     return params.size() == components.size()
         && IntStream.range(0, params.size())
-            .allMatch(
-                i ->
-                    params.get(i).getSimpleName().contentEquals(components.get(i).getSimpleName()));
+            .allMatch(i -> types.isSameType(params.get(i).asType(), components.get(i).asType()));
   }
 
   private static int indexIn(final List<? extends Tree> list, final Tree target) {

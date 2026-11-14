@@ -47,7 +47,8 @@ public abstract class SampleFixture {
   }
 
   public VariableElement parameterAt(final int line, final int character) {
-    return CursorElements.parameterElementAt(compiled.trees(), pathAt(line, character));
+    return CursorElements.parameterElementAt(
+        compiled.trees(), compiled.task().getTypes(), pathAt(line, character));
   }
 
   public TreePath pathAt(final int line, final int character) {
