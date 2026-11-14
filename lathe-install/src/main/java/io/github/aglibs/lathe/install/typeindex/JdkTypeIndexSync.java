@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -76,7 +77,7 @@ public final class JdkTypeIndexSync {
             TypeIndexOrigin.jdk(
                 new JdkTypeIndexOrigin(
                     source.home().toString(), source.vendor(), source.version())),
-            scanJdk());
+            scanJdk(source.home()));
     TypeIndexFiles.write(index, file);
     LOG.info(
         "[sync] jdk type index built for JDK %s in %dms types=%d"
@@ -92,10 +93,14 @@ public final class JdkTypeIndexSync {
         .resolve(LatheLayout.TYPE_INDEX_FILENAME);
   }
 
-  private static List<TypeIndexEntry> scanJdk() throws IOException {
-    final FileSystem jrt = FileSystems.getFileSystem(URI.create("jrt:/"));
-    final Path modules = jrt.getPath("/modules");
-    try (final Stream<Path> moduleRoots = Files.list(modules)) {
+  // The indexed JDK's own runtime image, which may not be the one running the build: a Gradle
+  // daemon
+  // on 21 compiling with a 17 toolchain indexes 17.
+  private static List<TypeIndexEntry> scanJdk(final Path javaHome) throws IOException {
+    try (final FileSystem jrt =
+            FileSystems.newFileSystem(
+                URI.create("jrt:/"), Map.of("java.home", javaHome.toString()));
+        final Stream<Path> moduleRoots = Files.list(jrt.getPath("/modules"))) {
       return moduleRoots
           .filter(Files::isDirectory)
           .flatMap(
