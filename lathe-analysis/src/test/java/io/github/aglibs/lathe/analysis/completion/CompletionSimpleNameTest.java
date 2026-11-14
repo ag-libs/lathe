@@ -794,6 +794,39 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
   }
 
   @Test
+  void simpleName_nestedClasses_membersOfTheClassAtTheCursorAndItsEnclosingInstance() {
+    final String sameNames =
+        """
+        class Test {
+            static class B {
+                static class Box {
+                    int beta;
+                    void m() {
+                        %s§
+                    }
+                }
+            }
+            static class A { static class Box { int alpha; } }
+        }""";
+    final String outerField =
+        """
+        class Test {
+            int outerField;
+            %s class Nested {
+                void m() {
+                    outer§
+                }
+            }
+        }""";
+
+    assertThat(labels(fixture.complete(sameNames.formatted("be")))).contains("beta");
+    assertThat(labels(fixture.complete(sameNames.formatted("al")))).doesNotContain("alpha");
+    assertThat(labels(fixture.complete(outerField.formatted("")))).contains("outerField");
+    assertThat(labels(fixture.complete(outerField.formatted("static"))))
+        .doesNotContain("outerField");
+  }
+
+  @Test
   void throwStatement_simpleName_ranksThrowablesHigher() {
     final var items =
         fixture.complete(
