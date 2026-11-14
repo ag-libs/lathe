@@ -180,11 +180,10 @@ function M.decorate_live_output(client)
   end)
 end
 
--- The live buffer is created with bufhidden=hide, so closing its window hides rather than
--- wipes it and BufWipeout alone would leak the per-buffer decoration tables. BufHidden fires
--- the moment the buffer stops being shown, which is also when its buffer-local jump keymaps
--- become unreachable.
-vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, {
+-- Dropped only with the buffer: the live buffer is created with bufhidden=hide, so closing its
+-- window keeps it, its marks and its jump keymaps, and the console shown again must still jump.
+-- One buffer is reused for every run, so keeping its table leaks nothing.
+vim.api.nvim_create_autocmd("BufWipeout", {
   group = STACKTRACE_AUGROUP,
   callback = function(ev)
     frame_locations[ev.buf] = nil
