@@ -13,11 +13,9 @@ import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TryTree;
-import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
@@ -28,7 +26,6 @@ import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -449,7 +446,7 @@ public final class ExtractVariableProvider {
 
   private static Set<String> takenNames(final TreePath exprPath) {
     final TreePath methodPath = TreePaths.enclosingMethod(exprPath);
-    return methodPath != null ? localAndParamNames(methodPath) : Set.of();
+    return methodPath != null ? ExtractionSupport.namesIn(methodPath) : Set.of();
   }
 
   // The simple name of the last type argument (Map<String, User> -> User), or null when the type is
@@ -461,17 +458,5 @@ public final class ExtractVariableProvider {
     }
 
     return null;
-  }
-
-  private static Set<String> localAndParamNames(final TreePath methodPath) {
-    final var names = new HashSet<String>();
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitVariable(final VariableTree tree, final Void unused) {
-        names.add(tree.getName().toString());
-        return super.visitVariable(tree, unused);
-      }
-    }.scan(methodPath, null);
-    return names;
   }
 }

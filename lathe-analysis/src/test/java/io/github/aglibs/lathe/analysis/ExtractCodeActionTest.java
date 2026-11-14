@@ -688,6 +688,47 @@ class ExtractCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_nameTakenElsewhereInTheClass_extractsUnderAnotherName() {
+    // A local named like the field the next statement reads would shadow it.
+    final var shadowsField =
+        """
+        package com.example;
+        class Test {
+          private int compute = 1;
+          void m() {
+            use(compute(2));
+            use(compute);
+          }
+          int compute(int n) { return n; }
+          void use(int n) {}
+        }
+        """;
+    // A field named like a local in another method would be captured where it replaces the
+    // expression there.
+    final var capturedByLocal =
+        """
+        package com.example;
+        class Test {
+          private final int base = 5;
+          int a() {
+            return base * 2;
+          }
+          int b() {
+            final int value = 1;
+            return base * 2 + value;
+          }
+        }
+        """;
+
+    assertThat(rightTitles(extractActionsSpanning(shadowsField, 4, 8, 4, 18)))
+        .anyMatch(t -> t.startsWith("Extract variable"))
+        .noneMatch(t -> t.startsWith("Extract variable 'compute'"));
+    assertThat(rightTitles(extractActionsSpanning(capturedByLocal, 4, 11, 4, 19)))
+        .anyMatch(t -> t.startsWith("Extract field") && t.contains("replace all 2"))
+        .noneMatch(t -> t.startsWith("Extract field 'value'"));
+  }
+
+  @Test
   void codeAction_recordBody_offersNoField() {
     final var source =
         """

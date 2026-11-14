@@ -35,6 +35,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
+import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.Positions;
@@ -843,5 +844,37 @@ public final class ExtractionSupport {
         || kind == Tree.Kind.POSTFIX_INCREMENT
         || kind == Tree.Kind.PREFIX_DECREMENT
         || kind == Tree.Kind.POSTFIX_DECREMENT;
+  }
+
+  // Every variable name declared or read under the tree: a new variable taking one could clash
+  // with a declaration, shadow a field a statement reads, or be shadowed where it replaces the
+  // expression.
+  static Set<String> namesIn(final TreePath path) {
+    final var names = new HashSet<String>();
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitVariable(final VariableTree tree, final Void unused) {
+        names.add(tree.getName().toString());
+        return super.visitVariable(tree, unused);
+      }
+
+      @Override
+      public Void visitIdentifier(final IdentifierTree tree, final Void unused) {
+        names.add(tree.getName().toString());
+        return super.visitIdentifier(tree, unused);
+      }
+
+      // A called method's name shares no namespace with a variable.
+      @Override
+      public Void visitMethodInvocation(final MethodInvocationTree tree, final Void unused) {
+        scan(tree.getTypeArguments(), unused);
+        if (!(tree.getMethodSelect() instanceof IdentifierTree)) {
+          scan(tree.getMethodSelect(), unused);
+        }
+
+        return scan(tree.getArguments(), unused);
+      }
+    }.scan(path.getLeaf(), null);
+    return Set.copyOf(names);
   }
 }
