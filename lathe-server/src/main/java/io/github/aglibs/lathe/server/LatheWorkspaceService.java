@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.server.run.LaunchTarget;
 import io.github.aglibs.lathe.server.run.RunKind;
 import java.nio.file.Path;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.function.Function;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
@@ -85,8 +87,10 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<?> dispatch(final ExecuteCommandParams params) {
     return switch (params.getCommand()) {
-      case LatheCommands.RUN_TEST -> runTest(params);
-      case LatheCommands.RUN_MAIN -> runMain(params);
+      case LatheCommands.RUN_TEST ->
+          launch(params, LatheWorkspaceService::testTarget, RunCoordinator::runFuture);
+      case LatheCommands.RUN_MAIN ->
+          launch(params, LatheWorkspaceService::mainTarget, RunCoordinator::runFuture);
       case LatheCommands.RUN_CANCEL -> cancelTest(params);
       case LatheCommands.RUNNABLES_FILE -> listRunnables(params);
       case LatheCommands.RUNNABLES_DIR -> dirRunnables(params);
@@ -97,8 +101,10 @@ final class LatheWorkspaceService implements WorkspaceService {
       case LatheCommands.RESOURCES_LIST -> host.onLoop(session -> session.queries().resources());
       case LatheCommands.RESOURCES_OPEN -> resourceOpen(params);
       case LatheCommands.RESOURCES_REFRESH -> refreshResource(params);
-      case LatheCommands.DEBUG_TEST -> debugTest(params);
-      case LatheCommands.DEBUG_MAIN -> debugMain(params);
+      case LatheCommands.DEBUG_TEST ->
+          launch(params, LatheWorkspaceService::testTarget, RunCoordinator::debugFuture);
+      case LatheCommands.DEBUG_MAIN ->
+          launch(params, LatheWorkspaceService::mainTarget, RunCoordinator::debugFuture);
       case LatheCommands.RUN_NAMED -> runNamed(params);
       case LatheCommands.DEBUG_NAMED -> debugNamed(params);
       case LatheCommands.RUN_CONFIGS_LIST ->
@@ -118,52 +124,44 @@ final class LatheWorkspaceService implements WorkspaceService {
     };
   }
 
-  private CompletableFuture<?> debugTest(final ExecuteCommandParams params) {
-    final var argument = parseRunTestArgument(params.getArguments().get(0));
-    return host.onLoopFuture(
-        session ->
-            session
-                .runs()
-                .debugTestFuture(argument.moduleRel(), argument.selections(), argument.token()));
+  // A run or debug of the target the command's argument names, under the argument's token.
+  private <T> CompletableFuture<T> launch(
+      final ExecuteCommandParams params,
+      final Function<JsonObject, LaunchTarget> target,
+      final Launch<T> launch) {
+    final var json = (JsonObject) params.getArguments().get(0);
+    final LaunchTarget launched = target.apply(json);
+    final String token = token(json);
+    return host.onLoopFuture(session -> launch.start(session.runs(), launched, token));
   }
 
-  private CompletableFuture<?> debugMain(final ExecuteCommandParams params) {
-    final var argument = parseRunMainArgument(params.getArguments().get(0));
-    return host.onLoopFuture(
-        session ->
-            session
-                .runs()
-                .debugMainFuture(argument.moduleRel(), argument.mainClass(), argument.token()));
+  @FunctionalInterface
+  private interface Launch<T> {
+    CompletableFuture<T> start(RunCoordinator runs, LaunchTarget target, String token);
   }
 
-  private CompletableFuture<?> runTest(final ExecuteCommandParams params) {
-    final var argument = parseRunTestArgument(params.getArguments().get(0));
-    return host.onLoopFuture(
-        session ->
-            session
-                .runs()
-                .runTestFuture(argument.moduleRel(), argument.selections(), argument.token()));
+  private static LaunchTarget testTarget(final JsonObject json) {
+    return new LaunchTarget.Tests(
+        json.get("moduleRel").getAsString(), parseSelections(json.getAsJsonArray("selections")));
   }
 
-  private CompletableFuture<?> runMain(final ExecuteCommandParams params) {
-    final var argument = parseRunMainArgument(params.getArguments().get(0));
-    return host.onLoopFuture(
-        session ->
-            session
-                .runs()
-                .runMainFuture(argument.moduleRel(), argument.mainClass(), argument.token()));
+  private static LaunchTarget mainTarget(final JsonObject json) {
+    return new LaunchTarget.Main(
+        json.get("moduleRel").getAsString(), json.get("mainClass").getAsString());
   }
 
   private CompletableFuture<?> runNamed(final ExecuteCommandParams params) {
-    final var argument = parseNamedArgument(params.getArguments().get(0));
-    return host.onLoopFuture(
-        session -> session.runs().runNamedFuture(argument.name(), argument.token()));
+    final var json = (JsonObject) params.getArguments().get(0);
+    final String name = json.get("name").getAsString();
+    final String token = token(json);
+    return host.onLoopFuture(session -> session.runs().runNamedFuture(name, token));
   }
 
   private CompletableFuture<?> debugNamed(final ExecuteCommandParams params) {
-    final var argument = parseNamedArgument(params.getArguments().get(0));
-    return host.onLoopFuture(
-        session -> session.runs().debugNamedFuture(argument.name(), argument.token()));
+    final var json = (JsonObject) params.getArguments().get(0);
+    final String name = json.get("name").getAsString();
+    final String token = token(json);
+    return host.onLoopFuture(session -> session.runs().debugNamedFuture(name, token));
   }
 
   private CompletableFuture<?> saveRunConfig(final ExecuteCommandParams params) {
@@ -186,7 +184,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<?> cancelTest(final ExecuteCommandParams params) {
-    final String token = parseCancelArgument(params.getArguments().get(0));
+    final String token = token((JsonObject) params.getArguments().get(0));
     return host.onLoop(
         session -> {
           session.runs().cancelRun(token);
@@ -345,31 +343,9 @@ final class LatheWorkspaceService implements WorkspaceService {
         .thenApply(result -> result.edits(chosen));
   }
 
-  private static String parseCancelArgument(final Object argument) {
-    final var json = (JsonObject) argument;
+  // The run's token: what the client keys its output and a cancel by; blank for none.
+  private static String token(final JsonObject json) {
     return json.has("token") ? json.get("token").getAsString() : "";
-  }
-
-  private record RunTestArgument(String moduleRel, List<TestSelection> selections, String token) {}
-
-  private static RunTestArgument parseRunTestArgument(final Object argument) {
-    final var json = (JsonObject) argument;
-    final List<TestSelection> selections =
-        json.getAsJsonArray("selections").asList().stream()
-            .map(JsonElement::getAsJsonObject)
-            .map(LatheWorkspaceService::parseSelection)
-            .toList();
-    final String token = json.has("token") ? json.get("token").getAsString() : "";
-    return new RunTestArgument(json.get("moduleRel").getAsString(), selections, token);
-  }
-
-  private record RunMainArgument(String moduleRel, String mainClass, String token) {}
-
-  private static RunMainArgument parseRunMainArgument(final Object argument) {
-    final var json = (JsonObject) argument;
-    final String token = json.has("token") ? json.get("token").getAsString() : "";
-    return new RunMainArgument(
-        json.get("moduleRel").getAsString(), json.get("mainClass").getAsString(), token);
   }
 
   private static TestSelection parseSelection(final JsonObject json) {
@@ -383,14 +359,6 @@ final class LatheWorkspaceService implements WorkspaceService {
         .map(JsonElement::getAsJsonObject)
         .map(LatheWorkspaceService::parseSelection)
         .toList();
-  }
-
-  private record NamedArgument(String name, String token) {}
-
-  private static NamedArgument parseNamedArgument(final Object argument) {
-    final var json = (JsonObject) argument;
-    final String token = json.has("token") ? json.get("token").getAsString() : "";
-    return new NamedArgument(json.get("name").getAsString(), token);
   }
 
   private static String optionalString(final JsonObject json, final String key) {

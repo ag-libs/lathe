@@ -19,6 +19,7 @@ import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.run.DiscoveredTest;
 import io.github.aglibs.lathe.server.run.JdwpOptions;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.LaunchTarget;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
@@ -183,7 +184,8 @@ class RunCoordinatorTest extends ServiceTestBase {
     final LaunchOutcome run =
         host.onLoopFuture(
                 session -> {
-                  final var started = session.runs().runMainFuture("app", MAIN, "run-1");
+                  final var started =
+                      session.runs().runFuture(new LaunchTarget.Main("app", MAIN), "run-1");
                   session.runs().cancelRun("run-1");
                   return started;
                 })
@@ -191,7 +193,8 @@ class RunCoordinatorTest extends ServiceTestBase {
     final CompletableFuture<DebugStartResult> debug =
         host.onLoopFuture(
             session -> {
-              final var started = session.runs().debugMainFuture("app", MAIN, "debug-1");
+              final var started =
+                  session.runs().debugFuture(new LaunchTarget.Main("app", MAIN), "debug-1");
               session.runs().cancelRun("debug-1");
               return started;
             });
@@ -212,7 +215,9 @@ class RunCoordinatorTest extends ServiceTestBase {
     host.initialize(tmp);
 
     final DebugStartResult attached =
-        host.onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-1"))
+        host.onLoopFuture(
+                session ->
+                    session.runs().debugFuture(new LaunchTarget.Main("app", MAIN), "debug-1"))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
     host.onLoop(
             session -> {
@@ -228,7 +233,8 @@ class RunCoordinatorTest extends ServiceTestBase {
 
     writeMainLaunch(List.of("sleep"), List.of("-XX:+LatheNoSuchOption"));
     final CompletableFuture<DebugStartResult> failed =
-        host.onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-2"));
+        host.onLoopFuture(
+            session -> session.runs().debugFuture(new LaunchTarget.Main("app", MAIN), "debug-2"));
 
     assertThatThrownBy(() -> failed.get(AT_ONCE_S, TimeUnit.SECONDS))
         .hasMessageContaining("the debuggee ended before the debugger attached");

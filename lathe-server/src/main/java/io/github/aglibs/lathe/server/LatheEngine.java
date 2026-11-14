@@ -39,6 +39,7 @@ import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.github.aglibs.lathe.server.engine.Noted;
 import io.github.aglibs.lathe.server.format.FormatEngine;
 import io.github.aglibs.lathe.server.format.FormatEngines;
+import io.github.aglibs.lathe.server.run.LaunchTarget;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.Serial;
 import java.lang.module.ModuleDescriptor;
@@ -765,7 +766,7 @@ public final class LatheEngine {
         LatheTestRun.from(
             request(
                 (session, cancel, progress) ->
-                    session.runs().runTestFuture(moduleRel, selections, token)),
+                    session.runs().runFuture(new LaunchTarget.Tests(moduleRel, selections), token)),
             selected.stream().map(RunTarget::id).toList()),
         read.notes());
   }
