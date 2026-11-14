@@ -1031,11 +1031,12 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
-    assertThat(edits).hasSize(1);
+    assertThat(edits).hasSize(2);
     assertThat(edits.get(0).getNewText())
         .contains("try {")
         .contains("throw new java.io.IOException(\"x\");")
-        .contains("catch (java.io.IOException e)");
+        .contains("catch (IOException e)");
+    assertThat(edits.get(1).getNewText()).contains("import java.io.IOException;");
     assertCompilesClean(applyEdits(source, edits));
   }
 
@@ -1062,7 +1063,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
-    assertThat(edits).hasSize(1);
+    assertThat(edits).hasSize(2);
     assertThat(edits.get(0).getNewText()).doesNotContain("throws");
   }
 
@@ -1091,17 +1092,17 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
-    assertThat(edits).hasSize(1);
+    assertThat(edits).hasSize(2);
     assertThat(edits.get(0).getNewText())
         .contains("try {")
         .contains("throw new java.io.IOException(\"x\");")
-        .contains("catch (java.io.IOException e)")
+        .contains("catch (IOException e)")
         .doesNotContain("throws");
     assertCompilesClean(applyEdits(source, edits));
   }
 
   // The statement around the call is wrapped, never the method body block; the catch variable takes
-  // a name no local in scope has.
+  // a name no local in scope has, and the type is qualified where a member class hides it.
   @Test
   void codeAction_unreportedException_insideIfWithLocalE_wrapsTheIfAndRenamesTheCatch() {
     final var source =
@@ -1114,6 +1115,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
               throw new java.io.IOException(e);
             }
           }
+          static class IOException {}
         }
         """;
 
