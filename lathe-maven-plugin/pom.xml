@@ -213,7 +213,10 @@
                  out; their test forks get it too, as Surefire passes user properties on. -->
             <lathe.disabled>false</lathe.disabled>
           </properties>
-          <mavenOpts>-DlatheLocalRepo=${settings.localRepository} -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav</mavenOpts>
+          <!-- Lock files are kept: on Windows, one build cannot open a lock file another is deleting,
+               so two fixtures resolving one artifact failed after the default 5 tries 50ms apart. The
+               longer retry rides out a scanner holding the file. -->
+          <mavenOpts>-DlatheLocalRepo=${settings.localRepository} -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav -Daether.named.file-lock.deleteLockFiles=false -Daether.named.file-lock.attempts=50 -Daether.named.file-lock.sleepMillis=100</mavenOpts>
         </configuration>
         <executions>
           <execution>
