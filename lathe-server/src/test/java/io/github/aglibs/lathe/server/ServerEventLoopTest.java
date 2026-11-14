@@ -22,7 +22,6 @@ class ServerEventLoopTest {
   // How long a test waits for a task that should run. The latch returns as soon as it does, so the
   // deadline costs nothing when the loop works; it only has to outlast a busy CI machine, where
   // DELAY_MS * 3 once ran out (the server's test classes run in parallel).
-  private static final long AWAIT_MS = 5_000;
 
   private final ServerEventLoop worker = new ServerEventLoop();
 
@@ -60,7 +59,7 @@ class ServerEventLoopTest {
           count.incrementAndGet();
           latch.countDown();
         });
-    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(ServiceTestBase.TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
 
@@ -77,7 +76,7 @@ class ServerEventLoopTest {
             latch.countDown();
           });
     }
-    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(ServiceTestBase.TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
 
@@ -100,7 +99,7 @@ class ServerEventLoopTest {
           countB.incrementAndGet();
           latch.countDown();
         });
-    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(ServiceTestBase.TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(countA.get()).isEqualTo(1);
     assertThat(countB.get()).isEqualTo(1);
   }
@@ -136,7 +135,7 @@ class ServerEventLoopTest {
           count.incrementAndGet();
           latch.countDown();
         });
-    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(ServiceTestBase.TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
 
@@ -153,7 +152,9 @@ class ServerEventLoopTest {
             });
     work.complete("done");
 
-    assertThat(result).succeedsWithin(Duration.ofMillis(AWAIT_MS)).isEqualTo("done");
+    assertThat(result)
+        .succeedsWithin(Duration.ofMillis(ServiceTestBase.TIMEOUT_MS))
+        .isEqualTo("done");
     assertThat(ranOn.get()).isEqualTo(LOOP_THREAD);
   }
 
@@ -178,8 +179,10 @@ class ServerEventLoopTest {
     value.complete("v");
     failure.completeExceptionally(new IllegalArgumentException("boom"));
 
-    assertThat(rejoinedValue).succeedsWithin(Duration.ofMillis(AWAIT_MS)).isEqualTo("v");
-    assertThat(rejoinedFailure).failsWithin(Duration.ofMillis(AWAIT_MS));
+    assertThat(rejoinedValue)
+        .succeedsWithin(Duration.ofMillis(ServiceTestBase.TIMEOUT_MS))
+        .isEqualTo("v");
+    assertThat(rejoinedFailure).failsWithin(Duration.ofMillis(ServiceTestBase.TIMEOUT_MS));
     assertThat(valueOn.get()).isEqualTo(LOOP_THREAD);
     assertThat(failureThread.get()).isEqualTo(LOOP_THREAD);
     assertThat(failureOn.get())
@@ -195,7 +198,7 @@ class ServerEventLoopTest {
                   worker.checkOnLoop();
                   return true;
                 }))
-        .succeedsWithin(Duration.ofMillis(AWAIT_MS))
+        .succeedsWithin(Duration.ofMillis(ServiceTestBase.TIMEOUT_MS))
         .isEqualTo(true);
     assertThatThrownBy(worker::checkOnLoop)
         .isInstanceOf(IllegalStateException.class)
@@ -244,9 +247,9 @@ class ServerEventLoopTest {
                 throw new AssertionError("submitted");
               });
 
-      assertThat(submitted).failsWithin(Duration.ofMillis(AWAIT_MS));
+      assertThat(submitted).failsWithin(Duration.ofMillis(ServiceTestBase.TIMEOUT_MS));
       assertThat(loop.submit(() -> statuses.size()))
-          .succeedsWithin(Duration.ofMillis(AWAIT_MS))
+          .succeedsWithin(Duration.ofMillis(ServiceTestBase.TIMEOUT_MS))
           .isEqualTo(2);
       assertThat(statuses).containsExactly(1, 1);
     } finally {

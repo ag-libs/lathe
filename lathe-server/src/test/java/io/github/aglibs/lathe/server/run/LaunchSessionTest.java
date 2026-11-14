@@ -22,7 +22,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 final class LaunchSessionTest {
 
-  private static final long TIMEOUT_SECONDS = 5;
+  // A deadline for a busy machine, not a delay: a passing launch never waits this out.
+  private static final long TIMEOUT_SECONDS = 30;
   private static final Consumer<TranscriptLine> NO_STREAM = line -> {};
   private static final Consumer<TestResult> NO_EVENTS = result -> {};
   // As the runner writes them: a pass, a failure with values and a frame, and a class's own

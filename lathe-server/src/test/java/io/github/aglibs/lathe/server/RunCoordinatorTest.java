@@ -35,6 +35,9 @@ import org.junit.jupiter.api.io.TempDir;
 class RunCoordinatorTest extends ServiceTestBase {
 
   private static final String MAIN = TestProcess.class.getName();
+  // A debuggee that dies fails well inside RunCoordinator's 15s wait for the JDWP agent, so its
+  // failure is not that wait running out.
+  private static final long AT_ONCE_S = 10;
 
   // The debug readiness gate: attachDebugHost waits on the future jdwpReadyConsumer completes when
   // the JVM's JDWP "Listening for transport ..." banner is drained -- replacing the old TCP probe
@@ -227,7 +230,7 @@ class RunCoordinatorTest extends ServiceTestBase {
     final CompletableFuture<DebugStartResult> failed =
         host.onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-2"));
 
-    assertThatThrownBy(() -> failed.get(TIMEOUT_S, TimeUnit.SECONDS))
+    assertThatThrownBy(() -> failed.get(AT_ONCE_S, TimeUnit.SECONDS))
         .hasMessageContaining("the debuggee ended before the debugger attached");
   }
 

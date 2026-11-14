@@ -7,12 +7,10 @@ import java.util.concurrent.TimeUnit;
 // stay on the test thread (the loop ends the process on an Error, so this loop never halts).
 final class TestLoop implements AutoCloseable {
 
-  private static final long TIMEOUT_S = 5;
-
   final ServerEventLoop eventLoop = new ServerEventLoop(status -> {});
 
   <T> T call(final Callable<T> task) throws Exception {
-    return eventLoop.submit(task).get(TIMEOUT_S, TimeUnit.SECONDS);
+    return eventLoop.submit(task).get(ServiceTestBase.TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   void run(final Runnable task) throws Exception {
