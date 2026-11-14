@@ -130,6 +130,9 @@ final class JdiInterpreterTest {
     assertThat(value("next().length")).isEqualTo(3);
     assertThat(value("calls")).isEqualTo(before + 1);
     assertThat(value("java.util.List.of(\"a\", \"b\").size()")).isEqualTo(2);
+    // A primitive argument to a reference parameter is boxed, as javac boxes it.
+    assertThat(value("java.util.List.of(1, 2, 3).size()")).isEqualTo(3);
+    assertThat(value("java.util.Objects.equals(ten, 10)")).isEqualTo(true);
   }
 
   // The debuggee's value as a plain Java one, so an assertion reads like the expression's result.
