@@ -13,6 +13,7 @@ import com.sun.jdi.Field;
 import com.sun.jdi.FloatValue;
 import com.sun.jdi.IncompatibleThreadStateException;
 import com.sun.jdi.IntegerValue;
+import com.sun.jdi.InterfaceType;
 import com.sun.jdi.LocalVariable;
 import com.sun.jdi.LongValue;
 import com.sun.jdi.Method;
@@ -388,9 +389,15 @@ final class JdiInterpreter {
     final JdiRef.Method ref = methodRef(path);
     final Method method = resolveMethod(ref);
     final List<Value> arguments = evalArguments(path, call.getArguments());
+    // A static method may be an interface's (List.of), which JDI invokes through InterfaceType.
     if (ref.isStatic()) {
-      final ClassType type = (ClassType) resolveType(ref.declaringBinaryName());
-      return invoker.invoke(() -> type.invokeMethod(thread(), method, arguments, SINGLE_THREADED));
+      final ReferenceType declaring = resolveType(ref.declaringBinaryName());
+      return invoker.invoke(
+          () ->
+              declaring instanceof final InterfaceType type
+                  ? type.invokeMethod(thread(), method, arguments, SINGLE_THREADED)
+                  : ((ClassType) declaring)
+                      .invokeMethod(thread(), method, arguments, SINGLE_THREADED));
     }
 
     final ObjectReference receiver = invocationReceiver(path, call.getMethodSelect());
