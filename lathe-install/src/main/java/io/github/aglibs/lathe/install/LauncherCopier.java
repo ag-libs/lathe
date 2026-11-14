@@ -29,7 +29,7 @@ public final class LauncherCopier {
     try {
       copy(versionDir, workspaceRoot.resolve(LatheLayout.LATHE_DIR));
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write workspace launchers", e);
+      throw new SyncException("Lathe sync failed to write workspace launchers", e);
     }
   }
 

@@ -54,7 +54,7 @@ public final class WorkspaceManifestWriter {
 
       writeManifest(latheDir, data);
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write workspace manifest", e);
+      throw new SyncException("Lathe sync failed to write workspace manifest", e);
     }
   }
 

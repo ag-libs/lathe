@@ -97,7 +97,7 @@ public final class WorkspaceSync {
     try {
       FileUtil.writeIfChanged(latheDir, file, "*\n", false);
     } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write %s".formatted(file), e);
+      throw new SyncException("Lathe sync failed to write %s".formatted(file), e);
     }
   }
 }

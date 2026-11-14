@@ -57,7 +57,7 @@ public final class JdkTypeIndexSync {
           () -> LOG.info("[sync] jdk type index waiting for another build indexing the JDK"),
           () -> indexOnce(source, index, t));
     } catch (final IOException | UncheckedIOException e) {
-      throw new SyncException("lathe:sync failed to index JDK types", e);
+      throw new SyncException("Lathe sync failed to index JDK types", e);
     }
   }
 

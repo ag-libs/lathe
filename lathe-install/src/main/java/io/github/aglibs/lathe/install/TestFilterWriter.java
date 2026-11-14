@@ -27,7 +27,7 @@ public final class TestFilterWriter {
       }
     } catch (final IOException e) {
       throw new SyncException(
-          "lathe:sync failed to write the test filter for %s".formatted(moduleRel), e);
+          "Lathe sync failed to write the test filter for %s".formatted(moduleRel), e);
     }
   }
 }

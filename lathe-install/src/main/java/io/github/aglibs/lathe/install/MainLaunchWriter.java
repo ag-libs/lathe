@@ -66,7 +66,7 @@ public final class MainLaunchWriter {
       }
     } catch (final IOException e) {
       throw new SyncException(
-          "lathe:sync failed to write main-launch template for %s".formatted(moduleRel), e);
+          "Lathe sync failed to write main-launch template for %s".formatted(moduleRel), e);
     }
   }
 }

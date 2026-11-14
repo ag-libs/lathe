@@ -83,6 +83,6 @@ public final class MavenArtifactResolver implements ArtifactResolver {
   }
 
   private static SyncException failure(final String coordinates, final Exception cause) {
-    return new SyncException("lathe:sync failed to resolve %s".formatted(coordinates), cause);
+    return new SyncException("Lathe sync failed to resolve %s".formatted(coordinates), cause);
   }
 }
