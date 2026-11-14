@@ -29,28 +29,12 @@ public final class LaunchPlan {
       final Path resultsSink,
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
-    final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
-    final List<String> classPath =
-        Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
-            .toList();
-    final List<String> rewrittenClassPath = reactorRewrite.toLathe(classPath);
-    final Map<String, String> patchModules = reactorRewrite.toLathe(data.patchModules());
-
-    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
-    if (jdwp.enabled()) {
-      args.add(jdwp.agentArg());
-    }
-
-    args.add("-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink));
-    addRuntimeShape(
-        args,
-        append(modulePath, overlay.modulePathAppend()),
-        append(rewrittenClassPath, overlay.classpathAppend()),
-        patchModules,
-        completeAddOpens(patchModules, data.addOpens()),
-        data.addReads(),
-        data.addExports(),
-        data.addModules());
+    final var args =
+        jvm(
+            testRuntime(data, reactorRewrite, runnerClasspath),
+            overlay,
+            jdwp,
+            List.of("-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink)));
     args.add(LatheLayout.TEST_RUNNER_MAIN_CLASS);
     selections.forEach(selection -> args.addAll(selection.toRunnerArgs()));
     args.addAll(overlay.programArgs());
@@ -63,23 +47,7 @@ public final class LaunchPlan {
       final String mainClass,
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
-    final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
-    final List<String> classPath = reactorRewrite.toLathe(data.classPath());
-
-    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
-    if (jdwp.enabled()) {
-      args.add(jdwp.agentArg());
-    }
-
-    addRuntimeShape(
-        args,
-        append(modulePath, overlay.modulePathAppend()),
-        append(classPath, overlay.classpathAppend()),
-        Map.of(),
-        data.addOpens(),
-        data.addReads(),
-        data.addExports(),
-        data.addModules());
+    final var args = jvm(mainRuntime(data, reactorRewrite), overlay, jdwp, List.of());
     addMainEntry(args, data.mode(), data.mainModule(), mainClass, overlay);
     return List.copyOf(args);
   }
@@ -98,26 +66,83 @@ public final class LaunchPlan {
       final String mainClass,
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
-    final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
-    final List<String> classPath = reactorRewrite.toLathe(data.classPath());
+    final var args = jvm(testRuntime(data, reactorRewrite, List.of()), overlay, jdwp, List.of());
+    addMainEntry(args, data.mode(), data.mainModule(), mainClass, overlay);
+    return List.copyOf(args);
+  }
+
+  // What the JVM runs with, whichever template it comes from, its paths rewritten to the mirror.
+  private record Runtime(
+      String javaHome,
+      List<String> jvmArgs,
+      List<String> modulePath,
+      List<String> classPath,
+      Map<String, String> patchModules,
+      List<String> addOpens,
+      List<String> addReads,
+      List<String> addExports,
+      List<String> addModules) {}
+
+  // extraClasspath: what the launch adds after the template's own class path (the test runner).
+  private static Runtime testRuntime(
+      final TestLaunchData data,
+      final ReactorRewrite reactorRewrite,
+      final List<Path> extraClasspath) {
     final Map<String, String> patchModules = reactorRewrite.toLathe(data.patchModules());
-
-    final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
-    if (jdwp.enabled()) {
-      args.add(jdwp.agentArg());
-    }
-
-    addRuntimeShape(
-        args,
-        append(modulePath, overlay.modulePathAppend()),
-        append(classPath, overlay.classpathAppend()),
+    return new Runtime(
+        data.javaHome(),
+        data.jvmArgs(),
+        reactorRewrite.toLathe(data.modulePath()),
+        reactorRewrite.toLathe(
+            Stream.concat(data.classPath().stream(), extraClasspath.stream().map(Path::toString))
+                .toList()),
         patchModules,
         completeAddOpens(patchModules, data.addOpens()),
         data.addReads(),
         data.addExports(),
         data.addModules());
-    addMainEntry(args, data.mode(), data.mainModule(), mainClass, overlay);
-    return List.copyOf(args);
+  }
+
+  private static Runtime mainRuntime(
+      final MainLaunchData data, final ReactorRewrite reactorRewrite) {
+    return new Runtime(
+        data.javaHome(),
+        data.jvmArgs(),
+        reactorRewrite.toLathe(data.modulePath()),
+        reactorRewrite.toLathe(data.classPath()),
+        Map.of(),
+        data.addOpens(),
+        data.addReads(),
+        data.addExports(),
+        data.addModules());
+  }
+
+  // The java command up to its entry point: the JVM, its options, the debug agent, the launch's own
+  // JVM arguments, then the module and class paths with the overlay's appended.
+  private static ArrayList<String> jvm(
+      final Runtime runtime,
+      final LaunchOverlay overlay,
+      final JdwpOptions jdwp,
+      final List<String> launchJvmArgs) {
+    final var args = new ArrayList<String>();
+    args.add(Path.of(runtime.javaHome(), "bin", "java").toString());
+    // First, so the build's and the user's own JVM arguments still override them.
+    args.addAll(LatheFlags.UTF8_OUTPUT_JVM_ARGS);
+    args.addAll(runtime.jvmArgs());
+    args.addAll(overlay.jvmArgs());
+    if (jdwp.enabled()) {
+      args.add(jdwp.agentArg());
+    }
+
+    args.addAll(launchJvmArgs);
+    addPathOption(args, "--module-path", append(runtime.modulePath(), overlay.modulePathAppend()));
+    addPathOption(args, "--class-path", append(runtime.classPath(), overlay.classpathAppend()));
+    addPatchModules(args, runtime.patchModules());
+    addRepeatedOption(args, "--add-opens", runtime.addOpens());
+    addRepeatedOption(args, "--add-reads", runtime.addReads());
+    addRepeatedOption(args, "--add-exports", runtime.addExports());
+    addRepeatedOption(args, "--add-modules", runtime.addModules());
+    return args;
   }
 
   private static void addMainEntry(
@@ -136,39 +161,8 @@ public final class LaunchPlan {
     args.addAll(overlay.programArgs());
   }
 
-  private static ArrayList<String> baseJavaArgs(
-      final String javaHome,
-      final List<String> templateJvmArgs,
-      final List<String> overlayJvmArgs) {
-    final var args = new ArrayList<String>();
-    args.add(Path.of(javaHome, "bin", "java").toString());
-    // First, so the build's and the user's own JVM arguments still override them.
-    args.addAll(LatheFlags.UTF8_OUTPUT_JVM_ARGS);
-    args.addAll(templateJvmArgs);
-    args.addAll(overlayJvmArgs);
-    return args;
-  }
-
   private static List<String> append(final List<String> base, final List<String> extra) {
     return Stream.concat(base.stream(), extra.stream()).toList();
-  }
-
-  private static void addRuntimeShape(
-      final List<String> args,
-      final List<String> modulePath,
-      final List<String> classPath,
-      final Map<String, String> patchModules,
-      final List<String> addOpens,
-      final List<String> addReads,
-      final List<String> addExports,
-      final List<String> addModules) {
-    addPathOption(args, "--module-path", modulePath);
-    addPathOption(args, "--class-path", classPath);
-    addPatchModules(args, patchModules);
-    addRepeatedOption(args, "--add-opens", addOpens);
-    addRepeatedOption(args, "--add-reads", addReads);
-    addRepeatedOption(args, "--add-exports", addExports);
-    addRepeatedOption(args, "--add-modules", addModules);
   }
 
   private static void addPathOption(
