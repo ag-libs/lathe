@@ -928,6 +928,28 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
+  void codeAction_unreportedException_hiddenByAMemberClass_addsThrowsQualified() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void method() { helper(); }
+          void helper() throws java.io.IOException {}
+          static class IOException {}
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final var throwsAction = findThrowsAction(diagnosticActions(source, diags));
+
+    final String rewritten =
+        applyEdits(source, throwsAction.getEdit().getChanges().get(TempSourceCompiler.TEST_URI));
+    assertThat(rewritten).contains("void method() throws java.io.IOException {");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
   void codeAction_unreportedException_appendsToExistingThrows() {
     final var source =
         """
