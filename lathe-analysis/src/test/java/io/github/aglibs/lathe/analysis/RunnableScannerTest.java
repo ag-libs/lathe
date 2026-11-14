@@ -118,6 +118,21 @@ class RunnableScannerTest {
   }
 
   @Test
+  void runnables_privateMain_returnsNoTargets() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          private static void main(String[] args) {
+          }
+        }
+        """;
+
+    assertThat(scan(source)).isEmpty();
+  }
+
+  @Test
   void runnables_mainWithTwoParams_returnsNoTargets() {
     final String source =
         """

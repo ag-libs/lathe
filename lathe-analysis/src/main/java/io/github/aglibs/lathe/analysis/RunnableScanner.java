@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.TypeKind;
@@ -121,11 +122,12 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
    * Matches both the classic {@code public static void main(String[])} and, since JDK 21+'s relaxed
    * launch protocol (JEP 512, finalized in JDK 25), a bare instance {@code void main()} -- no
    * {@code public}/{@code static} required, and either zero parameters or a single {@code
-   * String[]}.
+   * String[]}. A private one is never launched.
    */
   private static boolean isMainMethod(final ExecutableElement element) {
     if (!element.getSimpleName().contentEquals("main")
-        || element.getReturnType().getKind() != TypeKind.VOID) {
+        || element.getReturnType().getKind() != TypeKind.VOID
+        || element.getModifiers().contains(Modifier.PRIVATE)) {
       return false;
     }
 
