@@ -239,11 +239,16 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     externalWorker.dropFromCache(uri);
   }
 
-  @Override
-  public void close() {
+  // Closes every worker once the work queued on it is done; done when all have closed.
+  public CompletableFuture<Void> closeAsync() {
     final var closeFutures =
         allWorkers().map(CompilationWorker::closeAsync).toArray(CompletableFuture[]::new);
-    CompletableFuture.allOf(closeFutures).join();
     workers.clear();
+    return CompletableFuture.allOf(closeFutures);
+  }
+
+  @Override
+  public void close() {
+    closeAsync().join();
   }
 }
