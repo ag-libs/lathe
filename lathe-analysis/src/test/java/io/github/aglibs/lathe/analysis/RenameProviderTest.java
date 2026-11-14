@@ -510,6 +510,8 @@ class RenameProviderTest {
                 int local = 0;
                 for (int i = 0; i < count; i++) { int seen = i; }
                 for (int j = 0; j < count; j++) {}
+                int after = 0;
+                class Helper { void help() { int named = 0; } }
             }
             void put(String s) {}
             <A, B> void generic() {}
@@ -555,6 +557,12 @@ class RenameProviderTest {
           assertThat(conflict(session, source, "int i = 0", "i = 0", "seen")).isPresent();
           assertThat(conflict(session, source, "int seen", "seen", "j"))
               .as("a variable of a sibling loop")
+              .isEmpty();
+          assertThat(conflict(session, source, "int after", "after", "j"))
+              .as("a loop variable already out of scope")
+              .isEmpty();
+          assertThat(conflict(session, source, "int local", "local", "named"))
+              .as("a local of a local class's method")
               .isEmpty();
 
           assertThat(conflict(session, source, "class Inner", "Inner", "var"))

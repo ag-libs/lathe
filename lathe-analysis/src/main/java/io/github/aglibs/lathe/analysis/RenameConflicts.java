@@ -1,7 +1,10 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import java.util.List;
@@ -170,19 +173,33 @@ final class RenameConflicts {
                 analysis.trees().getScope(declaration), Objects::nonNull, Scope::getEnclosingScope)
             .flatMap(scope -> StreamSupport.stream(scope.getLocalElements().spliterator(), false))
             .anyMatch(found -> isVariableNamed(found, newName));
-    return visible || declaredWithin(declaration.getParentPath(), newName, analysis)
+    return visible || declaredWithin(declaration, newName, analysis)
         ? Optional.of("a variable named `%s` is already in scope".formatted(newName))
         : Optional.empty();
   }
 
+  // In a block, only what follows the declaration is in its scope; a class body starts a scope
+  // where the name may be declared again.
   private static boolean declaredWithin(
-      final TreePath scope, final String newName, final AttributedFileAnalysis analysis) {
+      final TreePath declaration, final String newName, final AttributedFileAnalysis analysis) {
+    final TreePath scope = declaration.getParentPath();
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final long from =
+        scope.getLeaf() instanceof BlockTree
+            ? positions.getStartPosition(analysis.tree(), declaration.getLeaf())
+            : -1;
     return Boolean.TRUE.equals(
         new TreePathScanner<Boolean, Void>() {
           @Override
           public Boolean visitVariable(final VariableTree node, final Void unused) {
-            return isVariableNamed(analysis.trees().getElement(getCurrentPath()), newName)
+            return (positions.getStartPosition(analysis.tree(), node) >= from
+                    && isVariableNamed(analysis.trees().getElement(getCurrentPath()), newName))
                 || Boolean.TRUE.equals(super.visitVariable(node, unused));
+          }
+
+          @Override
+          public Boolean visitClass(final ClassTree node, final Void unused) {
+            return false;
           }
 
           @Override
