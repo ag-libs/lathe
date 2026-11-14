@@ -38,7 +38,7 @@ public final class McpSession {
     final var pb = new ProcessBuilder(Os.launcher("lathe-mcp-launcher").toString());
     pb.directory(LspSession.ROOT.toFile());
     final Process process = pb.start();
-    drainStderr(process);
+    LspSession.forwardStderr(process, "mcp");
     return new McpSession(process);
   }
 
@@ -87,23 +87,5 @@ public final class McpSession {
   private void send(final String message) throws IOException {
     toServer.write((message + "\n").getBytes(UTF_8));
     toServer.flush();
-  }
-
-  private static void drainStderr(final Process process) {
-    final var thread =
-        new Thread(
-            () -> {
-              try (var reader =
-                  new BufferedReader(new InputStreamReader(process.getErrorStream(), UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                  System.out.println("[mcp] %s".formatted(line));
-                }
-              } catch (final IOException ignored) {
-              }
-            },
-            "mcp-stderr");
-    thread.setDaemon(true);
-    thread.start();
   }
 }

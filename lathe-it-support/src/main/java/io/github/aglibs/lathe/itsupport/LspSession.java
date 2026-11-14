@@ -10,6 +10,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -74,7 +75,7 @@ public final class LspSession {
     // 2 s.
     pb.environment().put("LATHE_JVM_OPTS", "-Dlathe.scanIntervalMs=200");
     final Process process = pb.start();
-    forwardStderr(process);
+    forwardStderr(process, "server");
 
     final Launcher<LanguageServer> launcher =
         LSPLauncher.createClientLauncher(
@@ -184,20 +185,22 @@ public final class LspSession {
         .toJsonTree(server.getWorkspaceService().executeCommand(params).get(120, SECONDS));
   }
 
-  private static void forwardStderr(final Process process) {
+  // A started server's stderr, line by line onto the test's output, tagged with the server's kind.
+  static void forwardStderr(final Process process, final String tag) {
     final var stderrThread =
         new Thread(
             () -> {
               try (var reader =
-                  new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                  new BufferedReader(
+                      new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                  System.out.println("[server] %s".formatted(line));
+                  System.out.println("[%s] %s".formatted(tag, line));
                 }
               } catch (final IOException ignored) {
               }
             },
-            "server-stderr");
+            "%s-stderr".formatted(tag));
     stderrThread.setDaemon(true);
     stderrThread.start();
   }
