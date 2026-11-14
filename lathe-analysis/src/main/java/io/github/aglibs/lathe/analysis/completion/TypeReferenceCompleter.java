@@ -375,7 +375,9 @@ final class TypeReferenceCompleter {
       @Override
       public Void visitClass(final ClassTree node, final Void unused) {
         final var el = analysis.trees().getElement(getCurrentPath());
+        // An anonymous class has an empty name, which no candidate can carry.
         if (el instanceof final TypeElement te
+            && !te.getSimpleName().isEmpty()
             && te.getSimpleName().toString().startsWith(prefix)
             && typeReferenceRoleAllows(te, analysis, scope, role)) {
           result.add(CandidateFactory.typeElementCandidate(te));
@@ -384,7 +386,7 @@ final class TypeReferenceCompleter {
         return super.visitClass(node, unused);
       }
     }.scan(analysis.tree(), null);
-    return result;
+    return List.copyOf(result);
   }
 
   private static List<CompletionCandidate> expectedConstructorTypeCandidates(

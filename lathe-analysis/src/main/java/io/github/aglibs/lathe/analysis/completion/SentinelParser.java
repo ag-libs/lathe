@@ -110,7 +110,8 @@ final class SentinelParser {
     for (final Tree node : sentinelPath) {
       if (node instanceof MethodTree m && enclosingMethod == null) {
         enclosingMethod = m.getName().toString();
-      } else if (node instanceof ClassTree c) {
+      } else if (node instanceof ClassTree c && !c.getSimpleName().isEmpty()) {
+        // An anonymous class has no name: its enclosing named class is the one to complete in.
         enclosingClass = c.getSimpleName().toString();
         break;
       }
