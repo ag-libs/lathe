@@ -15,7 +15,7 @@ final class TokenScannerTestHelper {
     final Path src = tmp.resolve(filename);
     Files.writeString(src, source);
     final var compiled = TestJavac.parse(src);
-    return TokenScanner.scan(compiled.trees(), compiled.cu());
+    return TokenScanner.scan(compiled.trees(), compiled.task().getElements(), compiled.cu());
   }
 
   static SemanticToken tokenAt(

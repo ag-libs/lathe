@@ -27,6 +27,7 @@ import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.util.Elements;
 
 public final class TokenScanner extends WrittenSourceScanner {
 
@@ -47,22 +48,28 @@ public final class TokenScanner extends WrittenSourceScanner {
   public static final List<String> TOKEN_MODIFIERS = List.of("declaration", "static", "deprecated");
 
   private final Trees trees;
+  private final Elements elements;
   private final CompilationUnitTree cu;
   private final SourcePositions positions;
   private final String content;
   private final List<SemanticToken> tokens = new ArrayList<>();
 
-  private TokenScanner(final Trees trees, final CompilationUnitTree cu, final String content) {
+  private TokenScanner(
+      final Trees trees,
+      final Elements elements,
+      final CompilationUnitTree cu,
+      final String content) {
     this.trees = trees;
+    this.elements = elements;
     this.cu = cu;
     this.positions = trees.getSourcePositions();
     this.content = content;
   }
 
-  public static List<SemanticToken> scan(final Trees trees, final CompilationUnitTree cu)
-      throws IOException {
+  public static List<SemanticToken> scan(
+      final Trees trees, final Elements elements, final CompilationUnitTree cu) throws IOException {
     final var scanner =
-        new TokenScanner(trees, cu, cu.getSourceFile().getCharContent(true).toString());
+        new TokenScanner(trees, elements, cu, cu.getSourceFile().getCharContent(true).toString());
     scanner.scan(cu, null);
     scanner.tokens.sort(
         Comparator.comparingInt(SemanticToken::line).thenComparingInt(SemanticToken::character));
@@ -303,20 +310,16 @@ public final class TokenScanner extends WrittenSourceScanner {
     };
   }
 
-  private static Set<String> interestingModifiers(final Element element) {
+  private Set<String> interestingModifiers(final Element element) {
     final var mods = new HashSet<String>();
     if (element.getModifiers().contains(Modifier.STATIC)) {
       mods.add("static");
     }
-    if (isDeprecated(element)) {
+    // Also a Javadoc-only @deprecated, which javac records and hover shows.
+    if (elements.isDeprecated(element)) {
       mods.add("deprecated");
     }
     return Set.copyOf(mods);
-  }
-
-  private static boolean isDeprecated(final Element element) {
-    return element.getAnnotationMirrors().stream()
-        .anyMatch(a -> a.getAnnotationType().toString().equals("java.lang.Deprecated"));
   }
 
   private void addToken(
