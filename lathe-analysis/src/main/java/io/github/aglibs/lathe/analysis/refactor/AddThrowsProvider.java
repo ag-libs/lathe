@@ -7,7 +7,6 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
-import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
@@ -16,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
@@ -59,29 +59,29 @@ public final class AddThrowsProvider {
 
     final MethodTree methodTree = (MethodTree) methodPath.getLeaf();
     final String fqn = request.payload().name();
-    final int lastDot = fqn.lastIndexOf('.');
-    final String simpleName = lastDot >= 0 ? fqn.substring(lastDot + 1) : fqn;
+    final TypeElement thrown = analysis.elements().getTypeElement(fqn);
+    if (thrown == null) {
+      return List.of();
+    }
+
+    final var written = CodeActionSupport.sourceType(analysis, methodPath, thrown.asType());
 
     final String source = CodeActionSupport.source(cu).orElse(null);
     if (source == null) {
       return List.of();
     }
 
-    final TextEdit throwsEdit = buildThrowsEdit(methodTree, simpleName, cu, positions, source);
+    final TextEdit throwsEdit = buildThrowsEdit(methodTree, written.text(), cu, positions, source);
     if (throwsEdit == null) {
       return List.of();
     }
 
     final var edits = new ArrayList<TextEdit>();
     edits.add(throwsEdit);
-
-    final var importEdit = new ImportAnalyzer(analysis).importEdit(fqn);
-    if (importEdit != null) {
-      edits.add(importEdit);
-    }
+    edits.addAll(written.imports());
 
     final var action = new CodeAction();
-    action.setTitle("Add 'throws %s' to method".formatted(simpleName));
+    action.setTitle("Add 'throws %s' to method".formatted(written.text()));
     action.setKind(CodeActionKind.QuickFix);
     action.setDiagnostics(List.of(diag));
 
@@ -95,7 +95,7 @@ public final class AddThrowsProvider {
 
   private static TextEdit buildThrowsEdit(
       final MethodTree methodTree,
-      final String simpleName,
+      final String typeText,
       final CompilationUnitTree cu,
       final SourcePositions positions,
       final String source) {
@@ -107,7 +107,7 @@ public final class AddThrowsProvider {
       }
 
       final var pos = Positions.offsetToPosition(cu, lastEnd);
-      return new TextEdit(new Range(pos, pos), ", %s".formatted(simpleName));
+      return new TextEdit(new Range(pos, pos), ", %s".formatted(typeText));
     }
 
     if (methodTree.getBody() == null) {
@@ -125,6 +125,6 @@ public final class AddThrowsProvider {
     }
 
     final Position pos = Positions.offsetToPosition(cu, insertOffset);
-    return new TextEdit(new Range(pos, pos), " throws %s".formatted(simpleName));
+    return new TextEdit(new Range(pos, pos), " throws %s".formatted(typeText));
   }
 }
