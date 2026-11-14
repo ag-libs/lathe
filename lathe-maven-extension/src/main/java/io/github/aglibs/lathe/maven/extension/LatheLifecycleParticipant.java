@@ -139,8 +139,10 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     }
   }
 
+  // Where the sync writes .lathe/: the top-level project's directory, not the .mvn-anchored
+  // multiModuleProjectDirectory, which can lie above it.
   private static Path reactorRoot(final MavenSession session) {
-    return session.getRequest().getMultiModuleProjectDirectory().toPath();
+    return session.getTopLevelProject().getBasedir().toPath();
   }
 
   // Team-wide opt-out committed in the reactor POM (<lathe.disabled>true</...>), read from the
