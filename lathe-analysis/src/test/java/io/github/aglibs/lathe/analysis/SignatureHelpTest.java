@@ -76,6 +76,28 @@ class SignatureHelpTest {
   }
 
   @Test
+  void signatureHelp_cursorAtTheEndOfAnArgumentOrPastVarargs_staysOnItsParameter() {
+    final var endOfFirst =
+        """
+        class Test {
+          void target(String name, int count) {}
+          void caller() { target(name()§, 1); }
+          String name() { return ""; }
+        }
+        """;
+    final var pastVarargs =
+        """
+        class Test {
+          void target(String format, Object... args) {}
+          void caller() { target("x", 1, 2, §3); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(endOfFirst).getActiveParameter()).isEqualTo(0);
+    assertThat(signatureHelpAt(pastVarargs).getActiveParameter()).isEqualTo(1);
+  }
+
+  @Test
   void signatureHelp_zeroParamMethod_returnsEmptyParamList() {
     final var source =
         """

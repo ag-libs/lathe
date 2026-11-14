@@ -71,7 +71,6 @@ final class SignatureHelpResolver {
     }
 
     final var fmt = new TypeDisplayFormatter(analysis.types());
-    final int activeParam = activeParamFromArgs(target.args(), positions, cu, cursorOffset);
     // One reader for every overload: overloads share ancestors, each parsed once.
     final DocReader reader = javadocLocator.reader(analysis, sourceRoots);
     final List<SignatureInformation> signatures =
@@ -82,6 +81,10 @@ final class SignatureHelpResolver {
                         m, fmt, target.name(), parser, sourceRoots, javadocLocator, reader))
             .toList();
     final int activeSignature = activeSignature(target);
+    final int activeParam =
+        varargsClamped(
+            activeParamFromArgs(target.args(), positions, cu, cursorOffset),
+            target.overloads().get(activeSignature));
 
     LOG.fine(
         () ->
@@ -391,11 +394,17 @@ final class SignatureHelpResolver {
         return i;
       }
 
-      if (cursorOffset < positions.getEndPosition(cu, args.get(i))) {
+      if (cursorOffset <= positions.getEndPosition(cu, args.get(i))) {
         return i;
       }
     }
     return Math.max(0, args.size() - 1);
+  }
+
+  // Every argument from the last parameter on fills a varargs parameter.
+  private static int varargsClamped(final int argument, final ExecutableElement method) {
+    final int last = method.getParameters().size() - 1;
+    return method.isVarArgs() && argument > last ? last : argument;
   }
 
   private static SignatureInformation buildSignature(
