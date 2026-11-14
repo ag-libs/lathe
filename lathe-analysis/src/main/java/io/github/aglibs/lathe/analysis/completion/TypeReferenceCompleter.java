@@ -228,7 +228,11 @@ final class TypeReferenceCompleter {
     }
 
     final var candidates =
-        new CandidateGenerator(analysis).proposeNestedTypes(outer, injected.prefix());
+        new CandidateGenerator(analysis)
+            .proposeNestedTypes(
+                outer,
+                injected.prefix(),
+                ReceiverResolver.resolveScope(analysis, req.cursorOffset()));
     final List<CompletionItem> items =
         CompletionCandidateRanker.rank(candidates, SemanticCompletionContext.blank(analysis))
             .stream()

@@ -171,7 +171,7 @@ final class MemberAccessCompleter {
                 && isStaticAccess
                 && resolved.type() instanceof DeclaredType dt
                 && dt.asElement() instanceof TypeElement te
-            ? generator.proposeNestedTypes(te, injected.prefix()).stream()
+            ? generator.proposeNestedTypes(te, injected.prefix(), scope).stream()
             : Stream.empty();
 
     final List<CompletionCandidate> candidates =
@@ -339,7 +339,7 @@ final class MemberAccessCompleter {
               ? members
               : Stream.concat(
                       members.stream(),
-                      generator.proposeNestedTypes(typeEl, injected.prefix()).stream())
+                      generator.proposeNestedTypes(typeEl, injected.prefix(), scope).stream())
                   .toList();
 
       final List<CompletionItem> items =

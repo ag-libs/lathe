@@ -153,8 +153,6 @@ public final class CompletionEngine {
         withOverrides.freshAnalysis() != null
             ? withOverrides.freshAnalysis()
             : resolveAnalysis(request);
-    CompletionEditApplier.applyNestedOuterImportEdits(
-        withOverrides.items(), injected.receiverText(), analysis);
     CompletionEditApplier.applyStatementSemicolonEdits(
         withOverrides.items(), site, analysis, request, injected.tokenStart());
     return recompiled != null && withOverrides.freshAnalysis() == null

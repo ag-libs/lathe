@@ -8,7 +8,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CursorElements;
-import io.github.aglibs.lathe.analysis.ImportAnalyzer;
 import io.github.aglibs.lathe.analysis.Positions;
 import java.util.List;
 import java.util.stream.Stream;
@@ -48,32 +47,6 @@ final class CompletionEditApplier {
     items.stream()
         .filter(item -> item.getKind() == CompletionItemKind.Keyword)
         .forEach(CompletionEditApplier::extendEditOverFollowingSpace);
-  }
-
-  static void applyNestedOuterImportEdits(
-      final List<CompletionItem> items,
-      final String receiverText,
-      final AttributedFileAnalysis analysis) {
-    if (analysis == null || receiverText == null || receiverText.indexOf('.') >= 0) {
-      return;
-    }
-
-    final var importAnalyzer = new ImportAnalyzer(analysis);
-    if (importAnalyzer.layout().isEmpty()) {
-      return;
-    }
-
-    items.stream()
-        .filter(item -> nestedTypeOwnedByReceiver(item, receiverText))
-        .map(item -> new ImportTarget(item, outerQualifiedName(item.getDetail())))
-        .filter(target -> target.qualifiedName() != null)
-        .forEach(
-            target -> {
-              final var edit = importAnalyzer.importEdit(target.qualifiedName());
-              if (edit != null) {
-                CompletionItemPresenter.addAdditionalTextEdit(target.item(), edit);
-              }
-            });
   }
 
   static void applyStatementSemicolonEdits(
@@ -188,33 +161,6 @@ final class CompletionEditApplier {
     if (item.getTextEdit() != null && item.getTextEdit().isLeft()) {
       item.getTextEdit().getLeft().setNewText(methodName);
     }
-  }
-
-  private record ImportTarget(CompletionItem item, String qualifiedName) {}
-
-  private static boolean nestedTypeOwnedByReceiver(
-      final CompletionItem item, final String receiverText) {
-    if (item.getDetail() == null) {
-      return false;
-    }
-
-    final String outer = outerQualifiedName(item.getDetail());
-    return outer != null && receiverText.equals(simpleName(outer));
-  }
-
-  private static String outerQualifiedName(final String nestedQualifiedName) {
-    final int nestedDot = nestedQualifiedName.lastIndexOf('.');
-    if (nestedDot < 0) {
-      return null;
-    }
-
-    final String outer = nestedQualifiedName.substring(0, nestedDot);
-    return outer.indexOf('.') >= 0 ? outer : null;
-  }
-
-  private static String simpleName(final String qualifiedName) {
-    final int dot = qualifiedName.lastIndexOf('.');
-    return dot >= 0 ? qualifiedName.substring(dot + 1) : qualifiedName;
   }
 
   private static void applySemicolonToMethod(
