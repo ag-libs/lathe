@@ -118,12 +118,25 @@ spec.check(
   3
 )
 
-local has_jump = false
+local jump
 for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
   if m.desc == "Lathe: jump to resolved stack frame" then
-    has_jump = true
+    jump = m.callback
   end
 end
-spec.check("jump keymap bound on the output buffer", has_jump, true)
+spec.check("jump keymap bound on the output buffer", jump ~= nil, true)
+
+-- The console hidden and shown again still jumps: hiding keeps the buffer, so its frames stay.
+vim.api.nvim_exec_autocmds("BufHidden", { buffer = buf })
+vim.api.nvim_set_current_buf(buf)
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+if jump then
+  jump()
+end
+spec.check(
+  "jump after the console was hidden and shown",
+  vim.api.nvim_buf_get_name(0):match("App%.java$") ~= nil,
+  true
+)
 
 spec.finish("stackdecorate_spec")
