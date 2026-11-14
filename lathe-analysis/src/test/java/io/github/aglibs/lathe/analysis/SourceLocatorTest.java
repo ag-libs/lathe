@@ -411,6 +411,7 @@ class SourceLocatorTest extends SampleFixture {
               items in a text block
               \""";
           java.util.function.Supplier<Integer> count = items::size;
+          java.util.function.Supplier<Test> made = Test::new;
           return items.size() + note.length() + block.length() + foo(/* items */ 1);
         }
 
@@ -434,6 +435,7 @@ class SourceLocatorTest extends SampleFixture {
       assertOnName(analysis, "int size()", 4, true); // a method's name
       assertOnName(analysis, "String note", 7, true); // a local's name
       assertOnName(analysis, "items::size", 7, true); // a method reference's name
+      assertOnName(analysis, "Test::new", 6, true); // a constructor reference's `new`
       assertOnName(analysis, "items.size()", 0, true); // a qualifier
       assertOnName(analysis, "items.size()", 6, true); // a member select's name
 
@@ -443,6 +445,7 @@ class SourceLocatorTest extends SampleFixture {
       assertOnName(analysis, "\"items in a string", 1, false);
       assertOnName(analysis, "items in a text block", 0, false);
       assertOnName(analysis, "/* items */ 1", 3, false); // in the middle of a call
+      assertOnName(analysis, "Test::new", 4, false); // a constructor reference's `::`
     }
   }
 

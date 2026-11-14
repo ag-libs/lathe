@@ -108,7 +108,8 @@ public final class DeclarationNames {
     }
 
     if (leaf instanceof final MemberReferenceTree reference) {
-      return within(offset, end - reference.getName().length(), reference.getName().length());
+      final String name = referenceName(reference);
+      return within(offset, end - name.length(), name.length());
     }
 
     final String name = declaredName(path);
