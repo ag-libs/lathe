@@ -501,6 +501,21 @@ class CompletionArgumentTest extends CompletionTestSupport {
   }
 
   @Test
+  void lambdaBody_mapToObjReturnExpectedType_ranksStringHigher() {
+    assertRanksStringHigherThanInt(
+        fixture.complete(
+            """
+            class Test {
+                void m() {
+                    java.util.List<String> mapped =
+                        java.util.stream.IntStream.range(0, 3).mapToObj(i -> §).toList();
+                }
+                String getStr() { return ""; }
+                int getInt() { return 0; }
+            }"""));
+  }
+
+  @Test
   void lambdaBody_filterExpectedType_ranksBooleanHigher() {
     final var items =
         fixture.complete(

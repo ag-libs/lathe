@@ -157,8 +157,9 @@ final class CompletionLibraryRules {
               0,
               LambdaResultShape.RECEIVER_OF_TO_LIST,
               TypeProjection.FIRST_TYPE_ARGUMENT),
+          // IntStream, LongStream and DoubleStream: Stream itself has no mapToObj.
           new LambdaRule(
-              "java.util.stream.Stream",
+              "java.util.stream.BaseStream",
               "mapToObj",
               0,
               LambdaResultShape.RECEIVER_OF_TO_LIST,
