@@ -28,6 +28,17 @@ class CompletionOverrideTest extends CompletionTestSupport {
     assertThat(item.getInsertText()).contains("@Override", "public void run()");
   }
 
+  @Test
+  void completion_insideAnInterface_offersADefaultStubButNoneOfObjects() {
+    final CompletionItem item =
+        itemLabeled(fixture.complete("interface Test extends Runnable { ru§ }"), "run")
+            .orElseThrow();
+
+    assertThat(item.getInsertText()).contains("@Override", "default void run()");
+    assertThat(fixture.complete("interface Test { toString§ }"))
+        .noneMatch(i -> i.getInsertText() != null && i.getInsertText().contains("@Override"));
+  }
+
   // The stub names its return and thrown types as the file can, and the item imports each.
   @Test
   void completion_stubNamingUnimportedTypes_importsEach() {

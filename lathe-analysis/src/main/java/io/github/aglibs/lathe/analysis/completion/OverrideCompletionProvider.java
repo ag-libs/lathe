@@ -38,20 +38,26 @@ final class OverrideCompletionProvider {
 
     final var types = analysis.types();
     final var names = new SourceTypeNames(analysis, enclosingType);
-    final var classType = (DeclaredType) enclosingType.asType();
 
     return analysis.elements().getAllMembers(enclosingType).stream()
         .filter(el -> el.getKind() == ElementKind.METHOD)
         .map(ExecutableElement.class::cast)
         .filter(method -> isOverridable(method, enclosingType))
         .filter(method -> method.getSimpleName().toString().startsWith(prefix))
-        .map(method -> overrideItem(method, classType, types, names))
+        .map(method -> overrideItem(method, enclosingType, types, names))
         .toList();
   }
 
   private static boolean isOverridable(
       final ExecutableElement method, final TypeElement enclosingType) {
-    if (method.getEnclosingElement().equals(enclosingType)) {
+    final var declaringType = (TypeElement) method.getEnclosingElement();
+    if (declaringType.equals(enclosingType)) {
+      return false;
+    }
+
+    // A default method may not override one of Object's.
+    if (enclosingType.getKind().isInterface()
+        && declaringType.getQualifiedName().contentEquals(Object.class.getName())) {
       return false;
     }
 
@@ -63,11 +69,14 @@ final class OverrideCompletionProvider {
 
   private static CompletionItem overrideItem(
       final ExecutableElement method,
-      final DeclaredType classType,
+      final TypeElement enclosingType,
       final Types types,
       final SourceTypeNames names) {
+    final var classType = (DeclaredType) enclosingType.asType();
+    final String modifier = enclosingType.getKind().isInterface() ? "default" : "public";
     final CompletionItem item =
-        CompletionItemPresenter.present(overrideCandidate(method, classType, types, names));
+        CompletionItemPresenter.present(
+            overrideCandidate(method, classType, modifier, types, names));
     names
         .importEditsFor(MethodStubRenderer.signatureTypes(List.of(method), classType, types))
         .forEach(edit -> CompletionItemPresenter.addAdditionalTextEdit(item, edit));
@@ -77,6 +86,7 @@ final class OverrideCompletionProvider {
   private static CompletionCandidate overrideCandidate(
       final ExecutableElement method,
       final DeclaredType classType,
+      final String modifier,
       final Types types,
       final SourceTypeNames names) {
     final var name = method.getSimpleName().toString();
@@ -84,10 +94,11 @@ final class OverrideCompletionProvider {
     final String insertText =
         """
         @Override
-        public %s {
+        %s %s {
           throw new UnsupportedOperationException();
         }"""
             .formatted(
+                modifier,
                 MethodStubRenderer.signature(List.of(method), classType, types, names.formatter()));
     return new CompletionCandidate(
         name,
