@@ -120,7 +120,7 @@ function M.setup()
         return
       end
       for _, client in ipairs(vim.lsp.get_clients({ name = "lathe" })) do
-        if client.root_dir and vim.startswith(name, client.root_dir) then
+        if client.root_dir and vim.startswith(name, client.root_dir .. "/") then
           util.exec(
             client,
             nil,

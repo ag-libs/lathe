@@ -150,4 +150,27 @@ do -- empty result -> notifies
   spec.check("empty result notifies", informed, true)
 end
 
+do -- a saved resource refreshes on the server whose root holds it, not one named as its prefix
+  local asked = {}
+  local function client(root)
+    return {
+      name = "lathe",
+      root_dir = root,
+      request = function(_, _, params, callback, _)
+        asked[#asked + 1] = root
+        callback(nil, nil)
+      end,
+    }
+  end
+  vim.lsp.get_clients = function()
+    return { client("/x/app"), client("/x/app-api") }
+  end
+
+  resources.setup()
+  local buf = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buf, "/x/app-api/src/main/resources/a.txt")
+  vim.api.nvim_exec_autocmds("BufWritePost", { buffer = buf })
+  spec.check("refresh goes to the root that holds the file", table.concat(asked, ","), "/x/app-api")
+end
+
 spec.finish()
