@@ -8,11 +8,13 @@ import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
+import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
@@ -58,6 +60,13 @@ public final class TryCatchWrapProvider {
       return List.of();
     }
 
+    final TypeElement caught = analysis.elements().getTypeElement(request.payload().name());
+    if (caught == null) {
+      return List.of();
+    }
+
+    final var written = CodeActionSupport.sourceType(analysis, statementPath, caught.asType());
+
     final String original = source.substring((int) statementStart, (int) statementEnd).strip();
     final String indent = CodeActionSupport.lineIndent(source, (int) statementStart);
     final String step = CodeActionSupport.indentUnit(source, statementPath, cu, positions);
@@ -70,14 +79,17 @@ public final class TryCatchWrapProvider {
             .formatted(
                 CodeActionSupport.reindent(original, indent, step),
                 indent,
-                request.payload().name(),
+                written.text(),
                 catchName(analysis, statementPath),
                 indent);
 
     final var start = Positions.offsetToPosition(cu, statementStart);
     final var end = Positions.offsetToPosition(cu, statementEnd);
     final var edit = new WorkspaceEdit();
-    edit.setChanges(Map.of(request.uri(), List.of(new TextEdit(new Range(start, end), wrapped))));
+    final var edits = new ArrayList<TextEdit>();
+    edits.add(new TextEdit(new Range(start, end), wrapped));
+    edits.addAll(written.imports());
+    edit.setChanges(Map.of(request.uri(), List.copyOf(edits)));
 
     final var action = new CodeAction();
     action.setTitle("Wrap in try/catch");
