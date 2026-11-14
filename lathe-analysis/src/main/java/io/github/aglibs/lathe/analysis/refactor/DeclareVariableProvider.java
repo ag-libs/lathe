@@ -70,8 +70,13 @@ public final class DeclareVariableProvider {
 
     final TreePath rhsPath = analysis.trees().getPath(cu, assign.getExpression());
     final TypeMirror rhsType = rhsPath != null ? analysis.trees().getTypeMirror(rhsPath) : null;
+    final boolean denotable = rhsType != null && CodeActionSupport.isDenotable(rhsType);
+    if (!denotable && !ConvertToVarProvider.isVarLegalInitializer(assign.getExpression())) {
+      return List.of();
+    }
+
     final CodeActionSupport.SourceType written =
-        rhsType != null && CodeActionSupport.isDenotable(rhsType)
+        denotable
             ? CodeActionSupport.sourceType(analysis, rhsPath, rhsType)
             : new CodeActionSupport.SourceType("var", List.of());
 

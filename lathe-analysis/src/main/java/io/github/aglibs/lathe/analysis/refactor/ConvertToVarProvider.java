@@ -119,7 +119,7 @@ public final class ConvertToVarProvider {
 
   // Excludes initializers that have no standalone type `var` can adopt: an array-initializer
   // shorthand (`{1, 2}`), a lambda, a method reference, or the `null` literal.
-  private static boolean isVarLegalInitializer(final ExpressionTree init) {
+  static boolean isVarLegalInitializer(final ExpressionTree init) {
     return switch (init.getKind()) {
       case LAMBDA_EXPRESSION, MEMBER_REFERENCE, NULL_LITERAL -> false;
       default -> !(init instanceof final NewArrayTree array && array.getType() == null);
