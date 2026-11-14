@@ -90,7 +90,8 @@ public final class NavigationFeatures {
 
     final Cursor cur = at.get();
     final VariableElement param =
-        CursorElements.parameterElementAt(cur.analysis().trees(), cur.path());
+        CursorElements.parameterElementAt(
+            cur.analysis().trees(), cur.analysis().types(), cur.path());
     if (param != null) {
       final var callee = (ExecutableElement) param.getEnclosingElement();
       final int index = callee.getParameters().indexOf(param);

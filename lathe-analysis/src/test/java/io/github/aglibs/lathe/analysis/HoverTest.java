@@ -820,6 +820,20 @@ class HoverTest extends SampleFixture {
   }
 
   @Test
+  void hover_parameterOfANonCanonicalRecordConstructor_showsCalleeParameter() {
+    // Named like the component, but of another type: not the canonical constructor, so the
+    // argument's hint is the callee's parameter.
+    final var source =
+        """
+        record Config(int bucket) {
+            Config(long bucket) { this(check(bucket, "bucket")); }
+            static int check(Object value, String name) { return 0; }
+        }
+        """;
+    assertThat(hoverText(source, "check(", "bucket")).contains("value");
+  }
+
+  @Test
   void hover_insideMethodRefArgument_showsOwnSymbol_plainArgumentShowsParameter() {
     final var source =
         """

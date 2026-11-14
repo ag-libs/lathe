@@ -8,7 +8,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -16,7 +15,6 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -184,7 +182,7 @@ public record ReferenceTarget(
 
     if (kind == ElementKind.PARAMETER) {
       final var record = enclosingRecord(element);
-      if (record == null || !isCanonicalConstructorParameter(element, record, types)) {
+      if (record == null || !CursorElements.isCanonicalConstructorParameter(element, types)) {
         return null;
       }
 
@@ -416,7 +414,7 @@ public record ReferenceTarget(
     }
 
     return elementKind != ElementKind.PARAMETER
-        || isCanonicalConstructorParameter(element, record, types);
+        || CursorElements.isCanonicalConstructorParameter(element, types);
   }
 
   private static TypeElement enclosingRecord(final Element element) {
@@ -426,17 +424,6 @@ public record ReferenceTarget(
     }
 
     return owner.getKind() == ElementKind.RECORD ? (TypeElement) owner : null;
-  }
-
-  private static boolean isCanonicalConstructorParameter(
-      final Element parameter, final TypeElement record, final Types types) {
-    final var constructor = (ExecutableElement) parameter.getEnclosingElement();
-    final List<? extends VariableElement> parameters = constructor.getParameters();
-    final List<? extends RecordComponentElement> components = record.getRecordComponents();
-    return parameters.size() == components.size()
-        && IntStream.range(0, parameters.size())
-            .allMatch(
-                i -> types.isSameType(parameters.get(i).asType(), components.get(i).asType()));
   }
 
   /**
