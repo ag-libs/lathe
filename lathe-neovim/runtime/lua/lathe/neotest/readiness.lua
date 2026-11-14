@@ -13,18 +13,20 @@ local WORKSPACE_PROGRESS_TITLE = "Lathe: indexing workspace"
 local READY_TIMEOUT_MS = 30000
 local READY_POLL_MS = 100
 local READY_AUGROUP = vim.api.nvim_create_augroup("LatheNeotestReady", { clear = true })
-local workspace_ready = false
+-- Client ids whose workspace has loaded: each server loads its own.
+local ready_clients = {}
 
---- Marks the workspace ready on the first ready signal. Returns true only on that first transition
---- (false on every later reload's progress), so callers can run first-ready-only work exactly once.
---- The flag is await_ready's fast path; when the progress event is missed (the :LatheStart flow, see
---- await_ready) it stays false and await_ready falls back to waiting for the client to attach.
-local function signal_ready()
-  if workspace_ready then
+--- Marks a client's workspace ready on its first ready signal. Returns true only on that first
+--- transition (false on every later reload's progress), so callers can run first-ready-only work
+--- exactly once. The mark is await_ready's fast path; when the progress event is missed (the
+--- :LatheStart flow, see await_ready) it stays unset and await_ready falls back to waiting for the
+--- client to attach.
+local function signal_ready(client_id)
+  if ready_clients[client_id] then
     return false
   end
 
-  workspace_ready = true
+  ready_clients[client_id] = true
   return true
 end
 
@@ -61,7 +63,7 @@ vim.api.nvim_create_autocmd("LspProgress", {
     if value and value.title == WORKSPACE_PROGRESS_TITLE then
       -- Only on the first ready transition: after that, neotest's own BufWritePost/CursorHold
       -- discovery keeps open buffers current, so re-sweeping on every reload is pure duplication.
-      if signal_ready() then
+      if signal_ready(client.id) then
         rediscover_open_buffers()
       end
     end
@@ -89,13 +91,14 @@ end
 --- and would block every discovery for the full timeout. Client presence means the server is up;
 --- per-file readiness (the doc is open and compiled) is then enforced by await_open_confirmed, and a
 --- discovery that still races is re-run by the DiagnosticChanged nudge.
-function M.await_ready()
-  if workspace_ready then
+function M.await_ready(path)
+  local client = common.client(path)
+  if client and ready_clients[client.id] then
     return
   end
 
   wait_until(function()
-    return #common.nio().lsp.get_clients({ name = "lathe" }) > 0
+    return common.client(path) ~= nil
   end, READY_TIMEOUT_MS, READY_POLL_MS)
 end
 

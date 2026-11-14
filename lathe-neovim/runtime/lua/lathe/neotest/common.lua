@@ -26,9 +26,22 @@ function M.debug_log(msg)
   end
 end
 
--- The Lathe client, looked up through nio for the adapter's async callers.
-function M.client()
-  return M.nio().lsp.get_clients({ name = "lathe" })[1]
+-- The Lathe client whose workspace holds `path`, looked up through nio for the adapter's async
+-- callers: with several projects open each file asks its own server, and none while that one is
+-- still starting. A lone client answers for every path, as does the first for no path.
+function M.client(path)
+  local clients = M.nio().lsp.get_clients({ name = "lathe" })
+  if not path or #clients <= 1 then
+    return clients[1]
+  end
+
+  for _, client in ipairs(clients) do
+    if client.root_dir and vim.startswith(path, client.root_dir .. "/") then
+      return client
+    end
+  end
+
+  return nil
 end
 
 -- A position id's class (`com.x.FooTest$Inner` for `com.x.FooTest$Inner#m()`), and the class a
