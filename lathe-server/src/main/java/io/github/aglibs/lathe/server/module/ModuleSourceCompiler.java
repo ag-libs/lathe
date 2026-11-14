@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -138,14 +139,14 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
             .collect(
                 Collectors.toMap(
                     tempFile -> tempFile,
-                    tempFile -> IOUtil.unchecked(() -> Files.readString(tempFile))));
+                    tempFile -> IOUtil.unchecked(() -> readTempText(tempFile))));
     try {
       return run.get();
     } finally {
       tempFiles.stream()
           .filter(tempFile -> !kept.containsKey(tempFile))
           .forEach(tempFile -> IOUtil.unchecked(() -> Files.deleteIfExists(tempFile)));
-      kept.forEach((tempFile, text) -> IOUtil.unchecked(() -> Files.writeString(tempFile, text)));
+      kept.forEach((tempFile, text) -> IOUtil.unchecked(() -> writeTempText(tempFile, text)));
     }
   }
 
@@ -281,6 +282,22 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return fm.getJavaFileObjects(uriByTempFile.keySet().toArray(Path[]::new));
   }
 
+  // A temp copy is written in the module's -encoding, as javac reads it with the module's own
+  // files:
+  // in UTF-8, an ISO-8859-1 module's non-ASCII character would shift every offset after it. A
+  // character the encoding cannot hold is written as '?', one character, so offsets stay.
+  private void writeTempText(final Path tempFile, final String text) throws IOException {
+    Files.write(tempFile, text.getBytes(sourceCharset()));
+  }
+
+  private String readTempText(final Path tempFile) throws IOException {
+    return new String(Files.readAllBytes(tempFile), sourceCharset());
+  }
+
+  private Charset sourceCharset() {
+    return Charset.forName(config.encoding());
+  }
+
   private Path writeTempFile(final String uri, final String content) {
     return writeAt(tempFileOf(uri), uri, content);
   }
@@ -294,7 +311,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       }
 
       Files.createDirectories(tempFile.getParent());
-      Files.writeString(tempFile, content);
+      writeTempText(tempFile, content);
       return tempFile;
     } catch (final IOException e) {
       throw new UncheckedIOException(e);

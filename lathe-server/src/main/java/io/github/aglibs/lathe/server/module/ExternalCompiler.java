@@ -87,6 +87,9 @@ public final class ExternalCompiler implements JavaSourceCompiler {
   private List<String> buildOptions(final Path filePath) {
     final var options = new ArrayList<String>();
     options.add("-proc:none");
+    // The temp copy is written in UTF-8; on JDK 17 javac would read it in the platform charset.
+    options.add("-encoding");
+    options.add("UTF-8");
     libraries
         .jdkModuleForFile(filePath)
         .filter(patchedModules::add)
