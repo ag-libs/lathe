@@ -175,9 +175,15 @@ final class JdiInterpreter {
         return inner;
       }
 
-      return attr.trees().getElement(getCurrentPath()) instanceof ExecutableElement
-          ? null
-          : "no method %s takes these arguments".formatted(methodName(node));
+      if (attr.trees().getElement(getCurrentPath()) instanceof ExecutableElement) {
+        return null;
+      }
+
+      final Name name =
+          node.getMethodSelect() instanceof final MemberSelectTree select
+              ? select.getIdentifier()
+              : ((IdentifierTree) node.getMethodSelect()).getName();
+      return "no method %s takes these arguments".formatted(name);
     }
 
     @Override
@@ -189,12 +195,6 @@ final class JdiInterpreter {
       final Element element = attr.trees().getElement(path);
       return element != null && element.asType().getKind() != TypeKind.ERROR;
     }
-  }
-
-  private static Name methodName(final MethodInvocationTree call) {
-    return call.getMethodSelect() instanceof final MemberSelectTree select
-        ? select.getIdentifier()
-        : ((IdentifierTree) call.getMethodSelect()).getName();
   }
 
   private Value eval(final TreePath path) {
