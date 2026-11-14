@@ -531,10 +531,13 @@ final class JdiInterpreter {
       return vm.mirrorOf(stringValueOf(left) + stringValueOf(right));
     }
 
-    return mirrorNumeric(
-        type.getKind(),
-        floating.applyAsDouble(asDouble(left), asDouble(right)),
-        integral.applyAsLong(asLong(left), asLong(right)));
+    // Only the result the type needs: `x / 0.5` must not also divide by the operand truncated to 0.
+    final TypeKind kind = type.getKind();
+    if (kind == TypeKind.DOUBLE || kind == TypeKind.FLOAT) {
+      return mirrorNumeric(kind, floating.applyAsDouble(asDouble(left), asDouble(right)), 0);
+    }
+
+    return mirrorNumeric(kind, 0, integral.applyAsLong(asLong(left), asLong(right)));
   }
 
   /** Renders a value the way {@code String +} would: primitives host-side, objects via toString. */
