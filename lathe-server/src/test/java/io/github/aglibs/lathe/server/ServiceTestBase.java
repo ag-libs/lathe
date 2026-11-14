@@ -47,8 +47,9 @@ import org.junit.jupiter.api.io.TempDir;
 abstract class ServiceTestBase {
 
   protected static final long DEBOUNCE_MS = 50;
-  // How long a test waits for the server's answer: a deadline for a busy machine, not a delay.
-  protected static final long TIMEOUT_S = 5;
+  // How long a test waits for the server's answer: a deadline for a busy machine, not a delay. A
+  // shared CI runner can stall every test for seconds at once; a passing test never waits this out.
+  protected static final long TIMEOUT_S = 30;
   protected static final long TIMEOUT_MS = TimeUnit.SECONDS.toMillis(TIMEOUT_S);
   private static final long WRITE_LOCK_POLL_MS = 20;
   // How long a test watches for a call that must not come, such as a duplicate publish: a fixed
