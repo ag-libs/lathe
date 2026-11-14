@@ -429,20 +429,32 @@ class ConvertCodeActionTest extends CodeActionTestBase {
   }
 
   @Test
-  void codeAction_reassignedResource_notOffered() {
-    final var source =
-        """
-        package com.example;
-        import java.io.FileReader;
-        class Test {
-          void m() throws Exception {
-            FileReader r = new FileReader("x");
-            r = new FileReader("y");
+  void codeAction_resourceReassignedOrOutlivingTheBlock_notOffered() {
+    final List<String> statements =
+        List.of(
+            "r = new FileReader(\"y\");", "return r;", "kept = r;", "final FileReader alias = r;");
+    for (final String statement : statements) {
+      final var source =
+          """
+          package com.example;
+          import java.io.FileReader;
+          class Test {
+            FileReader kept;
+            Object m() throws Exception {
+              FileReader r = new FileReader("x");
+              if (kept == null) {
+                %s
+              }
+              return null;
+            }
           }
-        }
-        """;
-    assertThat(rightTitles(replaceVarActionsAt(source, 4, 4)))
-        .doesNotContain("Surround with try-with-resources");
+          """
+              .formatted(statement);
+
+      assertThat(rightTitles(replaceVarActionsAt(source, 5, 4)))
+          .as(statement)
+          .doesNotContain("Surround with try-with-resources");
+    }
   }
 
   @Test
