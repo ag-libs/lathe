@@ -4,9 +4,11 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
@@ -69,8 +71,10 @@ public final class TryWithResourcesProvider {
       return List.of();
     }
 
-    // A try-resource is implicitly final; a later reassignment would not compile once moved in.
-    if (isReassigned(trees, stmtPath.getParentPath(), resource)) {
+    // A try-resource is implicitly final, so a reassignment would not compile once moved in; and
+    // one
+    // the block returns or stores would reach its user closed.
+    if (isReassignedOrEscapes(trees, stmtPath.getParentPath(), resource)) {
       return List.of();
     }
 
@@ -131,21 +135,43 @@ public final class TryWithResourcesProvider {
     return autoCloseable != null && analysis.types().isAssignable(type, autoCloseable.asType());
   }
 
-  private static boolean isReassigned(
+  private static boolean isReassignedOrEscapes(
       final Trees trees, final TreePath blockPath, final Element resource) {
-    final var reassigned = new AtomicBoolean(false);
+    final var found = new AtomicBoolean(false);
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitAssignment(final AssignmentTree node, final Void unused) {
-        final Element target = trees.getElement(new TreePath(getCurrentPath(), node.getVariable()));
-        if (resource.equals(target)) {
-          reassigned.set(true);
+        if (isResource(node.getVariable()) || isResource(node.getExpression())) {
+          found.set(true);
         }
 
         return super.visitAssignment(node, unused);
       }
+
+      @Override
+      public Void visitVariable(final VariableTree node, final Void unused) {
+        if (isResource(node.getInitializer())) {
+          found.set(true);
+        }
+
+        return super.visitVariable(node, unused);
+      }
+
+      @Override
+      public Void visitReturn(final ReturnTree node, final Void unused) {
+        if (isResource(node.getExpression())) {
+          found.set(true);
+        }
+
+        return super.visitReturn(node, unused);
+      }
+
+      private boolean isResource(final ExpressionTree expr) {
+        return expr instanceof IdentifierTree
+            && resource.equals(trees.getElement(new TreePath(getCurrentPath(), expr)));
+      }
     }.scan(blockPath, null);
-    return reassigned.get();
+    return found.get();
   }
 
   private static boolean isResourceClose(
