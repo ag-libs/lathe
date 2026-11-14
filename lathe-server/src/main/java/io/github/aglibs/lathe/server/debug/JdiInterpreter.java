@@ -41,6 +41,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedExpression;
 import java.util.Arrays;
 import java.util.List;
@@ -48,6 +49,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
@@ -130,7 +135,66 @@ final class JdiInterpreter {
   }
 
   Value evaluate() {
+    final String unresolved = new UnresolvedScanner().scan(attr.expression(), null);
+    if (unresolved != null) {
+      throw new EvaluationException(unresolved);
+    }
+
     return eval(attr.expression());
+  }
+
+  // The first part of the expression javac could not resolve, said as what is wrong with it: a name
+  // that is not in scope (an unimported type, a misspelt local), or a call no method matches. A
+  // call's receiver and arguments are checked first, so the message names the innermost cause.
+  private final class UnresolvedScanner extends TreePathScanner<String, Void> {
+
+    @Override
+    public String visitIdentifier(final IdentifierTree node, final Void unused) {
+      return resolves(getCurrentPath()) ? null : "cannot resolve '%s'".formatted(node.getName());
+    }
+
+    @Override
+    public String visitMemberSelect(final MemberSelectTree node, final Void unused) {
+      final String inner = super.visitMemberSelect(node, unused);
+      if (inner != null) {
+        return inner;
+      }
+
+      return resolves(getCurrentPath()) ? null : "cannot resolve '%s'".formatted(node);
+    }
+
+    @Override
+    public String visitMethodInvocation(final MethodInvocationTree node, final Void unused) {
+      final String inner =
+          reduce(
+              node.getMethodSelect() instanceof final MemberSelectTree select
+                  ? scan(select.getExpression(), unused)
+                  : null,
+              scan(node.getArguments(), unused));
+      if (inner != null) {
+        return inner;
+      }
+
+      if (attr.trees().getElement(getCurrentPath()) instanceof ExecutableElement) {
+        return null;
+      }
+
+      final Name name =
+          node.getMethodSelect() instanceof final MemberSelectTree select
+              ? select.getIdentifier()
+              : ((IdentifierTree) node.getMethodSelect()).getName();
+      return "no method %s takes these arguments".formatted(name);
+    }
+
+    @Override
+    public String reduce(final String first, final String second) {
+      return first != null ? first : second;
+    }
+
+    private boolean resolves(final TreePath path) {
+      final Element element = attr.trees().getElement(path);
+      return element != null && element.asType().getKind() != TypeKind.ERROR;
+    }
   }
 
   private Value eval(final TreePath path) {
@@ -388,7 +452,7 @@ final class JdiInterpreter {
   private Value methodInvocation(final TreePath path, final MethodInvocationTree call) {
     final JdiRef.Method ref = methodRef(path);
     final Method method = resolveMethod(ref);
-    final List<Value> arguments = evalArguments(path, call.getArguments());
+    final List<Value> arguments = evalArguments(path, call.getArguments(), method);
     // A static method may be an interface's (List.of), which JDI invokes through InterfaceType.
     if (ref.isStatic()) {
       final ReferenceType declaring = resolveType(ref.declaringBinaryName());
@@ -416,7 +480,7 @@ final class JdiInterpreter {
     final JdiRef.Method ref = methodRef(path);
     final ClassType type = (ClassType) resolveType(ref.declaringBinaryName());
     final Method constructor = resolveMethod(ref);
-    final List<Value> arguments = evalArguments(path, construction.getArguments());
+    final List<Value> arguments = evalArguments(path, construction.getArguments(), constructor);
     return invoker.invoke(
         () -> type.newInstance(thread(), constructor, arguments, SINGLE_THREADED));
   }
@@ -442,9 +506,34 @@ final class JdiInterpreter {
                         .formatted(ref.name(), ref.jvmSignature(), declaring.name())));
   }
 
+  // A primitive passed to a reference parameter (List.of(1, 2)) is boxed in the debuggee, as javac
+  // boxes it: JDI refuses a primitive where an object is expected.
   private List<Value> evalArguments(
-      final TreePath path, final List<? extends ExpressionTree> arguments) {
-    return arguments.stream().map(argument -> eval(child(path, argument))).toList();
+      final TreePath path, final List<? extends ExpressionTree> arguments, final Method method) {
+    final List<String> parameters = method.argumentTypeNames();
+    return IntStream.range(0, arguments.size())
+        .mapToObj(
+            i -> {
+              final Value value = eval(child(path, arguments.get(i)));
+              final boolean toReference =
+                  i < parameters.size() && !PRIMITIVES.contains(parameters.get(i));
+              return toReference && value instanceof final PrimitiveValue primitive
+                  ? box(primitive)
+                  : value;
+            })
+        .toList();
+  }
+
+  private Value box(final PrimitiveValue value) {
+    final String wrapper = BOXES.get(value.type().name());
+    final ClassType type = (ClassType) resolveType(wrapper);
+    final Method valueOf =
+        type.methodsByName(
+                "valueOf",
+                "(%s)L%s;".formatted(value.type().signature(), wrapper.replace('.', '/')))
+            .get(0);
+    return invoker.invoke(
+        () -> type.invokeMethod(thread(), valueOf, List.of(value), SINGLE_THREADED));
   }
 
   private ObjectReference invocationReceiver(final TreePath path, final ExpressionTree select) {
@@ -728,16 +817,20 @@ final class JdiInterpreter {
     };
   }
 
-  private static final Set<String> BOXED =
-      Set.of(
-          "java.lang.Boolean",
-          "java.lang.Byte",
-          "java.lang.Character",
-          "java.lang.Short",
-          "java.lang.Integer",
-          "java.lang.Long",
-          "java.lang.Float",
-          "java.lang.Double");
+  // Each primitive type's wrapper, by the primitive's name.
+  private static final Map<String, String> BOXES =
+      Map.of(
+          "boolean", "java.lang.Boolean",
+          "byte", "java.lang.Byte",
+          "char", "java.lang.Character",
+          "short", "java.lang.Short",
+          "int", "java.lang.Integer",
+          "long", "java.lang.Long",
+          "float", "java.lang.Float",
+          "double", "java.lang.Double");
+  private static final Set<String> PRIMITIVES = BOXES.keySet();
+
+  private static final Set<String> BOXED = Set.copyOf(BOXES.values());
 
   /**
    * Unwraps a boxed primitive to its {@code value} field so operators work on {@code Integer} etc.
