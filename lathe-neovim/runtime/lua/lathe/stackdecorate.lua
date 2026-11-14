@@ -100,7 +100,7 @@ end
 --- that it resolved to a source, then underlines each and binds the jump to its line. The buffer only
 --- grows while a run streams, so an answered row still holds the line that was sent; one that
 --- does not is skipped.
-local function decorate_stack_frames(bufnr, attempt)
+local function decorate_stack_frames(bufnr, attempt, client)
   attempt = attempt or 1
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
@@ -110,14 +110,14 @@ local function decorate_stack_frames(bufnr, attempt)
   if is_empty(lines) then
     if attempt < DECORATE_MAX_ATTEMPTS then
       vim.defer_fn(function()
-        decorate_stack_frames(bufnr, attempt + 1)
+        decorate_stack_frames(bufnr, attempt + 1, client)
       end, DECORATE_RETRY_MS)
     end
 
     return
   end
 
-  local client = lathe_client()
+  client = client or lathe_client()
   if not client then
     return
   end
@@ -160,10 +160,11 @@ end
 
 local live_decorate_pending = false
 
---- Once a run finishes, decorate the shared live buffer's stack frames. Coalesced so a multi-spec
---- file run decorates once, and the frame namespace is cleared first so a re-run does not stack
---- duplicate marks onto the buffer that output.reset() already emptied.
-function M.decorate_live_output()
+--- Once a run finishes, decorate the shared live buffer's stack frames, resolved by `client`, the
+--- server that ran it (else the current buffer's). Coalesced so a multi-spec file run decorates
+--- once, and the frame namespace is cleared first so a re-run does not stack duplicate marks onto
+--- the buffer that output.reset() already emptied.
+function M.decorate_live_output(client)
   if live_decorate_pending or not output.current_bufnr() then
     return
   end
@@ -174,7 +175,7 @@ function M.decorate_live_output()
     local buf = output.current_bufnr()
     if buf then
       vim.api.nvim_buf_clear_namespace(buf, STACKTRACE_NS, 0, -1)
-      decorate_stack_frames(buf)
+      decorate_stack_frames(buf, 1, client)
     end
   end)
 end

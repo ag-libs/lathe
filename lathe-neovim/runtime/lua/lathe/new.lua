@@ -39,9 +39,10 @@ local KIND_TOKENS = vim.tbl_map(function(kind)
   return kind.type
 end, KINDS)
 
--- Flat package names across all modules, primed lazily for command-line completion (which must answer
--- synchronously, so it reads this rather than issuing an LSP request per keystroke).
-local cache = { packages = {} }
+-- Flat package names across all modules by client id, each workspace its own, primed lazily for
+-- command-line completion (which must answer synchronously, so it reads this rather than issuing an
+-- LSP request per keystroke).
+local packages_by_client = {}
 
 local util = require("lathe.util")
 local commands = require("lathe.commands")
@@ -503,7 +504,7 @@ function M._refresh_async()
         list[#list + 1] = dest.pkg
       end
     end
-    cache.packages = list
+    packages_by_client[client.id] = list
   end)
 end
 
@@ -516,15 +517,17 @@ function M._cmd_complete(arglead, cmdline, _)
     return prefix_matches(KIND_TOKENS, arglead or "")
   end
 
-  if #cache.packages == 0 then
+  local client = lathe_client(vim.api.nvim_get_current_buf())
+  local packages = client and packages_by_client[client.id] or {}
+  if #packages == 0 then
     M._refresh_async()
   end
 
   if not arglead or arglead == "" then
-    return cache.packages
+    return packages
   end
 
-  return vim.fn.matchfuzzy(cache.packages, arglead)
+  return vim.fn.matchfuzzy(packages, arglead)
 end
 
 function M.setup()
