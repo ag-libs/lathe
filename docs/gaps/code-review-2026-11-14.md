@@ -74,6 +74,9 @@ Path shorthands are as in round one: `server/`, `analysis/`, `mcp/`, `install/`,
 
 - **CR-177 (verified)** The JDK type index scans the running JVM's runtime image but files it under another JDK: a Gradle daemon on 21 with a 17 toolchain writes 21's types into "JDK 17", cached by home/vendor/version. `install/typeindex/JdkTypeIndexSync.java:96, 114-118`; `gradle/LatheWorkspaceTask.java:396-402`. Fix: open `jrt:/` with `java.home` set to the indexed JDK; bump `CACHE_SCHEMA_VERSION`.
 - **CR-178** The compile shim stops its root search at `maven.multiModuleProjectDirectory`, `LaunchCapture` has no ceiling: a submodule build without `.mvn/` captures tests but not compiles, and a nested checkout writes into the parent's `.lathe/`. `compiler/LatheCompiler.java:149-166`; `lathe-junit/.../LaunchCapture.java:42-63` (CR-115). Which directory bounds the search is a decision.
+  Deferred past the release: no results are wrong, and every boundary trades one case for another.
+  A later fix must keep a worktree with no `.lathe/` yet from climbing into its parent's, and must not rely on `.git` or `.mvn`.
+  One option: the test hook takes a `.lathe/` only when it already has a directory for its module.
 - **CR-179** The extension's build lock and opt-out check use `multiModuleProjectDirectory/.lathe`, while the sync writes `topLevelProject/.lathe`. `lathe-maven-extension/.../LatheLifecycleParticipant.java:43, 142-144`. Fix: use the top-level project, as `SyncCoordinator` does.
 - **CR-180** An OpenJDK sync fails when a source listed by the last `make` has been deleted. `openjdk/OpenJdkSync.java:262`.
 - **CR-181** Under JUnit's parallel execution the results NDJSON can interleave: `write` makes two writer calls without synchronisation. `lathe-test-runner/.../ResultsListener.java:165-178`.
