@@ -257,16 +257,31 @@ class WorkspaceTypeIndexTest {
         .containsExactly("java.util.Map$Entry");
   }
 
+  // An anonymous class (Outer$1) or a local one (Outer$1Helper, simple name Helper) has no name
+  // outside its method, so search leaves it out; a member class of the same name stays.
   @Test
-  void searchSymbols_syntheticAnonymousClass_excluded() throws IOException {
-    // An anonymous/local class has a digit-started simple name (Outer$1); it must not pollute
-    // search.
+  void searchSymbols_anonymousOrLocalClass_excluded_memberClassKept() throws IOException {
     final var shard =
-        writeShard(tmp, "shard.json", shard(graphEntry("com.example.Outer$1", false)));
+        writeShard(
+            tmp,
+            "shard.json",
+            shard(
+                graphEntry("com.example.Outer$1", false),
+                new TypeIndexEntry(
+                    "Helper",
+                    "com.example.Outer$1Helper",
+                    "com.example",
+                    TypeKind.CLASS,
+                    false,
+                    List.of()),
+                graphEntry("com.example.Outer$Helper", false)));
 
     final var index = WorkspaceTypeIndex.build(List.of(shard));
 
     assertThat(index.searchSymbols("1", 10)).isEmpty();
+    assertThat(index.searchSymbols("Helper", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.Outer$Helper");
   }
 
   @Test
