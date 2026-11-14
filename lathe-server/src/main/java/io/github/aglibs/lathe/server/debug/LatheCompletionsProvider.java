@@ -15,10 +15,12 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.CompletionTriggerKind;
 import org.eclipse.lsp4j.InsertReplaceEdit;
+import org.eclipse.lsp4j.InsertTextFormat;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -36,6 +38,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 final class LatheCompletionsProvider implements ICompletionsProvider {
 
   private static final Logger LOG = Logger.getLogger(LatheCompletionsProvider.class.getName());
+
+  private static final Pattern SNIPPET_TAB_STOP = Pattern.compile("\\$\\d+");
 
   // The snippet is spliced as the initializer of a throwaway local so it sits in an expression
   // position -- where the completion engine resolves locals, params, and members. A bare statement
@@ -153,31 +157,24 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
 
   private static Range replaceRange(final org.eclipse.lsp4j.CompletionItem item) {
     final Either<TextEdit, InsertReplaceEdit> edit = item.getTextEdit();
-    if (edit == null) {
-      return null;
-    }
-
-    if (edit.isLeft()) {
-      return edit.getLeft().getRange();
-    }
-
-    final InsertReplaceEdit insertReplace = edit.getRight();
-    return insertReplace.getReplace() != null
-        ? insertReplace.getReplace()
-        : insertReplace.getInsert();
+    return edit != null && edit.isLeft() ? edit.getLeft().getRange() : null;
   }
 
+  // DAP has no snippets: a method's `($1)` tab stop would be typed in literally, so it is dropped.
   private static String insertText(final org.eclipse.lsp4j.CompletionItem item) {
+    final String text = rawInsertText(item);
+    return item.getInsertTextFormat() == InsertTextFormat.Snippet
+        ? SNIPPET_TAB_STOP.matcher(text).replaceAll("")
+        : text;
+  }
+
+  private static String rawInsertText(final org.eclipse.lsp4j.CompletionItem item) {
     if (item.getInsertText() != null) {
       return item.getInsertText();
     }
 
     final Either<TextEdit, InsertReplaceEdit> edit = item.getTextEdit();
-    if (edit != null && edit.isLeft()) {
-      return edit.getLeft().getNewText();
-    }
-
-    return item.getLabel();
+    return edit != null && edit.isLeft() ? edit.getLeft().getNewText() : item.getLabel();
   }
 
   private static String kindToType(final CompletionItemKind kind) {
