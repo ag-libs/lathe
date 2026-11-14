@@ -13,10 +13,10 @@ local stackdecorate = require("lathe.stackdecorate")
 
 local M = {}
 
--- Saved configs (full RunConfigInfo: name/kind/module/target/summary), refreshed on attach/save, for
--- :LatheRun/:LatheDebug completion and the picker. Completion is synchronous, so it reads this cache
--- rather than round-tripping the server.
-local config_list = {}
+-- Saved configs (full RunConfigInfo: name/kind/module/target/summary) by client id, each workspace
+-- its own, refreshed on attach/save, for :LatheRun/:LatheDebug completion and the picker.
+-- Completion is synchronous, so it reads this cache rather than round-tripping the server.
+local config_lists = {}
 -- Name of the last config run this session, for :LatheRunLast.
 local last_config
 
@@ -25,16 +25,20 @@ local SIGN_HL = "LatheRunnable"
 vim.api.nvim_set_hl(0, SIGN_HL, { link = "DiagnosticInfo", default = true })
 local SIGN_TEXT = "▶"
 
--- The single in-flight main run's token, so :LatheRunStop can cancel it. A main run is a
--- foreground user action (one buffer, one class), so tracking one token is sufficient; a new
--- run overwrites it, matching the shared single-buffer output surface.
-local active_token
+-- The single in-flight main run, { token, client_id }, so :LatheRunStop can cancel it on the server
+-- that runs it. A main run is a foreground user action (one buffer, one class), so tracking one is
+-- sufficient; a new run replaces it, matching the shared single-buffer output surface.
+local active_run
 
 local util = require("lathe.util")
 local commands = require("lathe.commands")
 local runnables = require("lathe.runnables")
 local KIND = runnables.KIND
 local lathe_client = util.client
+
+local function configs_of(client)
+  return client and config_lists[client.id] or {}
+end
 
 local function place_signs(bufnr, targets)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -81,8 +85,12 @@ end
 
 local notify = util.notify
 
-local function on_finished(label, err, outcome)
-  active_token = nil
+local function on_finished(client, token, label, err, outcome)
+  -- An earlier run ending must not forget the one that replaced it.
+  if active_run and active_run.token == token then
+    active_run = nil
+  end
+
   if err then
     notify("run error: " .. (err.message or vim.inspect(err)), vim.log.levels.ERROR)
     return
@@ -104,7 +112,7 @@ local function on_finished(label, err, outcome)
 
   -- Hyperlink any stack frames the run streamed into the shared output buffer, the same way the
   -- test path does once neotest's results() lands -- a main run has no results() hook of its own.
-  stackdecorate.decorate_live_output()
+  stackdecorate.decorate_live_output(client)
 end
 
 --- Shared foreground-run scaffolding: mint a token (so :LatheRunStop can cancel), clear and show the
@@ -112,14 +120,14 @@ end
 --- the token before dispatch.
 local function launch(client, command, args, label)
   local token = output.next_token()
-  active_token = token
+  active_run = { token = token, client_id = client.id }
   args.token = token
   output.reset()
   output.ensure_open()
   notify("Running " .. label, vim.log.levels.INFO)
   local function finish(err, outcome)
     vim.schedule(function()
-      on_finished(label, err, outcome)
+      on_finished(client, token, label, err, outcome)
     end)
   end
 
@@ -163,6 +171,7 @@ end
 --- Opens a picker over the saved configs (name · module · target) and runs the chosen one -- the
 --- IntelliJ-style "choose a run config" entry point. Bind to a key, e.g. <leader>tr.
 function M.pick()
+  local config_list = configs_of(lathe_client())
   if #config_list == 0 then
     notify("no saved run configs (see :LatheRunSave)", vim.log.levels.INFO)
     return
@@ -308,25 +317,27 @@ function M.save(name, overwrite)
   end)
 end
 
---- Refreshes the saved-config name cache from the server (for :LatheRun/:LatheDebug completion).
---- Best-effort: a missing client or failed list leaves the previous names in place.
-function M.refresh_configs()
-  local client = lathe_client()
+--- Refreshes `client`'s (else the current buffer's) saved-config cache from its server (for
+--- :LatheRun/:LatheDebug completion). Best-effort: a missing client or failed list leaves the
+--- previous names in place.
+function M.refresh_configs(client)
+  client = client or lathe_client()
   if not client then
     return
   end
 
   util.exec(client, nil, commands.RUN_CONFIGS_LIST, { {} }, function(configs)
     if configs then
-      config_list = configs
+      config_lists[client.id] = configs
     end
   end, { silent = true })
 end
 
---- Command-completion over the cached config names, prefix-filtered by the current argument.
+--- Command-completion over the current workspace's cached config names, prefix-filtered by the
+--- current argument.
 function M.complete_config(arglead)
   local matches = {}
-  for _, config in ipairs(config_list) do
+  for _, config in ipairs(configs_of(lathe_client())) do
     if config.name:sub(1, #arglead) == arglead then
       matches[#matches + 1] = config.name
     end
@@ -338,17 +349,24 @@ end
 --- Cancels the in-flight main run, if any. The replay JVM is server-side, so the stop is the
 --- lathe.run.cancel command keyed by the run token, not a client-side process kill.
 function M.stop()
-  if not active_token then
+  if not active_run then
     notify("no run to stop", vim.log.levels.WARN)
     return
   end
 
-  local client = lathe_client()
+  local client = vim.lsp.get_client_by_id(active_run.client_id)
   if not client then
     return
   end
 
-  util.exec(client, nil, commands.RUN_CANCEL, { { token = active_token } }, nil, { silent = true })
+  util.exec(
+    client,
+    nil,
+    commands.RUN_CANCEL,
+    { { token = active_run.token } },
+    nil,
+    { silent = true }
+  )
 end
 
 --- Registers the run commands and keeps the gutter signs and the run configs current.
@@ -364,7 +382,7 @@ function M.setup()
       local client = vim.lsp.get_client_by_id(args.data.client_id)
       if client and client.name == "lathe" then
         M.refresh_signs(args.buf)
-        M.refresh_configs()
+        M.refresh_configs(client)
       end
     end,
   })

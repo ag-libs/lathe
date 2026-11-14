@@ -60,18 +60,21 @@ function M.fake_client(answer, opts)
     end
   end
 
+  local fake = {
+    id = 1,
+    name = "lathe",
+    offset_encoding = "utf-16",
+    request = function(client, method, params, callback, bufnr)
+      requests[#requests + 1] =
+        { method = method, command = params.command, arguments = params.arguments }
+      return respond(client, method, params, callback, bufnr)
+    end,
+  }
   vim.lsp.get_clients = function(_)
-    return {
-      {
-        name = "lathe",
-        offset_encoding = "utf-16",
-        request = function(client, method, params, callback, bufnr)
-          requests[#requests + 1] =
-            { method = method, command = params.command, arguments = params.arguments }
-          return respond(client, method, params, callback, bufnr)
-        end,
-      },
-    }
+    return { fake }
+  end
+  vim.lsp.get_client_by_id = function(id)
+    return id == fake.id and fake or nil
   end
   if opts and opts.position then
     vim.lsp.util.make_position_params = function(_, _)

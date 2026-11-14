@@ -87,15 +87,17 @@ end
 --- ordering race. A main config (lathe_main_class set) routes to lathe.debug.main; otherwise the
 --- test selections route to lathe.debug.test.
 local function start_adapter(callback, config)
-  local client = lathe_client()
+  local client = config.lathe_client_id and vim.lsp.get_client_by_id(config.lathe_client_id)
+    or lathe_client()
   if not client then
     notify("server not attached; cannot start debug session", vim.log.levels.ERROR)
     return
   end
 
-  -- Track the run token so :LatheRunStop can cancel this debug replay directly (M.stop), rather than
-  -- relying on the attach adapter's terminate semantics. Cleared when the session ends.
-  active_tokens[config.lathe_token] = true
+  -- Track the run token, with the server running it, so :LatheRunStop can cancel this debug replay
+  -- there (M.stop), rather than relying on the attach adapter's terminate semantics. Cleared when the
+  -- session ends, or when it fails to start.
+  active_tokens[config.lathe_token] = client.id
 
   local command, argument
   if config.lathe_config_name then
@@ -118,6 +120,7 @@ local function start_adapter(callback, config)
   end
 
   local function failed(err)
+    active_tokens[config.lathe_token] = nil
     vim.schedule(function()
       notify("debug start error: " .. vim.inspect(err), vim.log.levels.ERROR)
     end)
@@ -186,9 +189,9 @@ function M.debug(bufnr)
     if route == "neotest" then
       require("neotest").run.run({ strategy = "dap" })
     elseif route == "dap_test" then
-      dap.run(M._test_config_for(test))
+      dap.run(vim.tbl_extend("force", M._test_config_for(test), { lathe_client_id = client.id }))
     elseif route == "dap_main" then
-      dap.run(M._main_config_for(main))
+      dap.run(vim.tbl_extend("force", M._main_config_for(main), { lathe_client_id = client.id }))
     else
       notify("no test or main here to debug", vim.log.levels.WARN)
     end
@@ -204,12 +207,13 @@ function M.debug_named(name)
     return
   end
 
-  if not lathe_client() then
+  local client = lathe_client()
+  if not client then
     notify("server not attached to this buffer", vim.log.levels.WARN)
     return
   end
 
-  dap.run(M._named_config_for(name))
+  dap.run(vim.tbl_extend("force", M._named_config_for(name), { lathe_client_id = client.id }))
 end
 
 --- Stops any in-flight Lathe debug session by cancelling its replay JVM directly (lathe.run.cancel) --
@@ -218,18 +222,14 @@ end
 --- dap.terminate() follows as belt-and-suspenders cleanup. Returns true if it stopped anything, so
 --- :LatheRunStop can fall through to the normal-run stop when there was no debug session.
 function M.stop()
-  local tokens = {}
-  for token in pairs(active_tokens) do
-    tokens[#tokens + 1] = token
-  end
-
-  if #tokens == 0 then
+  local runs = active_tokens
+  if next(runs) == nil then
     return false
   end
 
-  local client = lathe_client()
-  for _, token in ipairs(tokens) do
-    active_tokens[token] = nil
+  active_tokens = {}
+  for token, client_id in pairs(runs) do
+    local client = vim.lsp.get_client_by_id(client_id)
     if client then
       util.exec(client, nil, commands.RUN_CANCEL, { { token = token } }, nil, { silent = true })
     end
@@ -259,7 +259,8 @@ function M._decorate_on_session_end(session)
       active_tokens[session.config.lathe_token] = nil
     end
 
-    stackdecorate.decorate_live_output()
+    local client_id = session.config.lathe_client_id
+    stackdecorate.decorate_live_output(client_id and vim.lsp.get_client_by_id(client_id))
   end
 end
 
