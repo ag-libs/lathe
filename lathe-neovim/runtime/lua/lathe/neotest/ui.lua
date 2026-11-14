@@ -1,6 +1,7 @@
 -- What the user does after a run: re-run the first failing test, compare a failure's expected and
 -- actual values, and list the last run's tests in the quickfix.
 local common = require("lathe.neotest.common")
+local runnables = require("lathe.runnables")
 local util = require("lathe.util")
 local commands = require("lathe.commands")
 local discovery = require("lathe.neotest.discovery")
@@ -90,12 +91,7 @@ local function cursor_test_id()
   local targets = discovery.cached_targets(vim.api.nvim_buf_get_name(0))
   local line = vim.api.nvim_win_get_cursor(0)[1] - 1
   for _, t in ipairs(targets or {}) do
-    if
-      t.kind == common.TEST_METHOD_KIND
-      and t.range
-      and t.range.start.line <= line
-      and line <= t.range["end"].line
-    then
+    if t.kind == runnables.KIND.TEST_METHOD and runnables.in_range(t.range, line) then
       return t.id
     end
   end

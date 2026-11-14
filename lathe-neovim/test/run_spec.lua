@@ -1,10 +1,9 @@
--- Verifies lathe.run.main_target_for: the pure selection of which MAIN runnable a :LatheRun
+-- Verifies lathe.runnables.main_target_for: the pure selection of which MAIN runnable a :LatheRun
 -- should launch for a given cursor line, over the flat lathe.runnables.file target list.
 -- Exercises the cursor-in-range, single-main fallback, no-main, and ambiguous-multiple cases.
 --
--- Self-contained: lathe.run requires only lathe.output, which uses core Neovim APIs (no
--- neotest/nio), so this loads on any machine -- run-specs.sh runs every *_spec.lua
--- unconditionally.
+-- Self-contained: lathe.runnables needs only core Neovim APIs (no neotest/nio), so this loads on
+-- any machine -- run-specs.sh runs every *_spec.lua unconditionally.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -13,7 +12,7 @@
 --     -l lathe-neovim/test/run_spec.lua
 
 local spec = require("spec_helper").new()
-local run = require("lathe.run")
+local runnables = require("lathe.runnables")
 
 local MAIN = 0
 local TEST_METHOD = 1
@@ -46,14 +45,14 @@ end
 -- Case 1: cursor inside a main's declaration range selects that main.
 do
   local targets = { target(MAIN, "com.example.App", 10, 14) }
-  local picked = run.main_target_for(targets, 12)
+  local picked = runnables.main_target_for(targets, 12)
   spec.check("cursor in range -> that main", picked and picked.parentId, "com.example.App")
 end
 
 -- Case 2: a single main with the cursor outside its range still runs (the file's only main).
 do
   local targets = { target(MAIN, "com.example.App", 10, 14) }
-  local picked = run.main_target_for(targets, 0)
+  local picked = runnables.main_target_for(targets, 0)
   spec.check(
     "single main, cursor outside -> fallback",
     picked and picked.parentId,
@@ -67,7 +66,7 @@ do
     target(TEST_METHOD, "com.example.AppTest", 5, 9),
     target(TEST_METHOD, "com.example.AppTest", 11, 15),
   }
-  spec.check("no main -> nil", run.main_target_for(targets, 6), nil)
+  spec.check("no main -> nil", runnables.main_target_for(targets, 6), nil)
 end
 
 -- Case 4: several mains with the cursor on none is ambiguous -- select nothing rather than guess.
@@ -76,7 +75,7 @@ do
     target(MAIN, "com.example.A", 10, 14),
     target(MAIN, "com.example.B", 20, 24),
   }
-  spec.check("multiple mains, cursor on none -> nil", run.main_target_for(targets, 0), nil)
+  spec.check("multiple mains, cursor on none -> nil", runnables.main_target_for(targets, 0), nil)
 end
 
 -- Case 5: several mains, cursor inside one, picks exactly that one.
@@ -85,7 +84,7 @@ do
     target(MAIN, "com.example.A", 10, 14),
     target(MAIN, "com.example.B", 20, 24),
   }
-  local picked = run.main_target_for(targets, 22)
+  local picked = runnables.main_target_for(targets, 22)
   spec.check("multiple mains, cursor in B -> B", picked and picked.parentId, "com.example.B")
 end
 
@@ -96,7 +95,7 @@ do
     target(MAIN, "com.example.App", 12, 14),
     target(MAIN_CLASS, "com.example.App", 10, 20),
   }
-  local picked = run.main_target_for(targets, 10)
+  local picked = runnables.main_target_for(targets, 10)
   spec.check("cursor on class line -> its main", picked and picked.id, "com.example.App#main")
 end
 
@@ -107,7 +106,7 @@ do
     target(MAIN, "com.example.App", 12, 14),
     target(MAIN_CLASS, "com.example.App", 10, 20),
   }
-  local picked = run.main_target_for(targets, 13)
+  local picked = runnables.main_target_for(targets, 13)
   spec.check("method precedence over class", picked and picked.kind, MAIN)
 end
 
@@ -119,7 +118,7 @@ do
     target(MAIN, "com.example.B", 32, 34),
     target(MAIN_CLASS, "com.example.B", 30, 40),
   }
-  local picked = run.main_target_for(targets, 30)
+  local picked = runnables.main_target_for(targets, 30)
   spec.check("cursor on class B -> B's main", picked and picked.id, "com.example.B#main")
 end
 

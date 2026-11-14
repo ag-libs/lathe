@@ -13,20 +13,6 @@ local stackdecorate = require("lathe.stackdecorate")
 
 local M = {}
 
--- RunnableKind ordinals (lsp4j serializes the enum by ordinal): MAIN(0) is the main method,
--- MAIN_CLASS(4) is its enclosing class declaration. Both are gutter-signed and launch the same
--- class; TEST_* (1-3) are neotest's. See lathe.neotest's POSITION_TYPE for the test mapping.
-local RUN_KIND_MAIN = 0
-local RUN_KIND_TEST_METHOD = 1
-local RUN_KIND_TEST_CLASS = 2
-local RUN_KIND_TEST_PACKAGE = 3
-local RUN_KIND_MAIN_CLASS = 4
-local SELECTOR_KIND = {
-  [RUN_KIND_TEST_METHOD] = "METHOD",
-  [RUN_KIND_TEST_CLASS] = "CLASS",
-  [RUN_KIND_TEST_PACKAGE] = "PACKAGE",
-}
-
 -- Saved configs (full RunConfigInfo: name/kind/module/target/summary), refreshed on attach/save, for
 -- :LatheRun/:LatheDebug completion and the picker. Completion is synchronous, so it reads this cache
 -- rather than round-tripping the server.
@@ -46,50 +32,9 @@ local active_token
 
 local util = require("lathe.util")
 local commands = require("lathe.commands")
+local runnables = require("lathe.runnables")
+local KIND = runnables.KIND
 local lathe_client = util.client
-
-local function in_range(range, line)
-  return range ~= nil and line >= range.start.line and line <= range["end"].line
-end
-
---- The MAIN (method) runnable to launch for a cursor position: the main whose method range
---- contains `cursor_line` (0-based); else the main whose class range contains it (running from
---- the class gutter); else the file's only main if there is exactly one; else nil (no main, or
---- several with the cursor on none). Always returns a MAIN target -- a MAIN_CLASS hit resolves to
---- its class's method (id == the method's parentId) so the launch path is unchanged. Pure over the
---- raw lathe.runnables.file targets, so it is unit-testable without a live client.
-function M.main_target_for(targets, cursor_line)
-  local mains = {}
-  local main_by_class = {}
-  for _, t in ipairs(targets) do
-    if t.kind == RUN_KIND_MAIN then
-      mains[#mains + 1] = t
-      main_by_class[t.parentId] = t
-    end
-  end
-
-  -- Method range wins when the cursor is on the method line (the class range encloses it).
-  for _, t in ipairs(mains) do
-    if in_range(t.range, cursor_line) then
-      return t
-    end
-  end
-
-  for _, t in ipairs(targets) do
-    if t.kind == RUN_KIND_MAIN_CLASS and in_range(t.range, cursor_line) then
-      local method = main_by_class[t.id]
-      if method then
-        return method
-      end
-    end
-  end
-
-  if #mains == 1 then
-    return mains[1]
-  end
-
-  return nil
-end
 
 local function place_signs(bufnr, targets)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -98,7 +43,7 @@ local function place_signs(bufnr, targets)
 
   vim.api.nvim_buf_clear_namespace(bufnr, SIGN_NS, 0, -1)
   for _, t in ipairs(targets) do
-    if (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_MAIN_CLASS) and t.range then
+    if (t.kind == KIND.MAIN or t.kind == KIND.MAIN_CLASS) and t.range then
       pcall(vim.api.nvim_buf_set_extmark, bufnr, SIGN_NS, t.range.start.line, 0, {
         sign_text = SIGN_TEXT,
         sign_hl_group = SIGN_HL,
@@ -247,52 +192,36 @@ function M.run(bufnr)
     return
   end
 
-  local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
-  local function run_target(targets)
-    local target = targets and M.main_target_for(targets, cursor_line) or nil
-    vim.schedule(function()
-      if not target then
-        -- Main-only surface: no main means the user wants tests, which stay with neotest. Delegate
-        -- to it when installed (pcall -- neotest.run is nil until require('neotest').setup() ran).
-        local ok = pcall(function()
-          require("neotest").run.run()
-        end)
-        if not ok then
-          notify("no main here; configure neotest to run tests", vim.log.levels.WARN)
-        end
-
-        return
+  runnables.at_cursor(client, bufnr, function(targets, cursor_line)
+    local target = runnables.main_target_for(targets, cursor_line)
+    if not target then
+      -- Main-only surface: no main means the user wants tests, which stay with neotest. Delegate
+      -- to it when installed (pcall -- neotest.run is nil until require('neotest').setup() ran).
+      local ok = pcall(function()
+        require("neotest").run.run()
+      end)
+      if not ok then
+        notify("no main here; configure neotest to run tests", vim.log.levels.WARN)
       end
 
-      launch_main(client, target)
-    end)
-  end
+      return
+    end
 
-  util.exec(
-    client,
-    bufnr,
-    commands.RUNNABLES_FILE,
-    { { uri = vim.uri_from_bufnr(bufnr) } },
-    run_target,
-    {
-      on_error = function()
-        run_target(nil)
-      end,
-    }
-  )
+    launch_main(client, target)
+  end)
 end
 
 --- The `lathe.runConfigs.save` request body for a resolved runnable target: a MAIN pins its class, a
 --- test pins a single selector. A MAIN_CLASS resolves to its main method. Returns nil for a target
 --- with no saveable shape.
 local function save_request(targets, t)
-  if t.kind == RUN_KIND_MAIN then
+  if t.kind == KIND.MAIN then
     return { moduleRel = t.moduleRel, kind = "MAIN", mainClass = t.parentId }
   end
 
-  if t.kind == RUN_KIND_MAIN_CLASS then
+  if t.kind == KIND.MAIN_CLASS then
     for _, m in ipairs(targets) do
-      if m.kind == RUN_KIND_MAIN and m.parentId == t.id then
+      if m.kind == KIND.MAIN and m.parentId == t.id then
         return { moduleRel = m.moduleRel, kind = "MAIN", mainClass = m.parentId }
       end
     end
@@ -300,7 +229,7 @@ local function save_request(targets, t)
     return nil
   end
 
-  local selector_kind = SELECTOR_KIND[t.kind]
+  local selector_kind = runnables.SELECTOR_KIND[t.kind]
   if not selector_kind then
     return nil
   end
@@ -318,7 +247,7 @@ end
 function M._save_target_for(targets, cursor_line)
   for _, t in ipairs(targets) do
     if
-      (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_TEST_METHOD) and in_range(t.range, cursor_line)
+      (t.kind == KIND.MAIN or t.kind == KIND.TEST_METHOD) and runnables.in_range(t.range, cursor_line)
     then
       return save_request(targets, t)
     end
@@ -326,14 +255,14 @@ function M._save_target_for(targets, cursor_line)
 
   for _, t in ipairs(targets) do
     if
-      (t.kind == RUN_KIND_MAIN_CLASS or t.kind == RUN_KIND_TEST_CLASS)
-      and in_range(t.range, cursor_line)
+      (t.kind == KIND.MAIN_CLASS or t.kind == KIND.TEST_CLASS)
+      and runnables.in_range(t.range, cursor_line)
     then
       return save_request(targets, t)
     end
   end
 
-  local main = M.main_target_for(targets, cursor_line)
+  local main = runnables.main_target_for(targets, cursor_line)
   return main and save_request(targets, main) or nil
 end
 
@@ -361,44 +290,22 @@ function M.save(name, overwrite)
     return
   end
 
-  local cursor_line = vim.api.nvim_win_get_cursor(0)[1] - 1
-  local function save_target(targets)
-    local request = targets and M._save_target_for(targets, cursor_line) or nil
-    vim.schedule(function()
-      if not request then
-        notify(
-          ":LatheRunSave -- no runnable under cursor (place cursor in a main() or @Test method)",
-          vim.log.levels.WARN
-        )
-        return
-      end
+  runnables.at_cursor(client, bufnr, function(targets, cursor_line)
+    local request = M._save_target_for(targets, cursor_line)
+    if not request then
+      notify(
+        ":LatheRunSave -- no runnable under cursor (place cursor in a main() or @Test method)",
+        vim.log.levels.WARN
+      )
+      return
+    end
 
-      request.name = name
-      request.overwrite = overwrite
-      local function finish(save_err, saved)
-        vim.schedule(function()
-          on_saved(save_err, saved)
-        end)
-      end
-
-      util.exec(client, nil, commands.RUN_CONFIGS_SAVE, { request }, function(saved)
-        finish(nil, saved)
-      end, { on_error = finish })
-    end)
-  end
-
-  util.exec(
-    client,
-    bufnr,
-    commands.RUNNABLES_FILE,
-    { { uri = vim.uri_from_bufnr(bufnr) } },
-    save_target,
-    {
-      on_error = function()
-        save_target(nil)
-      end,
-    }
-  )
+    request.name = name
+    request.overwrite = overwrite
+    util.exec(client, nil, commands.RUN_CONFIGS_SAVE, { request }, function(saved)
+      on_saved(nil, saved)
+    end, { on_error = on_saved })
+  end)
 end
 
 --- Refreshes the saved-config name cache from the server (for :LatheRun/:LatheDebug completion).

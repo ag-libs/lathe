@@ -5,11 +5,16 @@ local common = require("lathe.neotest.common")
 local util = require("lathe.util")
 local commands = require("lathe.commands")
 local readiness = require("lathe.neotest.readiness")
+local runnables = require("lathe.runnables")
+local KIND = runnables.KIND
 
 local M = {}
 
-local POSITION_TYPE = { [common.TEST_METHOD_KIND] = "test", [common.TEST_CLASS_KIND] = "namespace" }
-local SELECTOR_KIND = { [common.TEST_METHOD_KIND] = "METHOD", [common.TEST_CLASS_KIND] = "CLASS" }
+-- The neotest position type of each test kind. A main is not a test: it stays out of the tree,
+-- and lathe.run's gutter handles it. A package has no entry either: it spans files, so nesting it
+-- under whichever file's discovery reported it puts it at the wrong level; package runs bind to the
+-- directory node neotest's own tree walk creates (build_spec's "dir" handling in lathe.neotest.spec).
+local POSITION_TYPE = { [KIND.TEST_METHOD] = "test", [KIND.TEST_CLASS] = "namespace" }
 local DISCOVERY_AUGROUP = vim.api.nvim_create_augroup("LatheNeotestDiscovery", { clear = true })
 
 -- Buffers whose discovery already returned tests: neotest has their positions, so they need no
@@ -150,7 +155,7 @@ function M._build_position_forest(file_path, targets)
         path = file_path,
         range = to_range(t.range),
         lathe_module_rel = t.moduleRel,
-        lathe_selector_kind = SELECTOR_KIND[t.kind],
+        lathe_selector_kind = runnables.SELECTOR_KIND[t.kind],
       }
       positions[t.id] = pos
       children_of[t.parentId] = children_of[t.parentId] or {}
@@ -225,7 +230,7 @@ function M._targets_from_discovery(tests, file_path, module_rel)
       targets[#targets + 1] = {
         id = test.id,
         parentId = class,
-        kind = common.TEST_METHOD_KIND,
+        kind = KIND.TEST_METHOD,
         label = test.label,
         moduleRel = module_rel,
         range = TOP_OF_FILE,
@@ -236,7 +241,7 @@ function M._targets_from_discovery(tests, file_path, module_rel)
         targets[#targets + 1] = {
           id = class,
           parentId = outer or class:match("^(.*)%.[^.]+$") or "",
-          kind = common.TEST_CLASS_KIND,
+          kind = KIND.TEST_CLASS,
           label = class:match("([^.$]+)$"),
           moduleRel = module_rel,
           range = TOP_OF_FILE,

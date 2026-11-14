@@ -1,5 +1,5 @@
 -- Verifies lathe.dap:
---   * _test_target_for: the pure selection of which TEST runnable a :LatheDebug should attach to
+--   * lathe.runnables.test_target_for: the pure selection of which TEST runnable a :LatheDebug should attach to
 --     for a given cursor line, over the flat lathe.runnables.file target list -- method-in-range,
 --     class fallback, package fallback, innermost precedence, and the no-test case.
 --   * _decorate_on_session_end: the DAP session-end guard that hyperlinks the streamed stack frames
@@ -28,6 +28,7 @@ package.loaded["lathe.stackdecorate"] = {
 }
 
 local dap = require("lathe.dap")
+local runnables = require("lathe.runnables")
 
 local TEST_METHOD = 1
 local TEST_CLASS = 2
@@ -53,7 +54,7 @@ end
 -- Case 1: cursor inside a test method's range selects that method.
 do
   local targets = { target(TEST_METHOD, "com.example.AppTest#a()", 10, 12) }
-  local picked = dap._test_target_for(targets, 11)
+  local picked = runnables.test_target_for(targets, 11)
   spec.check("cursor in method -> that method", picked and picked.id, "com.example.AppTest#a()")
 end
 
@@ -63,7 +64,7 @@ do
     target(TEST_METHOD, "com.example.AppTest#a()", 10, 12),
     target(TEST_CLASS, "com.example.AppTest", 8, 20),
   }
-  local picked = dap._test_target_for(targets, 8)
+  local picked = runnables.test_target_for(targets, 8)
   spec.check("cursor on class line -> the class", picked and picked.kind, TEST_CLASS)
 end
 
@@ -74,21 +75,21 @@ do
     target(TEST_METHOD, "com.example.AppTest#a()", 10, 12),
     target(TEST_CLASS, "com.example.AppTest", 8, 20),
   }
-  local picked = dap._test_target_for(targets, 11)
+  local picked = runnables.test_target_for(targets, 11)
   spec.check("method precedence over class", picked and picked.kind, TEST_METHOD)
 end
 
 -- Case 4: only a package target contains the cursor -- fall back to the package.
 do
   local targets = { target(TEST_PACKAGE, "com.example", 0, 40) }
-  local picked = dap._test_target_for(targets, 5)
+  local picked = runnables.test_target_for(targets, 5)
   spec.check("only package in range -> package", picked and picked.kind, TEST_PACKAGE)
 end
 
 -- Case 5: no target contains the cursor -- select nothing rather than guess.
 do
   local targets = { target(TEST_METHOD, "com.example.AppTest#a()", 10, 12) }
-  spec.check("cursor outside all -> nil", dap._test_target_for(targets, 0), nil)
+  spec.check("cursor outside all -> nil", runnables.test_target_for(targets, 0), nil)
 end
 
 -- Case 6: the resolved test selection maps the kind ordinal to the server's TestSelectionKind name.
