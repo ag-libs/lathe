@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import java.net.URI;
 import java.nio.file.Files;
@@ -30,15 +31,18 @@ class TextMentionsTest {
               String prose = "we sell shoes";
               Object reflect() { return "com.example.Shop#sell"; }
               String query = \"""
+                  we sell, then
                   call com.example.Shop.sell
                   \""";
             }
             """);
 
     assertThat(TextMentions.inStringLiterals(List.of(source), "sell"))
-        .extracting(location -> location.getRange().getStart().getLine())
-        .as("a text block's line has no quote of its own")
-        .containsExactly(2, 5, 6);
+        .extracting(
+            location -> location.getRange().getStart().getLine(),
+            location -> location.getRange().getStart().getCharacter())
+        .as("at the name that makes it a mention, in a text block on its own line")
+        .containsExactly(tuple(2, 16), tuple(5, 46), tuple(8, 28));
   }
 
   // A resource names a class qualified, or by its file name as a service file does.

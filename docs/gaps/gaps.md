@@ -2329,7 +2329,7 @@ Waits on `verify_change` telling an API change from a body change.
 
 ## MC-86 — Smaller answer defects from the exploratory round
 
-**Status: documented**
+**Status: deferred** (2026-11-15: the defects that gave wrong answers are fixed; what is left is below)
 
 **Value: low — Size: S each**
 
@@ -2342,13 +2342,19 @@ Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier an
 - `verify_change` checks callers 50 to a javac task, and javac skips flow analysis once a task has an error, as a Maven build does:
   while one caller fails, another in its batch that only lacks a `return` or an exception declaration is not listed.
 - `get_definition` on a `requires` module name answers "No definition found" without saying modules are not navigable.
-- The rename review list cites the line a text block opens on, not the line with the name (`PrefabValuesApi.java:106`
-  for line 108), and lists every `"get"` literal for a short name.
-- `search_symbols` labels an annotation "(Interface)"; `workspace_summary` has no size limit (about 46 KB on Helidon).
+- The rename review list lists every `"get"` literal for a short name.
+- `search_symbols` labels an annotation "(Interface)".
 
 ### Fix direction
 
 Each is small; take them one by one when touching the tool.
+The rest stay as they are (decided 2026-11-15):
+- The annotation label and the `requires` module answer each need a reason carried from the analysis to the answer
+  (the hit's kind past the symbol resolver; why a definition is empty): more plumbing than a rare query is worth.
+- A short name's literals are what the review list is for: a reflective call names a member by its bare name.
+
+Out of scope: `workspace_summary`'s size (about 46 KB on Helidon) is its point, every module named once with its
+reactor dependencies already capped at ten; a smaller answer would drop the module graph.
 
 ### Regression targets
 
@@ -2356,6 +2362,7 @@ Each is small; take them one by one when touching the tool.
 - `LatheEngineNavigationTest.diagnostics_moreThanAHundredErrors_reportsEveryOne` (analysis reports past javac's 100-error limit; fixed 2026-11-15)
 - `LibrarySourcesTest.originLabel_reactorModuleOnTheModulePath_namesTheBuildModule` (`describe_symbol`'s `source:` names a reactor module alike from every caller; fixed 2026-11-15)
 - `LatheEngineEditTest.fixImports_supertypeNestsAName_importsTheSupertypeOnly` and `fixImports_genericUse_onlyTheTypeTakingItsTypeArguments` (`fix_imports` picks the inherited nested type and the generic type; fixed 2026-11-15)
+- `TextMentionsTest.inStringLiterals_literalNamingIt_notCodeProseOrALongerWord` (a rename's text mention points at the name, in a text block on its own line; fixed 2026-11-15)
 
 ---
 
