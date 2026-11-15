@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
@@ -104,6 +105,34 @@ public record LatheTestRun(
             .filter(belongs)
             .map(TranscriptLine::text)
             .toList();
-    return printed.subList(Math.max(0, printed.size() - OUTPUT_LINES), printed.size());
+    final List<String> kept =
+        printed.size() <= OUTPUT_LINES ? printed : withoutDeeperFrames(printed);
+    return kept.subList(Math.max(0, kept.size() - OUTPUT_LINES), kept.size());
+  }
+
+  // A stack trace's frames past its first: kept, they would push out of the last lines the
+  // exception they belong to, the line that says why. Each exception and its cause keep the frame
+  // that says where.
+  private static List<String> withoutDeeperFrames(final List<String> lines) {
+    final var kept = new ArrayList<String>();
+    boolean afterFrame = false;
+    for (final String line : lines) {
+      final boolean frame = isStackFrame(line);
+      if (!frame || !afterFrame) {
+        kept.add(line);
+      }
+
+      afterFrame = frame;
+    }
+
+    return List.copyOf(kept);
+  }
+
+  // As Throwable.printStackTrace indents them: "\tat ..." and "\t... 12 more".
+  private static boolean isStackFrame(final String line) {
+    final String text = line.strip();
+    return !line.isEmpty()
+        && Character.isWhitespace(line.charAt(0))
+        && (text.startsWith("at ") || (text.startsWith("... ") && text.endsWith(" more")));
   }
 }
