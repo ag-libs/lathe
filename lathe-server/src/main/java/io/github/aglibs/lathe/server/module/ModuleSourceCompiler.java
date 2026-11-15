@@ -46,6 +46,9 @@ import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ModuleSourceCompiler.class.getName());
+  // Far past what one change breaks, still short of a flood: a module whose classpath did not
+  // resolve fails on every name, and every diagnostic reaches the editor and the agent.
+  private static final String REPORT_LIMIT = "1000";
   private static final String PATCH_MODULE = "--patch-module";
   private static final String MODULE_SOURCE_PATH = "--module-source-path";
   private static final String SYSTEM = "--system";
@@ -564,6 +567,13 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     // generate.
     if (mode == CompileMode.FULL) {
       opts.add("-g");
+    }
+
+    // javac stops reporting at 100 errors and 100 warnings a task, silently: a check of 50 callers
+    // listed 156 of about 221 errors. An analysis reports up to REPORT_LIMIT; the project's own
+    // limit, later in the arguments, still wins.
+    if (mode != CompileMode.FULL) {
+      opts.addAll(List.of("-Xmaxerrs", REPORT_LIMIT, "-Xmaxwarns", REPORT_LIMIT));
     }
 
     opts.addAll(modeCompilerArgs(compilerArgs, mode));

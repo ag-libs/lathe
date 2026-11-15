@@ -28,6 +28,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -110,6 +112,23 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final List<LatheDiagnostic> diagnostics = engine.diagnostics(source).value();
 
     assertThat(diagnostics).isEmpty();
+  }
+
+  // javac stops at 100 errors a task unless told otherwise; an analysis reports every one.
+  @Test
+  void diagnostics_moreThanAHundredErrors_reportsEveryOne() throws Exception {
+    final String fields =
+        IntStream.range(0, 120)
+            .mapToObj("  int n%d = \"nope\";"::formatted)
+            .collect(Collectors.joining("\n"));
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Sample.java",
+            "package com.example;\nclass Sample {\n%s\n}\n".formatted(fields));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.diagnostics(source).value()).hasSize(120);
   }
 
   @Test

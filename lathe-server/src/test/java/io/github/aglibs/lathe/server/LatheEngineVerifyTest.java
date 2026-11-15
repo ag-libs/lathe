@@ -69,7 +69,9 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
                 .implementations())
         .noneSatisfy(loc -> assertThat(loc.uri()).endsWith("LoudGreeter.java"));
     assertThat(ofImpl.overrides()).containsExactly("com.example.Greeter#greet()");
-    assertThat(impact.productionRefs()).isGreaterThanOrEqualTo(1);
+    assertThat(impact.productionRefs())
+        .as("Caller's one call; the declarations are the family, not uses")
+        .isEqualTo(1);
     assertThat(impact.testRefs()).isZero();
     assertThat(impact.affectedModules()).containsExactly("module");
   }
