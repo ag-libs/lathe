@@ -28,6 +28,18 @@ unavailable() {
   exit 0
 }
 
+# GitHub refuses a clone now and then; a retry after a pause gets it.
+clone() {
+  local attempt
+  for attempt in 1 2 3; do
+    rm -rf "$2"
+    git clone --quiet "$1" "$2" && return 0
+    [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+  done
+
+  return 1
+}
+
 command -v nvim >/dev/null 2>&1 || unavailable "nvim not found on PATH"
 [ -x "$fixture/.lathe/lathe-launcher.sh" ] || unavailable "multi-module fixture not built at $fixture"
 
@@ -36,7 +48,7 @@ while read -r name url commit; do
   [[ -z "$name" || "$name" == \#* ]] && continue
   dir="$plugins/$name"
   if [ ! -d "$dir/.git" ]; then
-    git clone --quiet "$url" "$dir" || unavailable "cannot clone $name from $url"
+    clone "$url" "$dir" || unavailable "cannot clone $name from $url"
   fi
 
   git -C "$dir" checkout --quiet "$commit" 2>/dev/null ||
