@@ -65,7 +65,7 @@ require("lathe").setup()
 
 | Option | Default | Meaning |
 |---|---|---|
-| `style.indent` | `{ profile = "editorconfig" }` | global-default live-editing indent: `profile` `"editorconfig"` (follow `.editorconfig`, else a 4-space Java baseline) or `"google"` (2-space block, 4-space continuation); optional `block` / `continuation` widths override the profile |
+| `style.indent` | `{ profile = "editorconfig" }` | global-default live-editing indent: `profile` `"editorconfig"` (follow `.editorconfig`, else a 4-wide Java baseline) or `"google"` (2-space block, 4-space continuation); optional `block` / `continuation` widths override the profile |
 | `format_on_save` | `false` | wire format-on-save (takes effect whenever the server advertises a formatter) |
 | `pom` | `{ validate = true, format = false }` | client-side `pom.xml` validation and `gq` formatting via `xmllint`; see [pom.xml validation & formatting](#pomxml-validation--formatting) |
 | `capabilities` | `make_client_capabilities()` | LSP capabilities table |
@@ -299,10 +299,14 @@ Both follow a per-workspace **style** — a project's committed `lathe-style.jso
 **Indentation** — `style.indent.profile`:
 
 - `editorconfig` (default) — follows the project's `.editorconfig` via Neovim's native EditorConfig
-  support (Lathe never parses `.editorconfig` itself). With no matching `.editorconfig`, a 4-space Java
+  support (Lathe never parses `.editorconfig` itself). With no matching `.editorconfig`, a 4-wide Java
   baseline applies. The wrapped-line (continuation) indent defaults to 2× the block width; pin it with
   `style.indent.continuation` (or override the block with `style.indent.block`).
 - `google` — 2-space block, 4-space continuation.
+
+A Java buffer indents with tabs when its file already does (most of its indented lines start with a
+tab), and with spaces otherwise, unless `.editorconfig`'s `indent_style` says which. Widths the
+project's style pins (below) always indent with spaces, as its formatter does.
 
 Which indent a Java buffer gets, when they disagree:
 
