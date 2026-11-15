@@ -176,15 +176,6 @@ public final class ProgressReporter {
       total += more;
     }
 
-    public synchronized void advance() {
-      if (token == null || state == State.ENDED) {
-        return;
-      }
-
-      completed++;
-      report(() -> "%d / %d".formatted(completed, total));
-    }
-
     public synchronized void advance(final boolean requiredAttribution, final int candidateHits) {
       if (token == null || state == State.ENDED) {
         return;
