@@ -167,15 +167,30 @@
         <artifactId>lathe-server</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <!-- Both lsp4j artifacts ask for gson as a version range, which sends Maven to every
+           repository for gson's versions whenever something resolves Lathe's servers; lathe-core
+           brings the gson Lathe is built with instead. -->
       <dependency>
         <groupId>org.eclipse.lsp4j</groupId>
         <artifactId>org.eclipse.lsp4j</artifactId>
         <version>${lsp4j.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
       <dependency>
         <groupId>org.eclipse.lsp4j</groupId>
         <artifactId>org.eclipse.lsp4j.jsonrpc</artifactId>
         <version>${lsp4j.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
       <dependency>
         <groupId>org.codehaus.plexus</groupId>
