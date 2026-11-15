@@ -265,7 +265,7 @@ final class LatheMcpTools {
             """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
                 its override/implementation family, how many production vs test references it has, \
-                which reactor modules use it, and the relevant test classes. Use it to scope a rename \
+                which reactor modules use or implement it, and the relevant test classes. Use it to scope a rename \
                 or signature change before making it.""",
             LatheMcpTools::handleAnalyzeChange),
         tool(

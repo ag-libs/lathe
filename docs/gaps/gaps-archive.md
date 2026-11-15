@@ -12783,7 +12783,7 @@ It counted the modules of reference sites only: a lambda implements a method wit
 
 ### Resolution
 
-`analyze_change` adds the modules of every implementation it found, not capped like the listed override family (`LatheEngine.analyzeChange`).
+`analyze_change` adds the modules of every implementation it found, not capped like the listed override family (`LatheEngine.analyzeChange`), and a test that implements the symbol is a relevant test.
 The release battery's check "analyze_change modules cover the implementations" lost its known-failure mark.
 
 ### Regression targets

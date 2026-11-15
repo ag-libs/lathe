@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
@@ -48,7 +49,8 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
   }
 
   // A signature change breaks every implementation: a module that implements the method only with
-  // a lambda, which declares no method of its name and never calls it, is affected too.
+  // a lambda, which declares no method of its name and never calls it, is affected too, and a test
+  // that does is a relevant test.
   @Test
   void analyzeChange_methodImplementedInAModuleThatNeverCallsIt_countsThatModule()
       throws Exception {
@@ -68,6 +70,21 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             "package com.example.impl;\nclass Wiring {\n  com.example.api.Greeter greeter = () -> {};\n}\n"),
         List.of("api"),
         1_000L);
+    final Path fakeRoot = tmp.resolve("impl/src/integrationTest/java");
+    final Path fake =
+        TestCompiler.writeAt(
+            fakeRoot.resolve("com/example/impl/FakeWiring.java"),
+            "package com.example.impl;\nclass FakeWiring {\n  com.example.api.Greeter greeter = () -> {};\n}\n",
+            1_000L);
+    final Path apiClasses = tmp.resolve(LatheLayout.LATHE_DIR).resolve("api/classes");
+    TestJavac.compileToDir(
+        tmp.resolve(LatheLayout.LATHE_DIR)
+            .resolve("impl")
+            .resolve(LatheLayout.sourceSetTree("integrationTest")),
+        List.of(apiClasses),
+        fake);
+    TestCompiler.writeSourceSetParams(
+        tmp, "impl", "integrationTest", fakeRoot, List.of(tmp.resolve("api/target/classes")));
     engine = new LatheEngine(tmp);
 
     final var pos = positionOf(ifaceSource, "greet");
@@ -77,6 +94,9 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(impact.overrideFamily())
         .anySatisfy(location -> assertThat(location.uri()).endsWith("Wiring.java"));
     assertThat(impact.affectedModules()).containsExactly("api", "impl");
+    assertThat(impact.relevantTests())
+        .as("a test implementing it breaks too")
+        .contains("FakeWiring");
   }
 
   @Test
