@@ -158,6 +158,22 @@ spec.check(
 
 spec.check("a finished setup run sets up nothing", sync.setting_up("/ws/f/src/A.java"), false)
 
+-- A root reached through a symlink (macOS's /var is /private/var) holds the files under its real
+-- path, a new file's too.
+local real_dir = vim.fn.tempname()
+local link = real_dir .. "-link"
+vim.fn.mkdir(real_dir .. "/src", "p")
+vim.uv.fs_symlink(real_dir, link)
+sync.run(link, false, nil, { cmd = { "/opt/bin/mvn" }, label = "mvn", action = "setup" })
+spec.check(
+  "a setup run through a symlink sets up the real path's files",
+  sync.setting_up(real_dir .. "/src/New.java"),
+  true
+)
+pending_cb({ code = 0 })
+vim.fn.delete(link)
+vim.fn.delete(real_dir, "rf")
+
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run("/ws/b", false)
 spec.check("a plain sync is not a setup", sync.setting_up("/ws/b/src/A.java"), false)

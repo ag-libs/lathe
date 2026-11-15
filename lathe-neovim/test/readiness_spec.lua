@@ -112,7 +112,7 @@ lathe.setup({})
 local sync = require("lathe.sync")
 local setting_up = sync.setting_up
 sync.setting_up = function(path)
-  return vim.startswith(path, unfinished .. "/")
+  return vim.startswith(vim.uv.fs_realpath(path) or path, vim.uv.fs_realpath(unfinished) .. "/")
 end
 lathe.warn_if_not_ready(vim.fn.bufadd(unfinished .. "/src/main/java/Running.java"))
 sync.setting_up = setting_up

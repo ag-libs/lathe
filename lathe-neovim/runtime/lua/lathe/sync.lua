@@ -281,11 +281,25 @@ function M.run(root, capture_tests, modules, opts)
   end)
 end
 
+-- The same path whatever symlinks lead to it (macOS's /var is /private/var), resolved through the
+-- nearest folder that exists, as a new buffer's file does not yet.
+local function real(path)
+  local resolved = vim.uv.fs_realpath(path)
+  if resolved then
+    return resolved
+  end
+
+  local dir = vim.fs.dirname(path)
+  return dir ~= path and vim.fs.joinpath(real(dir), vim.fs.basename(path)) or path
+end
+
 --- Whether :LatheInit is setting up the build that holds path (its download or first build): its
 --- `.lathe/` is incomplete until the run ends and starts the server.
 function M.setting_up(path)
+  local wanted = real(path)
   for root, action in pairs(running) do
-    if action ~= "sync" and (path == root or vim.startswith(path, root .. "/")) then
+    local at = real(root)
+    if action ~= "sync" and (wanted == at or vim.startswith(wanted, at .. "/")) then
       return true
     end
   end
