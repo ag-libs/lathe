@@ -1259,7 +1259,7 @@ None yet.
 
 ---
 
-## WS-35 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
+## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
 
 **Status: documented**
 
