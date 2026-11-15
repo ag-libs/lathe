@@ -144,6 +144,11 @@ spec.check(
   true
 )
 local console = vim.fn.bufnr("Lathe Sync Output")
+spec.check(
+  "the failure split opens without taking the cursor",
+  vim.api.nvim_get_current_buf() ~= console and vim.fn.bufwinid(console) ~= -1,
+  true
+)
 local console_lines = vim.api.nvim_buf_get_lines(console, 0, -1, false)
 spec.check(
   "the console shows the command itself, quoted",
@@ -195,6 +200,13 @@ spec.check("lathe/sync handler forwards capture", table.concat(last_args(), " ")
 spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
+vim.cmd("LatheSyncOutput")
+spec.check(
+  ":LatheSyncOutput moves the cursor into the split",
+  vim.api.nvim_get_current_buf(),
+  vim.fn.bufnr("Lathe Sync Output")
+)
+vim.cmd("wincmd p")
 
 -- :LatheSync from a file outside any workspace says so, and runs nothing.
 local before_outside = #calls

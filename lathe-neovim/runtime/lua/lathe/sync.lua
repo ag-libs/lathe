@@ -115,23 +115,24 @@ local function verdict_line()
   return #lines
 end
 
---- Opens (or focuses) the sync-console buffer in a bottom split and scrolls it to the build's
---- verdict, so Maven's [ERROR] summary or Gradle's BUILD FAILED is what fills the view. Returns false
---- when no sync has run yet.
-local function open_output_window()
+--- Opens the sync-console buffer in a bottom split and scrolls it to the build's verdict, so Maven's
+--- [ERROR] summary or Gradle's BUILD FAILED is what fills the view. With `focus` the cursor moves
+--- into it; without, it stays in the window the user was in, as a failure opens it unasked. Returns
+--- false when no sync has run yet.
+local function open_output_window(focus)
   if not (out_buf and vim.api.nvim_buf_is_valid(out_buf)) then
     return false
   end
 
+  local from = vim.api.nvim_get_current_win()
   if vim.fn.bufwinid(out_buf) == -1 then
     vim.cmd("botright 15split")
     vim.api.nvim_win_set_buf(0, out_buf)
   end
 
   local win = vim.fn.bufwinid(out_buf)
-  if win ~= -1 then
-    vim.api.nvim_win_set_cursor(win, { verdict_line(), 0 })
-  end
+  vim.api.nvim_win_set_cursor(win, { verdict_line(), 0 })
+  vim.api.nvim_set_current_win(focus and win or from)
   return true
 end
 
@@ -160,7 +161,10 @@ end
 --- the exact command and working directory so the run is reproducible by hand.
 local function show_failure(action, root, cmd, code, output)
   local lines = {
-    ("Lathe: %s FAILED (exit %d) — press r to retry, q to close"):format(action.noun, code),
+    ("Lathe: %s FAILED (exit %d) — :LatheSyncOutput jumps here; r retries, q closes"):format(
+      action.noun,
+      code
+    ),
     command_header(root, cmd),
     "",
   }
@@ -337,7 +341,7 @@ function M.setup()
   end, { desc = "Lathe: run .lathe/lathe-sync.sh --tests to also re-capture test launches" })
 
   vim.api.nvim_create_user_command("LatheSyncOutput", function()
-    if not open_output_window() then
+    if not open_output_window(true) then
       vim.notify("Lathe: no sync output yet", vim.log.levels.INFO)
     end
   end, { desc = "Lathe: reopen the last sync output" })
