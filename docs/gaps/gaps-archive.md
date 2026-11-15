@@ -12822,6 +12822,27 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-80 — `verify_change` skips callers that reach a changed type without naming it — done
+
+**Status: done.**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+It checked only the files that name the changed file's type, so 5 errors in three `dropwizard-health` tests that call `getSchedule().getDowntimeInterval().toSeconds()`, and never name `Duration`, went unreported.
+
+### Resolution
+
+The callers checked are also the files whose compiled classes refer to a class of the changed file, in the modules that can see it (`ChangeVerifier.referrers`): a class refers to every type it uses in its bytecode, whatever its source spells.
+They come from the `.lathe/` mirror, read when `verify_change` asks and kept nowhere, once per check for both the files to check and the sync it suggests: reading all 9,586 classes of Helidon's mirror takes 1–2.5 s, and a check reads only the modules downstream of the change.
+The editor is unchanged: it re-analyzes every open file downstream of a write.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.verifyChange_callerReachesTheChangedTypeOnlyThroughAChain_reportsIt`
+
+---
+
 ## MC-89 — `verify_change` checks the callers of a change the build's compile fails against its old classes — done
 
 **Status: done.**

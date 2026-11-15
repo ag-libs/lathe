@@ -601,6 +601,42 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     return files.get(0);
   }
 
+  // A caller that reaches the changed type through a chain of calls never names it: it is found by
+  // its compiled class, which refers to the type whatever the source spells.
+  @Test
+  void verifyChange_callerReachesTheChangedTypeOnlyThroughAChain_reportsIt() throws Exception {
+    final var api = new LinkedHashMap<String, String>();
+    api.put(
+        "com/example/api/Span.java",
+        "package com.example.api;\npublic class Span {\n  public int seconds() { return 1; }\n}\n");
+    api.put(
+        "com/example/api/Holder.java",
+        "package com.example.api;\npublic class Holder {\n  public Span span() { return new Span(); }\n}\n");
+    final Path span = TestCompiler.writeMirroredModule(tmp, "api", api, List.of(), 1_000L).get(0);
+    final Path use =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "user",
+                Map.of(
+                    "com/example/user/Use.java",
+                    "package com.example.user;\nclass Use {\n"
+                        + "  int u(com.example.api.Holder h) { return h.span().seconds(); }\n}\n"),
+                List.of("api"),
+                1_000L)
+            .get(0);
+    engine = new LatheEngine(tmp);
+
+    writeNewer(
+        span,
+        "package com.example.api;\npublic class Span {\n  public int secs() { return 1; }\n}\n");
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    final String usePath = FileUtil.slashed(tmp.relativize(use));
+    assertThat(verify.perModule())
+        .flatMap(LatheModuleDiagnostics::diagnostics)
+        .anyMatch(d -> d.path().equals(usePath) && d.message().contains("seconds"));
+  }
+
   @Test
   void verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync() throws Exception {
     final Path api = apiReactor(List.of("app1", "app2"), List.of());

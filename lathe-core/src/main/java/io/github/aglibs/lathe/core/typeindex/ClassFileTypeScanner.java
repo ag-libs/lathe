@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -104,6 +105,17 @@ public final class ClassFileTypeScanner {
       return scanClassEntry(className.get(), in);
     } catch (final IOException | IllegalArgumentException e) {
       return Optional.empty();
+    }
+  }
+
+  // The types a compiled class refers to, its constant pool's classes, by binary name: present
+  // whatever its source spells, a type reached through a chain of calls too. Empty for a file that
+  // is no class.
+  public static Set<String> referencedTypes(final Path classFile) {
+    try (final InputStream in = Files.newInputStream(classFile)) {
+      return ClassMetadataReader.read(in).map(ClassMetadata::referencedTypes).orElse(Set.of());
+    } catch (final IOException | IllegalArgumentException e) {
+      return Set.of();
     }
   }
 

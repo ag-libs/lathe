@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 // A source's class files in the .lathe/ mirror: which a compile wrote, and deleting those a source
 // no longer produces (a removed nested or sibling type, a deleted source). File operations only, no
@@ -117,6 +119,37 @@ final class ClassOutputs {
         .map(name -> config.latheClassesDir().resolve("%s.class".formatted(name.replace('.', '/'))))
         .filter(classFile -> classFile.getParent().equals(classDir))
         .anyMatch(classFile -> classOutputOf(source, classFile));
+  }
+
+  // The binary names of the classes the source compiled to, as the mirror holds them now.
+  static Set<String> classNamesOf(final ModuleSourceConfig config, final Path source) {
+    final Path classDir = classDirOf(config, source);
+    if (classDir == null) {
+      return Set.of();
+    }
+
+    return IOUtil.unchecked(() -> FileUtil.filesIn(classDir, FileUtil::isClassFile)).stream()
+        .filter(classFile -> classOutputOf(source, classFile))
+        .map(classFile -> ServerFiles.classBinaryName(config.latheClassesDir(), classFile))
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // The source a mirrored class was compiled from: the file its SourceFile attribute names in its
+  // package, which a sibling top-level type needs, or else the file named after its top-level type.
+  static Optional<Path> sourceOf(final ModuleSourceConfig config, final Path classFile) {
+    final Path classes = config.latheClassesDir();
+    final Path packageRel = classes.relativize(classFile.getParent());
+    return ClassSourceFile.of(classFile)
+        .flatMap(
+            name ->
+                config.searchRoots().stream()
+                    .map(root -> root.resolve(packageRel).resolve(name))
+                    .filter(Files::isRegularFile)
+                    .findFirst())
+        .or(
+            () ->
+                TypeSourceLocator.findSourceFile(
+                    ServerFiles.classBinaryName(classes, classFile), config.searchRoots()));
   }
 
   // The mirror directory holding the source's package classes; null outside the config's roots.
