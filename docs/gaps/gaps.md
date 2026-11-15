@@ -1107,6 +1107,34 @@ None yet.
 
 ---
 
+## CA-20 — An added import's group follows the file, not the project's configured import order
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: the import quick fix, "Add missing imports" and completion's auto-import, on a project that orders imports in groups.**
+
+Found by the pre-release JUnit editor round (2026-11-15), after the group-aware placement that fixed most of it.
+
+### Observed behaviour
+
+An added import goes to the group that already holds its top-level package, which the file shows; three cases the file cannot show are guessed.
+A file whose imports are one block of a single top-level package cannot say whether the project groups imports: JUnit's `ConditionEvaluator.java` holds only `org.*` imports, and an added `java.*` import joins that block without the blank line JUnit's import order puts between them.
+A new group goes where it sorts alphabetically, which JUnit's order (`java`, `javax`, `jdk`, `aQute`, …, `org`) does not always follow: an `aQute.*` import would land above `java`.
+Within a group, imports sort alphabetically, which IntelliJ's default `javax` before `java` block does not.
+The build's import-order check fails on each until the file is formatted.
+
+### Fix direction
+
+Record the order the project declares, Spotless `importOrder` or an Eclipse `.importorder` file, in the sync's style, and place imports by it when there is one.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
