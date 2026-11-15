@@ -59,7 +59,8 @@ final class McpText {
 
   // Authority lines appended to semantic-result text so the agent trusts the result instead of
   // re-verifying with grep (the "distrust tax"). True by construction for Java: the search is
-  // javac-resolved; Lathe reads no Kotlin, so where there is some the grep advice is left out.
+  // javac-resolved; Lathe reads no Kotlin or Groovy, so where there is some the grep advice is left
+  // out.
   private static final String REFERENCES_AUTHORITY =
       "All javac-resolved references to this exact declaration; same-named but unrelated symbols are"
           + " already excluded";
@@ -105,17 +106,24 @@ final class McpText {
   }
 
   static String vouched(final String authority, final LatheNotes notes) {
-    return notes.kotlinModules().isEmpty() ? authority + NO_GREP_NEEDED : authority + ".";
+    return notes.unreadSources().isEmpty() ? authority + NO_GREP_NEEDED : authority + ".";
   }
 
-  // An answer about a symbol's uses: in a workspace with Kotlin sources, which Lathe does not read,
-  // it names the modules to check with grep.
+  // An answer about a symbol's uses: in a workspace with sources Lathe does not read (Kotlin,
+  // Groovy), it names each language's modules to check with grep.
   static CallToolResult usesResult(final String text, final LatheNotes notes) {
     return result(
-        notes.kotlinModules().isEmpty()
+        notes.unreadSources().isEmpty()
             ? text
-            : "%s%n%nKotlin sources in %s are not searched; check them with grep."
-                .formatted(text, listed(notes.kotlinModules())),
+            : "%s%n%n%s are not searched; check them with grep."
+                .formatted(
+                    text,
+                    notes.unreadSources().stream()
+                        .map(
+                            unread ->
+                                "%s sources in %s"
+                                    .formatted(unread.language(), listed(unread.modules())))
+                        .collect(Collectors.joining(" and "))),
         notes);
   }
 
@@ -427,19 +435,23 @@ final class McpText {
                 modules.stream()
                     .map(McpText::moduleLine)
                     .collect(Collectors.joining(System.lineSeparator())),
-                kotlinSourcesLine(notes),
+                unreadSourcesLines(notes),
                 LatheLayout.captureTestsCommand("<module>"));
     return result(text, notes);
   }
 
-  // Every module with Kotlin sources, which Lathe does not analyze: one of only Kotlin sources is
-  // none Lathe compiles, so the list above leaves it out. All named, as the summary's point is
-  // the names.
-  static String kotlinSourcesLine(final LatheNotes notes) {
-    return notes.kotlinModules().isEmpty()
-        ? ""
-        : "%n%nKotlin sources, which Lathe does not analyze, in: %s"
-            .formatted(String.join(", ", notes.kotlinModules()));
+  // Every module with sources Lathe does not analyze, a line per language: one of only Kotlin or
+  // Groovy sources is none Lathe compiles, so the list above leaves it out. All named, as the
+  // summary's point is the names.
+  static String unreadSourcesLines(final LatheNotes notes) {
+    final String lines =
+        notes.unreadSources().stream()
+            .map(
+                unread ->
+                    "%n%s sources, which Lathe does not analyze, in: %s"
+                        .formatted(unread.language(), String.join(", ", unread.modules())))
+            .collect(Collectors.joining());
+    return lines.isEmpty() ? "" : "%n%s".formatted(lines);
   }
 
   static String moduleLine(final LatheModuleSummary module) {
@@ -529,7 +541,8 @@ final class McpText {
                     ch.calls().stream()
                         .map(call -> callLine(arrow, call))
                         .collect(Collectors.joining(System.lineSeparator())));
-    // Its callees are on the classpath, Kotlin ones too; its callers may be in unread Kotlin.
+    // Its callees are on the classpath, Kotlin and Groovy ones too; its callers may be in unread
+    // sources.
     return ch.incoming() ? usesResult(text, notes) : result(text, notes);
   }
 

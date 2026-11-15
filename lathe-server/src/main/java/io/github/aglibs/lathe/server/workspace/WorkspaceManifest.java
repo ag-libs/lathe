@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -26,11 +27,7 @@ import java.util.stream.Stream;
 public final class WorkspaceManifest {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
-  // Maven's and Gradle's Kotlin plugins look for a module's Kotlin sources in src/<source
-  // set>/kotlin
-  // by default.
   private static final String SOURCES_DIR = "src";
-  private static final String KOTLIN_DIR = "kotlin";
 
   private final LibrarySources libraries;
   private final List<Path> typeIndexShardPaths;
@@ -46,9 +43,9 @@ public final class WorkspaceManifest {
   private final String loadProblem;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
-  // The built modules with Kotlin sources, mixed ones too, which Lathe does not read: an answer
+  // The built modules with sources of each language Lathe does not read, mixed ones too: an answer
   // about a symbol's uses cannot vouch for theirs, and the summary names them.
-  private final List<Path> kotlinModuleDirs;
+  private final Map<UnreadLanguage, List<Path>> unreadModuleDirs;
   // Why go-to-definition into the JDK finds no source, when the build found no JDK sources; null
   // when they are there.
   private final String jdkSourcesNote;
@@ -75,8 +72,15 @@ public final class WorkspaceManifest {
     this.loadProblem = loadProblem;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
-    this.kotlinModuleDirs =
-        builtModuleDirs.stream().filter(WorkspaceManifest::hasKotlinSources).toList();
+    this.unreadModuleDirs =
+        Arrays.stream(UnreadLanguage.values())
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    language -> language,
+                    language ->
+                        builtModuleDirs.stream()
+                            .filter(dir -> hasSources(dir, language))
+                            .toList()));
     this.jdkSourcesNote = jdkSourcesNote;
   }
 
@@ -193,14 +197,14 @@ public final class WorkspaceManifest {
         .max(Comparator.comparingInt(Path::getNameCount));
   }
 
-  public List<Path> kotlinModuleDirs() {
-    return kotlinModuleDirs;
+  public List<Path> unreadModuleDirs(final UnreadLanguage language) {
+    return unreadModuleDirs.get(language);
   }
 
-  private static boolean hasKotlinSources(final Path moduleDir) {
+  private static boolean hasSources(final Path moduleDir, final UnreadLanguage language) {
     return IOUtil.unchecked(() -> ServerFiles.childDirectories(moduleDir.resolve(SOURCES_DIR)))
         .stream()
-        .anyMatch(sourceSet -> Files.isDirectory(sourceSet.resolve(KOTLIN_DIR)));
+        .anyMatch(sourceSet -> Files.isDirectory(sourceSet.resolve(language.sourceDir())));
   }
 
   public Optional<String> jdkSourcesNote() {

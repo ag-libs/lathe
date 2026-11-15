@@ -133,8 +133,8 @@ final class LatheMcpTools {
                 modules, and returns each use as one `path:line:column: code` line. It finds uses a plain grep \
                 misses or misattributes — a symbol reached through a variable, or one of several \
                 overloads that share a name — and excludes unrelated symbols that merely share the \
-                name, so you need not re-check Java sources with grep (Lathe reads no Kotlin; the \
-                answer names the modules with Kotlin sources). Use before changing or removing a symbol, \
+                name, so you need not re-check Java sources with grep (Lathe reads no Kotlin or \
+                Groovy; the answer names the modules with such sources). Use before changing or removing a symbol, \
                 especially a method \
                 with overrides/implementations or a common/overloaded name; for a rare, distinctive \
                 name a plain grep is fine. A field's or variable's uses are tagged [read] or \
@@ -362,8 +362,8 @@ final class LatheMcpTools {
             """
                 The reactor at a glance: every module, the reactor modules it depends on, \
                 and whether its test launch is captured (which run_test needs), plus the sync \
-                command that builds them, and the modules with Kotlin sources, which Lathe does \
-                not analyze. Call it first in an unfamiliar project, instead of reading the build \
+                command that builds them, and the modules with Kotlin or Groovy sources, which \
+                Lathe does not analyze. Call it first in an unfamiliar project, instead of reading the build \
                 files.\
                 """,
             LatheMcpTools::handleWorkspaceSummary));
@@ -569,7 +569,7 @@ final class LatheMcpTools {
       return McpText.error(notAJavaSource(notJava.get()));
     }
 
-    // Only which named files went unchecked, and the Kotlin modules: verify_change reports its own
+    // Only which named files went unchecked, and the unread sources: verify_change reports its own
     // failures and deferral.
     return guarded(
         tool,

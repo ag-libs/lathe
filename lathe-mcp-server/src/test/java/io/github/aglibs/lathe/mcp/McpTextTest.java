@@ -28,6 +28,7 @@ import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.LatheTestFailure;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
+import io.github.aglibs.lathe.server.engine.UnreadSources;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -102,22 +103,26 @@ class McpTextTest {
     assertThat(text).doesNotContain("Kotlin");
   }
 
-  // A module of only Kotlin sources is none Lathe compiles: the summary names it apart, and every
-  // one, past the ten a long list of dependents is cut to.
+  // A module of only Kotlin or Groovy sources is none Lathe compiles: the summary names it apart,
+  // under its language, and every one, past the ten a long list of dependents is cut to.
   @Test
-  void modulesResult_workspaceWithKotlin_namesEveryKotlinModule() {
+  void modulesResult_workspaceWithKotlinAndGroovy_namesEveryModuleByLanguage() {
     final List<String> kotlin = IntStream.rangeClosed(1, 11).mapToObj("kt%02d"::formatted).toList();
     final String text =
         text(
             McpText.modulesResult(
                 List.of(new LatheModuleSummary("app", List.of(), false, false)),
-                new LatheNotes(List.of(), List.of(), List.of(), false, kotlin)));
+                withUnread(
+                    new UnreadSources("Kotlin", kotlin),
+                    new UnreadSources("Groovy", List.of("specs")))));
 
     assertThat(text.lines())
-        .contains(
+        .containsSubsequence(
             "app  tests: none",
+            "",
             "Kotlin sources, which Lathe does not analyze, in: %s"
-                .formatted(String.join(", ", kotlin)));
+                .formatted(String.join(", ", kotlin)),
+            "Groovy sources, which Lathe does not analyze, in: specs");
   }
 
   @Test
@@ -304,7 +309,7 @@ class McpTextTest {
                     List.of("build files changed — run `.lathe/lathe-sync.sh`"),
                     List.of("x/X.java is outside the modules the last build compiled"),
                     true,
-                    List.of("app-kotlin"))))
+                    List.of(new UnreadSources("Kotlin", List.of("app-kotlin"))))))
         .containsExactly(
             "Not compiled: a/A.java:3: cannot find symbol; b/B.java:1: ';' expected — fix the code; cross-module answers use their last good classes.",
             "Sync required: build files changed — run `.lathe/lathe-sync.sh`",
@@ -409,18 +414,21 @@ class McpTextTest {
         .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412:9 [EXTERNAL]: void connect() {");
   }
 
-  // Lathe reads no Kotlin: where there is some, an answer about uses no longer says grep is
-  // needless and names the modules to check: an empty one, verify_change's, deferred too, and the
-  // callers in a call hierarchy, though not its callees.
+  // Lathe reads no Kotlin or Groovy: where there is some, an answer about uses no longer says grep
+  // is needless and names each language's modules to check: an empty one, verify_change's, deferred
+  // too, and the callers in a call hierarchy, though not its callees.
   @Test
-  void referencesResult_workspaceWithKotlin_namesItsModulesInsteadOfTheGrepAdvice() {
+  void referencesResult_workspaceWithKotlinOrGroovy_namesItsModulesInsteadOfTheGrepAdvice() {
     final var use =
         new LatheLocation(
             "file:///w/app/App.java", "app/App.java", 3, 4, LatheLocation.Origin.REACTOR, "run();");
-    final var withKotlin =
-        new LatheNotes(List.of(), List.of(), List.of(), false, List.of("app-kotlin"));
+    final var withKotlin = withUnread(new UnreadSources("Kotlin", List.of("app-kotlin")));
     final String kotlinLine =
         "Kotlin sources in app-kotlin are not searched; check them with grep.";
+    final var withGroovyToo =
+        withUnread(
+            new UnreadSources("Kotlin", List.of("app-kotlin")),
+            new UnreadSources("Groovy", List.of("specs", "app-kotlin")));
 
     assertThat(
             text(
@@ -433,6 +441,11 @@ class McpTextTest {
         .doesNotContain("no need to re-verify");
     assertThat(text(McpText.referencesResult(new LatheReferences(0, false, List.of()), withKotlin)))
         .isEqualTo("No references found.%n%n%s".formatted(kotlinLine));
+    assertThat(
+            text(McpText.referencesResult(new LatheReferences(1, false, uses(use)), withGroovyToo)))
+        .endsWith(
+            "Kotlin sources in app-kotlin and Groovy sources in specs, app-kotlin are not searched; check them with grep.")
+        .doesNotContain("no need to re-verify");
     assertThat(
             text(
                 McpText.verifyChangeResult(
@@ -858,5 +871,9 @@ class McpTextTest {
       final DiagnosticSeverity severity,
       final String source) {
     return LatheDiagnostic.of("Shop.java", new Diagnostic(range, message, severity, source));
+  }
+
+  private static LatheNotes withUnread(final UnreadSources... unread) {
+    return new LatheNotes(List.of(), List.of(), List.of(), false, List.of(unread));
   }
 }

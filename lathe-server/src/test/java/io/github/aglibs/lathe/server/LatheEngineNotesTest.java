@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.UnreadSources;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -20,10 +21,11 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
   private static final String BUILD_FILES_NOTE =
       "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 
-  // A module with Kotlin sources, which Lathe does not read, is named by its workspace path for an
-  // answer about uses; the first test shows a workspace without any names none.
+  // A module with Kotlin or Groovy sources, which Lathe does not read, is named by its workspace
+  // path under each language for an answer about uses, Kotlin first; the next test shows a
+  // workspace without any names none.
   @Test
-  void notes_moduleWithKotlinSources_namesIt() throws Exception {
+  void notes_moduleWithKotlinAndGroovySources_namesItUnderEach() throws Exception {
     final Path source =
         TestCompiler.writeMirroredModule(
                 tmp,
@@ -33,9 +35,13 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
                 1_000L)
             .get(0);
     Files.createDirectories(tmp.resolve("module/src/test/kotlin"));
+    Files.createDirectories(tmp.resolve("module/src/test/groovy"));
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.notes(List.of(source)).kotlinModules()).containsExactly("module");
+    assertThat(engine.notes(List.of(source)).unreadSources())
+        .containsExactly(
+            new UnreadSources("Kotlin", List.of("module")),
+            new UnreadSources("Groovy", List.of("module")));
   }
 
   @Test

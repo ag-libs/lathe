@@ -1483,6 +1483,35 @@ None yet.
 
 ---
 
+## WS-37 — Java that Groovy compiles jointly, under `src/<source set>/groovy`, is in no module
+
+**Status: documented**
+
+**Value: low — Size: L**
+
+**Affects: Gradle and GMavenPlus builds whose Groovy source sets hold Java files.**
+
+Found by the exploratory round on micronaut-core (2026-11-15).
+
+### Observed behaviour
+
+Gradle's Groovy plugin compiles the Java files under `src/<source set>/groovy` together with the Groovy ones, with groovyc, not javac.
+Lathe captures javac's compiles only, so those Java files belong to no module:
+opened in the editor they get "not under any Lathe module", and no search, rename or check reads them.
+Answers about a symbol's uses name the module, as one with Groovy sources Lathe does not search,
+so an agent knows to check it with grep.
+
+### Fix direction
+
+Capture the Groovy compile's Java sources as a tree of their own, compiled by javac against the Groovy classes from the build;
+the Groovy sources themselves stay unread.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
