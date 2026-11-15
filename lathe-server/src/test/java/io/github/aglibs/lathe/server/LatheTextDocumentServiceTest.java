@@ -69,6 +69,8 @@ import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SemanticTokens;
+import org.eclipse.lsp4j.SemanticTokensParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
@@ -316,6 +318,48 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThatThrownBy(() -> diagnostics.get(TIMEOUT_S, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasRootCauseInstanceOf(IllegalArgumentException.class);
+  }
+
+  // What an editor asks of every opened file: its semantic tokens and its folds, routed to the
+  // file's module.
+  @Test
+  void semanticTokensAndFoldingRange_openFile_answeredFromItsModule() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path source = sourceRoot.resolve("com/example/Widget.java");
+    Files.createDirectories(source.getParent());
+    final var content =
+        """
+        package com.example;
+
+        import java.util.List;
+        import java.util.Map;
+
+        class Widget {
+          List<String> names() {
+            return List.of();
+          }
+        }
+        """;
+    Files.writeString(source, content);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    host.initialize(tmp);
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
+    final var document = documentOf(source);
+
+    final SemanticTokens tokens =
+        service
+            .semanticTokensFull(new SemanticTokensParams(document))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+    final var folding = new FoldingRangeRequestParams();
+    folding.setTextDocument(document);
+    final List<FoldingRange> ranges =
+        service.foldingRange(folding).get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    // Five numbers per token: Widget, names, List and String at least.
+    assertThat(tokens.getData()).hasSizeGreaterThanOrEqualTo(4 * 5);
+    assertThat(ranges).extracting(FoldingRange::getKind).contains("imports");
   }
 
   // VS Code writes '@' as %40, Path.toUri leaves it alone: both spellings must reach one document.
