@@ -2325,32 +2325,6 @@ None yet.
 
 ---
 
-## MC-77 — `workspace_summary` gives no test status for some modules
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP `workspace_summary`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-Some modules show no test status at all, while others say `tests: not captured`.
-
-### Fix direction
-
-Show a status for every module: captured, not captured (with the command), or no tests.
-
-Also (exploratory round, 2026-11-04): no test status for Dropwizard's docs/source/examples `conscrypt`, `getting-started` and `views`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-85 — `verify_change` says nothing about uses in modules the sync leaves out
 
 **Status: documented**

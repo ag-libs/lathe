@@ -106,7 +106,7 @@ Answers are text only, with any notes after the result, so every MCP client show
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
-| `workspace_summary` | — | every module, the project's modules it depends on (all on its classpath, transitive ones included with Maven), and whether its test launch is captured, plus the sync command; call it first in an unfamiliar project |
+| `workspace_summary` | — | every module, the project's modules it depends on (all on its classpath, transitive ones included with Maven), and whether its test launch is captured (or that it has no tests), plus the sync command; call it first in an unfamiliar project |
 | `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build; says so when no module compiles the file |
 | `get_definition` | `file, line, symbol or column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, symbol or column`, optional `access` (`read`, `write`) | every real use of a symbol across the project — resolves overloads/inheritance, unlike `grep`; a field's or variable's uses are tagged `[read]` or `[write]`, and `access` keeps one kind |

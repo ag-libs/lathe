@@ -447,11 +447,10 @@ final class McpText {
         module.dependsOn().isEmpty()
             ? ""
             : "  depends on: %s".formatted(listed(module.dependsOn()));
+    // Every module says, so a missing status never reads as an unknown one.
     final String tests =
-        !module.hasTests()
-            ? ""
-            : "  tests: %s".formatted(module.testsCaptured() ? "captured" : "not captured");
-    return "%s%s%s".formatted(module.module(), upstream, tests);
+        module.hasTests() ? (module.testsCaptured() ? "captured" : "not captured") : "none";
+    return "%s%s  tests: %s".formatted(module.module(), upstream, tests);
   }
 
   static CallToolResult importsResult(final LatheImports imports, final LatheNotes notes) {
