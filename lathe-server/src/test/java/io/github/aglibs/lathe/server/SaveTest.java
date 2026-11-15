@@ -12,11 +12,9 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import java.io.Closeable;
-import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,7 +36,7 @@ class SaveTest extends ServiceTestBase {
   @Test
   void didSave_processorReportsOnTheWrite_mergedIntoThePublishUntilTheBufferChanges()
       throws Exception {
-    final Path processors = compileNoteProcessor();
+    final Path processors = TestCompiler.noteProcessor(tmp);
     final Path note = saveWithProcessor(List.of(), List.of(processors));
 
     // Edited, the buffer no longer holds what was written, so the write's warning no longer
@@ -57,7 +55,7 @@ class SaveTest extends ServiceTestBase {
   // write reported came from the old build, and the buffer still holds the written content.
   @Test
   void didSave_syncReloadsWithAnotherBuild_writeReportGoneFromThePublish() throws Exception {
-    final Path processors = compileNoteProcessor();
+    final Path processors = TestCompiler.noteProcessor(tmp);
     final Path note = saveWithProcessor(List.of(), List.of(processors));
     clearInvocations(client);
 
@@ -82,40 +80,9 @@ class SaveTest extends ServiceTestBase {
   // Without a processor path javac finds processors on the classpath, as Maven's build does.
   @Test
   void didSave_processorOnTheClasspathOnly_reportsOnTheWrite() throws Exception {
-    final Path processors = compileNoteProcessor();
+    final Path processors = TestCompiler.noteProcessor(tmp);
 
     saveWithProcessor(List.of(processors), List.of());
-  }
-
-  // A processor warning on every root element. Analysis runs without annotation processors, so
-  // only a write sees it.
-  private Path compileNoteProcessor() throws IOException {
-    final Path processorSource =
-        TestCompiler.writeAt(
-            tmp.resolve("processor-src/proc/NoteProcessor.java"),
-            """
-            package proc;
-            import java.util.Set;
-            import javax.annotation.processing.*;
-            import javax.lang.model.SourceVersion;
-            import javax.lang.model.element.TypeElement;
-            import javax.tools.Diagnostic;
-            @SupportedAnnotationTypes("*")
-            public class NoteProcessor extends AbstractProcessor {
-              @Override public SourceVersion getSupportedSourceVersion() {
-                return SourceVersion.latestSupported();
-              }
-              @Override public boolean process(Set<? extends TypeElement> types, RoundEnvironment round) {
-                round.getRootElements().forEach(element -> processingEnv.getMessager()
-                    .printMessage(Diagnostic.Kind.WARNING, "noted by processor", element));
-                return false;
-              }
-            }
-            """,
-            1_000L);
-    final Path processors = tmp.resolve("processors");
-    TestJavac.compileToDir(processors, processorSource);
-    return processors;
   }
 
   // Opens and saves a module source whose build runs NoteProcessor from the given paths, and waits
