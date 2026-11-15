@@ -12843,6 +12843,36 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-72 — MCP recompiles an unchanged file on every tool call; parallel calls compile it N times — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: MCP tools, on large files and with agents that call tools in parallel.**
+
+Found watching an MCP session log on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Every tool call reads the file from disk and passes it to the analysis as a new document
+(`LatheEngine.fileWork`, formerly `compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
+Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
+three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
+more on very large files.
+
+### Resolution
+
+The session keeps the engine's last compile of each file and answers from it while the file is the same document snapshot with the same content and no write pass has changed what its module compiles against.
+Parallel calls share a compile still running.
+A per-module generation, bumped as a write pass records a module to refresh (its own writes, another server's seen through the stamps, a build's), before a refresh it may hand to the next pass, tells a compile out of date; a reload or a change on disk replaces the snapshot.
+
+### Regression targets
+
+`LatheTextDocumentServiceTest.diagnosticsFuture_unchangedFile_compiledOnceUntilItOrWhatItUsesChanges`
+
+---
+
 ## MC-67 — `analyze_change` reports no override family for a method that overrides one — done
 
 **Status: done.**

@@ -165,6 +165,9 @@ modules that changed.
 - **Validity:** a per-module generation counter, bumped on a change to any of the module's sources (an editor
   change, a save, a change on disk the candidate index notices), on a rebuild of a module it depends on, and on a
   workspace reload. An entry from an older generation is ignored and replaced.
+  The session already keeps such a generation for the MCP tools' compile of the file they are about (MC-72):
+  it is bumped for every module a write pass refreshes, which covers a rebuild of the module or one it depends on,
+  whoever wrote it. (c) adds the editor-change and reload bumps.
 - **Memory:** entries held through `SoftReference`, which the JVM clears only when memory runs short (a
   `WeakReference` would be cleared at the next collection, seconds away), plus a bound on entries per module.
   The answers themselves are small: a few hundred locations per query.
@@ -210,7 +213,8 @@ query from memory; a first query needs the exposure graph above.
 ## Open questions
 
 - Which invalidation events (c) needs beyond those listed, e.g. an annotation processor's generated sources
-  changing without a source edit, or `.lathe/` rewritten by another server.
+  changing without a source edit. A `.lathe/` rewritten by another server needs none of its own: the write pass
+  sees it in the compile stamps and refreshes the modules it affects.
 
 - Batch size for implementations and incoming calls: the same 8 as references, or measured.
 - Whether (b) should apply to every instance method or only above a candidate-count threshold.

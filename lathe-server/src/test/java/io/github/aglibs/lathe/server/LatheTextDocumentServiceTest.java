@@ -48,6 +48,7 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.DefinitionParams;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -318,6 +319,49 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThatThrownBy(() -> diagnostics.get(TIMEOUT_S, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasRootCauseInstanceOf(IllegalArgumentException.class);
+  }
+
+  // The engine asks for a file's diagnostics before each tool: an unchanged file is compiled once,
+  // calls at once share that compile, and a write to what it compiles against, or a change to the
+  // file itself, compiles it again.
+  @Test
+  void diagnosticsFuture_unchangedFile_compiledOnceUntilItOrWhatItUsesChanges() throws Exception {
+    final DepFixture fx = depWithUsers(1);
+    final Path user = fx.users().get(0);
+    final String uri = user.toUri().toString();
+    final String content = Files.readString(user);
+    host.setDocumentsFollowDisk(true);
+    host.initialize(tmp);
+    awaitStartup();
+
+    try (final var compiles = new CompileLog(tmp)) {
+      final var first = engineDiagnostics(uri, content);
+      final var second = engineDiagnostics(uri, content);
+      assertThat(first.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+      assertThat(second.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+      assertThat(engineDiagnostics(uri, content).get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+      assertThat(analyses(compiles)).as("three calls on an unchanged file, one compile").hasSize(1);
+    }
+
+    TestCompiler.writeAt(
+        fx.dep(),
+        "package com.example;\npublic class Dep { public int w() { return 1; } }\n",
+        5_000L);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(engineDiagnostics(uri, content).get(TIMEOUT_S, TimeUnit.SECONDS))
+        .as("Dep lost v(), which User0 calls")
+        .isNotEmpty();
+
+    TestCompiler.writeAt(
+        user, "package com.example;\nclass User0 { int u() { return new Dep().w(); } }\n", 6_000L);
+    final String fixed = Files.readString(user);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(engineDiagnostics(uri, fixed).get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+  }
+
+  private CompletableFuture<List<Diagnostic>> engineDiagnostics(
+      final String uri, final String content) {
+    return host.onLoopFuture(session -> session.diagnosticsFuture(uri, content, 1));
   }
 
   // What an editor asks of every opened file: its semantic tokens and its folds, routed to the

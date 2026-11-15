@@ -2309,36 +2309,6 @@ None yet.
 
 ---
 
-## MC-72 — MCP recompiles an unchanged file on every tool call; parallel calls compile it N times
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: MCP tools, on large files and with agents that call tools in parallel.**
-
-Found watching an MCP session log on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-Every tool call reads the file from disk and passes it to the analysis as a new document
-(`LatheEngine.fileWork`, formerly `compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
-Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
-three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
-more on very large files.
-
-### Fix direction
-
-Reuse the last analysis when the file's content equals what was last compiled for it and nothing it depends
-on changed since (the compile stamps and the stale scan know); otherwise compile as today.
-Coalesce concurrent requests for one file onto one compile.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-74 — `search_symbols` lists types the project cannot use, though its description says it excludes them
 
 **Status: documented**
