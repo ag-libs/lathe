@@ -643,12 +643,12 @@ final class McpText {
         .count();
   }
 
-  // A changed file the build's own compile fails left its callers checked against its previous
-  // classes, so a caller that compiled may not with the change.
+  // A changed file the build's own compile fails has its last good classes in .lathe/: its callers
+  // were checked against its edited source instead, which the answer says.
   static String failedWritesNote(final LatheVerifyChange verify) {
     return verify.failedWrites().isEmpty()
         ? ""
-        : "%n%nThe build's compile fails %s; callers were checked against the classes of the last good compile."
+        : "%n%nThe build's compile fails %s; its callers were checked against its edited source."
             .formatted(String.join(", ", verify.failedWrites()));
   }
 

@@ -127,9 +127,16 @@ public interface JavaSourceCompiler extends AutoCloseable {
   }
 
   // analyzeOpenBatch for a check whose results nobody keeps: like compileDetached, the files' own
-  // compiles are left undisturbed.
+  // compiles are left undisturbed. context: sources analyzed with them for what they declare, with
+  // no result of their own, which the default, compiling each file alone, cannot honour.
   default List<CompilerResult> analyzeOpenBatchDetached(
-      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+      final List<TransientSource> sources,
+      final List<TransientSource> context,
+      final CancelChecker cancelChecker) {
+    if (!context.isEmpty()) {
+      throw new UnsupportedOperationException("context sources need a compiler of a module's tree");
+    }
+
     return sources.stream().map(source -> compileDetached(source.uri(), source.content())).toList();
   }
 

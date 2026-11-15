@@ -209,19 +209,39 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   @Override
   public List<CompilerResult> analyzeOpenBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    final var options = buildOptions(CompileMode.OPEN);
-    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
-    final JavacRunner.BatchAnalysis batch =
-        runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, true, cancelChecker);
-    return sources.stream().map(source -> resultFor(batch, uriByTempFile, source.uri())).toList();
+    return openBatch(sources, List.of(), cancelChecker, true);
   }
 
+  // Context sources are analyzed with the others for what they declare, and answer nothing; one of
+  // another module is placed as analyzeDetached places it.
   @Override
   public List<CompilerResult> analyzeOpenBatchDetached(
-      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+      final List<TransientSource> sources,
+      final List<TransientSource> context,
+      final CancelChecker cancelChecker) {
     return keepingTempText(
-        sources.stream().map(source -> tempFileOf(source.uri())).toList(),
-        () -> analyzeOpenBatch(sources, cancelChecker));
+        Stream.concat(
+                sources.stream().map(source -> tempFileOf(source.uri())),
+                context.stream().map(source -> detachedTempFileOf(source.uri())))
+            .toList(),
+        () -> openBatch(sources, context, cancelChecker, false));
+  }
+
+  // The sources are this tree's own, and a misrouted one fails; withTokens: only an analysis that
+  // is kept serves semantic tokens.
+  private List<CompilerResult> openBatch(
+      final List<TransientSource> sources,
+      final List<TransientSource> context,
+      final CancelChecker cancelChecker,
+      final boolean withTokens) {
+    final var options = buildOptions(CompileMode.OPEN);
+    final Map<Path, String> uriByTempFile =
+        new LinkedHashMap<>(writeTempSources(sources, cancelChecker));
+    uriByTempFile.putAll(writeTempSources(context, cancelChecker, this::detachedTempFileOf));
+    final JavacRunner.BatchAnalysis batch =
+        runner.analyzeBatchDiagnosed(
+            javaFilesOf(uriByTempFile), options, withTokens, cancelChecker);
+    return sources.stream().map(source -> resultFor(batch, uriByTempFile, source.uri())).toList();
   }
 
   private static CompilerResult resultFor(

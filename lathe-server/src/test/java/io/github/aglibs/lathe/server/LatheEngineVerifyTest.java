@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
+import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import java.nio.file.Files;
@@ -490,6 +491,78 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(verify.failedWrites()).containsExactly(path);
     assertThat(engine.diagnostics(callee).notes().notCompiled())
         .contains("%s:2: noted by processor (-Werror)".formatted(tmp.relativize(callee)));
+  }
+
+  // The classes of a change the build's compile fails stay those of its last good compile: its
+  // callers are checked against its edited source, so one the change breaks is reported now, not
+  // only once the warning is fixed.
+  @Test
+  void verifyChange_changeFailsTheBuildsCompileAndBreaksACaller_reportsTheCaller()
+      throws Exception {
+    final Path callee = moduleBuiltWithTheNoteProcessor(List.of("-Werror"));
+    final Path caller = callee.resolveSibling("Caller.java");
+    engine = new LatheEngine(tmp);
+
+    writeNewer(callee, "package com.example;\nclass Callee {\n  void wave() {}\n}\n");
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    final String callerPath = FileUtil.slashed(tmp.relativize(caller));
+    assertThat(verify.failedWrites()).containsExactly(FileUtil.slashed(tmp.relativize(callee)));
+    assertThat(verify.perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .anyMatch(
+                        d ->
+                            d.path().equals(callerPath)
+                                && d.severity() == LatheDiagnostic.Severity.ERROR
+                                && d.message().contains("greet")));
+  }
+
+  // A second changed file the failing change breaks is checked with its edited source too, not
+  // against its stale classes.
+  @Test
+  void verifyChange_anotherChangedFileBrokenByAFailingChange_reportsIt() throws Exception {
+    final Path callee = moduleBuiltWithTheNoteProcessor(List.of("-Werror"));
+    final Path caller = callee.resolveSibling("Caller.java");
+    engine = new LatheEngine(tmp);
+
+    writeNewer(callee, "package com.example;\nclass Callee {\n  void wave() {}\n}\n");
+    writeNewer(
+        caller,
+        "package com.example;\nclass Caller {\n  // edited\n  void run(Callee c) { c.greet(); }\n}\n");
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    final String callerPath = FileUtil.slashed(tmp.relativize(caller));
+    assertThat(verify.perModule())
+        .flatMap(LatheModuleDiagnostics::diagnostics)
+        .anyMatch(d -> d.path().equals(callerPath) && d.message().contains("greet"));
+  }
+
+  // The failing change's source goes only where it resolves: in a module that cannot see it, it
+  // would fail and make javac skip the flow analysis behind "unreported exception".
+  @Test
+  void verifyChange_failingChangeBesideAnUnrelatedModule_keepsThatModulesFlowErrors()
+      throws Exception {
+    final Path callee = moduleBuiltWithTheNoteProcessor(List.of("-Werror"));
+    final var other = new LinkedHashMap<String, String>();
+    other.put("com/other/Y.java", "package com.other;\nclass Y {\n  static void run() {}\n}\n");
+    other.put("com/other/Z.java", "package com.other;\nclass Z {\n  void z() { Y.run(); }\n}\n");
+    final Path y = TestCompiler.writeMirroredModule(tmp, "other", other, List.of(), 1_000L).get(0);
+    final Path z = y.resolveSibling("Z.java");
+    engine = new LatheEngine(tmp);
+
+    writeNewer(
+        callee, "package com.example;\nclass Callee {\n  void greet() { new Caller(); }\n}\n");
+    writeNewer(
+        y, "package com.other;\nclass Y {\n  static void run() throws java.io.IOException {}\n}\n");
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    final String zPath = FileUtil.slashed(tmp.relativize(z));
+    assertThat(verify.perModule())
+        .flatMap(LatheModuleDiagnostics::diagnostics)
+        .anyMatch(d -> d.path().equals(zPath) && d.message().contains("unreported exception"));
   }
 
   @Test

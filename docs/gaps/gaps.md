@@ -2661,31 +2661,3 @@ Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-wo
 ### Regression targets
 
 None yet.
-
----
-
-## MC-89 — `verify_change` checks the callers of a change the build's compile fails against its old classes
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: MCP `verify_change`.**
-
-Found by the review of the MC-82 fix (2026-11-15).
-
-### Observed behaviour
-
-When a changed file's write fails, its classes in `.lathe/` stay the ones of its last good compile, and its callers are checked against those.
-A change that both removes a method its callers use and adds a warning `-Werror` fails reports the warning but no caller:
-`Caller` still compiles against the old `Callee.class`.
-The answer says the callers were checked against the last good compile, so it does not read as clean,
-but the broken callers appear only on the next check, after the warning is fixed.
-
-### Fix direction
-
-Check the callers of a changed file whose write failed against its edited source, analyzed with them, instead of its old classes.
-
-### Regression targets
-
-None yet.

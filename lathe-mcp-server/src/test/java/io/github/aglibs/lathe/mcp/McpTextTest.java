@@ -352,7 +352,7 @@ class McpTextTest {
             McpText.failedWritesNote(
                 new LatheVerifyChange(null, List.of(), List.of(), null, List.of("app/A.java"))))
         .isEqualTo(
-            "%n%nThe build's compile fails app/A.java; callers were checked against the classes of the last good compile."
+            "%n%nThe build's compile fails app/A.java; its callers were checked against its edited source."
                 .formatted());
     assertThat(
             McpText.failedWritesNote(

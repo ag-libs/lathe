@@ -14,8 +14,8 @@ import java.util.List;
  * downstream modules a cross-module change may break, and {@code suggestedSync} is the sync that
  * builds and verifies them (or null when nothing is downstream). {@code perModule} covers the
  * changed files and their callers in their own and in dependent modules. {@code failedWrites} names
- * the changed files the build's own compile fails: their callers were checked against the classes
- * of their last good compile.
+ * the changed files the build's own compile fails: their classes are those of their last good
+ * compile, so their callers were checked against their edited source.
  */
 public record LatheVerifyChange(
     ReconcileOutcome.DeferReason deferral,

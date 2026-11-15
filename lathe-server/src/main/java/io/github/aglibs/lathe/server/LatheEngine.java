@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.TextMentions;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -942,10 +943,19 @@ public final class LatheEngine {
     final Set<Path> changedSet = Set.copyOf(plan.changed());
     final Set<String> changedUris =
         changedSet.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
+    // The classes of a changed file the build's compile fails are those of its last good compile:
+    // its callers are analyzed with its edited source instead, so they see what it declares now.
+    final List<TransientSource> failedSources =
+        plan.failedWrites().keySet().stream()
+            .map(LatheUri::fromPath)
+            .filter(contents::containsKey)
+            .map(uri -> new TransientSource(uri, contents.get(uri)))
+            .toList();
     final Map<String, List<Diagnostic>> analyses =
         withFailedWrites(
             request(
-                (session, cancel, progress) -> checkAll(session, contents, changedUris, cancel)),
+                (session, cancel, progress) ->
+                    checkAll(session, contents, changedUris, failedSources, cancel)),
             plan.failedWrites());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
@@ -993,6 +1003,7 @@ public final class LatheEngine {
       final WorkspaceSession session,
       final Map<String, String> contents,
       final Set<String> changed,
+      final List<TransientSource> context,
       final CancelChecker cancel) {
     final Map<Boolean, Map<String, String>> byChanged =
         contents.entrySet().stream()
@@ -1001,20 +1012,35 @@ public final class LatheEngine {
                     file -> changed.contains(file.getKey()),
                     Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
     return FeatureAnswers.concatAll(
-            byChanged.get(true).entrySet().stream().map(file -> checkedAlone(session, file)))
+            byChanged.get(true).entrySet().stream()
+                .map(file -> checkedAlone(session, file, context, cancel)))
         .thenCombine(
-            session.features().diagnosticsTransientFuture(byChanged.get(false), cancel),
+            session.features().diagnosticsTransientFuture(byChanged.get(false), context, cancel),
             (alone, batched) ->
                 Stream.concat(alone.stream(), batched.entrySet().stream())
                     .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
+  // A changed file another changed file's failing write leaves stale classes for is checked with
+  // that file's edited source; the failing file itself, and any other file, alone.
   private static CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>> checkedAlone(
-      final WorkspaceSession session, final Map.Entry<String, String> file) {
+      final WorkspaceSession session,
+      final Map.Entry<String, String> file,
+      final List<TransientSource> context,
+      final CancelChecker cancel) {
+    final List<TransientSource> others =
+        context.stream().filter(source -> !source.uri().equals(file.getKey())).toList();
+    if (others.isEmpty()) {
+      return session
+          .features()
+          .diagnosticsTransientFuture(file.getKey(), file.getValue())
+          .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
+    }
+
     return session
         .features()
-        .diagnosticsTransientFuture(file.getKey(), file.getValue())
-        .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
+        .diagnosticsTransientFuture(Map.of(file.getKey(), file.getValue()), others, cancel)
+        .thenApply(checked -> List.copyOf(checked.entrySet()));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
