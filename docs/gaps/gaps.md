@@ -321,7 +321,7 @@ None yet.
 
 ---
 
-## EG-067 — The first build floods the log with warnings, and a disabled Lathe says nothing
+## EG-067 — The first build floods the log with warnings
 
 **Status: documented**
 
@@ -331,33 +331,38 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
 
-The README quick start (`mvn clean test -Dlathe.capture.only=true`) prints 199 `[WARNING]` lines on
-EqualsVerifier, a small reactor:
+The README quick start (`mvn clean test -Dlathe.capture.only=true`) prints 56 `[WARNING]` lines on
+EqualsVerifier, a small reactor (2026-11-15):
 
-- 164 are Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, one per test class, because
+- 21 are Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, one per test class, because
   capture-only excludes every test and Surefire reports skipped classes as warnings.
-- 9 are blocks of `The following dependencies could not be resolved at this point of the build but seem to
+  They come from the Kotlin, `-21`/`-25`/`-26`, mockito and signedjar modules;
+  `equalsverifier-core` and `equalsverifier-test` report `Tests run: 0, Skipped: 0` and no warning.
+- 27 lines, 9 blocks of `The following dependencies could not be resolved at this point of the build but seem to
   be part of the reactor`, printed before `lathe:sync` on the parent.
   `lathe:sync` is an aggregator with `requiresDependencyResolution = TEST`, bound to the parent's
   `process-test-classes`, which runs before any child module is built.
   The sync itself is complete.
+- 3 are maven-compiler's `I/O error reading dependency state` after `clean`, not Lathe's.
 
 A first-time user sees a wall of warnings from a command the README told them to run; a Helidon-size
 reactor prints thousands.
-
-The other way round, `CI=true` or `-Dlathe.disabled=true` switches Lathe off with no line at the default
-log level, so a developer whose environment sets `CI` gets no hint why `.lathe/` stops updating.
 
 ### Fix direction
 
 Find a capture-only filter that Surefire does not count as skipped, or say in the README and test-capture
 guide that the warnings are expected.
 Resolve the sync's dependencies without the reactor warnings, or bind the sync to a later project.
-Log one `INFO` line when Lathe is disabled, naming the switch.
+
+### Delivered
+
+The other half of this entry, a disabled Lathe saying nothing: with `CI` set or `lathe.disabled=true`, the Maven extension
+and the Gradle settings plugin now say once that Lathe is off and which switch did it (`LatheFlags.disabledNotice`).
 
 ### Regression targets
 
-None yet.
+- `LatheFlagsTest.disabledNotice_explicitSwitchOrCi_namesIt_noneWhenOn`
+- `LatheSettingsPluginFunctionalTest.apply_switches_commandLineWinsThenDotLatheThenCiAndGradleProperties`
 
 ---
 
@@ -1138,7 +1143,8 @@ With a Maven sync running, an agent's `rename_symbol` succeeded on disk (31 edit
 Renaming back then changed only the declaration, leaving 30 uses of the dropped name and 29 errors.
 2 of 16 rounds with a sync running, none without.
 Likely cause: the sync stamps a source from the file on disk when it mirrors, after javac compiled an older content, so a stale class looks current.
-0.1.24 shares the stamping code.
+The stamping code is unchanged since 0.1.24: `CompileCapture.writeStamps` records the disk file's mtime and fingerprint
+at mirror time (`CompiledStamps.builtOf`), never what javac read.
 
 ### Fix direction
 
@@ -1200,32 +1206,6 @@ root build is left out with a `[lathe] … left out` line.
 ### Fix direction
 
 Capture included builds that hold Java projects as more modules of the same workspace.
-
-### Regression targets
-
-None yet.
-
----
-
-## WS-30 — The JDK type index lists the build's JDK, not the project's
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: completion and type search of JDK types, when a build compiles with a different JDK than it runs on (a toolchain).**
-
-Found while reviewing the JDK cache lock (2026-11-05).
-
-### Observed behaviour
-
-`JdkTypeIndexSync` records the index as the project's JDK (`source.home()`, vendor and version, which also key its cache entry), but `scanJdk` reads the `jrt:/` file system of the JVM the sync runs in: the build's own JDK.
-When the two differ (Maven or Gradle on JDK 25 compiling with a JDK 17 toolchain), the index lists the build JDK's types: completion and type search offer types the project's JDK lacks, and miss any it has that the build JDK does not.
-The cache entry is keyed by the project's JDK, so the first build to index it decides its content for every later build.
-
-### Fix direction
-
-Scan the project's JDK: open its `jrt:/` through `source.home()` (`FileSystems.newFileSystem(URI.create("jrt:/"), Map.of("java.home", ...))`, public API since JDK 9), and keep the build JDK's only when the two are the same.
 
 ### Regression targets
 
@@ -1295,33 +1275,6 @@ values) — is in [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §1
 ### Regression targets
 
 None yet — to be defined when the fix is scheduled.
-
----
-
-## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-With two top-level test classes in one file both declaring `method`, `run_test` with `scope=method` runs only the first class's; its `Ran:` line names that class, and the second goes unmentioned.
-Class scope runs every top-level class (archived [TE-9](gaps-archive.md#te-9--running-a-file-with-two-top-level-test-classes-runs-only-the-first--done)).
-
-The same happens with a `@Nested` class: a method name in both the outer class and a nested one runs only the outer one, and the ambiguity is not reported (agent review on Dropwizard, 2026-11-01).
-
-### Fix direction
-
-Run every match, as the class scope does, or ask which class is meant.
-
-### Regression targets
-
-None yet.
 
 ---
 
@@ -1831,9 +1784,12 @@ Found by the pre-release probes (2026-10-27) on Helidon.
 
 ### Observed behaviour
 
-On a Helidon builder method (`allowAll`), all of the first `maxResults=4` results are `[GENERATED]` builder
-internals, and none is a user call site.
-`rename_symbol` there correctly refuses generated code, but does not name the blueprint method to rename
+On a Helidon builder method (`allowAll`), all of the first `maxResults=4` results were `[GENERATED]` builder
+internals, and none a user call site (2026-10-27).
+From the blueprint declaration (`AllowListConfigBlueprint.java:51`) the first four of 8 references are hand-written
+(`TrustedProxyMatcher`, `AllowList`, the blueprint), because the generated `Builder.allowAll(boolean)` and its callers
+are not among them at all (FR-020's generator link); the ordering still matters once FR-020 adds them (2026-11-15).
+`rename_symbol` on generated code correctly refuses it, but does not name the blueprint method to rename
 instead.
 
 ### Fix direction
@@ -1893,31 +1849,6 @@ Matching the separator of the line an edit lands next to, instead of a whole-fil
 handle files that are already mixed.
 Tests must build CRLF content explicitly (`"…\r\n"`): `fix_imports` and `format_file` on a CRLF file,
 asserting no bare `\n` and no `\r\r`.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-The read tools accept a `.java`-named path outside the workspace, including a symlink to `/etc/passwd`, whose third line was echoed back.
-Writes outside the reactor are refused.
-
-### Fix direction
-
-Resolve the real path and answer only for files under the workspace, its dependency sources and the JDK's.
 
 ### Regression targets
 
@@ -2029,6 +1960,9 @@ Found by an agent's exploration of a private 61-module Maven service (2026-10-30
 
 The source cache held three versions of one internal library, and the agent had to work out which one
 Lathe had resolved for the module it asked about.
+The version is only implied by the cache path a result shows
+(`…/deps/com.fasterxml.jackson.core/jackson-annotations/2.22/com/fasterxml/jackson/annotation/JsonCreator.java:46:19`),
+never named.
 
 ### Fix direction
 
@@ -2145,7 +2079,8 @@ Found by a refactoring review of Lathe itself through its own MCP server (2026-1
 Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
 The largest file is where an outline saves the most reading, and the one where the tool fails.
 Part of the size was the JSON form, gone since answers are text only ([MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)),
-but 428 lines of text would still be about 25k characters.
+but 428 lines of text would still be about 50k characters: the text form is about 120 characters per declaration
+(re-probed 2026-11-15; Helidon's largest test file, 157 declarations, answers 19k characters, uncapped).
 
 ### Fix direction
 
@@ -2383,8 +2318,9 @@ Found by an agent's review of the MCP tools on Helidon (2026-11-01).
 
 ### Observed behaviour
 
-On `Handler.handle` it names 5 affected modules, while the 225 implementations it found span about 15
-(openapi and webclient/http2 among them); changing the method's signature would break all of them.
+On `Handler.handle` it names 5 affected modules, while the 225 implementations it found span 29 (re-probed
+2026-11-15; openapi, webclient/http2 and security/providers/oidc among them); changing the method's signature would
+break all of them.
 
 ### Fix direction
 
@@ -2655,12 +2591,15 @@ Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
 
 ### Observed behaviour
 
-Renaming `Formatter.of` to `ofX` (`Formatter.java:37`) leaves a `{@link}` at line 20 dangling, an Error Prone `InvalidLink`
-warning that `-Werror` fails. `verify_change` reports no errors: the log shows `[compile:batch] failed=1` then
-`[verify] 37 files diags=0`, the callers checked against the old classes, with no "Not compiled" note.
-With the link fixed too, it reports 103 errors. An unused new parameter, and an unused local in a test, give the same.
+Adding `private int unusedProbeField;` to `Formatter.java` is an Error Prone `UnusedVariable` warning that `-Werror`
+fails (re-probed 2026-11-15; the original case, a `{@link}` left dangling by renaming `Formatter.of`, is gone since rename
+rewrites Javadoc references).
+`verify_change` reports "No errors — the changed files and their callers compile": the log shows `[compile:batch] failed=1`
+then `[verify] 37 file(s) in 2 module(s) diags=0`, the callers checked against the old classes, with no "Not compiled" note.
+An unused new parameter gives the same; an unused local in a test does not trip Error Prone there.
 The other tools' note reads only `Formatter.java:1: warnings found and -Werror specified`: line 1, the warning itself
-hidden; `run_test` refuses with the same text.
+hidden (the open compile shows a javac `Hint` on the field, never the `[UnusedVariable]` diagnostic); `run_test` refuses
+with the same text.
 Related to EG-084 (the open compile skips the build's plugins) and MC-73 (a file that does not compile answers from stale
 classes); this is their consequence for `verify_change`.
 
@@ -2668,6 +2607,12 @@ classes); this is their consequence for `verify_change`.
 
 When a changed file's write fails, report that failure in `verify_change` (its real diagnostics, not the `-Werror` summary)
 and say the callers were checked against the previous classes.
+
+Cause: `verify_change` compiles the changed file as a transient analysis compile, which drops `-Xplugin:` and
+`-Xep` arguments (`ModuleSourceCompiler.modeCompilerArgs`) and adds `-proc:none`, so the plugin warning never appears there;
+the write (a full compile) has it, but `WritePass.FailedWrite` keeps only the first error line of `BatchWrite.diagnosticsByUri`,
+and `verify_change` does not consult the failed writes at all.
+`LatheMcpTools.handleVerifyChange` passes only the not-checked notes, so the "Not compiled" line is left out on purpose there.
 
 ### Regression targets
 
@@ -2690,8 +2635,8 @@ Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
 `find_references` on `withPrefabValuesForField` (`SingleTypeEqualsVerifierApi.java:244`) misses `KotlinWithoutReflectTest.kt:110`
 and `:159` and says "no need to re-verify with grep". Renaming it, or `Warning.ALL_FIELDS_SHOULD_BE_USED`, leaves the Kotlin
 uses broken (`KotlinDelegationTest.kt:169`), the review list silent on `.kt` files, and `verify_change` clean.
-`analyze_change` counts no Kotlin callers (`forClass` has 77); `workspace_summary` reports 8 modules and leaves out the two
-Kotlin test modules that `workspace.json` lists.
+`analyze_change` counts no Kotlin callers (`forClass` has 77); `workspace_summary` leaves out the two Kotlin test modules
+that `workspace.json` lists.
 
 ### Fix direction
 
@@ -2750,9 +2695,10 @@ Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier an
   Callers are checked 50 to a javac task, and javac skips flow analysis once a task has an error, as a Maven build does:
   while one caller fails, another in its batch that only lacks a `return` or an exception declaration is not listed.
 - `analyze_change` counts declarations and overriding declarations as references (`toSeconds`: "5 production" for 4 calls;
-  an unused constructor: "1 production").
-- `describe_symbol`'s `source:` label is the JPMS module name from one caller and the Maven module from another, and the
-  signature drops `final`, `<T>` and `default`.
+  a private constructor: "9 production" for 8 `new Duration(`).
+- `describe_symbol`'s `source:` label is the JPMS module name from one caller (`nl.jqno.equalsverifier`) and the Maven
+  module from another (`equalsverifier-core`).
+  The signature keeps `final`, `<T>` and `default` since the hover modifiers shipped (re-probed 2026-11-15).
 - `get_definition` on a `requires` module name answers "No definition found" without saying modules are not navigable.
 - The rename review list cites the line a text block opens on, not the line with the name (`PrefabValuesApi.java:106`
   for line 108), and lists every `"get"` literal for a short name.
@@ -2783,6 +2729,32 @@ An agent working across worktrees needs one Lathe MCP server per worktree, each 
 ### Fix direction
 
 Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-workspace-server.md), which keeps one process per client until measurements show a need.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-88 — `workspace_summary` leaves out a compiled module
+
+**Status: documented**
+
+**Affects: MCP `workspace_summary`.**
+
+Found by the re-probe of MC-83 (2026-11-15) on EqualsVerifier.
+
+### Observed behaviour
+
+After a sync on JDK 26, `.lathe/` holds compile parameters for 8 Java modules, but `workspace_summary` reports 7:
+`equalsverifier-26` is missing.
+It has a test tree only and no `test-discovery.json`, and sits in the `modules-jdk26` profile (`<jdk>[26,)</jdk>`), which that sync ran.
+Other test-only modules (`equalsverifier-test`, `equalsverifier-test-mockito`) are listed.
+The cause is not found yet; `ChangeVerifier.moduleSummaries` lists every config in the module registry, so the module is likely not loaded.
+
+### Fix direction
+
+Find why the registry or the summary drops the module, and list every module the last build compiled.
 
 ### Regression targets
 

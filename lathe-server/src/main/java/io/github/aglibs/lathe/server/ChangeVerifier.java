@@ -333,6 +333,11 @@ final class ChangeVerifier {
     return "%s:%s".formatted(state.root().relativize(entry.getKey()), entry.getValue().error());
   }
 
+  // A module compiles it, or it is among a dependency's or the JDK's extracted sources.
+  boolean routed(final Path file) {
+    return !(router.routeCompiler(LatheUri.fromPath(file)) instanceof CompilerRoute.Missing);
+  }
+
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
   private boolean uncheckable(final Path file) {
     return router.routeCompiler(LatheUri.fromPath(file)) instanceof CompilerRoute.Missing
@@ -343,6 +348,10 @@ final class ChangeVerifier {
   // module (a sync writes each module it built a .lathe directory, one without sources too) the
   // file is outside its source roots, and outside the built modules the build left it out.
   private String notCheckedReason(final Path file) {
+    if (!file.startsWith(state.root())) {
+      return "%s is outside the workspace, so Lathe cannot check it".formatted(file);
+    }
+
     final Path relative = state.root().relativize(file);
     if (Files.notExists(file)) {
       return "%s does not exist, and the last build did not compile it".formatted(relative);

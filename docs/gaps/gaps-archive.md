@@ -10040,6 +10040,25 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-30 — The JDK type index lists the build's JDK, not the project's — done
+
+**Status: done.**
+
+**Affects: completion and type search of JDK types, when a build compiles with a different JDK than it runs on (a toolchain).**
+
+Found while reviewing the JDK cache lock (2026-11-05).
+The JDK type index was recorded and cached as the project's JDK but scanned from the JVM the sync ran in, so a build on JDK 25 compiling with a JDK 17 toolchain indexed JDK 25's types under JDK 17's cache entry.
+
+### Resolution
+
+The sync scans the project JDK's own runtime image (`JdkTypeIndexSync.scanJdk` opens `jrt:/` with `java.home` set to that JDK), and the index schema was bumped so an index written from the build's JDK is rebuilt (#252).
+
+### Regression targets
+
+- `JdkTypeIndexSyncTest.index_homeIsNoJdk_failsOnItsImageInsteadOfScanningTheRunningJdk`
+
+---
+
 ## WS-34 — After a sync, an open file keeps the error its last save reported against the old build — done
 
 **Status: done.**
@@ -11565,6 +11584,27 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first — done
+
+**Status: done.**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+With two classes in one file declaring the same test method, top-level or `@Nested`, `run_test` with `scope=method` ran only the first and did not mention the other.
+
+### Resolution
+
+A method name runs in every class of the file that declares it, nested ones included (`LatheEngine.selectTargets`), and the `Ran:` line lists each.
+Each class needs its own method selector, which the runner already takes several of.
+
+### Regression targets
+
+- `LatheEngineRunTest.selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndEveryMethodOfTheName`
+- `LatheTestRunnerTest.run_selectMethodOfANestedClass_runsIt`
+
+---
+
 ## TE-17 — A test that locates its sources from its own class file fails when replayed — done (workaround documented)
 
 **Status: done (workaround documented).**
@@ -12730,6 +12770,28 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too — done
+
+**Status: done.**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+The read tools accepted any existing `.java`-named file, including a symlink to `/etc/passwd`, and explained the refusal to check it as a module a profile left out.
+
+### Resolution
+
+The file and position tools answer only for a file whose real path is in the workspace, compiled by one of its modules, or among the dependency and JDK sources the build extracted (`LatheEngine.inWorkspaceOrSources`).
+Any other file is refused with "`<file>` is outside the workspace and its dependency and JDK sources", a link in the workspace to a file outside it included.
+`verify_change` names such a file as outside the workspace instead of blaming a profile.
+
+### Regression targets
+
+- `LatheMcpToolsTest.fileTools_fileOutsideTheWorkspace_returnError`
+- `LatheMcpToolsTest.fileTools_linkInTheWorkspaceToAFileOutside_returnError`
+
+---
 
 ## MC-81 — `verify_change` after a `module-info.java` edit checks only `module-info.java` — done
 

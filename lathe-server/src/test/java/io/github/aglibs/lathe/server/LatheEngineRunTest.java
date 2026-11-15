@@ -25,16 +25,17 @@ import org.junit.jupiter.api.Test;
 class LatheEngineRunTest extends LatheEngineTestBase {
   // The scan lists a nested class before its enclosing one; running the class runs the outermost,
   // which JUnit runs with its @Nested classes, and every top-level class of the file, not only the
-  // first. A method in the outer class wins a name clash.
+  // first. A method name runs in every class declaring it, nested or top-level.
   @Test
-  void selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndOneMethod() {
+  void selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndEveryMethodOfTheName() {
     final List<RunTarget> targets =
         List.of(
             target("demo.Outer$Inner#run()", RunnableKind.TEST_METHOD, "run"),
             target("demo.Outer$Inner", RunnableKind.TEST_CLASS, "Inner"),
             target("demo.Outer#run()", RunnableKind.TEST_METHOD, "run"),
             target("demo.Outer", RunnableKind.TEST_CLASS, "Outer"),
-            target("demo.Second", RunnableKind.TEST_CLASS, "Second"));
+            target("demo.Second", RunnableKind.TEST_CLASS, "Second"),
+            target("demo.Second#run()", RunnableKind.TEST_METHOD, "run"));
     final Path file = tmp.resolve("Outer.java");
 
     assertThat(LatheEngine.selectTargets(targets, TestScope.CLASS, null, file))
@@ -42,7 +43,7 @@ class LatheEngineRunTest extends LatheEngineTestBase {
         .containsExactly("demo.Outer", "demo.Second");
     assertThat(LatheEngine.selectTargets(targets, TestScope.METHOD, "run", file))
         .extracting(RunTarget::id)
-        .containsExactly("demo.Outer#run()");
+        .containsExactly("demo.Outer$Inner#run()", "demo.Outer#run()", "demo.Second#run()");
     assertThatThrownBy(() -> LatheEngine.selectTargets(targets, TestScope.METHOD, "missing", file))
         .hasMessage("no test method 'missing' in Outer.java");
   }

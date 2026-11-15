@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.BuildSuccess;
@@ -40,8 +41,18 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   @Override
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
+    final Optional<String> off =
+        LatheFlags.disabledNotice(
+            System.getProperty(LatheFlags.DISABLED),
+            System.getenv(LatheFlags.CI_ENV) != null,
+            "-D");
+    if (off.isPresent()) {
+      LOG.info(off.get());
+      return;
+    }
+
     final var latheDir = reactorRoot(session).resolve(LatheLayout.LATHE_DIR);
-    if (LatheFlags.isDisabled() || isPomOptOut(session.getTopLevelProject(), latheDir)) {
+    if (isPomOptOut(session.getTopLevelProject(), latheDir)) {
       return;
     }
 
@@ -147,8 +158,8 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   // Team-wide opt-out committed in the reactor POM (<lathe.disabled>true</...>), read from the
   // resolved model since mvnd cannot be trusted with System.getenv. A developer opts back in by
-  // creating an empty .lathe/ at the reactor root; a -Dlathe.disabled / CI kill stays absolute via
-  // isDisabled().
+  // creating an empty .lathe/ at the reactor root; a -Dlathe.disabled / CI kill stays absolute,
+  // checked first in afterProjectsRead.
   static boolean isPomOptOut(final MavenProject topLevelProject, final Path latheDir) {
     return "true".equals(topLevelProject.getProperties().getProperty(LatheFlags.DISABLED))
         && !Files.isDirectory(latheDir);

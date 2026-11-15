@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import org.gradle.api.GradleException;
 import org.gradle.api.IsolatedAction;
 import org.gradle.api.Plugin;
@@ -16,6 +17,8 @@ import org.gradle.api.initialization.ProjectDescriptor;
 import org.gradle.api.initialization.Settings;
 import org.gradle.api.initialization.resolve.DependencyResolutionManagement;
 import org.gradle.api.initialization.resolve.RepositoriesMode;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
 import org.gradle.util.GradleVersion;
@@ -25,6 +28,8 @@ import org.gradle.util.GradleVersion;
 // configured.
 public class LatheSettingsPlugin implements Plugin<Settings> {
 
+  private static final Logger LOG = Logging.getLogger(LatheSettingsPlugin.class);
+
   // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
   // applies Lathe to each project without cross-project configuration (Isolated Projects).
   private static final String MIN_GRADLE_VERSION = "8.8";
@@ -33,7 +38,17 @@ public class LatheSettingsPlugin implements Plugin<Settings> {
   // those would write a .lathe/ of its own.
   @Override
   public void apply(final Settings settings) {
-    if (settings.getGradle().getParent() != null || isDisabled(settings)) {
+    if (settings.getGradle().getParent() != null) {
+      return;
+    }
+
+    final Optional<String> off = disabledNotice(settings);
+    if (off.isPresent()) {
+      LOG.lifecycle(off.get());
+      return;
+    }
+
+    if (isOptedOut(settings)) {
       return;
     }
 
@@ -82,18 +97,18 @@ public class LatheSettingsPlugin implements Plugin<Settings> {
             == RepositoriesMode.PREFER_PROJECT;
   }
 
-  // As on Maven: -Plathe.disabled and CI are absolute; lathe.disabled=true in gradle.properties
-  // opts the repository out unless the developer opted back in by creating .lathe/.
-  private static boolean isDisabled(final Settings settings) {
-    final ProviderFactory providers = settings.getProviders();
-    final String commandLine =
-        settings.getStartParameter().getProjectProperties().get(LatheFlags.DISABLED);
-    if (LatheFlags.isDisabled(
-        commandLine, providers.environmentVariable(LatheFlags.CI_ENV).isPresent())) {
-      return true;
-    }
+  // As on Maven: -Plathe.disabled and CI are absolute, and said so.
+  private static Optional<String> disabledNotice(final Settings settings) {
+    return LatheFlags.disabledNotice(
+        settings.getStartParameter().getProjectProperties().get(LatheFlags.DISABLED),
+        settings.getProviders().environmentVariable(LatheFlags.CI_ENV).isPresent(),
+        "-P");
+  }
 
-    return "true".equals(providers.gradleProperty(LatheFlags.DISABLED).getOrNull())
+  // lathe.disabled=true in gradle.properties opts the repository out, silently as the project's own
+  // choice, unless the developer opted back in by creating .lathe/.
+  private static boolean isOptedOut(final Settings settings) {
+    return "true".equals(settings.getProviders().gradleProperty(LatheFlags.DISABLED).getOrNull())
         && !Files.isDirectory(settings.getRootDir().toPath().resolve(LatheLayout.LATHE_DIR));
   }
 

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -120,6 +121,22 @@ public final class LatheFlags {
     }
 
     return ci;
+  }
+
+  // Why lathe.disabled or CI turns Lathe off, worded the same by each build tool, which says it
+  // once: a developer whose shell sets CI would otherwise not know why .lathe/ stops updating.
+  // option is how that tool sets a property on its command line (-D, -P).
+  public static Optional<String> disabledNotice(
+      final String disabled, final boolean ci, final String option) {
+    if (!isDisabled(disabled, ci)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        "true".equals(disabled)
+            ? "[lathe] Off: %s=true; .lathe/ is not updated.".formatted(DISABLED)
+            : "[lathe] Off: the %s environment variable is set; .lathe/ is not updated. Add %s%s=false to keep Lathe on."
+                .formatted(CI_ENV, option, DISABLED));
   }
 
   // One message for every unmet requirement, worded the same by each build tool; option is how

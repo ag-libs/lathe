@@ -118,6 +118,8 @@ public final class LatheEngine {
   private final SessionHost host = new SessionHost();
   private final AtomicLong runToken = new AtomicLong();
   private final Path workspaceRoot;
+  // The workspace root with its links resolved, which a file's real path is compared against.
+  private final Path realWorkspaceRoot;
   private final Path latheDir;
   private final DiskEdits diskEdits;
 
@@ -166,6 +168,7 @@ public final class LatheEngine {
 
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
+    this.realWorkspaceRoot = IOUtil.unchecked(() -> workspaceRoot.toRealPath());
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     this.diskEdits =
         new DiskEdits(
@@ -793,8 +796,8 @@ public final class LatheEngine {
   }
 
   // The outermost targets of the scope: a nested class runs with its enclosing one (the scan lists
-  // it first), and a file's every top-level test class runs, not only the first. A method is one,
-  // the outermost of its name.
+  // it first), and a file's every top-level test class runs, not only the first. A method runs in
+  // every class that declares it, nested ones too, as a method selector reaches only its own class.
   static List<RunTarget> selectTargets(
       final List<RunTarget> targets, final TestScope scope, final String method, final Path file) {
     final List<RunTarget> matching =
@@ -810,11 +813,13 @@ public final class LatheEngine {
                   .formatted(scope.name().toLowerCase(Locale.ROOT), file.getFileName()));
     }
 
+    if (scope == TestScope.METHOD) {
+      return matching;
+    }
+
     final long outermost =
         matching.stream().mapToLong(LatheEngine::nestingDepth).min().orElseThrow();
-    final List<RunTarget> outer =
-        matching.stream().filter(target -> nestingDepth(target) == outermost).toList();
-    return scope == TestScope.METHOD ? outer.subList(0, 1) : outer;
+    return matching.stream().filter(target -> nestingDepth(target) == outermost).toList();
   }
 
   private static long nestingDepth(final RunTarget target) {
@@ -1157,6 +1162,14 @@ public final class LatheEngine {
         location.getRange().getStart().getCharacter(),
         origin(targetPath),
         snippet(targetPath, location.getRange()));
+  }
+
+  // Whether the read tools answer for an existing file: one in the workspace, or one a module
+  // compiles or the build extracted as a dependency's or the JDK's sources. By real path, so a link
+  // in the workspace to a file outside it is outside too.
+  public boolean inWorkspaceOrSources(final Path file) {
+    final Path real = IOUtil.unchecked(() -> file.toRealPath());
+    return real.startsWith(realWorkspaceRoot) || query(session -> session.verifier().routed(real));
   }
 
   private LatheLocation.Origin origin(final Path target) {

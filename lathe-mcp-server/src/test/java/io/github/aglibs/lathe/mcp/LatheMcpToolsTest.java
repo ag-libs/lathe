@@ -23,6 +23,8 @@ import java.util.logging.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class LatheMcpToolsTest {
@@ -246,6 +248,46 @@ class LatheMcpToolsTest {
         .isEqualTo("format_file requires a 'file' argument");
     assertThat(call("fix_imports", Map.of("file", pom.toString())).isError()).isTrue();
     assertThat(call("outline", Map.of("file", missing.toString())).isError()).isTrue();
+  }
+
+  // The read tools answer only for the workspace and the dependency and JDK sources; any other
+  // file is refused as such, not checked and explained as a module a profile left out.
+  @Test
+  void fileTools_fileOutsideTheWorkspace_returnError(@TempDir final Path outside) throws Exception {
+    final Path foreign = Files.writeString(outside.resolve("Foreign.java"), "class Foreign {}");
+    final Path loose = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+    final String refusal =
+        "%s is outside the workspace and its dependency and JDK sources".formatted(foreign);
+
+    assertThat(
+            List.of(call("outline", Map.of("file", foreign.toString())), describe(foreign, 1, 7)))
+        .allSatisfy(
+            result -> {
+              assertThat(result.isError()).isTrue();
+              assertThat(text(result)).isEqualTo(refusal);
+            });
+    assertThat(call("outline", Map.of("file", loose.toString())).isError()).isFalse();
+    assertThat(text(call("verify_change", Map.of("files", List.of(foreign.toString())))))
+        .contains(
+            "Not checked: %s is outside the workspace, so Lathe cannot check it"
+                .formatted(foreign));
+  }
+
+  // A link is judged by the file it points to: one in the workspace to a file outside it is
+  // outside too. Symbolic links need privileges on Windows.
+  @Test
+  @DisabledOnOs(OS.WINDOWS)
+  void fileTools_linkInTheWorkspaceToAFileOutside_returnError(@TempDir final Path outside)
+      throws Exception {
+    final Path target = Files.writeString(outside.resolve("Secret.java"), "class Secret {}");
+    final Path link = Files.createSymbolicLink(tmp.resolve("Secret.java"), target);
+
+    final CallToolResult result = call("get_diagnostics", Map.of("file", link.toString()));
+
+    assertThat(result.isError()).isTrue();
+    assertThat(text(result))
+        .isEqualTo(
+            "%s is outside the workspace and its dependency and JDK sources".formatted(link));
   }
 
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
