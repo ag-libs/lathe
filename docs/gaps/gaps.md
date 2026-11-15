@@ -1636,33 +1636,6 @@ Take one up only with a narrow, tree-based rule, measured with `dev/indent-corpu
 
 ---
 
-## NV-12 — The neotest end-to-end check clones its plugins from GitHub on every CI run
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: CI's Linux and macOS build rows (lathe-neovim's `neotest-e2e` step).**
-
-Found when a macOS row failed on #176 (2026-11-11) with every Neovim spec passing.
-
-### Observed behaviour
-
-`test/e2e/run-e2e.sh` clones neotest, nvim-nio and plenary into `target/e2e-plugins`, at the commits `plugins.txt` pins.
-`target/` is new on every CI run, so every run clones from GitHub.
-One clone failed (`fatal: could not read Username for 'https://github.com'`), and under GitHub Actions a failed clone fails the build.
-The rerun passed.
-
-### Fix direction
-
-Cache `target/e2e-plugins` across runs (`actions/cache`, keyed on `plugins.txt`), and retry the clone as the Neovim download already does.
-
-### Regression targets
-
-None yet.
-
----
-
 # MCP / Agent Facade Gaps (MC)
 
 Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
