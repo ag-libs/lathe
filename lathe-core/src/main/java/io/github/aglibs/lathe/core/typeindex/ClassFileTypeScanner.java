@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core.typeindex;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.InputStream;
@@ -105,6 +106,17 @@ public final class ClassFileTypeScanner {
     } catch (final IOException | IllegalArgumentException e) {
       return Optional.empty();
     }
+  }
+
+  // Every string of a compiled class's constant pool: the classes it uses, and the descriptors and
+  // generic signatures that name a type it only passes along. Empty for a file that is no class.
+  public static List<String> constantStrings(final Path classFile) {
+    return IOUtil.unchecked(
+        () -> {
+          try (final InputStream in = Files.newInputStream(classFile)) {
+            return ClassMetadataReader.utf8Constants(in);
+          }
+        });
   }
 
   private static Optional<ClassMetadata> readClassFile(final Path root, final Path file) {

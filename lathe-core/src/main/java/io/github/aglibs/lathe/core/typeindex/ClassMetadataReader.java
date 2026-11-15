@@ -1,11 +1,14 @@
 package io.github.aglibs.lathe.core.typeindex;
 
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -22,6 +25,66 @@ final class ClassMetadataReader {
 
   static Optional<ClassMetadata> read(final InputStream in) throws IOException {
     final var data = new DataInputStream(in);
+    final Optional<ConstantPool> pool = readConstantPool(data);
+    if (pool.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final int constantPoolCount = pool.get().utf8Entries().length;
+    final String[] utf8Entries = pool.get().utf8Entries();
+    final int[] classNameIndexes = pool.get().classNameIndexes();
+    final int[] nameAndTypeDescriptors = pool.get().nameAndTypeDescriptors();
+    final List<Integer> invokeDynamicNameAndTypes = pool.get().invokeDynamicNameAndTypes();
+
+    final var access = new ClassAccess(data.readUnsignedShort());
+    final String binaryName =
+        resolveClassName(data.readUnsignedShort(), utf8Entries, classNameIndexes);
+    if (binaryName == null) {
+      return Optional.empty();
+    }
+
+    final var directSupertypes = new ArrayList<String>();
+    final int superClassIndex = data.readUnsignedShort();
+    if (superClassIndex != 0) {
+      final String superclass = resolveClassName(superClassIndex, utf8Entries, classNameIndexes);
+      if (superclass == null) {
+        return Optional.empty();
+      }
+
+      directSupertypes.add(superclass);
+    }
+
+    final int interfaceCount = data.readUnsignedShort();
+    for (int i = 0; i < interfaceCount; i++) {
+      final String interfaceName =
+          resolveClassName(data.readUnsignedShort(), utf8Entries, classNameIndexes);
+      if (interfaceName == null) {
+        return Optional.empty();
+      }
+
+      directSupertypes.add(interfaceName);
+    }
+
+    final Set<String> referencedTypes =
+        referencedTypes(binaryName, constantPoolCount, utf8Entries, classNameIndexes);
+    final Set<String> lambdaTargets =
+        lambdaTargets(invokeDynamicNameAndTypes, nameAndTypeDescriptors, utf8Entries);
+    return Optional.of(
+        new ClassMetadata(access, binaryName, directSupertypes, referencedTypes, lambdaTargets));
+  }
+
+  // Every string of the class's constant pool: its class names, member names, descriptors and
+  // generic signatures. Empty for a file that is no class.
+  static List<String> utf8Constants(final InputStream in) throws IOException {
+    return readConstantPool(new DataInputStream(in))
+        .map(pool -> Arrays.stream(pool.utf8Entries()).filter(Objects::nonNull).toList())
+        .orElse(List.of());
+  }
+
+  // The entries this reader uses, by constant pool index; empty for no class or a pool it cannot
+  // walk.
+  private static Optional<ConstantPool> readConstantPool(final DataInputStream data)
+      throws IOException {
     if (data.readInt() != CLASS_MAGIC) {
       return Optional.empty();
     }
@@ -60,41 +123,26 @@ final class ClassMetadataReader {
       i += slots - 1;
     }
 
-    final var access = new ClassAccess(data.readUnsignedShort());
-    final String binaryName =
-        resolveClassName(data.readUnsignedShort(), utf8Entries, classNameIndexes);
-    if (binaryName == null) {
-      return Optional.empty();
-    }
-
-    final var directSupertypes = new ArrayList<String>();
-    final int superClassIndex = data.readUnsignedShort();
-    if (superClassIndex != 0) {
-      final String superclass = resolveClassName(superClassIndex, utf8Entries, classNameIndexes);
-      if (superclass == null) {
-        return Optional.empty();
-      }
-
-      directSupertypes.add(superclass);
-    }
-
-    final int interfaceCount = data.readUnsignedShort();
-    for (int i = 0; i < interfaceCount; i++) {
-      final String interfaceName =
-          resolveClassName(data.readUnsignedShort(), utf8Entries, classNameIndexes);
-      if (interfaceName == null) {
-        return Optional.empty();
-      }
-
-      directSupertypes.add(interfaceName);
-    }
-
-    final Set<String> referencedTypes =
-        referencedTypes(binaryName, constantPoolCount, utf8Entries, classNameIndexes);
-    final Set<String> lambdaTargets =
-        lambdaTargets(invokeDynamicNameAndTypes, nameAndTypeDescriptors, utf8Entries);
     return Optional.of(
-        new ClassMetadata(access, binaryName, directSupertypes, referencedTypes, lambdaTargets));
+        new ConstantPool(
+            utf8Entries, classNameIndexes, nameAndTypeDescriptors, invokeDynamicNameAndTypes));
+  }
+
+  // Arrays indexed by constant pool slot, read once and only by this reader.
+  private record ConstantPool(
+      String[] utf8Entries,
+      int[] classNameIndexes,
+      int[] nameAndTypeDescriptors,
+      List<Integer> invokeDynamicNameAndTypes) {
+    ConstantPool {
+      ValidCheck.check()
+          .notNull(utf8Entries, "utf8Entries")
+          .notNull(classNameIndexes, "classNameIndexes")
+          .notNull(nameAndTypeDescriptors, "nameAndTypeDescriptors")
+          .notNull(invokeDynamicNameAndTypes, "invokeDynamicNameAndTypes")
+          .validate();
+      invokeDynamicNameAndTypes = List.copyOf(invokeDynamicNameAndTypes);
+    }
   }
 
   // The functional interface each invokedynamic converts to: the return type of its descriptor.

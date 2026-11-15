@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.files.ServerFiles;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -138,10 +140,12 @@ final class ChangeVerifier {
 
   // Files to diagnose for verify_change, by module: each changed file, then the files that see it,
   // the changed files' modules first.
-  Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
+  private Map<String, List<Path>> verifyTargetsByModule(
+      final List<Path> changed, final Map<Path, List<Path>> referrers) {
     final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
     changed.forEach(file -> addVerifyTarget(byModule, file));
-    changed.forEach(file -> seenBy(file).forEach(path -> addVerifyTarget(byModule, path)));
+    changed.forEach(
+        file -> seenBy(file, referrers).forEach(path -> addVerifyTarget(byModule, path)));
     return Collections.unmodifiableMap(
         byModule.entrySet().stream()
             .collect(
@@ -169,10 +173,28 @@ final class ChangeVerifier {
 
   // A module descriptor is named by no file, yet decides what every source of its module may read,
   // so all of them see it; the modules reading it are left to the sync the answer suggests.
-  private List<Path> seenBy(final Path file) {
+  private List<Path> seenBy(final Path file, final Map<Path, List<Path>> referrers) {
     return file.getFileName().toString().equals(LatheLayout.MODULE_INFO_JAVA)
         ? moduleSources(file)
-        : referrers(file);
+        : referrers.getOrDefault(file, List.of());
+  }
+
+  // Each changed file's referrers, found once for both the files to check and the modules to sync,
+  // as reading the mirrored classes takes a second on a large reactor. A module or package
+  // declaration has none: no file names it, and its reach is its module's.
+  private Map<Path, List<Path>> referrersOf(final List<Path> changed) {
+    final List<Path> files =
+        changed.stream().distinct().filter(file -> !isDeclaration(file)).toList();
+    final Map<Path, Set<Path>> byBytecode = bytecodeReferrers(files);
+    return files.stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                file -> file, file -> referrers(file, byBytecode.getOrDefault(file, Set.of()))));
+  }
+
+  private static boolean isDeclaration(final Path file) {
+    final String name = file.getFileName().toString();
+    return name.equals(LatheLayout.MODULE_INFO_JAVA) || name.equals(LatheLayout.PACKAGE_INFO_JAVA);
   }
 
   private List<Path> moduleSources(final Path descriptor) {
@@ -185,16 +207,118 @@ final class ChangeVerifier {
         .toList();
   }
 
-  // Matched by type-name token: may over-select (a file that only mentions the name) but never
-  // misses a direct caller; an extra candidate just compiles clean.
-  private List<Path> referrers(final Path file) {
-    final Set<Path> reach =
-        moduleDirOf(file).map(state.moduleGraph()::downstreamModuleDirs).orElse(Set.of());
-    return state.candidateIndex().candidateUris(FileUtil.javaTypeName(file)).stream()
-        .map(LatheUri::toPath)
+  // The files that name the file's type, a token match that may over-select (an extra candidate
+  // just compiles clean), and those whose compiled classes use a class of the file, which a caller
+  // reaching it through a chain of calls never names.
+  private List<Path> referrers(final Path file, final Set<Path> byBytecode) {
+    final Set<Path> reach = reach(file);
+    return Stream.concat(
+            state.candidateIndex().candidateUris(FileUtil.javaTypeName(file)).stream()
+                .map(LatheUri::toPath),
+            byBytecode.stream())
         .filter(path -> !path.equals(file))
         .filter(path -> moduleDirOf(path).filter(reach::contains).isPresent())
+        .distinct()
         .toList();
+  }
+
+  private Set<Path> reach(final Path file) {
+    return moduleDirOf(file).map(state.moduleGraph()::downstreamModuleDirs).orElse(Set.of());
+  }
+
+  // One pass over the mirrored classes of the trees the changed files reach, as the last write left
+  // them, read only when verify_change asks: each changed file's referrers by their sources.
+  private Map<Path, Set<Path>> bytecodeReferrers(final List<Path> files) {
+    final Map<Path, TypeNeedles> needles =
+        files.stream().collect(Collectors.toUnmodifiableMap(file -> file, this::typeNeedles));
+    final Map<Path, Set<Path>> found = new HashMap<>();
+    for (final ModuleSourceConfig config : state.registry().allConfigs()) {
+      final List<Path> seeing =
+          files.stream().filter(file -> reach(file).contains(config.moduleDir())).toList();
+      if (seeing.isEmpty()) {
+        continue;
+      }
+
+      for (final Path classFile :
+          IOUtil.unchecked(
+              () -> FileUtil.walkFiles(config.latheClassesDir(), FileUtil::isClassFile))) {
+        addReferrer(found, config, classFile, seeing, needles);
+      }
+    }
+
+    return Map.copyOf(found);
+  }
+
+  private static void addReferrer(
+      final Map<Path, Set<Path>> found,
+      final ModuleSourceConfig config,
+      final Path classFile,
+      final List<Path> seeing,
+      final Map<Path, TypeNeedles> needles) {
+    final List<String> constants = ClassFileTypeScanner.constantStrings(classFile);
+    final List<Path> using =
+        seeing.stream().filter(file -> needles.get(file).foundIn(constants)).toList();
+    if (using.isEmpty()) {
+      return;
+    }
+
+    ClassOutputs.sourceOf(config, classFile)
+        .ifPresent(
+            source ->
+                using.forEach(
+                    file -> found.computeIfAbsent(file, k -> new HashSet<>()).add(source)));
+  }
+
+  // The file's classes in internal form: those the mirror holds, and its own type, which a deleted
+  // or renamed type has no class for any more, with any type nested in it.
+  private TypeNeedles typeNeedles(final Path file) {
+    final Set<String> types =
+        state
+            .registry()
+            .moduleSourceFor(file)
+            .map(
+                config ->
+                    Stream.concat(
+                            config.sourceRootOf(file).stream()
+                                .map(root -> FileUtil.slashed(root.relativize(file)))
+                                .map(path -> path.substring(0, path.length() - ".java".length())),
+                            ClassOutputs.classNamesOf(config, file).stream()
+                                .map(name -> name.replace('.', '/')))
+                        .collect(Collectors.toUnmodifiableSet()))
+            .orElse(Set.of());
+    return new TypeNeedles(types);
+  }
+
+  // How a class's constant pool names a type: a class entry for it or a type nested in it, and
+  // L<type>; inside a descriptor or signature, also as L<type>$ or L<type><.
+  private record TypeNeedles(Set<String> types, List<String> nested, List<String> inSignatures) {
+    TypeNeedles {
+      types = Set.copyOf(types);
+      nested = List.copyOf(nested);
+      inSignatures = List.copyOf(inSignatures);
+    }
+
+    TypeNeedles(final Set<String> types) {
+      this(
+          types,
+          types.stream().map("%s$"::formatted).toList(),
+          types.stream()
+              .flatMap(
+                  type ->
+                      Stream.of(
+                          "L%s;".formatted(type), "L%s$".formatted(type), "L%s<".formatted(type)))
+              .toList());
+    }
+
+    boolean foundIn(final List<String> constants) {
+      return constants.stream().anyMatch(this::names);
+    }
+
+    private boolean names(final String constant) {
+      return types.contains(constant)
+          || nested.stream().anyMatch(constant::startsWith)
+          || inSignatures.stream().anyMatch(constant::contains);
+    }
   }
 
   private Optional<Path> moduleDirOf(final Path file) {
@@ -258,16 +382,18 @@ final class ChangeVerifier {
         .toList();
   }
 
-  // Only the dependents a change can reach: those with a file naming a changed type. A test class,
-  // or a type no dependent names, reaches none, so no sync is suggested for it.
-  List<String> downstreamModuleRels(final List<Path> changed) {
+  // Only the dependents a change can reach: those with a file naming a changed type or referring to
+  // it in its compiled classes. A test class, or a type no dependent uses, reaches none, so no sync
+  // is suggested for it.
+  private List<String> downstreamModuleRels(
+      final List<Path> changed, final Map<Path, List<Path>> referrers) {
     final Set<Path> changedModuleDirs =
         changed.stream()
             .map(this::moduleDirOf)
             .flatMap(Optional::stream)
             .collect(Collectors.toUnmodifiableSet());
     return changed.stream()
-        .flatMap(this::reachedModuleDirs)
+        .flatMap(file -> reachedModuleDirs(file, referrers))
         .filter(dir -> !changedModuleDirs.contains(dir))
         .distinct()
         .map(dir -> SourceLayout.moduleRel(state.root(), dir))
@@ -276,16 +402,17 @@ final class ChangeVerifier {
   }
 
   // A module or package declaration is named by no file, yet changes what every dependent sees.
-  private Stream<Path> reachedModuleDirs(final Path file) {
-    final String name = file.getFileName().toString();
-    if (name.equals(LatheLayout.MODULE_INFO_JAVA) || name.equals(LatheLayout.PACKAGE_INFO_JAVA)) {
+  private Stream<Path> reachedModuleDirs(final Path file, final Map<Path, List<Path>> referrers) {
+    if (isDeclaration(file)) {
       return moduleDirOf(file)
           .map(state.moduleGraph()::downstreamModuleDirs)
           .orElse(Set.of())
           .stream();
     }
 
-    return referrers(file).stream().map(this::moduleDirOf).flatMap(Optional::stream);
+    return referrers.getOrDefault(file, List.of()).stream()
+        .map(this::moduleDirOf)
+        .flatMap(Optional::stream);
   }
 
   // What an MCP answer cannot vouch for after its pass: files whose write failed and that are
@@ -399,11 +526,12 @@ final class ChangeVerifier {
       return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of());
     }
 
+    final Map<Path, List<Path>> referrers = referrersOf(changed);
     return new VerifyPlan(
         outcome,
         changed,
-        verifyTargetsByModule(changed),
-        downstreamModuleRels(changed),
+        verifyTargetsByModule(changed, referrers),
+        downstreamModuleRels(changed, referrers),
         reactorModuleCount(),
         failedWrites(changed));
   }

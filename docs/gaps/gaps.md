@@ -476,7 +476,7 @@ None yet.
 
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
-**Status: accepted (server and Neovim shipped; VS Code pending).**
+**Status: deferred** (server and Neovim shipped; the VS Code command waits until VS Code client work resumes)
 
 **Value: high — Size: M**
 
@@ -2462,35 +2462,6 @@ Test: `analyze_change` on an interface method that a subinterface redeclares lis
 
 None yet. The battery's reference round trip no longer catches this: since it accepts a definition that
 `find_references` agrees with, it passes on Helidon either way.
-
----
-
-## MC-80 — `verify_change` skips callers that reach a changed type without naming it
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: MCP `verify_change`.**
-
-Found by the exploratory MCP round (2026-11-04) on Dropwizard.
-
-### Observed behaviour
-
-With the same `toSeconds(int)` change, `verify_change` misses 5 errors in three `dropwizard-health` test files
-(`ScheduleTest:24`, `HealthCheckConfigurationTest:25/26`, `DefaultHealthFactoryTest:60/61`). They call
-`getSchedule().getDowntimeInterval().toSeconds()` and never name `Duration`; `find_references` lists all 11 uses and
-`get_diagnostics` on `ScheduleTest` shows the error.
-The callers checked are the files that mention the changed file's type.
-
-### Fix direction
-
-Take the callers from the changed members' references (the reference index already answers them), or add the files that
-mention a changed member's name in the modules that can see it.
-
-### Regression targets
-
-None yet.
 
 ---
 
