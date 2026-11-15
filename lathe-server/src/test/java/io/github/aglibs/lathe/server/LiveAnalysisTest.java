@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -58,7 +60,7 @@ class LiveAnalysisTest extends ServiceTestBase {
   void didChange_unsavedSiblingChangedSignature_analyzedAgainstIt_unlessItNoLongerParses()
       throws Exception {
     // An unused field is reported only by an analysis without errors, so a publish carrying it is
-    // a clean analysis -- not the empty publish that clears a file on each change.
+    // a clean analysis, not an empty one.
     final var sources = new LinkedHashMap<String, String>();
     sources.put(
         "com/example/Greeter.java",
@@ -108,6 +110,39 @@ class LiveAnalysisTest extends ServiceTestBase {
         "package com.example; class User { private int marker; String u() { return Greeter.greet(\"a\", 2);  } }",
         3);
     verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user) && hasError(p)));
+  }
+
+  // The diagnostics stay while the file is edited, until the next analysis replaces them: an empty
+  // publish on each change made every error in the file flash off at each keystroke.
+  @Test
+  void didChange_errorStillThere_keepsTheDiagnosticsUntilTheNextAnalysis() throws Exception {
+    final Path broken =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/Broken.java", "package com.example; class Broken {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(broken, "package com.example; class Broken { Missing m; }");
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, broken) && hasError(p)));
+    awaitWorkerIdle();
+
+    clearInvocations(client);
+    change(broken, "package com.example; class Broken { Missing m; int x; }", 2);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, broken) && hasError(p)));
+    awaitWorkerIdle();
+    verify(client, never())
+        .publishDiagnostics(argThat(p -> isFor(p, broken) && p.getDiagnostics().isEmpty()));
+
+    clearInvocations(client);
+    change(broken, "package com.example; class Broken { int x; }", 3);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, broken) && p.getDiagnostics().isEmpty()));
   }
 
   private static boolean hasError(final PublishDiagnosticsParams params) {
