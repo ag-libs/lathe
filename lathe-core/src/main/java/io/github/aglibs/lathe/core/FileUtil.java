@@ -249,11 +249,22 @@ public final class FileUtil {
     }
   }
 
+  // Windows denies replacing a file that another process has open or is replacing at that moment
+  // (two builds writing one cache entry); it lets go within moments, so the move is retried. A
+  // missing source fails at once.
   public static void moveReplacing(final Path src, final Path dest) throws IOException {
-    try {
-      Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-    } catch (final AtomicMoveNotSupportedException e) {
-      Files.move(src, dest, StandardCopyOption.REPLACE_EXISTING);
+    for (int attempt = 1; ; attempt++) {
+      try {
+        Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        return;
+      } catch (final AtomicMoveNotSupportedException e) {
+        Files.move(src, dest, StandardCopyOption.REPLACE_EXISTING);
+        return;
+      } catch (final NoSuchFileException e) {
+        throw e;
+      } catch (final FileSystemException e) {
+        pauseBeforeRetry(attempt, e);
+      }
     }
   }
 
