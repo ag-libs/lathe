@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.eclipse.lsp4j.Diagnostic;
 
 // What an agent's verify_change and the notes on every MCP answer are built from: which sources
 // differ from what the build compiled, which modules their callers are in, which files still fail
@@ -378,7 +379,7 @@ final class ChangeVerifier {
   // written or changed since the build) and, per module, the files that see them.
   VerifyPlan plan(final ReconcileOutcome outcome, final List<Path> files) {
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
-      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of());
     }
 
     final List<Path> touched =
@@ -390,7 +391,7 @@ final class ChangeVerifier {
             : files;
     final List<Path> changed = differingFromBuild(touched);
     if (changed.isEmpty()) {
-      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of());
     }
 
     return new VerifyPlan(
@@ -398,7 +399,19 @@ final class ChangeVerifier {
         changed,
         verifyTargetsByModule(changed),
         downstreamModuleRels(changed),
-        reactorModuleCount());
+        reactorModuleCount(),
+        failedWrites(changed));
+  }
+
+  // The changed files whose write failed and that are unchanged since, with what the write
+  // reported: their callers were checked against the classes of their last good compile.
+  private Map<Path, List<Diagnostic>> failedWrites(final List<Path> changed) {
+    final Set<Path> changedFiles = Set.copyOf(changed);
+    return stillFailing()
+        .filter(entry -> changedFiles.contains(entry.getKey()))
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, entry -> entry.getValue().diagnostics()));
   }
 
   record VerifyPlan(
@@ -406,7 +419,8 @@ final class ChangeVerifier {
       List<Path> changed,
       Map<String, List<Path>> targets,
       List<String> downstream,
-      int moduleCount) {
+      int moduleCount,
+      Map<Path, List<Diagnostic>> failedWrites) {
 
     VerifyPlan {
       ValidCheck.check().notNull(outcome, "outcome").validate();
@@ -415,6 +429,7 @@ final class ChangeVerifier {
       // lists the modules that way.
       targets = Collections.unmodifiableMap(new LinkedHashMap<>(targets));
       downstream = List.copyOf(downstream);
+      failedWrites = Map.copyOf(failedWrites);
     }
   }
 }

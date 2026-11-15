@@ -177,9 +177,9 @@ class WritePassFilesTest {
     final Map<Path, WritePass.FailedWrite> failed =
         Map.of(
             broken,
-            new WritePass.FailedWrite(100L, "1: error"),
+            new WritePass.FailedWrite(100L, "1: error", List.of()),
             edited,
-            new WritePass.FailedWrite(150L, "1: error"));
+            new WritePass.FailedWrite(150L, "1: error", List.of()));
 
     assertThat(WritePass.withoutFailedCompiles(stale, failed)).containsOnlyKeys(edited, fresh);
   }

@@ -383,6 +383,7 @@ final class McpText {
     return result(
         verifyHeadline(errors, total - errors, notes.notChecked().size())
             + verifyDiagnosticLines(verify.perModule())
+            + failedWritesNote(verify)
             + crossModuleNote(verify, errors),
         notes);
   }
@@ -407,6 +408,15 @@ final class McpText {
         .flatMap(module -> module.diagnostics().stream())
         .filter(located -> located.severity() == LatheDiagnostic.Severity.ERROR)
         .count();
+  }
+
+  // A changed file the build's own compile fails left its callers checked against its previous
+  // classes, so a caller that compiled may not with the change.
+  static String failedWritesNote(final LatheVerifyChange verify) {
+    return verify.failedWrites().isEmpty()
+        ? ""
+        : "%n%nThe build's compile fails %s; callers were checked against the classes of the last good compile."
+            .formatted(String.join(", ", verify.failedWrites()));
   }
 
   // A change to a core module names over a hundred dependents; the count and the sync command carry

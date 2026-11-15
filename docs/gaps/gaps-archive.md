@@ -12771,6 +12771,31 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-82 — `verify_change` says clean when the change fails only the build's Error Prone and `-Werror` — done
+
+**Status: done.**
+
+**Affects: MCP `verify_change`, `run_test` and the notes.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+An Error Prone warning under `-Werror` (an unused new field in `Formatter.java`) failed the build's compile, but `verify_change` answered "No errors": it checks a changed file with Lathe's analysis compile, which runs without the build's processors and plugins, and checked the callers against the file's previous classes without saying so.
+The other tools' note named only `Formatter.java:1: warnings found and -Werror specified`.
+
+### Resolution
+
+The write pass keeps what the build's compile reported for a file it failed to write (`WritePass.FailedWrite`).
+`verify_change` reports those diagnostics for a changed file whose write failed, in place of the analysis check's, and says its callers were checked against the classes of the last good compile.
+When `-Werror` is the only error, the "Not compiled" note on every tool, and `run_test`'s refusal, name the warning it failed on, recognised by javac's code `compiler.err.warnings.and.werror`.
+The editor's open compile still runs without the build's plugins (EG-084).
+
+### Regression targets
+
+- `LatheEngineVerifyTest.verifyChange_changeFailsOnlyTheBuildsCompile_reportsTheWriteAndItsCallersOldClasses`
+- `LatheEngineVerifyTest.verifyChange_buildOnlyWarningWithoutWerror_reportsNoFailedWrite`
+- `McpTextTest.failedWritesNote_changedFileTheBuildFails_namesIt_noneOtherwise`
+
+---
+
 ## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too — done
 
 **Status: done.**

@@ -918,11 +918,11 @@ public final class LatheEngine {
           outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
               ? null
               : LatheLayout.SYNC_SCRIPT_COMMAND;
-      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync);
+      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync, List.of());
     }
 
     if (plan.changed().isEmpty()) {
-      return new LatheVerifyChange(null, List.of(), List.of(), null);
+      return new LatheVerifyChange(null, List.of(), List.of(), null, List.of());
     }
 
     final var checked = Stopwatch.start();
@@ -942,7 +942,10 @@ public final class LatheEngine {
     final Set<String> changedUris =
         changedSet.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
     final Map<String, List<Diagnostic>> analyses =
-        request((session, cancel, progress) -> checkAll(session, contents, changedUris, cancel));
+        withFailedWrites(
+            request(
+                (session, cancel, progress) -> checkAll(session, contents, changedUris, cancel)),
+            plan.failedWrites());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(
@@ -962,7 +965,30 @@ public final class LatheEngine {
                     checked.elapsedMs(),
                     perModule.stream().mapToInt(module -> module.diagnostics().size()).sum()));
     return new LatheVerifyChange(
-        null, perModule, plan.downstream(), syncFor(plan.downstream(), plan.moduleCount()));
+        null,
+        perModule,
+        plan.downstream(),
+        syncFor(plan.downstream(), plan.moduleCount()),
+        plan.failedWrites().keySet().stream()
+            .map(file -> displayPath(file, LatheUri.fromPath(file)))
+            .sorted()
+            .toList());
+  }
+
+  // A changed file whose write failed reports what the write found: the build's own compile, with
+  // the processors and plugins the analysis compile runs without, fails where the check may pass.
+  private static Map<String, List<Diagnostic>> withFailedWrites(
+      final Map<String, List<Diagnostic>> checked, final Map<Path, List<Diagnostic>> failedWrites) {
+    final Map<String, List<Diagnostic>> written =
+        failedWrites.entrySet().stream()
+            .filter(failed -> !failed.getValue().isEmpty())
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    failed -> LatheUri.fromPath(failed.getKey()), Map.Entry::getValue));
+    return Stream.concat(
+            checked.entrySet().stream().filter(entry -> !written.containsKey(entry.getKey())),
+            written.entrySet().stream())
+        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
   // A changed file is checked alone, against the classes its write produced, as the build sees it:
