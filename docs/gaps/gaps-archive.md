@@ -12843,6 +12843,48 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-67 — `analyze_change` reports no override family for a method that overrides one — done
+
+**Status: done.**
+
+**Affects: MCP `analyze_change`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+For `HttpRouteImpl.beforeStart`, which overrides `ServerLifecycle.beforeStart`, it answered "override family: none" while its reference count included the parent's callers: the family looked only down the hierarchy.
+
+### Resolution
+
+`analyze_change` lists the methods the target overrides under "overrides", nearest first, by `Type#name(parameters)` (`ReferenceFeatures.overriddenMethods`): a JDK or dependency method has no location in the answer, and `describe_symbol` or `get_definition` follow a name.
+The family below it is "overridden by", and its abstract redeclarations "redeclared by" (MC-78).
+
+### Regression targets
+
+- `LatheEngineVerifyTest.analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences`
+- `McpTextTest.analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty`
+
+---
+
+## MC-78 — `analyze_change`'s override family leaves out abstract redeclarations — done
+
+**Status: done.**
+
+**Affects: MCP `analyze_change`. Go to implementation and `find_implementations` leave them out by design.**
+
+Found by the MCP release battery's reference round trip on Helidon (2026-11-02).
+For `MediaType.text()` it left out `HttpMediaType.text()`, the subinterface's abstract redeclaration that `get_definition`, `find_references` and rename treat as part of the family: the implementation search dropped every abstract overrider.
+
+### Resolution
+
+The implementation search returns abstract overriders too, marked as redeclarations (`MethodImplementationLocator`, `ImplementationHit`), from the same one pass over the candidate files.
+Go to implementation and `find_implementations` leave them out, as before; `analyze_change` lists them under "redeclared by" and counts their modules as affected.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences`: the redeclaring subinterface is listed apart, and `find_implementations` leaves it out.
+- `MethodImplementationTest.methodImplementations_genericOverride_concreteDeclarationAndTheAbstractOneAsARedeclaration`
+
+---
+
 ## MC-80 — `verify_change` skips callers that reach a changed type without naming it — done
 
 **Status: done.**

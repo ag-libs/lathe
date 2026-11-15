@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.DeclarationNames;
+import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.analysis.Positions;
@@ -1111,30 +1112,36 @@ public final class LatheEngine {
                             hover ->
                                 session
                                     .search()
-                                    .implementationFuture(uri, pos)
+                                    .familyFuture(uri, pos)
                                     .thenCompose(
-                                        implementations ->
+                                        family ->
                                             session
                                                 .search()
-                                                .referencesFuture(uri, pos, true, cancel, progress)
-                                                .thenApply(
-                                                    references ->
-                                                        new ChangeFacts(
-                                                            hover,
-                                                            implementations,
-                                                            references))))));
+                                                .overriddenFuture(uri, pos)
+                                                .thenCompose(
+                                                    overrides ->
+                                                        session
+                                                            .search()
+                                                            .referencesFuture(
+                                                                uri, pos, true, cancel, progress)
+                                                            .thenApply(
+                                                                references ->
+                                                                    new ChangeFacts(
+                                                                        hover,
+                                                                        overrides,
+                                                                        family,
+                                                                        references)))))));
     final ChangeFacts facts = read.value();
     final String signature = hoverText(facts.hover());
-    final List<LatheLocation> overrideFamily =
-        capImplementations(facts.implementations(), IMPACT_MAX_RESULTS).implementations();
+    final List<LatheLocation> overrideFamily = familyMembers(facts.family(), false);
+    final List<LatheLocation> redeclaredBy = familyMembers(facts.family(), true);
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
-    // A signature change breaks every implementation, in a module that never calls it too.
+    // A signature change breaks every implementation and redeclaration, in a module that never
+    // calls it too.
     final List<Path> implementationPaths =
-        facts.implementations().getLeft().stream()
-            .map(location -> LatheUri.toPath(location.getUri()))
-            .toList();
+        facts.family().stream().map(hit -> LatheUri.toPath(hit.location().getUri())).toList();
     final Map<Path, ModulePlacement> placements =
         query(
             session ->
@@ -1180,7 +1187,9 @@ public final class LatheEngine {
     return new Noted<>(
         new LatheChangeImpact(
             signature,
+            facts.overrides(),
             overrideFamily,
+            redeclaredBy,
             production,
             test,
             refs.truncated(),
@@ -1189,19 +1198,37 @@ public final class LatheEngine {
         read.notes());
   }
 
-  // What analyze_change reads about the symbol, in one request: its hover, its override family and
-  // its references. The hover may be absent.
+  // What analyze_change reads about the symbol, in one request: its hover, the methods it
+  // overrides,
+  // the family below it and its references. The hover may be absent.
   private record ChangeFacts(
       Hover hover,
-      Either<List<? extends Location>, List<? extends LocationLink>> implementations,
+      List<String> overrides,
+      List<ImplementationHit> family,
       List<? extends Location> references) {
 
     ChangeFacts {
       ValidCheck.check()
-          .notNull(implementations, "implementations")
+          .notNull(overrides, "overrides")
+          .notNull(family, "family")
           .notNull(references, "references")
           .validate();
+      overrides = List.copyOf(overrides);
+      family = List.copyOf(family);
     }
+  }
+
+  // The family members below the symbol of one kind, implementations or redeclarations, capped as
+  // the references are.
+  private List<LatheLocation> familyMembers(
+      final List<ImplementationHit> family, final boolean redeclarations) {
+    return capReferences(
+            family.stream()
+                .filter(hit -> hit.redeclaration() == redeclarations)
+                .map(ImplementationHit::location)
+                .toList(),
+            IMPACT_MAX_RESULTS)
+        .references();
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,

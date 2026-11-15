@@ -571,12 +571,14 @@ final class McpText {
     return output.stream().map(line -> "%n    | %s".formatted(line)).collect(Collectors.joining());
   }
 
+  // The override family both ways: what the method overrides, by name, as a JDK or dependency
+  // method
+  // has no location here, and what overrides or, abstract, redeclares it, by location.
   static CallToolResult analyzeResult(final LatheChangeImpact impact, final LatheNotes notes) {
-    final String overrides =
-        impact.overrideFamily().isEmpty()
-            ? "none"
-            : "%d%n%s"
-                .formatted(impact.overrideFamily().size(), locationLines(impact.overrideFamily()));
+    final String redeclared =
+        impact.redeclaredBy().isEmpty()
+            ? ""
+            : "%nredeclared by: %s".formatted(familyLines(impact.redeclaredBy()));
     final String text =
         String.join(
             System.lineSeparator(),
@@ -588,8 +590,13 @@ final class McpText {
                     impact.referencesTruncated() ? " (truncated)" : ""),
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
-            "override family: %s".formatted(overrides));
+            "overrides: %s".formatted(joinOrNone(impact.overrides())),
+            "overridden by: %s%s".formatted(familyLines(impact.overrideFamily()), redeclared));
     return usesResult(text, notes);
+  }
+
+  private static String familyLines(final List<LatheLocation> members) {
+    return members.isEmpty() ? "none" : "%d%n%s".formatted(members.size(), locationLines(members));
   }
 
   static String joinOrNone(final List<String> items) {

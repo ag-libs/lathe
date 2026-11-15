@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CallHierarchyItemData;
 import io.github.aglibs.lathe.analysis.CallHierarchyItemDataCodec;
+import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
@@ -818,25 +819,15 @@ final class ReferenceSearch {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementationFuture(final String uri, final Position pos) {
-    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
-    if (route.isEmpty()) {
-      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
-    }
-
-    final CompilationWorker cursorWorker = route.get().worker();
-    final var request = router.featureRequest(route.get().doc(), pos);
-    final var indexSnapshot = reactorIndex.current();
-    final var lambdaSnapshot = reactorIndex.lambdaImplementors();
-
     final var t = Stopwatch.start();
-    return cursorWorker
-        .submit(session -> session.references().resolveTarget(request))
-        .thenCompose(
-            target ->
-                implementationForTarget(
-                    target, request, cursorWorker, indexSnapshot, lambdaSnapshot))
+    return familyFuture(uri, pos)
         .thenApply(
-            locations -> {
+            hits -> {
+              final List<Location> locations =
+                  hits.stream()
+                      .filter(hit -> !hit.redeclaration())
+                      .map(ImplementationHit::location)
+                      .toList();
               LOG.fine(
                   () ->
                       "[implementation] %s %dms hits=%d"
@@ -845,7 +836,38 @@ final class ReferenceSearch {
             });
   }
 
-  private CompletableFuture<List<Location>> implementationForTarget(
+  // The family below the symbol at the position: its implementations, and the abstract methods
+  // that redeclare it, which go to implementation leaves out and the change impact lists apart.
+  CompletableFuture<List<ImplementationHit>> familyFuture(final String uri, final Position pos) {
+    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
+    if (route.isEmpty()) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final CompilationWorker cursorWorker = route.get().worker();
+    final var request = router.featureRequest(route.get().doc(), pos);
+    final var indexSnapshot = reactorIndex.current();
+    final var lambdaSnapshot = reactorIndex.lambdaImplementors();
+    return cursorWorker
+        .submit(session -> session.references().resolveTarget(request))
+        .thenCompose(
+            target ->
+                implementationForTarget(
+                    target, request, cursorWorker, indexSnapshot, lambdaSnapshot));
+  }
+
+  // The methods the one at the position overrides, as Type#name(parameters), nearest first.
+  CompletableFuture<List<String>> overriddenFuture(final String uri, final Position pos) {
+    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
+    if (route.isEmpty()) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    final var request = router.featureRequest(route.get().doc(), pos);
+    return route.get().worker().submit(session -> session.references().overriddenMethods(request));
+  }
+
+  private CompletableFuture<List<ImplementationHit>> implementationForTarget(
       final ReferenceTarget target,
       final SourceFeatureRequest request,
       final CompilationWorker cursorWorker,
@@ -888,7 +910,7 @@ final class ReferenceSearch {
   // for a functional interface its lambdas and method references, need sources attributed: the
   // bytecode lambda index and the open documents, not every file naming the interface. A failure
   // there leaves the named subtypes.
-  private CompletableFuture<List<Location>> implementationsOfType(
+  private CompletableFuture<List<ImplementationHit>> implementationsOfType(
       final ReferenceTarget target,
       final SourceFeatureRequest request,
       final CompilationWorker cursorWorker,
@@ -899,11 +921,17 @@ final class ReferenceSearch {
     final Set<String> reactorDuplicateNames = reactorIndex.ambiguousHierarchyNames();
     return FeatureAnswers.concatAll(
         Stream.of(
-            cursorWorker.submit(
-                session ->
-                    session
-                        .navigation()
-                        .typeImplementations(request, indexSnapshot, reactorDuplicateNames)),
+            cursorWorker
+                .submit(
+                    session ->
+                        session
+                            .navigation()
+                            .typeImplementations(request, indexSnapshot, reactorDuplicateNames))
+                .thenApply(
+                    locations ->
+                        locations.stream()
+                            .map(location -> new ImplementationHit(location, false))
+                            .toList()),
             implementationsIn(
                     target,
                     samInterface,
@@ -930,7 +958,7 @@ final class ReferenceSearch {
   // keeps (local and anonymous ones among them, matched from the tree), and the files with lambdas
   // and method references when the target is a functional interface or its method: those the
   // bytecode lambda index names, and of the files naming the interface those the filter keeps.
-  private CompletableFuture<List<Location>> implementationsIn(
+  private CompletableFuture<List<ImplementationHit>> implementationsIn(
       final ReferenceTarget target,
       final Optional<String> samInterface,
       final WorkspaceTypeIndex indexSnapshot,

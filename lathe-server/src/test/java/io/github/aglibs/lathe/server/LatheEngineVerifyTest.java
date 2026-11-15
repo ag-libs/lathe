@@ -25,6 +25,9 @@ import org.junit.jupiter.api.condition.EnabledForJreRange;
 // verify_change and analyze_change: what a change breaks, and the sync it suggests.
 class LatheEngineVerifyTest extends LatheEngineTestBase {
   @Test
+  // The family both ways: an interface method lists what overrides it and, apart, the subinterface
+  // that redeclares it, which find_implementations leaves out; the implementation lists the method
+  // it overrides.
   void analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences() throws Exception {
     final GreeterFixture greeter = greeterFixture();
     final String ifaceSource = greeter.ifaceSource();
@@ -34,16 +37,37 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             tmp,
             "com/example/Caller.java",
             "package com.example; class Caller { void run(Greeter g) { g.greet(); } }");
-    compileIntoMirror(iface, greeter.impl(), caller);
+    final Path loud =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/LoudGreeter.java",
+            "package com.example; interface LoudGreeter extends Greeter { void greet(); }");
+    compileIntoMirror(iface, greeter.impl(), caller, loud);
     engine = new LatheEngine(tmp);
 
     final var pos = positionOf(ifaceSource, "greet");
     final LatheChangeImpact impact =
         engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
+    final String implSource = Files.readString(greeter.impl());
+    final var implPos = positionOf(implSource, "greet");
+    final LatheChangeImpact ofImpl =
+        engine.analyzeChange(greeter.impl(), implPos.getLine(), implPos.getCharacter()).value();
 
     assertThat(impact.signature()).contains("greet");
+    assertThat(impact.overrides()).isEmpty();
     assertThat(impact.overrideFamily())
-        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
+        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"))
+        .noneSatisfy(loc -> assertThat(loc.uri()).endsWith("LoudGreeter.java"));
+    assertThat(impact.redeclaredBy())
+        .singleElement()
+        .satisfies(loc -> assertThat(loc.uri()).endsWith("LoudGreeter.java"));
+    assertThat(
+            engine
+                .findImplementations(iface, pos.getLine(), pos.getCharacter(), 10)
+                .value()
+                .implementations())
+        .noneSatisfy(loc -> assertThat(loc.uri()).endsWith("LoudGreeter.java"));
+    assertThat(ofImpl.overrides()).containsExactly("com.example.Greeter#greet()");
     assertThat(impact.productionRefs()).isGreaterThanOrEqualTo(1);
     assertThat(impact.testRefs()).isZero();
     assertThat(impact.affectedModules()).containsExactly("module");

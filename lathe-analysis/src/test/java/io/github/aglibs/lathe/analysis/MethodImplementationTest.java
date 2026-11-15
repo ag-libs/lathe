@@ -18,8 +18,11 @@ class MethodImplementationTest {
 
   @TempDir private Path tempDir;
 
+  // The abstract redeclaration in between is no implementation: it comes back marked as a
+  // redeclaration, which go to implementation leaves out.
   @Test
-  void methodImplementations_genericOverride_returnsConcreteExactDeclaration() throws IOException {
+  void methodImplementations_genericOverride_concreteDeclarationAndTheAbstractOneAsARedeclaration()
+      throws IOException {
     final String serviceContent = "interface Service<T> { T execute(T value); }\n";
     final var serviceSource = Files.writeString(tempDir.resolve("Service.java"), serviceContent);
     final var classDir = tempDir.resolve("classes");
@@ -66,6 +69,17 @@ class MethodImplementationTest {
       assertThat(locations.get(0).getUri()).isEqualTo(candidateUri);
       assertThat(locations.get(0).getRange().getStart()).isEqualTo(new Position(4, 16));
       assertThat(locations.get(0).getRange().getEnd()).isEqualTo(new Position(4, 23));
+      assertThat(
+              MethodImplementationLocator.locate(
+                  candidateSession.analysis(candidateUri, candidateContent, 1, () -> {}),
+                  target,
+                  Set.of("AbstractService", "Direct"),
+                  candidateUri))
+          .filteredOn(ImplementationHit::redeclaration)
+          .singleElement()
+          .satisfies(
+              hit ->
+                  assertThat(hit.location().getRange().getStart()).isEqualTo(new Position(1, 25)));
     }
   }
 
@@ -395,7 +409,11 @@ class MethodImplementationTest {
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames) {
     return MethodImplementationLocator.locate(
-        session.analysis(uri, content, 1, () -> {}), target, candidateBinaryNames, uri);
+            session.analysis(uri, content, 1, () -> {}), target, candidateBinaryNames, uri)
+        .stream()
+        .filter(hit -> !hit.redeclaration())
+        .map(ImplementationHit::location)
+        .toList();
   }
 
   private ReferenceTarget samTarget(final String interfaceContent) {

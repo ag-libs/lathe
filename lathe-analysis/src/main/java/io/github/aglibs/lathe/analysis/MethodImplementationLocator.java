@@ -41,7 +41,7 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   // when the target is not a functional interface or its method.
   private final ExecutableElement samMethod;
   private final String uri;
-  private final List<Location> results = new ArrayList<>();
+  private final List<ImplementationHit> results = new ArrayList<>();
 
   private MethodImplementationLocator(
       final AttributedFileAnalysis analysis,
@@ -60,7 +60,9 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
     this.uri = uri;
   }
 
-  public static List<Location> locate(
+  // Abstract overriders come back as redeclarations: go to implementation leaves them out, the
+  // change impact lists them apart.
+  public static List<ImplementationHit> locate(
       final AttributedFileAnalysis analysis,
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames,
@@ -169,13 +171,13 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
     final boolean unnamed = isLocalOrAnonymousSubtype(candidateType);
     if (targetMethod == null) {
       if (unnamed) {
-        unnamedClassLocation(candidateType, classPath).ifPresent(results::add);
+        unnamedClassLocation(candidateType, classPath).ifPresent(this::addFound);
       } else if (!candidateType.equals(targetType)
           && candidateBinaryNames.contains(
               analysis.elements().getBinaryName(candidateType).toString())
           && isSubtypeOfTarget(candidateType)) {
         locationAtPath(classPath, analysis.tree(), candidateType.getSimpleName().toString())
-            .ifPresent(results::add);
+            .ifPresent(this::addFound);
       }
 
       return;
@@ -191,11 +193,20 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
         .filter(ExecutableElement.class::isInstance)
         .map(ExecutableElement.class::cast)
         .filter(method -> method.getKind() == ElementKind.METHOD)
-        .filter(method -> !method.getModifiers().contains(Modifier.ABSTRACT))
         .filter(method -> method.getSimpleName().contentEquals(target.simpleName()))
         .filter(method -> analysis.elements().overrides(method, targetMethod, candidateType))
-        .flatMap(method -> location(method, classTree, classPath).stream())
-        .forEach(results::add);
+        .forEach(
+            method ->
+                location(method, classTree, classPath)
+                    .ifPresent(
+                        location ->
+                            results.add(
+                                new ImplementationHit(
+                                    location, method.getModifiers().contains(Modifier.ABSTRACT)))));
+  }
+
+  private void addFound(final Location location) {
+    results.add(new ImplementationHit(location, false));
   }
 
   // A class the type index knows only by a binary name like Outer$1 or Outer$1Local.
@@ -261,7 +272,7 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
     }
 
     final var start = Positions.range(analysis.trees(), analysis.tree(), node).getStart();
-    results.add(new Location(uri, new Range(start, start)));
+    addFound(new Location(uri, new Range(start, start)));
   }
 
   private boolean implementsTarget(final ExecutableElement sam, final TypeElement convertedType) {

@@ -694,17 +694,22 @@ class McpTextTest {
         .startsWith(lines("PASS — 2 passed, 0 failed, 0 skipped", "Ran: com.example.ShopTest"));
   }
 
+  // The family both ways: what the method overrides by name, what overrides it, and apart what
+  // redeclares it abstract; redeclarations are left out when there are none.
   @Test
   void analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty() {
     final var base = location("app/Base.java", 4, "abstract int sell(int count);");
     final var override = location("app/Shop.java", 8, "int sell(int count) {");
+    final var redeclaration = location("app/Store.java", 3, "int sell(int count);");
 
     assertThat(
             text(
                 McpText.analyzeResult(
                     new LatheChangeImpact(
                         "int sell(int count)",
+                        List.of("app.Seller#sell(int)"),
                         List.of(base, override),
+                        List.of(redeclaration),
                         4,
                         2,
                         true,
@@ -717,13 +722,17 @@ class McpTextTest {
                 "references: 4 production, 2 test (truncated)",
                 "affected modules: app, core",
                 "relevant tests: ShopTest",
-                "override family: 2",
+                "overrides: app.Seller#sell(int)",
+                "overridden by: 2",
                 "app/Base.java:4:1: abstract int sell(int count);",
-                "app/Shop.java:8:1: int sell(int count) {"));
+                "app/Shop.java:8:1: int sell(int count) {",
+                "redeclared by: 1",
+                "app/Store.java:3:1: int sell(int count);"));
     assertThat(
             text(
                 McpText.analyzeResult(
-                    new LatheChangeImpact("", List.of(), 0, 0, false, List.of(), List.of()),
+                    new LatheChangeImpact(
+                        "", List.of(), List.of(), List.of(), 0, 0, false, List.of(), List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
             lines(
@@ -731,7 +740,8 @@ class McpTextTest {
                 "references: 0 production, 0 test",
                 "affected modules: none",
                 "relevant tests: none",
-                "override family: none"));
+                "overrides: none",
+                "overridden by: none"));
   }
 
   // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.
