@@ -74,7 +74,8 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
             mention -> {
               assertThat(mention.line()).isEqualTo(3);
               assertThat(mention.column())
-                  .isEqualTo(Files.readAllLines(file).get(3).indexOf("\"handler\""));
+                  .as("at the name, inside the quotes")
+                  .isEqualTo(Files.readAllLines(file).get(3).indexOf("\"handler\"") + 1);
             });
     assertThat(rename.mentionCount()).isEqualTo(1);
   }

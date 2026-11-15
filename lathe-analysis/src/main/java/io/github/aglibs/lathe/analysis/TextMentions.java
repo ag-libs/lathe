@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.Location;
@@ -85,6 +86,7 @@ public final class TextMentions {
   static List<Location> literals(
       final Trees trees, final CompilationUnitTree cu, final Tree scope, final String name) {
     final String uri = LatheUri.canonical(cu.getSourceFile().toUri().toString());
+    final CharSequence source = IOUtil.unchecked(() -> cu.getSourceFile().getCharContent(true));
     final var found = new ArrayList<Location>();
     new TreeScanner<Void, Void>() {
       @Override
@@ -95,7 +97,8 @@ public final class TextMentions {
             return null;
           }
 
-          final Position at = Positions.offsetToPosition(cu, start);
+          final long end = trees.getSourcePositions().getEndPosition(cu, node);
+          final Position at = Positions.offsetToPosition(cu, nameOffset(source, start, end, name));
           found.add(new Location(uri, new Range(at, at)));
         }
 
@@ -103,6 +106,20 @@ public final class TextMentions {
       }
     }.scan(scope, null);
     return List.copyOf(found);
+  }
+
+  // Where the name stands in the literal javac found, so a text block's mention is on the line
+  // with the name, not the one its quotes open on. Searched in the literal's own text only; one
+  // the name is escaped in (\u0073ell) keeps the literal's start.
+  private static long nameOffset(
+      final CharSequence source, final long start, final long end, final String name) {
+    if (end <= start || end > source.length()) {
+      return start;
+    }
+
+    final OptionalInt at =
+        wordStarts(source.subSequence((int) start, (int) end).toString(), name).findFirst();
+    return at.isPresent() ? start + at.getAsInt() : start;
   }
 
   // A resource names a class or member qualified (com.example.OldName, bean.oldName) or, as a
