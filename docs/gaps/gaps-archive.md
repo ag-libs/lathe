@@ -12865,7 +12865,7 @@ more on very large files.
 
 The session keeps the engine's last compile of each file and answers from it while the file is the same document snapshot with the same content and no write pass has changed what its module compiles against.
 Parallel calls share a compile still running.
-A per-module generation, bumped for every module a write pass refreshes (its own writes, another server's seen through the stamps, a build's), tells a compile out of date; a reload or a change on disk replaces the snapshot.
+A per-module generation, bumped as a write pass records a module to refresh (its own writes, another server's seen through the stamps, a build's), before a refresh it may hand to the next pass, tells a compile out of date; a reload or a change on disk replaces the snapshot.
 
 ### Regression targets
 

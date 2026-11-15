@@ -100,9 +100,6 @@ final class WorkspaceSession {
   // change on disk replaces them.
   private boolean documentsFollowDisk;
   private final DiagnosticPublisher publisher;
-  // Per module dir, how many write passes changed what its sources compile against: its own
-  // classes, or a module's it depends on. A compile from an older generation may be out of date.
-  private final Map<Path, Long> moduleGenerations = new HashMap<>();
   // Per file, the engine's last compile: an unchanged file asked again, or by calls running in
   // parallel, shares it instead of compiling once per tool call.
   private final Map<String, EngineCompile> engineCompiles = new HashMap<>();
@@ -376,7 +373,7 @@ final class WorkspaceSession {
 
   private long moduleGeneration(final CompilerRoute route) {
     return route instanceof final CompilerRoute.Module module
-        ? moduleGenerations.getOrDefault(module.config().moduleDir(), 0L)
+        ? writePass.moduleGeneration(module.config().moduleDir())
         : 0L;
   }
 
@@ -933,7 +930,6 @@ final class WorkspaceSession {
   // Re-analyze the open files in the scope's modules, so what the passes wrote shows in their
   // diagnostics.
   private void refreshOpenFiles(final Set<Path> scope) {
-    scope.forEach(moduleDir -> moduleGenerations.merge(moduleDir, 1L, Long::sum));
     LOG.fine(
         () ->
             "[dependents] checking %d open file(s) across %d module(s)"

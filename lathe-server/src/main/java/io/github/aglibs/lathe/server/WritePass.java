@@ -124,6 +124,10 @@ final class WritePass {
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
   // analyzes each open file once and rebuilds the index (~200ms on a large reactor) once.
   private final Set<Path> refreshScope = new HashSet<>();
+  // Per module dir, how many passes changed what its sources compile against: its own classes, a
+  // module's it depends on, or its failed files. Bumped as the pass records the change, before the
+  // refresh it may defer to a later pass, so a query never takes an older compile for current.
+  private final Map<Path, Long> moduleGenerations = new HashMap<>();
   // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
   // pass writes them without waiting for them to settle, while a build holds the reactor lock, and
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
@@ -403,6 +407,16 @@ final class WritePass {
             });
   }
 
+  private void refreshLater(final Set<Path> moduleDirs) {
+    refreshScope.addAll(moduleDirs);
+    moduleDirs.forEach(moduleDir -> moduleGenerations.merge(moduleDir, 1L, Long::sum));
+  }
+
+  long moduleGeneration(final Path moduleDir) {
+    eventLoop.checkOnLoop();
+    return moduleGenerations.getOrDefault(moduleDir, 0L);
+  }
+
   private void refreshAfterPasses() {
     if (!refreshScope.isEmpty()) {
       final Set<Path> scope = Set.copyOf(refreshScope);
@@ -531,7 +545,7 @@ final class WritePass {
     final Path root = config.sourceRoots().get(0);
     tree.orphans().forEach(rel -> writtenSinceVerify.add(root.resolve(rel)));
     reactorIndex.refreshShard(config);
-    refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
+    refreshLater(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
   }
 
@@ -803,7 +817,7 @@ final class WritePass {
                   .formatted(
                       byFailure.get(true).size(), stamps.size(), state.layout().moduleRel(config)));
       // The failed files' open buffers get their write diagnostics.
-      refreshScope.add(config.moduleDir());
+      refreshLater(Set.of(config.moduleDir()));
       final List<Path> rest = byFailure.get(false);
       return rest.isEmpty()
           ? CompletableFuture.completedFuture(null)
@@ -827,7 +841,7 @@ final class WritePass {
           }
         });
     writtenSinceVerify.addAll(stamps.keySet());
-    refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
+    refreshLater(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
     reactorIndex.refreshShard(config);
     LOG.fine(
         () ->
@@ -938,8 +952,8 @@ final class WritePass {
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     final Map<Path, SourceStamp> seen = stampsSeen.put(tree.config(), current);
     if (seen != null && !seen.equals(current)) {
-      refreshScope.add(tree.config().moduleDir());
-      refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(tree.config().moduleDir()));
+      refreshLater(Set.of(tree.config().moduleDir()));
+      refreshLater(state.moduleGraph().downstreamModuleDirs(tree.config().moduleDir()));
     }
   }
 
