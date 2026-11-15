@@ -26,13 +26,16 @@ import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.IntFunction;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 // The text of every MCP answer: what an agent reads back from a tool, built from the engine's
@@ -44,6 +47,8 @@ final class McpText {
   // their code: whole, a 400-declaration file answered 57k characters, which the client saved to a
   // file instead of showing.
   static final int OUTLINE_MAX_DECLARATIONS = 200;
+  // The most lines any outline answer lists, about 21k characters even with their code left out.
+  static final int OUTLINE_MAX_LINES = 600;
   // The document symbol kinds of a class, an interface or annotation, an enum and a record.
   private static final Set<String> TYPE_KINDS = Set.of("class", "interface", "enum", "struct");
 
@@ -173,15 +178,16 @@ final class McpText {
       return result("No declarations in %s.".formatted(file.getFileName()), notes);
     }
 
+    final var shape = OutlineShape.of(items);
     if (type != null) {
-      return typeOutline(file, items, type, notes);
+      return typeOutline(file, items, shape, type, notes);
     }
 
     final String path = items.get(0).location().path();
     if (items.size() > OUTLINE_MAX_DECLARATIONS) {
       return result(
           "%s is too large for one outline: %d declarations. Its types, with their own members; call outline with type=<Name> for one:%n%s"
-              .formatted(path, items.size(), typeLines(items)),
+              .formatted(path, items.size(), typeLines(items, shape)),
           notes);
     }
 
@@ -201,26 +207,26 @@ final class McpText {
   private static CallToolResult typeOutline(
       final Path file,
       final List<LatheOutlineItem> items,
+      final OutlineShape shape,
       final String type,
       final LatheNotes notes) {
     final List<Integer> matches =
-        IntStream.range(0, items.size())
-            .filter(i -> isType(items.get(i)) && items.get(i).name().equals(type))
-            .boxed()
-            .toList();
+        shape.memberTypes().stream().filter(i -> items.get(i).name().equals(type)).toList();
     if (matches.isEmpty()) {
       return error(
-          "No type %s in %s; its types:%n%s".formatted(type, file.getFileName(), typeLines(items)));
+          "No type %s in %s; its types:%n%s"
+              .formatted(type, file.getFileName(), typeLines(items, shape)));
     }
 
     return result(
         matches.stream()
-            .map(i -> typeBlock(items, i))
-            .collect(Collectors.joining("%n%n".formatted())),
+            .map(i -> typeBlock(items, shape, i))
+            .collect(Collectors.joining(System.lineSeparator().repeat(2))),
         notes);
   }
 
-  private static String typeBlock(final List<LatheOutlineItem> items, final int typeIndex) {
+  private static String typeBlock(
+      final List<LatheOutlineItem> items, final OutlineShape shape, final int typeIndex) {
     final LatheOutlineItem type = items.get(typeIndex);
     final List<Integer> members = memberIndexes(items, typeIndex);
     final boolean compact = members.size() > OUTLINE_MAX_DECLARATIONS;
@@ -234,33 +240,60 @@ final class McpText {
                 compact
                     ? " (their code left out: over %d)".formatted(OUTLINE_MAX_DECLARATIONS)
                     : "");
-    return Stream.concat(
-            Stream.of(header, outlineLine(type)),
-            members.stream().map(i -> memberLine(items, i, compact)))
-        .collect(Collectors.joining(System.lineSeparator()));
+    return "%s%n%s%n%s"
+        .formatted(
+            header,
+            outlineLine(type),
+            cappedLines(items, members, i -> memberLine(items, shape, i, compact), "members"));
   }
 
   private static String memberLine(
-      final List<LatheOutlineItem> items, final int index, final boolean compact) {
+      final List<LatheOutlineItem> items,
+      final OutlineShape shape,
+      final int index,
+      final boolean compact) {
     final LatheOutlineItem member = items.get(index);
     if (isType(member)) {
-      return typeLine(items, index);
+      return typeLine(items, shape, index);
     }
 
     return compact ? positionLine(member) : outlineLine(member);
   }
 
-  // Every type of the file, indented by nesting, with its position and own member count.
-  private static String typeLines(final List<LatheOutlineItem> items) {
-    return IntStream.range(0, items.size())
-        .filter(i -> isType(items.get(i)))
-        .mapToObj(i -> typeLine(items, i))
-        .collect(Collectors.joining(System.lineSeparator()));
+  // The file's member types, indented by nesting, with their position and own member count; a
+  // class declared in a method is no member of the type around it.
+  private static String typeLines(final List<LatheOutlineItem> items, final OutlineShape shape) {
+    return cappedLines(items, shape.memberTypes(), i -> typeLine(items, shape, i), "types");
   }
 
-  private static String typeLine(final List<LatheOutlineItem> items, final int typeIndex) {
+  private static String typeLine(
+      final List<LatheOutlineItem> items, final OutlineShape shape, final int typeIndex) {
     return "%s  %d member(s)"
-        .formatted(positionLine(items.get(typeIndex)), memberIndexes(items, typeIndex).size());
+        .formatted(positionLine(items.get(typeIndex)), shape.memberCounts().get(typeIndex));
+  }
+
+  // At most OUTLINE_MAX_LINES lines, then how many more and the line they start at, from which the
+  // agent can read the file: a generated enum or a parser's types can run into the thousands.
+  private static String cappedLines(
+      final List<LatheOutlineItem> items,
+      final List<Integer> indexes,
+      final IntFunction<String> line,
+      final String noun) {
+    final String shown =
+        indexes.stream()
+            .limit(OUTLINE_MAX_LINES)
+            .map(line::apply)
+            .collect(Collectors.joining(System.lineSeparator()));
+    if (indexes.size() <= OUTLINE_MAX_LINES) {
+      return shown;
+    }
+
+    return "%s%n… and %d more %s, from line %d"
+        .formatted(
+            shown,
+            indexes.size() - OUTLINE_MAX_LINES,
+            noun,
+            line(items.get(indexes.get(OUTLINE_MAX_LINES)).location()));
   }
 
   // The declarations directly in the type: the items after it, one level deeper, until the outline
@@ -282,6 +315,40 @@ final class McpText {
     return TYPE_KINDS.contains(item.kind());
   }
 
+  // memberTypes: the indexes of the types every enclosing declaration of which is a type, a local
+  // class left out. memberCounts: each declaration's own members, by index. One pass over the
+  // outline, which lists a declaration right after the one it is in.
+  private record OutlineShape(List<Integer> memberTypes, List<Integer> memberCounts) {
+    OutlineShape {
+      memberTypes = List.copyOf(memberTypes);
+      memberCounts = List.copyOf(memberCounts);
+    }
+
+    static OutlineShape of(final List<LatheOutlineItem> items) {
+      final int[] counts = new int[items.size()];
+      final List<Integer> memberTypes = new ArrayList<>();
+      final Deque<Integer> enclosing = new ArrayDeque<>();
+      for (int i = 0; i < items.size(); i++) {
+        final LatheOutlineItem item = items.get(i);
+        while (!enclosing.isEmpty() && items.get(enclosing.peek()).depth() >= item.depth()) {
+          enclosing.pop();
+        }
+
+        if (!enclosing.isEmpty()) {
+          counts[enclosing.peek()]++;
+        }
+
+        if (isType(item) && enclosing.stream().allMatch(j -> isType(items.get(j)))) {
+          memberTypes.add(i);
+        }
+
+        enclosing.push(i);
+      }
+
+      return new OutlineShape(memberTypes, Arrays.stream(counts).boxed().toList());
+    }
+  }
+
   // An outline line without its code.
   private static String positionLine(final LatheOutlineItem item) {
     return "%s%s %s  %d:%d"
@@ -295,14 +362,7 @@ final class McpText {
 
   // line:column of the name, the position the other tools take.
   static String outlineLine(final LatheOutlineItem item) {
-    return "%s%s %s  %d:%d: %s"
-        .formatted(
-            "  ".repeat(item.depth()),
-            item.kind(),
-            item.name(),
-            line(item.location()),
-            toWire(item.location().column()),
-            item.location().snippet());
+    return "%s: %s".formatted(positionLine(item), item.location().snippet());
   }
 
   // The notes say why the list may be empty or stale: a .lathe/ from another Lathe version loads no

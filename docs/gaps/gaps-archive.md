@@ -12785,11 +12785,15 @@ Found by a refactoring review of Lathe itself through its own MCP server (2026-1
 A file of more than 200 declarations answers its types instead, each with its position and own member count, and says to pass `type=<Name>` for one (`McpText.OUTLINE_MAX_DECLARATIONS`).
 With `type`, `outline` answers that type's own members, a nested type as one line with its member count; a type whose own members pass the cap lists them without their code, about 35 characters each.
 An unknown type name is an error listing the file's types.
+No answer lists more than 600 lines (`McpText.OUTLINE_MAX_LINES`): past them it says how many more there are and the line they start at.
+A class declared in a method is no member type: the types view leaves it out.
 
 ### Regression targets
 
 - `McpTextTest.outlineResult_fileOverTheCap_answersItsTypes_oneTypeByName`
 - `McpTextTest.outlineResult_typeOverTheCapOrUnknown_membersWithoutCodeOrAnErrorListingTheTypes`
+- `McpTextTest.outlineResult_typeWithMoreMembersThanTheLineCap_listsTheCapAndWhereTheRestStart`
+- `McpTextTest.outlineResult_localClassInAMethod_notAMemberType`
 
 ---
 

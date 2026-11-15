@@ -585,8 +585,14 @@ final class LatheMcpTools {
         file ->
             render(
                 engine.outline(file),
-                (items, notes) ->
-                    McpText.outlineResult(file, items, stringArg(request, "type"), notes)));
+                (items, notes) -> McpText.outlineResult(file, items, typeArg(request), notes)));
+  }
+
+  // A blank type names none: the whole file.
+  private static String typeArg(final CallToolRequest request) {
+    return Optional.ofNullable(stringArg(request, "type"))
+        .filter(name -> !name.isBlank())
+        .orElse(null);
   }
 
   // An enum argument by its constant's name, case-insensitive.

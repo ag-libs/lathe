@@ -142,7 +142,7 @@ class McpTextTest {
   // type is then asked for by name, its nested types as one line each.
   @Test
   void outlineResult_fileOverTheCap_answersItsTypes_oneTypeByName() {
-    final List<LatheOutlineItem> items = bigOutline();
+    final List<LatheOutlineItem> items = bigOutline(201);
 
     assertThat(text(McpText.outlineResult(tmp.resolve("Shop.java"), items, null, McpText.NO_NOTES)))
         .isEqualTo(
@@ -164,7 +164,7 @@ class McpTextTest {
   // the file has no type of is an error that lists its types.
   @Test
   void outlineResult_typeOverTheCapOrUnknown_membersWithoutCodeOrAnErrorListingTheTypes() {
-    final List<LatheOutlineItem> items = bigOutline();
+    final List<LatheOutlineItem> items = bigOutline(201);
 
     final String big =
         text(McpText.outlineResult(tmp.resolve("Shop.java"), items, "Big", McpText.NO_NOTES));
@@ -186,20 +186,51 @@ class McpTextTest {
                 "  struct Inner  203:1  2 member(s)"));
   }
 
-  // Class Big with 201 methods and a nested record Inner of two fields: 205 declarations, over the
-  // cap.
-  private static List<LatheOutlineItem> bigOutline() {
+  // No answer lists more than the line cap: past it, how many more and the line they start at, from
+  // which the agent reads the file.
+  @Test
+  void outlineResult_typeWithMoreMembersThanTheLineCap_listsTheCapAndWhereTheRestStart() {
+    final String big =
+        text(
+            McpText.outlineResult(
+                tmp.resolve("Shop.java"), bigOutline(650), "Big", McpText.NO_NOTES));
+
+    assertThat(big.lines())
+        .hasSize(McpText.OUTLINE_MAX_LINES + 3)
+        .last()
+        .isEqualTo("… and 51 more members, from line 602");
+  }
+
+  // A class declared in a method is no member of the type around it: the types of a file over the
+  // cap leave it out, and the type's member count does not hold it.
+  @Test
+  void outlineResult_localClassInAMethod_notAMemberType() {
+    final List<LatheOutlineItem> items =
+        Stream.concat(
+                bigOutline(201).stream().limit(2),
+                Stream.concat(
+                    Stream.of(outlineItem("class", "Local", 2, 3, "class Local {")),
+                    bigOutline(201).stream().skip(2)))
+            .toList();
+
+    assertThat(text(McpText.outlineResult(tmp.resolve("Shop.java"), items, null, McpText.NO_NOTES)))
+        .contains("class Big  1:1  202 member(s)")
+        .doesNotContain("Local");
+  }
+
+  // Class Big with the given number of methods, then a nested record Inner of two fields.
+  private static List<LatheOutlineItem> bigOutline(final int methods) {
     return Stream.of(
             Stream.of(outlineItem("class", "Big", 0, 1, "public class Big {")),
-            IntStream.rangeClosed(1, 201)
+            IntStream.rangeClosed(1, methods)
                 .mapToObj(
                     i ->
                         outlineItem(
                             "method", "m%d".formatted(i), 1, i + 1, "void m%d() {".formatted(i))),
             Stream.of(
-                outlineItem("struct", "Inner", 1, 203, "record Inner(int a, int b) {"),
-                outlineItem("field", "a", 2, 204, "int a"),
-                outlineItem("field", "b", 2, 205, "int b")))
+                outlineItem("struct", "Inner", 1, methods + 2, "record Inner(int a, int b) {"),
+                outlineItem("field", "a", 2, methods + 3, "int a"),
+                outlineItem("field", "b", 2, methods + 4, "int b")))
         .flatMap(stream -> stream)
         .toList();
   }
