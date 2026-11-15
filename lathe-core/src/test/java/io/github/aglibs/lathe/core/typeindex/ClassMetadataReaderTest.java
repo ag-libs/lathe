@@ -43,6 +43,15 @@ class ClassMetadataReaderTest {
     assertThat(metadata.orElseThrow().access().kind()).isEqualTo(TypeKind.INTERFACE);
   }
 
+  // A record carries no flag of its own; its superclass makes it one, and a plain class stays one.
+  @Test
+  void kind_recordAndPlainClass_recordOnlyForTheRecord() throws IOException {
+    assertThat(ClassMetadataReader.read(classFile(Point.class)).orElseThrow().kind())
+        .isEqualTo(TypeKind.RECORD);
+    assertThat(ClassMetadataReader.read(classFile(Child.class)).orElseThrow().kind())
+        .isEqualTo(TypeKind.CLASS);
+  }
+
   @Test
   void read_javaLangObject_returnsNoSupertypes() throws IOException {
     final var metadata = ClassMetadataReader.read(classFile(Object.class));
@@ -148,6 +157,10 @@ class ClassMetadataReaderTest {
   }
 
   private static class Parent {}
+
+  private record Point(int x, int y) {
+    private Point {}
+  }
 
   private static final class Child extends Parent implements Runnable {
     @Override

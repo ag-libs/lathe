@@ -82,6 +82,7 @@ import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolInformation;
+import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -484,7 +485,7 @@ public final class LatheEngine {
     return Stream.concat(
         Stream.of(
             new LatheOutlineItem(
-                symbol.getKind().name().toLowerCase(Locale.ROOT),
+                kindName(symbol.getKind()).toLowerCase(Locale.ROOT),
                 symbol.getName(),
                 depth,
                 toLatheLocation(new Location(uri, symbol.getSelectionRange())))),
@@ -556,11 +557,20 @@ public final class LatheEngine {
         .collect(Collectors.toUnmodifiableSet());
   }
 
+  // The Java word where LSP has none: a record is a Struct there, an enum constant an EnumMember.
+  private static String kindName(final SymbolKind kind) {
+    return switch (kind) {
+      case Struct -> "Record";
+      case EnumMember -> "Enum constant";
+      default -> kind.name();
+    };
+  }
+
   private LatheSymbol toLatheSymbol(final SymbolInformation symbol) {
     final String container = symbol.getContainerName() == null ? "" : symbol.getContainerName();
     return new LatheSymbol(
         symbol.getName(),
-        symbol.getKind().name(),
+        kindName(symbol.getKind()),
         container,
         toLatheLocation(symbol.getLocation()));
   }

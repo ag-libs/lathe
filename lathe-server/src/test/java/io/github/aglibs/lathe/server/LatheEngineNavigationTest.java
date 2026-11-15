@@ -590,7 +590,8 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
   }
 
   @Test
-  void outline_typeWithNestedType_listsEveryDeclarationAtItsDepthWithItsLine() throws Exception {
+  void outline_typeWithNestedTypes_listsEveryDeclarationAtItsDepthWithItsJavaKind()
+      throws Exception {
     final Path source =
         TestCompiler.writeModuleSource(
             tmp,
@@ -608,6 +609,8 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
               }
 
               record Item(String name) {}
+
+              enum Size { SMALL }
             }
             """);
     engine = new LatheEngine(tmp);
@@ -626,8 +629,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             tuple("field", "stock", 1, 4, "private int stock = 3;"),
             tuple("constructor", "Shop", 1, 6, "public Shop() {}"),
             tuple("method", "sell", 1, 8, "int sell(int count) {"),
-            tuple("struct", "Item", 1, 12, "record Item(String name) {}"),
-            tuple("field", "name", 2, 12, "record Item(String name) {}"));
+            tuple("record", "Item", 1, 12, "record Item(String name) {}"),
+            tuple("field", "name", 2, 12, "record Item(String name) {}"),
+            tuple("enum", "Size", 1, 14, "enum Size { SMALL }"),
+            tuple("enum constant", "SMALL", 2, 14, "enum Size { SMALL }"));
     assertThat(outline)
         .allSatisfy(
             item ->

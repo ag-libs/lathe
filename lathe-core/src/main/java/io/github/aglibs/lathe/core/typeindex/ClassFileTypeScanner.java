@@ -217,7 +217,7 @@ public final class ClassFileTypeScanner {
     // class.
     final boolean typeNameCandidate =
         metadata.access().isPublicType() && Character.isJavaIdentifierStart(simpleName.charAt(0));
-    final TypeKind kind = metadata.access().kind();
+    final TypeKind kind = metadata.kind();
     final List<String> directSupertypes =
         kind == TypeKind.INTERFACE || kind == TypeKind.ANNOTATION
             ? metadata.directSupertypes().stream()
