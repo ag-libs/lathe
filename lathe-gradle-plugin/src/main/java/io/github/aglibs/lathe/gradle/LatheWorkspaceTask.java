@@ -391,8 +391,9 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
 
   // The newest JDK any project compiles with, as the server's: the server then parses what every
   // module's compile accepts. One older than the server runs on does not count (a toolchain on JDK
-  // 11; the server's javac then compiles for 11 with --release); a build with none runs the server
-  // on the JDK Gradle runs on, which is new enough.
+  // 11: the server's javac compiles for 11 by its --release, or the -source, -target and --system
+  // its capture records); a build with none runs the server on the JDK Gradle runs on, which is new
+  // enough.
   static JdkSource compilingJdk(final List<ProjectFacts> facts) {
     return facts.stream()
         .filter(

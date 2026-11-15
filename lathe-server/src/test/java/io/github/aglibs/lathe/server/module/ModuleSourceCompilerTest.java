@@ -331,7 +331,7 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, "11", config.proc(), config.encoding()),
+            withOptions(config, "11", config.proc(), config.encoding(), config.compilerArgs()),
             new CompilationAdmission(1))) {
       assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN)))
           .singleElement()
@@ -341,10 +341,73 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, null, config.proc(), config.encoding()),
+            withOptions(config, null, config.proc(), config.encoding(), config.compilerArgs()),
             new CompilationAdmission(1))) {
       assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN))).isEmpty();
     }
+  }
+
+  // A build's compile JDK comes as --system. The server's own is javac's default, and one gone
+  // since
+  // the sync cannot be opened: neither is applied, the compile writes against the server's JDK,
+  // and only the missing one is warned about.
+  @Test
+  void compileBatch_systemOfOwnOrMissingJdk_writesAgainstTheServersJdk_warnsOfTheMissing()
+      throws Exception {
+    final var config = TestCompiler.mainTreeConfig(td, "module");
+    final Path sourceRoot = config.sourceRoots().get(0);
+    Files.createDirectories(sourceRoot);
+    final String uri = sourceRoot.resolve("Names.java").toUri().toString();
+    final Path missing = td.resolve("uninstalled-jdk");
+    final var warned = new CopyOnWriteArrayList<String>();
+    final var handler =
+        new Handler() {
+          @Override
+          public void publish(final LogRecord record) {
+            if (record.getLevel() == Level.WARNING && record.getMessage().contains(td.toString())) {
+              warned.add(record.getMessage());
+            }
+          }
+
+          @Override
+          public void flush() {}
+
+          @Override
+          public void close() {}
+        };
+    final var log = Logger.getLogger(ModuleSourceCompiler.class.getName());
+    log.addHandler(handler);
+    try {
+      for (final String jdk :
+          List.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), missing.toString())) {
+        try (var compiler =
+            new ModuleSourceCompiler(
+                withOptions(
+                    config,
+                    null,
+                    config.proc(),
+                    config.encoding(),
+                    List.of(
+                        "--system",
+                        jdk,
+                        "-source",
+                        TestCompiler.RELEASE,
+                        "-target",
+                        TestCompiler.RELEASE)),
+                new CompilationAdmission(1))) {
+          assertThat(
+                  compiler
+                      .compileBatch(List.of(new TransientSource(uri, "class Names {}")), () -> {})
+                      .writtenBinaryNames())
+              .as(jdk)
+              .containsExactly("Names");
+        }
+      }
+    } finally {
+      log.removeHandler(handler);
+    }
+
+    assertThat(warned).singleElement().asString().contains(missing.toString());
   }
 
   // The editor's text is compiled from a temp copy javac reads in the module's -encoding: a
@@ -359,7 +422,8 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, config.release(), config.proc(), "ISO-8859-1"),
+            withOptions(
+                config, config.release(), config.proc(), "ISO-8859-1", config.compilerArgs()),
             new CompilationAdmission(1))) {
       assertThat(compiler.compile(uri, source, CompileMode.OPEN).diagnostics())
           .filteredOn(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
@@ -661,7 +725,12 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withOptions(config, config.release(), LatheFlags.PROC_NONE, config.encoding()),
+            withOptions(
+                config,
+                config.release(),
+                LatheFlags.PROC_NONE,
+                config.encoding(),
+                config.compilerArgs()),
             new CompilationAdmission(1))) {
       final BatchWrite write = compiler.compileBatch(sources, () -> {});
 
@@ -689,7 +758,8 @@ class ModuleSourceCompilerTest {
       final ModuleSourceConfig config,
       final String release,
       final String proc,
-      final String encoding) {
+      final String encoding,
+      final List<String> compilerArgs) {
     return new ModuleSourceConfig(
         config.moduleDir(),
         config.sourceTree(),
@@ -704,7 +774,7 @@ class ModuleSourceCompilerTest {
         config.parameters(),
         config.enablePreview(),
         proc,
-        config.compilerArgs(),
+        compilerArgs,
         config.analysisMode(),
         config.externalOutput(),
         null,

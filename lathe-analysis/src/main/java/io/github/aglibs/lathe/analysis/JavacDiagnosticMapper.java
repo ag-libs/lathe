@@ -30,13 +30,23 @@ public final class JavacDiagnosticMapper {
       final String content) {
     final var seen = new HashSet<String>();
     return raw.stream()
-        .filter(
-            d ->
-                d.getKind() != javax.tools.Diagnostic.Kind.NOTE
-                    || d.getPosition() != javax.tools.Diagnostic.NOPOS)
+        .filter(JavacDiagnosticMapper::aboutTheFile)
         .map(d -> toLsp(d, content))
         .filter(d -> notDuplicate(d, seen))
         .toList();
+  }
+
+  // A warning or note of no file is about the compile (a -source older than javac's own, processor
+  // options no processor claimed): it would land on the first line of every file. An error of no
+  // file stays, as the compile it fails would otherwise look clean.
+  private static boolean aboutTheFile(final javax.tools.Diagnostic<? extends JavaFileObject> d) {
+    if (d.getKind() == javax.tools.Diagnostic.Kind.ERROR) {
+      return true;
+    }
+
+    return d.getSource() != null
+        && (d.getKind() != javax.tools.Diagnostic.Kind.NOTE
+            || d.getPosition() != javax.tools.Diagnostic.NOPOS);
   }
 
   public static Diagnostic toLsp(

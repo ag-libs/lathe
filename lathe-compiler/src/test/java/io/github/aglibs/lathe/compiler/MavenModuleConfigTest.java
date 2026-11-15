@@ -136,6 +136,52 @@ class MavenModuleConfigTest {
         .containsExactly("--module-version", "27.0.0-SNAPSHOT", "-Werror");
   }
 
+  // Without a release, Maven passes javac its source and target beside the custom args, and
+  // compiles against its own JDK, or a toolchain's, whose javac it forks: they are recorded with
+  // them, so the server compiles for the same version and JDK. A toolchain targeting a release
+  // newer than Maven's JDK, which the server runs on, keeps its args. A release is recorded as one.
+  @Test
+  void of_sourceAndTargetWithoutRelease_recordedWithTheCompileJdkUnlessNewerThanMaven()
+      throws Exception {
+    final Path toolchain = tmp.resolve("jdk-17");
+    Files.createDirectories(toolchain.resolve(LatheLayout.JDK_MODULES_IMAGE).getParent());
+    Files.writeString(toolchain.resolve(LatheLayout.JDK_MODULES_IMAGE), "image");
+    final var config = new CompilerConfiguration();
+    config.setOutputLocation(tmp.resolve("target/classes").toString());
+    config.setSourceVersion("11");
+    config.setTargetVersion("11");
+    config.addCompilerCustomArgument("-Werror", null);
+    final List<String> inMaven = MavenModuleConfig.of(config).compilerArgs();
+    config.setFork(true);
+    config.setExecutable(toolchain.resolve("bin").resolve("javac").toString());
+    final List<String> forked = MavenModuleConfig.of(config).compilerArgs();
+    config.setTargetVersion(Integer.toString(Runtime.version().feature() + 1));
+    final List<String> newerThanMaven = MavenModuleConfig.of(config).compilerArgs();
+    config.setSourceVersion("1.8");
+    config.setTargetVersion("1.8");
+    final List<String> legacyName = MavenModuleConfig.of(config).compilerArgs();
+    config.setReleaseVersion("17");
+
+    final ModuleConfigData withRelease = MavenModuleConfig.of(config);
+
+    assertThat(inMaven)
+        .containsExactly(
+            "--system",
+            System.getProperty(LatheLayout.JAVA_HOME_PROPERTY),
+            "-source",
+            "11",
+            "-target",
+            "11",
+            "-Werror");
+    assertThat(forked)
+        .containsExactly(
+            "--system", toolchain.toString(), "-source", "11", "-target", "11", "-Werror");
+    assertThat(newerThanMaven).containsExactly("-Werror");
+    assertThat(legacyName).containsSubsequence("-source", "1.8", "-target", "1.8", "-Werror");
+    assertThat(withRelease.compilerArgs()).containsExactly("-Werror");
+    assertThat(withRelease.release()).isEqualTo("17");
+  }
+
   @Test
   void write_producesReadableJsonFile() throws Exception {
     final var moduleRoot = tmp.resolve("module-f");
