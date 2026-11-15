@@ -31,6 +31,7 @@ class TextMentionsTest {
               String prose = "we sell shoes";
               Object reflect() { return "com.example.Shop#sell"; }
               String query = \"""
+                  we sell, then
                   call com.example.Shop.sell
                   \""";
             }
@@ -40,8 +41,8 @@ class TextMentionsTest {
         .extracting(
             location -> location.getRange().getStart().getLine(),
             location -> location.getRange().getStart().getCharacter())
-        .as("at the name itself, in a text block on its own line")
-        .containsExactly(tuple(2, 16), tuple(5, 46), tuple(7, 28));
+        .as("at the name that makes it a mention, in a text block on its own line")
+        .containsExactly(tuple(2, 16), tuple(5, 46), tuple(8, 28));
   }
 
   // A resource names a class qualified, or by its file name as a service file does.

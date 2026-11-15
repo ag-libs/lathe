@@ -98,7 +98,8 @@ public final class TextMentions {
           }
 
           final long end = trees.getSourcePositions().getEndPosition(cu, node);
-          final Position at = Positions.offsetToPosition(cu, nameOffset(source, start, end, name));
+          final long offset = nameOffset(source, start, end, name, text.equals(name));
+          final Position at = Positions.offsetToPosition(cu, offset);
           found.add(new Location(uri, new Range(at, at)));
         }
 
@@ -109,16 +110,22 @@ public final class TextMentions {
   }
 
   // Where the name stands in the literal javac found, so a text block's mention is on the line
-  // with the name, not the one its quotes open on. Searched in the literal's own text only; one
-  // the name is escaped in (\u0073ell) keeps the literal's start.
+  // with the name, not the one its quotes open on: the first qualified occurrence, as that is what
+  // made it a mention, unless the literal is the name alone. Searched in the literal's own text; a
+  // name written with unicode escapes is not found there and keeps the literal's start.
   private static long nameOffset(
-      final CharSequence source, final long start, final long end, final String name) {
+      final CharSequence source,
+      final long start,
+      final long end,
+      final String name,
+      final boolean alone) {
     if (end <= start || end > source.length()) {
       return start;
     }
 
+    final String literal = source.subSequence((int) start, (int) end).toString();
     final OptionalInt at =
-        wordStarts(source.subSequence((int) start, (int) end).toString(), name).findFirst();
+        wordStarts(literal, name).filter(word -> alone || qualified(literal, word)).findFirst();
     return at.isPresent() ? start + at.getAsInt() : start;
   }
 
