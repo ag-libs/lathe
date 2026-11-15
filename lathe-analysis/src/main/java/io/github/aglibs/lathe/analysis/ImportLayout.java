@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.analysis;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,18 +77,18 @@ public record ImportLayout(List<ImportLine> imports, Position packageEnd) {
         .orElseGet(() -> newGroup(groups, spelling));
   }
 
-  // The kind's imports in blank-line-separated runs.
+  // The kind's imports in blank-line-separated runs: one starts at the first import and at each
+  // after a blank line, and runs to the next start, the last to the end.
   private static List<List<ImportLine>> groups(final List<ImportLine> kind) {
-    final var groups = new ArrayList<List<ImportLine>>();
-    for (final ImportLine line : kind) {
-      if (groups.isEmpty() || line.afterBlankLine()) {
-        groups.add(new ArrayList<>());
-      }
-
-      CollectionUtil.last(groups).add(line);
-    }
-
-    return groups.stream().map(List::copyOf).toList();
+    final List<Integer> bounds =
+        IntStream.concat(
+                IntStream.range(0, kind.size()).filter(i -> i == 0 || kind.get(i).afterBlankLine()),
+                IntStream.of(kind.size()))
+            .boxed()
+            .toList();
+    return IntStream.range(0, bounds.size() - 1)
+        .mapToObj(g -> List.copyOf(kind.subList(bounds.get(g), bounds.get(g + 1))))
+        .toList();
   }
 
   // The group a new import joins: the only one, as a single block may be a formatter's that never

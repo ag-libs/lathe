@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.TextEdit;
 
 public final class ImportAnalyzer {
 
+  private static final long NO_IMPORT = -1;
   private static final Pattern BLANK_LINE = Pattern.compile("\\n[ \\t\\r]*\\n");
 
   private final AttributedFileAnalysis analysis;
@@ -36,17 +37,11 @@ public final class ImportAnalyzer {
     final List<ImportLayout.ImportLine> lines =
         IntStream.range(0, complete.size())
             .mapToObj(
-                i -> {
-                  final ImportTree imp = complete.get(i);
-                  final long start = positions.getStartPosition(cu, imp);
-                  return new ImportLayout.ImportLine(
-                      spelling(imp),
-                      Positions.offsetToPosition(cu, start),
-                      Positions.offsetToPosition(cu, positions.getEndPosition(cu, imp)),
-                      i > 0
-                          && blankLineBetween(
-                              source, positions.getEndPosition(cu, complete.get(i - 1)), start));
-                })
+                i ->
+                    importLine(
+                        complete.get(i),
+                        i == 0 ? NO_IMPORT : positions.getEndPosition(cu, complete.get(i - 1)),
+                        source))
             .toList();
     final long packageEnd =
         cu.getPackage() == null ? -1 : positions.getEndPosition(cu, cu.getPackage());
@@ -56,12 +51,20 @@ public final class ImportAnalyzer {
             packageEnd < 0 ? ImportLayout.NO_PACKAGE : Positions.offsetToPosition(cu, packageEnd)));
   }
 
-  // Whether a blank line separates two imports: a comment line or an import still being typed
-  // between them does not.
-  private static boolean blankLineBetween(final String source, final long from, final long to) {
-    return from >= 0
-        && to <= source.length()
-        && BLANK_LINE.matcher(source.substring((int) from, (int) to)).find();
+  // An import, and whether a blank line separates it from the one ending at previousEnd: a comment
+  // line or an import still being typed between them does not.
+  private ImportLayout.ImportLine importLine(
+      final ImportTree imp, final long previousEnd, final String source) {
+    final CompilationUnitTree cu = analysis.tree();
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final long start = positions.getStartPosition(cu, imp);
+    return new ImportLayout.ImportLine(
+        spelling(imp),
+        Positions.offsetToPosition(cu, start),
+        Positions.offsetToPosition(cu, positions.getEndPosition(cu, imp)),
+        previousEnd != NO_IMPORT
+            && start <= source.length()
+            && BLANK_LINE.matcher(source.substring((int) previousEnd, (int) start)).find());
   }
 
   private static String spelling(final ImportTree imp) {
