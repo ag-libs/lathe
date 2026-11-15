@@ -40,6 +40,7 @@ import org.gradle.api.artifacts.result.ResolvedDependencyResult;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.configuration.BuildFeatures;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -698,6 +699,12 @@ public class LatheProjectPlugin implements Plugin<Project> {
       final Path moduleDir) {
     final TaskProvider<JavaCompile> compile =
         project.getTasks().named(sourceSet.getCompileJavaTaskName(), JavaCompile.class);
+    final Provider<RegularFile> sourceMtimes =
+        project
+            .getLayout()
+            .getBuildDirectory()
+            .file(
+                "tmp/%s/%s".formatted(sourceSet.getCompileJavaTaskName(), SourceMtimes.FILE_NAME));
     final TaskProvider<LatheCaptureTask> capture =
         project
             .getTasks()
@@ -711,6 +718,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getSourceTree().set(sourceTree);
                   task.getTestCode().set(testCode);
                   task.getModuleDir().set(moduleDir.toFile());
+                  task.getSourceMtimesFile().set(sourceMtimes);
                   task.getSources().from(sourceSet.getJava());
                   task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());
                   task.getCompiledSources().from(javac.getSource());
@@ -735,7 +743,21 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getEncoding().set(project.provider(() -> javac.getOptions().getEncoding()));
                   task.getInferModulePath().set(javac.getModularity().getInferModulePath());
                 });
-    compile.configure(javac -> javac.finalizedBy(capture));
+    final TaskProvider<LatheSourceMtimesTask> snapshot =
+        project
+            .getTasks()
+            .register(
+                sourceSet.getTaskName("lathe", "sourceMtimes"),
+                LatheSourceMtimesTask.class,
+                task -> {
+                  task.getSources().from(sourceSet.getJava());
+                  task.getMtimesFile().set(sourceMtimes);
+                });
+    compile.configure(
+        javac -> {
+          javac.dependsOn(snapshot);
+          javac.finalizedBy(capture);
+        });
     // Part of building the classes: a task that runs after them and writes into what the capture
     // reads (Apache Fineract's OpenAPI spec, into the resources) then runs after the capture,
     // never alongside it.

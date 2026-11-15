@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.gradle;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
@@ -17,6 +18,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.Directory;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFile;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
@@ -137,6 +139,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Internal
   public abstract Property<LatheBuildLockService> getBuildLock();
 
+  // Where the compile task recorded its sources' mtimes as it started (SourceMtimes).
+  @Internal
+  public abstract RegularFileProperty getSourceMtimesFile();
+
   @TaskAction
   public void capture() throws IOException {
     getBuildLock().get();
@@ -158,10 +164,20 @@ public abstract class LatheCaptureTask extends DefaultTask {
       }
 
       CompileCapture.mirror(
-          moduleDir, config, List.of(getResourcesDir().get().getAsFile().toPath()));
+          moduleDir,
+          config,
+          List.of(getResourcesDir().get().getAsFile().toPath()),
+          mtimesBeforeCompile(config));
     } finally {
       LatheLock.release(lock);
     }
+  }
+
+  // As the compile task recorded them before javac ran; when it did not run, there was no compile
+  // to race, and the sources now are what it last compiled.
+  private Map<Path, Long> mtimesBeforeCompile(final ModuleConfigData config) throws IOException {
+    return SourceMtimes.take(getSourceMtimesFile().get().getAsFile().toPath())
+        .orElseGet(() -> CompileCapture.sourceMtimes(CompiledStamps.sourcesByKey(config).values()));
   }
 
   // Whether the compile wrote a class for every source, asked only with failOnError off (a personal

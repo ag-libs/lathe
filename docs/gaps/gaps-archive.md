@@ -10040,6 +10040,31 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-21 — A rename racing a build can leave the tree broken — done
+
+**Status: done.**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+With a Maven sync running, an agent's `rename_symbol` succeeded on disk, but the next `verify_change` reported the new name as missing: the build stamped each source from the file on disk once javac was done, after javac had compiled the older content, so the server took the stale class for current and never rewrote it.
+Any write during a compile raced the same way: an editor save, a `git checkout`.
+
+### Resolution
+
+The build records each source's mtime just before javac runs, and after it leaves unstamped, and out of the built record, every source whose mtime differs then or that was not there (`CompileCapture.sourceMtimes`).
+The server compiles an unstamped source as never built.
+Maven takes the snapshot in the compiler wrapper (`LatheCompiler.performCompile`); Gradle in a task the compile task depends on (`LatheSourceMtimesTask`), as an action of the compile task itself would change its build cache key.
+It holds as long as a write moves the file's mtime, as the server's own staleness check assumes.
+
+### Regression targets
+
+- `CompileCaptureTest.mirror_sourceWrittenOrAddedDuringTheCompile_leftUnstamped`
+- `SourceMtimesTest.take_recordedAtTheCompilesStart_readsTheMtimesOnce_noneWhenNothingWasRecorded`
+- `LatheCaptureTaskFunctionalTest.capture_javaProject_capturesFromCacheRefillsAWipedLatheAndKeepsTheLastGoodOne`: the snapshot task leaves the compile's build cache key alone.
+
+---
+
 ## WS-30 — The JDK type index lists the build's JDK, not the project's — done
 
 **Status: done.**
