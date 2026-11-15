@@ -259,7 +259,10 @@ public final class LatheEngine {
       final Set<LatheReference.Access> kept,
       final int maxResults) {
     final List<ReferenceMatch> uses =
-        matches.stream().filter(match -> kept.contains(access(match))).toList();
+        matches.stream()
+            .filter(match -> kept.contains(access(match)))
+            .sorted(Comparator.comparing(ReferenceMatch::toLocation, locationOrder()))
+            .toList();
     return new LatheReferences(
         uses.size(),
         uses.size() > maxResults,
@@ -282,7 +285,11 @@ public final class LatheEngine {
   private CappedLocations capLocations(
       final List<? extends Location> locations, final int maxResults) {
     final List<LatheLocation> capped =
-        locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
+        locations.stream()
+            .sorted(locationOrder())
+            .limit(maxResults)
+            .map(this::toLatheLocation)
+            .toList();
     return new CappedLocations(locations.size(), locations.size() > maxResults, capped);
   }
 
@@ -522,14 +529,15 @@ public final class LatheEngine {
                     .toList());
   }
 
-  // The reactor's types first, then the JDK's and dependencies', then JDK internals: hidden from a
-  // plain project, but one that adds exports (an annotation processor, a javac plugin) uses them.
+  // The reactor's hand-written types first, then its generated ones, then the JDK's and
+  // dependencies', then JDK internals: hidden from a plain project, but one that adds exports (an
+  // annotation processor, a javac plugin) uses them.
   private int rank(final SymbolInformation symbol) {
-    if (origin(LatheUri.toPath(symbol.getLocation().getUri())) != LatheLocation.Origin.EXTERNAL) {
-      return 0;
-    }
-
-    return jdkInternal(symbol.getContainerName()) ? 2 : 1;
+    return switch (origin(LatheUri.toPath(symbol.getLocation().getUri()))) {
+      case REACTOR -> 0;
+      case GENERATED -> 1;
+      case EXTERNAL -> jdkInternal(symbol.getContainerName()) ? 3 : 2;
+    };
   }
 
   // In a JDK package its modules do not export to everyone (javac's internals, jdk.internal): no
@@ -930,8 +938,25 @@ public final class LatheEngine {
         .stream()
         .flatMap(
             call ->
-                callSites(call.getFrom().getName(), call.getFrom().getUri(), call.getFromRanges()))
+                call.getFromRanges().stream()
+                    .map(
+                        range ->
+                            Map.entry(
+                                call.getFrom().getName(),
+                                new Location(call.getFrom().getUri(), range))))
+        .sorted(Map.Entry.comparingByValue(locationOrder()))
+        .map(site -> new LatheCall(site.getKey(), toLatheLocation(site.getValue())))
         .toList();
+  }
+
+  // The order every capped list answers in: the project's own sources, then its generated ones,
+  // then the JDK's and dependencies'; by file within each, which keeps a module's together and its
+  // main sources before its tests, then by position. A cap then keeps what the agent edits.
+  private Comparator<Location> locationOrder() {
+    return Comparator.comparing((Location location) -> origin(LatheUri.toPath(location.getUri())))
+        .thenComparing(Location::getUri)
+        .thenComparingInt(location -> location.getRange().getStart().getLine())
+        .thenComparingInt(location -> location.getRange().getStart().getCharacter());
   }
 
   // Where the method calls each callee, in source order, so the answer reads as the method does.

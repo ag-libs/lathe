@@ -220,6 +220,59 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .containsExactlyInAnyOrder("boot", "run", "go");
   }
 
+  // A capped answer keeps what the agent edits: the project's own sources come before generated
+  // ones, though a generated file's path sorts first and its type's name matches exactly, in
+  // references, calls and types.
+  @Test
+  void referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten() throws Exception {
+    final GreetFixture fx = greetFixture();
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/Call.java"),
+            "package com.example; class Call { void help(Callee c) { c.greet(); } }",
+            1_000L);
+    compileIntoMirror(fx.callee(), fx.caller(), generated);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(fx.calleeSource(), "greet");
+
+    final LatheReferences all =
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS).value();
+    final LatheReferences capped =
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 2, ANY_ACCESS).value();
+    final LatheCallHierarchy callers =
+        engine
+            .callHierarchy(
+                fx.callee(),
+                pos.getLine(),
+                pos.getCharacter(),
+                CallDirection.INCOMING,
+                SymbolScope.ALL,
+                50)
+            .value();
+
+    assertThat(all.references())
+        .extracting(reference -> reference.location().uri())
+        .containsExactly(
+            fx.callee().toUri().toString(),
+            fx.caller().toUri().toString(),
+            generated.toUri().toString());
+    assertThat(capped.total()).isEqualTo(3);
+    assertThat(capped.references())
+        .extracting(reference -> reference.location().origin())
+        .containsOnly(LatheLocation.Origin.REACTOR);
+    assertThat(callers.calls()).extracting(call -> call.name()).containsExactly("run", "help");
+    assertThat(engine.searchSymbols("Call", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .containsExactly("Callee", "Caller", "Call");
+  }
+
   @Test
   void callHierarchy_findsIncomingCallerAndOutgoingCallee() throws Exception {
     final GreetFixture fx = greetFixture();
