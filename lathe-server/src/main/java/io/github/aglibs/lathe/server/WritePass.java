@@ -308,6 +308,8 @@ final class WritePass {
     }
 
     final StaleScan scan = withReported(staleModules(trees));
+    // A failed write keeps its source stale; once a build compiled the source, the failure is gone.
+    failedCompiles.keySet().retainAll(Set.copyOf(scan.staleFiles()));
     final long sourcesMs = scanned.elapsedMs();
     // By mtime, not stamp: the MCP engine stamps the files it writes, so an editor's server on the
     // same workspace never finds them stale.

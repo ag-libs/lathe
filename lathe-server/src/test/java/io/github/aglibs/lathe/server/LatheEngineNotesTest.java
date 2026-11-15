@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -42,6 +43,70 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
 
     Files.writeString(source, "package com.example; class Sample { int m; }");
     assertThat(engine.outline(source).notes().notCompiled()).isEmpty();
+  }
+
+  // The sync that adds a missing dependency also compiles the file that needed it, so the file is
+  // not stale and no later write clears its failure; a file the dependency does not fix keeps its
+  // note.
+  @Test
+  void notes_syncAddsTheMissingDependency_notCompiledOnlyWhatStillFails() throws Exception {
+    final Path fixed =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Fixed.java", "package com.example; class Fixed {}");
+    final Path broken =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Broken.java", "package com.example; class Broken {}");
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fixed).value();
+
+    Files.writeString(fixed, "package com.example; class Fixed { com.example.api.Api api; }");
+    Files.writeString(broken, "package com.example; class Broken { com.example.api.Gone gone; }");
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(2);
+
+    TestCompiler.writeMirroredModule(
+        tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L);
+    TestJavac.compileToDir(
+        tmp.resolve(".lathe/module/classes"), List.of(tmp.resolve(".lathe/api/classes")), fixed);
+    stampModule(fixed);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        null,
+        List.of(tmp.resolve("api/target/classes")));
+
+    assertThat(engine.diagnostics(fixed).value()).isEmpty();
+    assertThat(engine.notes(List.of()).notCompiled())
+        .singleElement()
+        .asString()
+        .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Broken.java")));
+  }
+
+  // A build that compiles the failed file without changing the workspace (no reload) stamps it.
+  @Test
+  void notes_buildCompilesTheFailedFile_notCompiledGoneWithoutAReload() throws Exception {
+    final Path libraryClasses = Files.createDirectories(tmp.resolve("lib-classes"));
+    final Path fixed =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Fixed.java", "package com.example; class Fixed {}");
+    TestCompiler.writeModuleParams(
+        tmp, "module", tmp.resolve("module/src/main/java"), null, List.of(libraryClasses));
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fixed).value();
+
+    Files.writeString(fixed, "package com.example; class Fixed { com.lib.Lib lib; }");
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(1);
+
+    final Path library =
+        TestCompiler.writeAt(
+            tmp.resolve("lib-src/com/lib/Lib.java"),
+            "package com.lib; public class Lib {}",
+            1_000L);
+    TestJavac.compileToDir(libraryClasses, library);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), List.of(libraryClasses), fixed);
+    stampModule(fixed);
+
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).isEmpty();
   }
 
   // A sync cannot add a file outside a synced module's source roots, nor one in a module the
