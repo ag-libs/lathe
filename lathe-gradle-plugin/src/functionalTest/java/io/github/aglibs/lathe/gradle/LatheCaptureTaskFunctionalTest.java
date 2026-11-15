@@ -76,11 +76,16 @@ class LatheCaptureTaskFunctionalTest {
     final var main = params("", LatheLayout.CLASSES_DIR);
     assertThat(main.sourceRoots()).containsExactly(fixture.path("src/main/java"));
     assertThat(main.outputDir()).isEqualTo(fixture.path("build/classes/java/main"));
-    // No --release: Gradle compiled with -source/-target, as nothing set options.release, and the
-    // args carry them, so the server compiles for 17 on a newer JDK too.
+    // No --release: Gradle compiled with -source/-target against its toolchain's JDK, as nothing
+    // set options.release, and the args carry all three, so the server compiles alike on a newer
+    // JDK too.
     assertThat(main.release()).isNull();
     assertThat(main.proc()).isEqualTo("none");
-    assertThat(main.compilerArgs()).containsExactly("-source", "17", "-target", "17", "-proc:none");
+    assertThat(main.compilerArgs()).hasSize(7).startsWith("--system");
+    assertThat(Path.of(main.compilerArgs().get(1)).resolve(LatheLayout.JDK_MODULES_IMAGE))
+        .isRegularFile();
+    assertThat(main.compilerArgs().subList(2, 7))
+        .containsExactly("-source", "17", "-target", "17", "-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
         .contains(fixture.path("build/classes/java/main"));
   }
@@ -269,7 +274,7 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(app.release()).isEqualTo("17");
     assertThat(app.processorPath()).isNotEmpty();
     assertThat(app.proc()).isNull();
-    assertThat(app.compilerArgs()).doesNotContain("-proc:none", "-source", "-target");
+    assertThat(app.compilerArgs()).doesNotContain("-proc:none", "--system", "-source", "-target");
     assertThat(app.generatedSourcesDir())
         .isEqualTo(fixture.path("app/build/generated/sources/annotationProcessor/java/main"));
     assertThat(app.classpath()).contains(fixture.path("lib/build/classes/java/main"));

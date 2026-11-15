@@ -690,6 +690,18 @@ public class LatheProjectPlugin implements Plugin<Project> {
         : Optional.empty();
   }
 
+  // The args Gradle lists, and what it passes javac apart from them: the -source and -target, and
+  // the JDK of the compile's toolchain they are compiled against.
+  private static List<String> compilerArgs(final JavaCompile javac) {
+    return CompileCapture.withCompileJdk(
+        javac.getOptions().getAllCompilerArgs(),
+        javac.getJavaCompiler().get().getMetadata().getInstallationPath().getAsFile().toPath(),
+        javac.getSourceCompatibility(),
+        javac.getTargetCompatibility(),
+        javac.getOptions().getRelease().map(String::valueOf).getOrNull(),
+        false);
+  }
+
   private static Stream<ResourceRootData> resourceRoots(
       final Path root, final String module, final SourceSet sourceSet) {
     final String output = relative(root, sourceSet.getOutput().getResourcesDir());
@@ -746,20 +758,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                       .from(
                           (Callable<FileCollection>)
                               () -> javac.getOptions().getAnnotationProcessorPath());
-                  task.getCompilerArgs()
-                      .set(
-                          project.provider(
-                              () ->
-                                  CompileCapture.withSourceAndTarget(
-                                      javac.getOptions().getAllCompilerArgs(),
-                                      javac.getSourceCompatibility(),
-                                      javac.getTargetCompatibility(),
-                                      javac
-                                          .getOptions()
-                                          .getRelease()
-                                          .map(String::valueOf)
-                                          .getOrNull(),
-                                      false)));
+                  task.getCompilerArgs().set(project.provider(() -> compilerArgs(javac)));
                   task.getFailOnError()
                       .set(project.provider(() -> javac.getOptions().isFailOnError()));
                   // Only a --release the compile used, as on Maven: one Gradle did not pass

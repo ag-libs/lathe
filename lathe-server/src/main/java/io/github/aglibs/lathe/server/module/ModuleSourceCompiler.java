@@ -486,7 +486,44 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   private static List<String> hoistFileManagerOptions(
       final List<String> args, final StandardJavaFileManager fm) {
     return consumeFileManagerFlags(
-        args, Set.of(MODULE_SOURCE_PATH, SYSTEM), (flag, value) -> applyOption(fm, flag, value));
+        args, Set.of(MODULE_SOURCE_PATH, SYSTEM), (flag, value) -> hoistOption(fm, flag, value));
+  }
+
+  private static boolean hoistOption(
+      final StandardJavaFileManager fm, final String flag, final String value) {
+    if (SYSTEM.equals(flag) && !isOtherJdk(value)) {
+      return true;
+    }
+
+    return applyOption(fm, flag, value);
+  }
+
+  // The JDK a build compiled against (--system): the server's own is javac's default, already open,
+  // so it is not applied again; one gone since the sync cannot be, and the compile then runs
+  // against the server's JDK.
+  private static boolean isOtherJdk(final String home) {
+    final Path jdk = Path.of(home);
+    if (isSameFile(jdk, Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY)))) {
+      return false;
+    }
+
+    if (!Files.isRegularFile(jdk.resolve(LatheLayout.JDK_MODULES_IMAGE))) {
+      LOG.warning(
+          () ->
+              "[compile] JDK %s the build compiled against not found; compiling against the server's"
+                  .formatted(home));
+      return false;
+    }
+
+    return true;
+  }
+
+  private static boolean isSameFile(final Path a, final Path b) {
+    try {
+      return Files.isSameFile(a, b);
+    } catch (final IOException e) {
+      return false;
+    }
   }
 
   // Repoint each patched module at tempDir (edited buffers, first so they win) plus the module's

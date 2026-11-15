@@ -59,6 +59,8 @@ public final class LatheLayout {
   // Where a JDK keeps its sources, relative to its home: the build extracts them, the server
   // explains their absence.
   public static final Path JDK_SOURCE_ZIP = Path.of("lib", "src.zip");
+  // A JDK's module image, relative to its home: only a JDK 9+ has one, as javac's --system needs.
+  public static final Path JDK_MODULES_IMAGE = Path.of("lib", "modules");
   public static final String NATIVE_ENCODING_PROPERTY = "native.encoding";
   public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";

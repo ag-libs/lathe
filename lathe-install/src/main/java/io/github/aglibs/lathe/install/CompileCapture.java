@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -22,6 +23,7 @@ import java.util.stream.Stream;
 // runs: a failed compile keeps the last good mirror, so its sources stay stale for the server.
 public final class CompileCapture {
 
+  private static final String SYSTEM = "--system";
   private static final Set<String> VERSION_AND_PREVIEW_ARGS =
       Set.of("--release", "-source", "--source", "-target", "--target", "--enable-preview");
 
@@ -32,13 +34,15 @@ public final class CompileCapture {
     Json.write(config, moduleDir.resolve(LatheLayout.paramsFileName(config.sourceTree())));
   }
 
-  // A compile with no --release passes javac the -source and -target the build tool keeps apart
-  // from the args it lists: added to them, so the server's javac, maybe a newer JDK's, writes the
-  // same class file version and checks the same language level. Not where the args name a version
-  // themselves (javac refuses --release beside -source), nor with preview, which javac allows only
-  // at its own version.
-  public static List<String> withSourceAndTarget(
+  // A compile with no --release compiles against its own JDK (jdkHome) for the -source and -target
+  // the build tool keeps apart from the args it lists: added to them, as --system for the JDK, so
+  // the server's javac, maybe a newer JDK's, writes the same class file version and checks the
+  // same language level and JDK API. A JDK before 9 has no module image to name: only the versions.
+  // Not where the args name a version themselves (javac refuses --release beside -source), nor
+  // with preview, which javac allows only at its own version.
+  public static List<String> withCompileJdk(
       final List<String> args,
+      final Path jdkHome,
       final String source,
       final String target,
       final String release,
@@ -51,12 +55,27 @@ public final class CompileCapture {
       return List.copyOf(args);
     }
 
-    return Stream.concat(Stream.of("-source", source, "-target", target), args.stream()).toList();
+    final Stream<String> system =
+        jdkHome != null
+                && Files.isRegularFile(jdkHome.resolve(LatheLayout.JDK_MODULES_IMAGE))
+                && args.stream().noneMatch(CompileCapture::isSystemArg)
+            ? Stream.of(SYSTEM, jdkHome.toString())
+            : Stream.empty();
+    return Stream.of(system, Stream.of("-source", source, "-target", target), args.stream())
+        .flatMap(Function.identity())
+        .toList();
   }
 
   private static boolean isVersionOrPreviewArg(final String arg) {
-    return VERSION_AND_PREVIEW_ARGS.stream()
-        .anyMatch(flag -> arg.equals(flag) || arg.startsWith("%s=".formatted(flag)));
+    return VERSION_AND_PREVIEW_ARGS.stream().anyMatch(flag -> isFlag(arg, flag));
+  }
+
+  private static boolean isSystemArg(final String arg) {
+    return isFlag(arg, SYSTEM);
+  }
+
+  private static boolean isFlag(final String arg, final String flag) {
+    return arg.equals(flag) || arg.startsWith("%s=".formatted(flag));
   }
 
   private static boolean isBlank(final String value) {

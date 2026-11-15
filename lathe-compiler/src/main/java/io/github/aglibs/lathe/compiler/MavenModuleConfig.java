@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -30,15 +31,48 @@ final class MavenModuleConfig {
         config.isParameters(),
         enablePreview(config),
         config.getProc(),
-        CompileCapture.withSourceAndTarget(
-            compilerArgs(config),
-            config.getSourceVersion(),
-            config.getTargetVersion(),
-            config.getReleaseVersion(),
-            enablePreview(config)),
+        targetsNewerThanMaven(config.getTargetVersion())
+            ? compilerArgs(config)
+            : CompileCapture.withCompileJdk(
+                compilerArgs(config),
+                compileJdk(config),
+                config.getSourceVersion(),
+                config.getTargetVersion(),
+                config.getReleaseVersion(),
+                enablePreview(config)),
         AnalysisMode.CLASSPATH,
         false,
         LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
+  }
+
+  // The server runs on the JDK Maven runs on, whose javac cannot compile for a newer toolchain's
+  // target: such a compile keeps its args, and the server compiles it at its own level, as without
+  // the versions. A target it cannot read ("1.8" and "17" are read) is taken as not newer.
+  private static boolean targetsNewerThanMaven(final String target) {
+    if (target == null) {
+      return false;
+    }
+
+    final String version = target.startsWith("1.") ? target.substring(2) : target;
+    final int dot = version.indexOf('.');
+    try {
+      return Integer.parseInt(dot < 0 ? version : version.substring(0, dot))
+          > Runtime.version().feature();
+    } catch (final NumberFormatException e) {
+      return false;
+    }
+  }
+
+  // A toolchain makes maven-compiler-plugin fork its JDK's javac (bin/javac under its home);
+  // otherwise javac runs in Maven's own JVM.
+  private static Path compileJdk(final CompilerConfiguration config) {
+    final String executable = config.getExecutable();
+    if (config.isFork() && executable != null && Path.of(executable).isAbsolute()) {
+      final Path bin = Path.of(executable).getParent();
+      return bin != null ? bin.getParent() : null;
+    }
+
+    return Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY));
   }
 
   private static List<String> compilerArgs(final CompilerConfiguration config) {

@@ -151,28 +151,42 @@ class CompileCaptureTest {
     return Files.createDirectories(tmp.resolve(".lathe/module-a"));
   }
 
-  // A compile without --release records its -source and -target ahead of its own args; one whose
-  // args already name a version or preview, or with a release or preview of its own, or without
-  // both versions, records its args as they are.
+  // A compile without --release records the JDK it compiled against and its -source and -target
+  // ahead of its own args; a JDK before 9, with no module image, only the versions. One whose args
+  // already name a version or preview, or with a release or preview of its own, or without both
+  // versions, records its args as they are.
   @Test
-  void withSourceAndTarget_noReleaseOrVersionArgs_addsThem_otherwiseArgsAsTheyAre() {
+  void withCompileJdk_noReleaseOrVersionArgs_addsJdkAndVersions_otherwiseArgsAsTheyAre()
+      throws Exception {
+    final Path jdk = tmp.resolve("jdk-17");
+    Files.createDirectories(jdk.resolve(LatheLayout.JDK_MODULES_IMAGE).getParent());
+    Files.writeString(jdk.resolve(LatheLayout.JDK_MODULES_IMAGE), "image");
+    final Path jdk8 = tmp.resolve("jdk-8");
+    Files.createDirectories(jdk8.resolve("lib"));
     final List<String> args =
         List.of("-Xlint:all", "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED");
 
-    assertThat(CompileCapture.withSourceAndTarget(args, "17", "17", null, false))
+    assertThat(CompileCapture.withCompileJdk(args, jdk, "17", "17", null, false))
         .containsExactly(
+            "--system",
+            jdk.toString(),
             "-source",
             "17",
             "-target",
             "17",
             "-Xlint:all",
             "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED");
-    assertThat(CompileCapture.withSourceAndTarget(args, "1.8", "11", "", false))
-        .startsWith("-source", "1.8", "-target", "11");
-    assertThat(CompileCapture.withSourceAndTarget(args, "17", "17", "17", false)).isEqualTo(args);
-    assertThat(CompileCapture.withSourceAndTarget(args, "17", "17", null, true)).isEqualTo(args);
-    assertThat(CompileCapture.withSourceAndTarget(args, null, "17", null, false)).isEqualTo(args);
-    assertThat(CompileCapture.withSourceAndTarget(args, "17", " ", null, false)).isEqualTo(args);
+    assertThat(CompileCapture.withCompileJdk(args, jdk8, "1.8", "1.8", "", false))
+        .startsWith("-source", "1.8", "-target", "1.8", "-Xlint:all");
+    assertThat(CompileCapture.withCompileJdk(args, null, "17", "11", null, false))
+        .startsWith("-source", "17", "-target", "11", "-Xlint:all");
+    assertThat(
+            CompileCapture.withCompileJdk(List.of("--system=/jdk"), jdk, "17", "17", null, false))
+        .containsExactly("-source", "17", "-target", "17", "--system=/jdk");
+    assertThat(CompileCapture.withCompileJdk(args, jdk, "17", "17", "17", false)).isEqualTo(args);
+    assertThat(CompileCapture.withCompileJdk(args, jdk, "17", "17", null, true)).isEqualTo(args);
+    assertThat(CompileCapture.withCompileJdk(args, jdk, null, "17", null, false)).isEqualTo(args);
+    assertThat(CompileCapture.withCompileJdk(args, jdk, "17", " ", null, false)).isEqualTo(args);
     for (final List<String> own :
         List.of(
             List.of("--release", "17"),
@@ -180,7 +194,7 @@ class CompileCaptureTest {
             List.of("-source", "17"),
             List.of("--target=17"),
             List.of("--enable-preview"))) {
-      assertThat(CompileCapture.withSourceAndTarget(own, "11", "11", null, false))
+      assertThat(CompileCapture.withCompileJdk(own, jdk, "11", "11", null, false))
           .as("%s", own)
           .isEqualTo(own);
     }
