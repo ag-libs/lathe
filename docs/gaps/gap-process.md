@@ -106,6 +106,16 @@ A triaged gap that is not deferred carries `Value` and `Size` on one line under 
 
 Pick the next work by value first, then size: `grep -n 'Value: high' docs/gaps/gaps.md`.
 
+Every gap carries `Kind` on its own line under its `Status`:
+
+| Field | Values |
+|---|---|
+| `Kind` | `bug`: something Lathe does today answers wrongly, breaks, misleads or is too slow; `feature`: a capability Lathe does not have. When unsure, ask whether any answer is wrong today. |
+
+Feature freeze (since 2026-11-15): only bugs are worked on.
+A `feature` gap stays `deferred` until the freeze ends, and a new one is filed as `deferred`.
+`grep -n 'Kind: bug' docs/gaps/gaps.md` lists the live work.
+
 Completion entries keep `Tier` (`basic` / `typed` / `assistive` / `presentation`), `Failure mode`,
 and `Owner component` as defined by the completion [expectations](../done/lathe-completion-expectations.md)
 and the [gap workflow](gap-workflow.md).

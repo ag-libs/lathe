@@ -60,6 +60,8 @@ These are reference data, not gap items.
 
 **Status: deferred**
 
+**Kind: feature**
+
 ### Observed behaviour
 
 The server does not advertise `selectionRangeProvider`, and no handler exists.
@@ -119,7 +121,9 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ## EG-020 — Info-file structural features shipped, but package Javadoc folding remains missing
 
-**Status: documented (symbols, semantic tokens and module-body folding shipped; package-Javadoc folding remains).**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 ### Delivered
 
@@ -166,6 +170,8 @@ where jdtls returns a result Lathe does not, or the two disagree substantively. 
 
 **Status: deferred (references/highlight shipped; completion deferred).**
 
+**Kind: feature**
+
 ### Delivered — references, highlight, and rename over Javadoc references
 
 `textDocument/references`, `textDocument/documentHighlight`, and rename now cover a symbol's Javadoc
@@ -202,6 +208,8 @@ python3 dev/jdtls_diff.py --methods completion <ws>/.../Api.java
 
 **Status: deferred (multi-line Javadoc folding shipped; non-Javadoc comments deferred).**
 
+**Kind: feature**
+
 ### Delivered — multi-line Javadoc blocks fold
 
 `FoldingRangeScanner` now folds a declaration's leading multi-line Javadoc (`/** … */`) as a
@@ -231,6 +239,8 @@ python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 ## EG-057 — Symbol search matches CamelHumps only in reactor types, not in JDK and dependency types
 
 **Status: deferred** (by design since EG-005; the docs that claimed more are corrected).
+
+**Kind: feature**
 
 ### Observed behaviour
 
@@ -274,6 +284,8 @@ None: the behaviour is unchanged; only the docs and the tool description were co
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
+**Kind: feature**
+
 **Value: low — Size: L**
 
 Found by the agent-tooling landscape review (2026-10-24).
@@ -300,6 +312,8 @@ None yet.
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
+**Kind: feature**
+
 **Value: low — Size: L**
 
 Found by the agent-tooling landscape review (2026-10-24).
@@ -324,6 +338,8 @@ None yet.
 ## EG-067 — The first build floods the log with warnings
 
 **Status: deferred** (both warnings are documented as expected in the [test-capture guide](../guide/test-capture.md) and the README)
+
+**Kind: bug**
 
 **Value: medium — Size: S**
 
@@ -373,6 +389,8 @@ and the Gradle settings plugin now say once that Lathe is off and which switch d
 
 **Status: deferred.**
 
+**Kind: bug**
+
 Decision (2026-10-30): not before the release; such code is rare outside generated sources, and 0.1.24 does the same.
 **Affects: the editor and MCP.**
 
@@ -415,6 +433,8 @@ None yet.
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
+**Kind: bug**
+
 **Value: low — Size: S**
 
 **Affects: the editor.**
@@ -442,6 +462,8 @@ None yet.
 ## EG-072 — Malformed requests and unusual URIs get internal errors or are accepted silently
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
+
+**Kind: bug**
 
 **Value: low — Size: M**
 
@@ -477,6 +499,8 @@ None yet.
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
 **Status: deferred** (server and Neovim shipped; the VS Code command waits until VS Code client work resumes)
+
+**Kind: feature**
 
 **Value: high — Size: M**
 
@@ -535,7 +559,9 @@ A VS Code command over the same server command.
 
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
-**Status: deferred** (triaged 2026-11-03: low severity for the editor)
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Value: low — Size: S**
 
@@ -561,6 +587,8 @@ None yet.
 ## EG-084 — Diagnostics skip the build's javac plugins, and contradict the notes that run them
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: medium — Size: M**
 
@@ -588,7 +616,9 @@ None yet.
 
 ## EG-091 — No inlay hints
 
-**Status: documented**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Affects: the editor.**
 
@@ -613,6 +643,8 @@ None yet.
 
 **Status: deferred** (triaged 2026-11-09: beyond jdtls, which by its settings searches types, and source methods only behind `java.symbols.includeSourceMethodDeclarations` — not measured; the per-keystroke cost is the open risk)
 
+**Kind: feature**
+
 **Affects: the editor's workspace symbols and MCP `search_symbols`.**
 
 Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose symbol search covers classes, methods and fields across sources and libraries.
@@ -635,7 +667,9 @@ None yet.
 
 ## EG-104 — Hover shows no usage count
 
-**Status: documented**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Affects: the editor's hover and MCP `describe_symbol`.**
 
@@ -654,7 +688,9 @@ None yet.
 
 ## EG-094 — A deprecated API's use does not suggest its replacement
 
-**Status: documented**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Affects: the editor's diagnostics and code actions.**
 
@@ -677,7 +713,9 @@ None yet.
 
 ## EG-095 — No Spring Boot or Quarkus configuration-key navigation
 
-**Status: documented**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Affects: the editor and MCP.**
 
@@ -702,6 +740,8 @@ None yet.
 ## EG-106 — Hover drops the text of a Markdown doc comment, keeping only its links
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: high — Size: S**
 
@@ -739,6 +779,8 @@ None yet.
 
 **Status: documented**
 
+**Kind: bug**
+
 **Value: medium — Size: S**
 
 **Affects: Neovim's `:LatheFormat` and format-on-save on a Gradle build that applies Spotless without a `lathe-style.json`.**
@@ -766,6 +808,8 @@ None yet.
 
 **Status: documented**
 
+**Kind: bug**
+
 **Value: low — Size: S**
 
 **Affects: the editor's semantic highlighting.**
@@ -790,6 +834,8 @@ None yet.
 ## EG-109 — `:LatheNew` cannot create a type in a Gradle source set beyond `main` and `test`
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: low — Size: M**
 
@@ -822,6 +868,8 @@ Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
+**Kind: feature**
+
 **Value: low — Size: M**
 
 **Affects: the editor and MCP.**
@@ -847,6 +895,8 @@ None yet.
 ## FR-020 — Renaming a Helidon blueprint option leaves the generated builder's callers broken
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: medium — Size: M**
 
@@ -881,6 +931,8 @@ None yet.
 ## FR-029 — References to a widely used method take 12–27 s on a very large codebase
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: low — Size: M**
 
@@ -978,6 +1030,8 @@ None yet.
 
 **Status: documented**
 
+**Kind: bug**
+
 **Value: medium — Size: M**
 
 **Affects: the editor's implementations and incoming calls, and MCP `find_implementations` and `call_hierarchy`.**
@@ -1039,6 +1093,8 @@ Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 
 **Status: deferred (add-missing slice shipped; automatic invocation deferred).**
 
+**Kind: feature**
+
 Signal: user feedback — pasting a snippet with several unimported types was recurring friction: the
 only path was moving the cursor onto each unresolved name and invoking the single-name import quick fix
 in turn.
@@ -1078,6 +1134,8 @@ removes unused imports and reorders them as the project's Spotless does.
 
 **Status: deferred.**
 
+**Kind: bug**
+
 Decision (2026-11-03): Error Prone is too heavy for the analysis compile, so it runs only in the full compile on save,
 where the editor shows the warning; a refactor's compile check is not expected to run it.
 **Affects: Neovim, VS Code, any client, on builds that run Error Prone (or another javac plugin) with `-Werror`.**
@@ -1111,6 +1169,8 @@ None yet.
 
 **Status: documented**
 
+**Kind: bug**
+
 **Value: low — Size: M**
 
 **Affects: the import quick fix, "Add missing imports" and completion's auto-import, on a project that orders imports in groups.**
@@ -1143,7 +1203,9 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
 ## CQ-0041 — Module directives complete, but annotation arguments on a module descriptor do not
 
-**Status: documented (module-directive completion shipped; module-annotation arguments remain).**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 ### Delivered
 
@@ -1174,6 +1236,8 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 **Status: documented**
 
+**Kind: bug**
+
 **Affects: member completion, on a server running JDK 21 or older, or for a `SOURCE`-retained annotation.**
 
 Found reviewing the FR-031 fix (2026-11-08); suspected from the code, not yet reproduced.
@@ -1203,6 +1267,8 @@ prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive
 ## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory
 
 **Status: deferred.**
+
+**Kind: bug**
 
 Decision (2026-10-24): Lathe sets no default limit until users report how much memory they want it to
 use; machines with plenty of memory are expected to use it. The installation guide documents capping
@@ -1257,6 +1323,8 @@ None yet.
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
+**Kind: bug**
+
 **Value: low — Size: S**
 
 **Affects: the editor and MCP.**
@@ -1285,7 +1353,9 @@ None yet.
 
 ## WS-27 — On Gradle, included builds are not covered
 
-**Status: documented**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Value: low — Size: L**
 
@@ -1312,6 +1382,8 @@ None yet.
 ## WS-34 — A build check that scans the whole project finds the class mirror in `.lathe/`
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: medium — Size: M**
 
@@ -1353,6 +1425,8 @@ None yet.
 
 **Status: deferred** (documented in the [troubleshooting guide](../guide/troubleshooting.md); fix only if Lombok users ask)
 
+**Kind: bug**
+
 **Value: low — Size: S**
 
 **Affects: the editor's diagnostics of Lombok classes right after a `lombok.config` edit; `verify_change` is not affected.**
@@ -1383,6 +1457,8 @@ None yet.
 ## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: low — Size: unknown**
 
@@ -1416,6 +1492,8 @@ replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
 
 **Status: deferred**
 
+**Kind: bug**
+
 (Renumbered from TE-1, which is already used by the archived capture-dependency-leak gap in
 [gaps-archive.md](gaps-archive.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath).)
 
@@ -1435,6 +1513,8 @@ None yet — to be defined when the fix is scheduled.
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
 **Status: deferred** (2026-11-04: the silent part fixed; replaying the copy from `.lathe/` deferred)
+
+**Kind: bug**
 
 **Value: medium — Size: M**
 
@@ -1492,7 +1572,9 @@ would touch every replayed launch; reconsider if a project asks for it.
 
 ## TE-17 — A Gradle source set beyond `test` has no package, folder or module runs
 
-**Status: documented**
+**Status: deferred** (2026-11-15: feature freeze)
+
+**Kind: feature**
 
 **Value: low — Size: M**
 
@@ -1521,6 +1603,8 @@ A module run covering several source sets needs one launch per source set.
 ## TE-18 — Tests a Gradle source set runs through another engine never show in the editor
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: low — Size: M**
 
@@ -1554,6 +1638,8 @@ the entries below are what remains.
 
 **Status: deferred**
 
+**Kind: feature**
+
 ### Observed behaviour
 
 The evaluator computes values (reads, method/constructor invocation, `String` concat) but cannot
@@ -1585,6 +1671,8 @@ None yet — to be defined when the fix is scheduled.
 
 **Status: deferred**
 
+**Kind: feature**
+
 ### Observed behaviour
 
 A `NewArray` tree raises `EvaluationException: unsupported expression: NEW_ARRAY`. Reads of existing
@@ -1613,6 +1701,8 @@ None yet — to be defined when the fix is scheduled.
 ## DB-7 — A breakpoint in a file that is not open, or was closed, never fires, and nothing says so
 
 **Status: deferred (cross-module source lookup shipped; arming breakpoints in files without an analysis remains, needed once a client keeps breakpoints in closed files).**
+
+**Kind: bug**
 
 **Value: low — Size: S–M**
 
@@ -1704,6 +1794,8 @@ Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
+**Kind: bug**
+
 **Value: low — Size: S**
 
 **Affects: Neovim.**
@@ -1732,6 +1824,8 @@ None yet.
 ## NV-10 — Signature help highlights no parameter when the active overload is not the first
 
 **Status: documented**
+
+**Kind: bug**
 
 **Value: medium — Size: S**
 
@@ -1778,6 +1872,8 @@ None yet.
 
 **Status: deferred** (2026-11-12: stopped on purpose, to keep the indenter simple)
 
+**Kind: bug**
+
 **Value: low — Size: M**
 
 **Affects: Neovim's live indentation (`indentexpr`, `gg=G`) of code the project formats with google-java-format.**
@@ -1817,6 +1913,8 @@ Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
+**Kind: feature**
+
 **Value: low — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24).
@@ -1843,6 +1941,8 @@ None yet.
 ## MC-27 — No view of a type's API by name: members, supertypes and the first javadoc line
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Value: low — Size: M**
 
@@ -1871,6 +1971,8 @@ None yet.
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
+**Kind: feature**
+
 **Value: low — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24).
@@ -1896,6 +1998,8 @@ None yet.
 ## MC-31 — `get_definition` cannot return the definition's body
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Value: medium — Size: M**
 
@@ -1928,6 +2032,8 @@ None yet.
 
 **Status: documented**
 
+**Kind: bug**
+
 **Value: low — Size: S**
 
 **Affects: MCP `rename_symbol`.**
@@ -1954,6 +2060,8 @@ connects a generated member to the declaration it was generated from.
 ## MC-41 — MCP edits written to a CRLF file add LF line endings
 
 **Status: deferred.**
+
+**Kind: bug**
 
 Decision (2026-10-27): a real but narrow problem; a fix was written and reverted (see below).
 **Affects: MCP `fix_imports`.**
@@ -2005,6 +2113,8 @@ None yet.
 
 **Status: deferred** (2026-11-15: a new capability, not a defect; one level per call is what the tool says it answers)
 
+**Kind: feature**
+
 **Value: medium — Size: M**
 
 **Affects: MCP `call_hierarchy`.**
@@ -2030,6 +2140,8 @@ None yet.
 ## MC-55 — No tool finds the `instanceof` and pattern-match sites for a type
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Value: medium — Size: M**
 
@@ -2059,6 +2171,8 @@ None yet.
 ## MC-56 — No map of JAX-RS routes and their wiring
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Value: medium — Size: L**
 
@@ -2090,6 +2204,8 @@ None yet.
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
+**Kind: feature**
+
 **Value: low — Size: M**
 
 **Affects: MCP.**
@@ -2118,6 +2234,8 @@ None yet.
 ## MC-61 — No overview of how a type's members are used
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Value: low — Size: M**
 
@@ -2148,6 +2266,8 @@ None yet.
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
+**Kind: feature**
+
 **Value: low — Size: M**
 
 **Affects: MCP.**
@@ -2175,6 +2295,8 @@ None yet.
 ## MC-65 — No structural search and replace
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Value: low — Size: L**
 
@@ -2205,6 +2327,8 @@ None yet.
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
+**Kind: feature**
+
 **Value: low — Size: S**
 
 **Affects: MCP `rename_symbol`.**
@@ -2232,6 +2356,8 @@ None yet.
 ## MC-68 — `analyze_change` has no caller-selected output limit or exact capped counts
 
 **Status: documented (a fixed internal cap exists; caller-selected limiting remains).**
+
+**Kind: bug**
 
 **Value: low — Size: S**
 
@@ -2265,6 +2391,8 @@ None yet.
 
 **Status: documented**
 
+**Kind: bug**
+
 **Value: medium — Size: S**
 
 **Affects: MCP `verify_change`.**
@@ -2293,6 +2421,8 @@ Waits on `verify_change` telling an API change from a body change.
 ## MC-86 — Smaller answer defects from the exploratory round
 
 **Status: deferred** (2026-11-15: the defects that gave wrong answers are fixed; what is left is below)
+
+**Kind: bug**
 
 **Value: low — Size: S each**
 
@@ -2332,6 +2462,8 @@ reactor dependencies already capped at ten; a smaller answer would drop the modu
 ## MC-87 — One MCP server answers for one worktree only
 
 **Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
+
+**Kind: feature**
 
 **Affects: MCP, with several git worktrees.**
 
