@@ -1383,6 +1383,34 @@ would touch every replayed launch; reconsider if a project asks for it.
 
 ---
 
+## TE-17 — A Gradle source set beyond `test` has no package, folder or module runs
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: editor test runs and MCP `run_test` on Gradle source sets such as `integrationTest`, `jmh` or a JVM test suite.**
+
+Found by the pre-release Gradle round (2026-11-15) on Caffeine.
+
+### Observed behaviour
+
+In such a source set, a test class or method runs from the source set's own captured launch.
+A package, folder or module run does not: a package or folder in it offers no run, and a module run takes `test`'s tests only.
+Before 2026-11-15, a test file there offered a package run that ran `test`'s package of the same name
+(on Caffeine's `lincheckTest`, 31 classes and 234,588 results in place of the Lincheck test).
+
+### Fix direction
+
+Run a package, folder or module of a source set from that source set's launch.
+A module run covering several source sets needs one launch per source set.
+
+### Regression targets
+
+`LatheWorkspaceServiceTest.executeCommand_listRunnables_sourceSetFile_noPackageRun` (the package run is not offered).
+
+---
+
 
 # Debug & Evaluation Gaps (DB)
 
