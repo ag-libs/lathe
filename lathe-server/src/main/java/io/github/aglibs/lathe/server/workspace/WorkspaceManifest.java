@@ -147,8 +147,7 @@ public final class WorkspaceManifest {
       final List<Path> runnerClasspath = data.runnerClasspath().stream().map(Path::of).toList();
       final ReactorRewrite reactorRewrite =
           ReactorRewrite.of(
-                  workspaceRoot, PackedJars.withPackedTrees(workspaceRoot, data.outputs()))
-              .keeping(PackedJars.shadedJars(workspaceRoot, data.outputs()));
+              workspaceRoot, PackedJars.withPackedTrees(workspaceRoot, data.outputs()));
       return new WorkspaceManifest(
           LibrarySources.from(
               data.dependencySources(),

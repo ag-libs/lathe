@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -184,13 +183,13 @@ final class CompletenessGateTest {
     final Path shaded = Path.of(jar("dep/target/dep-1.jar"));
     final ReactorRewrite rewrite =
         ReactorRewrite.of(
-                workspaceRoot,
-                Stream.concat(
-                        TestCompiler.targetOutputs("dep", "app").stream(),
-                        Stream.of(
-                            new OutputData("dep/target/dep-1.jar", "dep", LatheLayout.CLASSES_DIR)))
-                    .toList())
-            .keeping(Set.of(shaded));
+            workspaceRoot,
+            Stream.concat(
+                    TestCompiler.targetOutputs("dep", "app").stream(),
+                    Stream.of(
+                        new OutputData(
+                            "dep/target/dep-1.jar", "dep", LatheLayout.CLASSES_DIR, true)))
+                .toList());
     final var data =
         testLaunch(
             List.of(),

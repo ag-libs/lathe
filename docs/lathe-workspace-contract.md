@@ -146,9 +146,9 @@ Workspace-wide data: `WorkspaceManifestData`.
 | `outputs` | every build output that can appear on another module's classpath, and the mirror it stands for (`OutputData`) |
 | `buildTool` | absolute path of the tool that ran the last build (the one `lathe-sync.sh` runs); the formatter's `%MVN%` |
 
-Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`.
+Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`, plus `shaded: true` on a jar the build shaded (written only when true).
 The server and launch planner rewrite a listed path to `.lathe/<module>/<tree>`; an unlisted path, such as a jar committed in the repo, is used as written.
-A listed jar holding classes in a package none of its module's mirrors has is a shaded jar, holding relocated classes:
+A shaded jar holds the classes it relocated, which the mirror lacks:
 the server's analysis takes the mirror and then the jar, and a launch the jar as written, since its own classes call the relocated ones.
 A front-end lists what its build actually produces, so custom output locations need nothing special;
 a front-end whose outputs are read in place (`externalOutput`) lists none.
@@ -160,6 +160,7 @@ Without it the server still compiles and navigates the workspace's own code, but
 - **Maven** writes it from `lathe:sync` on a full reactor only (a `-pl` build skips it), touching the mtime when the content is unchanged; each POM in `buildFiles` carries the fingerprint of the content Maven read.
   Its `outputs` are each non-`pom` module's output directories plus `<finalName>.jar` and `<finalName>-tests.jar`;
   a custom test-jar classifier or another classified jar is not listed.
+  A `<finalName>.jar` that `maven-shade-plugin` replaces with a shaded one is marked `shaded`.
 - **OpenJDK** writes it with no `jdk` and empty dependency lists; its `buildFiles` are each synced module's and build tool's `_the.<batch>_batch` marker, which `make` touches after compiling that batch, so they carry no fingerprint: the touch is the signal.
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`

@@ -7,7 +7,6 @@ import io.github.aglibs.lathe.core.schema.OutputData;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class ReactorRewriteTest {
@@ -85,13 +84,17 @@ final class ReactorRewriteTest {
     assertThat(REWRITE.expand(Path.of("/repo/a.jar"))).containsExactly(Path.of("/repo/a.jar"));
   }
 
-  // A kept (shaded) jar: its own classes there name the relocated packages, so a launch's class
-  // and module paths keep the jar alone, while analysis takes the mirror and then the jar. A jar
-  // not kept is unchanged.
+  // A shaded jar: its own classes there name the relocated packages, so a launch's class and
+  // module paths keep the jar alone, while analysis takes the mirror and then the jar on a class
+  // path, and the mirror alone for one entry. A jar not shaded is unchanged.
   @Test
-  void keeping_shadedJar_launchKeepsTheJar_analysisTheMirrorThenTheJar() {
+  void of_shadedJar_launchKeepsTheJar_analysisTheMirrorThenTheJar() {
     final ReactorRewrite rewrite =
-        REWRITE.keeping(Set.of(Path.of(os("/workspace/lib/build/libs/lib.jar"))));
+        ReactorRewrite.of(
+            WORKSPACE,
+            List.of(
+                new OutputData("lib/build/libs/lib.jar", "lib", "classes", true),
+                new OutputData("app/target/app-1.0.jar", "app", "classes")));
     final List<String> path =
         List.of(
             os("/workspace/lib/build/libs/lib.jar"),

@@ -153,9 +153,9 @@ The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build prin
   editor is blocked with a reason naming the missing jar.
   Turn those features off for the capture-only sync (JUnit's build:
   `-Pjunit.develocity.predictiveTestSelection.enabled=false`).
-- **A project whose jar is shaded** (a Shadow jar relocating a library, written where the `jar` task's goes, as
-  JUnit's build does): the editor gives the projects using it its latest classes and then the shaded jar, for the
-  relocated classes.
+- **A project whose jar is shaded** (its `jar` task disabled, and a Shadow jar relocating a library written in its
+  place, as JUnit's build does): the editor gives the projects using it its latest classes and then the shaded jar,
+  for the relocated classes.
   A run, test or debug uses the shaded jar alone, as its classes call the relocated ones, so it runs that project's
   own code as the last build left it.
 - **Gradle 8.x with Isolated Projects on:** only a build of the root's `build`, `check`, or `test` refreshes the

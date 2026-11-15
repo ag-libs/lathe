@@ -207,17 +207,16 @@ class ReactorProjectsTest {
     assertThat(shadeExecution(lib).getConfiguration()).hasToString(before);
   }
 
-  // A shaded main jar is listed like any other: the server tells it by the relocated classes it
-  // holds, which the mirror lacks.
+  // A shaded main jar is listed and marked: it holds relocated classes the mirror lacks.
   @Test
-  void outputs_moduleShadingItsMainJar_listsItsMainJar() throws Exception {
+  void outputs_moduleShadingItsMainJar_marksItsMainJar() throws Exception {
     final MavenProject lib = shading("shade", null, null);
 
     assertThat(ReactorProjects.outputs(tmp, List.of(lib)))
         .containsExactly(
             new OutputData("lib/target/classes", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("lib/target/test-classes", "lib", LatheLayout.TEST_CLASSES_DIR),
-            new OutputData("lib/target/lib-1.jar", "lib", LatheLayout.CLASSES_DIR),
+            new OutputData("lib/target/lib-1.jar", "lib", LatheLayout.CLASSES_DIR, true),
             new OutputData("lib/target/lib-1-tests.jar", "lib", LatheLayout.TEST_CLASSES_DIR));
   }
 

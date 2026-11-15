@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.schema.OutputData;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,9 @@ public final class ReactorRewrite {
   private final Map<Path, List<Path>> allMirrors;
   private final Map<Path, Path> firstMirrors;
   // Shaded jars: the module's own classes in them name the relocated packages, so a launch runs
-  // the jar alone, while analysis takes the mirror and then the jar for the relocated classes.
+  // the jar alone (the String paths, as launch files hold them), while analysis takes the mirror
+  // and then the jar on a class path (expand), and the mirror alone where one entry stands for it
+  // (toLathe(Path): a module path, which cannot hold both).
   private final Set<Path> keptJars;
 
   private ReactorRewrite(final Map<Path, List<Path>> allMirrors, final Set<Path> keptJars) {
@@ -43,11 +46,15 @@ public final class ReactorRewrite {
     final Path root = workspaceRoot.normalize();
     final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
     final var mirrors = new LinkedHashMap<Path, List<Path>>();
+    final var shaded = new HashSet<Path>();
     for (final OutputData output : outputs) {
+      final Path path = root.resolve(output.path()).normalize();
+      if (Boolean.TRUE.equals(output.shaded())) {
+        shaded.add(path);
+      }
+
       final Path mirror = latheDir.resolve(output.module()).resolve(output.tree()).normalize();
-      final List<Path> listed =
-          mirrors.computeIfAbsent(
-              root.resolve(output.path()).normalize(), path -> new ArrayList<>());
+      final List<Path> listed = mirrors.computeIfAbsent(path, ignored -> new ArrayList<>());
       if (!listed.contains(mirror)) {
         listed.add(mirror);
       }
@@ -58,12 +65,7 @@ public final class ReactorRewrite {
             .collect(
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, listed -> List.copyOf(listed.getValue()))),
-        Set.of());
-  }
-
-  // The same rewrite keeping each of the jars (shaded ones) as described at keptJars.
-  public ReactorRewrite keeping(final Set<Path> jars) {
-    return new ReactorRewrite(allMirrors, Set.copyOf(jars));
+        Set.copyOf(shaded));
   }
 
   public static ReactorRewrite none() {

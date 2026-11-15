@@ -295,6 +295,38 @@ class LatheSyncTaskFunctionalTest {
         .doesNotContain("app");
   }
 
+  // A library that disables its jar task and publishes a shaded jar at the jar's path, as JUnit's
+  // shadow convention does: the jar is listed as shaded, since it holds relocated classes its
+  // mirror lacks. The app's jar task is enabled, so its jar is not.
+  @Test
+  void sync_jarTaskDisabled_marksTheJarAtItsPathShaded() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "lib/build.gradle",
+                """
+                plugins { id 'java-library' }
+                def shaded = tasks.register('shaded', Jar) {
+                  from sourceSets.main.output
+                  archiveFileName = 'lib.jar'
+                  destinationDirectory = layout.buildDirectory.dir('libs')
+                }
+                tasks.named('jar') { enabled = false }
+                configurations.runtimeElements.outgoing {
+                  artifacts.clear()
+                  artifact(shaded)
+                }
+                """);
+
+    fixture.runner("latheSync").build();
+
+    assertThat(workspace().outputs())
+        .contains(
+            new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR, true),
+            new OutputData("lib/build/classes/java/main", "lib", LatheLayout.CLASSES_DIR),
+            new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR));
+  }
+
   // Module-access flags a forked compile and the daemon run with reach the server's jvm.args. The
   // daemon's come as the org.gradle.jvmargs property the plugin reads, from the command line here:
   // set in gradle.properties it would start a daemon of its own, slow to start.
