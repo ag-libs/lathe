@@ -105,6 +105,18 @@ final class FormatService {
         : "%s %s".formatted(formatter.engine(), formatter.version());
   }
 
+  // A formatter release built for a newer Java than the server's fails to load: the JVM's text
+  // names class file versions, not the formatter or what to do about it.
+  private String failureReason(final Throwable failure) {
+    final Throwable root = ExceptionUtil.rootCause(failure);
+    if (root instanceof UnsupportedClassVersionError && spec != null) {
+      return "formatter %s does not run on Java %d, the server's: declare a version that runs on it in %s, or set LATHE_JAVA_HOME to a newer JDK"
+          .formatted(describe(spec), Runtime.version().feature(), LatheLayout.STYLE_SHARED_FILE);
+    }
+
+    return root.getMessage();
+  }
+
   void close() {
     formatThread.shutdownNow();
     List.copyOf(formatsInFlight).forEach(format -> format.cancel(false));
@@ -210,9 +222,7 @@ final class FormatService {
             failure -> {
               throw FeatureAnswers.refused(
                   "Could not format %s: %s"
-                      .formatted(
-                          LatheUri.toPath(uri).getFileName(),
-                          ExceptionUtil.rootCause(failure).getMessage()));
+                      .formatted(LatheUri.toPath(uri).getFileName(), failureReason(failure)));
             });
   }
 
@@ -256,7 +266,7 @@ final class FormatService {
                     new MessageParams(
                         MessageType.Warning,
                         "Lathe: formatting failed: %s (further failures are only logged)"
-                            .formatted(ExceptionUtil.rootCause(cause).getMessage())));
+                            .formatted(failureReason(cause))));
               }
 
               return List.of();
