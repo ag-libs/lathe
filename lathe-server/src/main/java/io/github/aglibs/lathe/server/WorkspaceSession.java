@@ -358,7 +358,9 @@ final class WorkspaceSession {
       return;
     }
 
-    publisher.publishEmpty(uri);
+    // The diagnostics stay until the next analysis replaces them: clients draw them on the edited
+    // text meanwhile, and clearing them here made every error in the file flash off at each
+    // keystroke.
     eventLoop.schedule(
         uri,
         debounceMs,

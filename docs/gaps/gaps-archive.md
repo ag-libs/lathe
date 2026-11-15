@@ -7,6 +7,31 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-105 — Every keystroke cleared the file's diagnostics until the next compile — done
+
+**Status: done.**
+
+**Affects: the editor (every client), most visibly Neovim.**
+
+Found by the jdtls comparison's harness (2026-11-11), measuring errors while typing on spring-petclinic.
+On every `didChange` the server published an empty diagnostics list for the file before its 500 ms debounced compile,
+so every error and warning in the file flashed off at each keystroke and came back half a second after typing stopped.
+jdtls keeps the previous diagnostics until its next result replaces them.
+
+### Resolution
+
+A change no longer publishes an empty list; the next analysis replaces the diagnostics.
+The clearing dated from the first commit, with no recorded reason, and nothing depended on it:
+the clean publishes tests wait for come from analyses, closing a file still clears it, and a save always writes and republishes the file, an edit undone before its analysis included.
+In Neovim the drawn diagnostics and `]d` follow the edited text at once; `vim.diagnostic.get()` keeps the old line until the next analysis, about half a second.
+
+### Regression targets
+
+- `LiveAnalysisTest.didChange_errorStillThere_keepsTheDiagnosticsUntilTheNextAnalysis`
+- `LiveAnalysisTest.didSave_editUndoneBeforeItsAnalysis_clearsTheEditsDiagnostics`
+
+---
+
 ## EG-078 — No formatter detection on a Gradle build — done
 
 **Status: done.** Fixed by [Declared Formatters](../done/lathe-declared-formatters.md) (2026-11-11).
