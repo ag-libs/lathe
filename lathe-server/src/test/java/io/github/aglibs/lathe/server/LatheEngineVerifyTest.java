@@ -84,7 +84,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         List.of(apiClasses),
         fake);
     TestCompiler.writeSourceSetParams(
-        tmp, "impl", "integrationTest", fakeRoot, List.of(tmp.resolve("api/target/classes")));
+        tmp, "impl", "integrationTest", fakeRoot, List.of(tmp.resolve("api/target/classes")), true);
     engine = new LatheEngine(tmp);
 
     final var pos = positionOf(ifaceSource, "greet");
