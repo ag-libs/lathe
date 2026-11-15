@@ -568,7 +568,7 @@ class McpTextTest {
                 "Not renamed — review: the old name is still text in 4 place(s) (showing first 1):",
                 "app/Shop.java:7:1: // the count of items",
                 "",
-                "Not checked — 1 file(s) outside the modules the last build compiled name it:",
+                "Not checked — 1 Java file(s) outside every synced source root name it:",
                 "it/ShopIT.java:12:1: shop.count();"));
     assertThat(
             text(

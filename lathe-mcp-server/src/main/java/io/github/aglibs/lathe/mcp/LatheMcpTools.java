@@ -150,8 +150,8 @@ final class LatheMcpTools {
                 match. It updates uses grep+sed would miss or silently rebind to the wrong overload, \
                 and reports exactly which files it changed, then lists where the old name is still \
                 text (string literals, qualified in resources) for you to review; it edits none. It \
-                also lists Java files outside the modules the last build compiled (a profile may \
-                leave a module out) that name it: neither renamed nor checked. Renaming a public top-level type also \
+                also lists Java files outside every synced source root (a module a profile leaves \
+                out, test fixtures) that name it: neither renamed nor checked. Renaming a public top-level type also \
                 renames its file. Refuses if it would touch a file outside the reactor, or if the \
                 symbol (or a method it overrides) is declared in the JDK, a dependency, or \
                 generated source, or if it would change what a name means: a use the new name \

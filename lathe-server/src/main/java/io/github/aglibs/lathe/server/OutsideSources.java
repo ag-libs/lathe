@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -15,6 +16,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -24,6 +27,8 @@ import org.eclipse.lsp4j.Range;
 // profiles leave out, examples, templates. A rename neither edits nor checks them, so where they
 // name the symbol is where a full build may still break.
 final class OutsideSources {
+
+  private static final Logger LOG = Logger.getLogger(OutsideSources.class.getName());
 
   // Build output; hidden directories (.git, .lathe) are skipped too.
   private static final Set<String> OUTPUT_DIRS = Set.of("target", "build");
@@ -51,10 +56,18 @@ final class OutsideSources {
                   @Override
                   public FileVisitResult visitFile(
                       final Path file, final BasicFileAttributes attrs) {
-                    if (FileUtil.isJavaFile(file)) {
+                    if (FileUtil.isJavaFile(file) && Files.isReadable(file)) {
                       firstMention(file, name).ifPresent(found::add);
                     }
 
+                    return FileVisitResult.CONTINUE;
+                  }
+
+                  // The list is advice: a directory it cannot read (a container's volume
+                  // owned by root) must not fail the rename.
+                  @Override
+                  public FileVisitResult visitFileFailed(final Path file, final IOException e) {
+                    LOG.log(Level.WARNING, e, () -> "[rename] %s not searched".formatted(file));
                     return FileVisitResult.CONTINUE;
                   }
                 }));

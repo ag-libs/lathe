@@ -160,7 +160,8 @@ final class McpText {
         .formatted(rename.mentionCount(), more, locationLines(rename.mentions()));
   }
 
-  // A module the build's profiles leave out is not synced, so the rename never saw these files.
+  // A module the build's profiles leave out is not synced, nor is a test fixture outside its
+  // module's source roots, so the rename never saw these files.
   static String outsideLines(final LatheRename rename) {
     if (rename.outsideCount() == 0) {
       return "";
@@ -170,7 +171,7 @@ final class McpText {
         rename.outsideCount() > rename.outside().size()
             ? " (showing first %d)".formatted(rename.outside().size())
             : "";
-    return "%n%nNot checked — %d file(s) outside the modules the last build compiled name it%s:%n%s"
+    return "%n%nNot checked — %d Java file(s) outside every synced source root name it%s:%n%s"
         .formatted(rename.outsideCount(), more, locationLines(rename.outside()));
   }
 
