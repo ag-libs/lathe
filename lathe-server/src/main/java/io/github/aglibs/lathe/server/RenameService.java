@@ -71,6 +71,7 @@ final class RenameService {
         uri,
         pos,
         Optional.empty(),
+        FeatureRouter.NOT_CANCELLED,
         (session, request) -> session.references().localRenameTextMentions(request));
   }
 

@@ -13,6 +13,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 // Routes a request about a file to the worker that analyzes it, and keeps the analyses of the files
 // used most recently: a file routed here is touched in the analysis LRU, and the least recent one
@@ -21,6 +22,9 @@ import org.eclipse.lsp4j.Position;
 final class FeatureRouter {
 
   private static final Logger LOG = Logger.getLogger(FeatureRouter.class.getName());
+
+  // For a feature no request can cancel: the editor's navigation, and features other features use.
+  static final CancelChecker NOT_CANCELLED = () -> {};
 
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
@@ -109,13 +113,15 @@ final class FeatureRouter {
     }
   }
 
-  // A feature at a position of an open document, run on its module's worker. The request is built
-  // here, on the loop, so what runs on the worker reads none of the loop's state.
+  // A feature at a position of an open document, run on its module's worker, unless cancelled
+  // while it waits there. The request is built here, on the loop, so what runs on the worker reads
+  // none of the loop's state.
   <T> CompletableFuture<T> positionFeature(
       final String operation,
       final String uri,
       final Position pos,
       final T fallback,
+      final CancelChecker cancelChecker,
       final BiFunction<SourceAnalysisSession, SourceFeatureRequest, T> feature) {
     return openDocFeature(
         operation,
@@ -123,7 +129,7 @@ final class FeatureRouter {
         fallback,
         (worker, doc) -> {
           final SourceFeatureRequest request = featureRequest(doc, pos);
-          return worker.submit(session -> feature.apply(session, request));
+          return worker.submit(session -> feature.apply(session, request), cancelChecker);
         });
   }
 

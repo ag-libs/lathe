@@ -460,7 +460,8 @@ public final class LatheEngine {
                 file,
                 line,
                 column,
-                (session, uri, pos, cancel, progress) -> session.features().hoverFuture(uri, pos)))
+                (session, uri, pos, cancel, progress) ->
+                    session.features().hoverFuture(uri, pos, cancel)))
         .map(LatheEngine::hoverText);
   }
 
@@ -1218,7 +1219,7 @@ public final class LatheEngine {
                 (session, uri, pos, cancel, progress) ->
                     session
                         .features()
-                        .hoverFuture(uri, pos)
+                        .hoverFuture(uri, pos, cancel)
                         .thenCompose(
                             hover ->
                                 session

@@ -663,7 +663,7 @@ final class ReferenceSearch {
   // cursor, then reuse the single-file reference search. No workspace/candidate index is touched,
   // so it stays cheap even for fields and methods.
   CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
-      final String uri, final Position pos) {
+      final String uri, final Position pos, final CancelChecker cancelChecker) {
     return router.openDocFeature(
         "documentHighlight",
         uri,
@@ -672,7 +672,7 @@ final class ReferenceSearch {
           final var request = router.featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
-              .submit(session -> session.references().resolveTarget(request))
+              .submit(session -> session.references().resolveTarget(request), cancelChecker)
               .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
               .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"));
         });
@@ -1454,6 +1454,7 @@ final class ReferenceSearch {
             uri,
             pos,
             List.<CallHierarchyItem>of(),
+            FeatureRouter.NOT_CANCELLED,
             (session, request) -> session.hierarchy().prepareCallHierarchy(request))
         .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }
