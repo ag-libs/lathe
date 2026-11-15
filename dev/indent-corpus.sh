@@ -6,7 +6,8 @@
 #
 # Paths are .java files or directories (searched for .java files); the default is this repository's
 # own main sources, which google-java-format formats (block 2, continuation 4, the defaults here).
-# For AOSP or palantir output, pass --block 4 --continuation 8.
+# For AOSP or palantir output, pass --block 4 --continuation 8; a tab-indented project is measured
+# with a tab as wide as --block.
 #
 # Needs the Java tree-sitter parser, as check-nvim.sh does: LATHE_NVIM_PARSER_RUNTIME names a
 # runtime directory holding parser/java.so (default: Neovim's data directory's site/).
