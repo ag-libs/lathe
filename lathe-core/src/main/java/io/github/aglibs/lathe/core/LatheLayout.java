@@ -209,9 +209,11 @@ public final class LatheLayout {
     // The task the sync script runs, and its argument that captures the tests without running them.
     public static final String SYNC_TASK = "latheSync";
     public static final String CAPTURE_ONLY_ARG = "-P%s=true".formatted(LatheFlags.CAPTURE_ONLY);
-    // A project's first run, for the setup message: it writes .lathe/ without running the tests.
+    // A project's first run, for the setup message: it writes .lathe/ without running the tests,
+    // and
+    // goes on past a test task a build fails for its skipped tests, so every one is captured.
     public static final String FIRST_BUILD_COMMAND =
-        "./gradlew %s %s".formatted(SYNC_TASK, CAPTURE_ONLY_ARG);
+        "./gradlew %s %s --continue".formatted(SYNC_TASK, CAPTURE_ONLY_ARG);
 
     private Gradle() {}
   }

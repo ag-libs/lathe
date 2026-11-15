@@ -20,6 +20,15 @@ class LatheTestCaptureTest {
 
   @TempDir Path tmp;
 
+  // The sync's warning and the capture-only skip of a test task both ask this.
+  @Test
+  void capturesOn_javaBelow17_no_17AndLater_yes() {
+    assertThat(LatheTestCapture.capturesOn(11)).isFalse();
+    assertThat(LatheTestCapture.capturesOn(16)).isFalse();
+    assertThat(LatheTestCapture.capturesOn(17)).isTrue();
+    assertThat(LatheTestCapture.capturesOn(25)).isTrue();
+  }
+
   // A launch captured by Develocity's test-selection JVM names jars it copied to the temporary
   // directory, deleted later in the build: one there or already gone is temporary; the build's own
   // jars and Gradle's caches (either may live in the temporary directory too), the repository's,

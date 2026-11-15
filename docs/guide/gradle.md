@@ -59,8 +59,11 @@ version control, as Lathe writes a `.gitignore` inside it; keep it out of any ch
 directory too, see [troubleshooting](troubleshooting.md)):
 
 ```sh
-./gradlew latheSync -Plathe.capture.only=true
+./gradlew latheSync -Plathe.capture.only=true --continue
 ```
+
+A build that rejects skipped tests (a test listener that fails the task, as Caffeine's does) ends this run with
+failed test tasks, but `.lathe/` is complete and every test task's launch is captured; see [Syncing](#syncing).
 
 Open any Java source in your editor's Lathe client.
 After this, every normal build keeps Lathe up to date (see [What the build keeps current](#what-the-build-keeps-current)),
@@ -134,7 +137,7 @@ The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build prin
   [Test capture](test-capture.md#requirements-and-current-limits).
 - **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
   captured, so they can't be run or debugged from the editor; a capture-only build (the editor's sync with tests)
-names each such test task.
+  skips each such test task and names it.
 - **A notice on every test run.**
   Lathe loads its capture listener into the test JVM through the `JDK_JAVA_OPTIONS` environment variable, which
   leaves the test task's cache key alone; the JVM announces it with

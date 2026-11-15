@@ -99,11 +99,11 @@ public abstract class LatheFactsTask extends DefaultTask {
   public void write() throws IOException {
     getBuildLock().get();
     if (getTestJavaVersion().isPresent()
-        && getTestJavaVersion().get() < LatheLayout.MIN_JAVA_VERSION) {
+        && !LatheTestCapture.capturesOn(getTestJavaVersion().get())) {
       getLogger()
           .warn(
               "[lathe] {} runs on Java {}, older than the {} Lathe captures on: its tests are not"
-                  + " captured, so they can't be run from the editor",
+                  + " captured, so they can't be run from the editor, and this sync skips it",
               getTestTask().get(),
               getTestJavaVersion().get(),
               LatheLayout.MIN_JAVA_VERSION);
