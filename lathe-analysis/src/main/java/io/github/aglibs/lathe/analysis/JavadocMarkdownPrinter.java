@@ -33,6 +33,8 @@ import javax.lang.model.element.ExecutableElement;
 
 final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
+  private static final String MARKDOWN = "MARKDOWN";
+
   // A method's doc comment with its parameter names as its source declares them: an @param tag
   // inherits by position, and a class-file method's own names are synthetic.
   record MethodDoc(List<String> paramNames, DocCommentTree tree) {
@@ -344,12 +346,29 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   @Override
   public Void visitText(final TextTree node, final Void unused) {
-    final String body = pendingParagraph ? node.getBody().stripLeading() : node.getBody();
+    appendText(node.getBody());
+    return null;
+  }
+
+  // A `///` comment's text (JDK 23+) is a MARKDOWN node, which the scanner's own visitRawText
+  // skips; it is Markdown already, so it is printed as it is, its links between it as for javadoc.
+  // RawTextTree is newer than the JDK Lathe compiles against, so the node is known by its kind's
+  // name, and its text is its toString, which is its content.
+  @Override
+  public Void scan(final DocTree node, final Void unused) {
+    if (node != null && MARKDOWN.equals(node.getKind().name())) {
+      appendText(node.toString());
+      return null;
+    }
+
+    return super.scan(node, unused);
+  }
+
+  private void appendText(final String text) {
+    final String body = pendingParagraph ? text.stripLeading() : text;
     if (!body.isEmpty()) {
       append(body);
     }
-
-    return null;
   }
 
   @Override

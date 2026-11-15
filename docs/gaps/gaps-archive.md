@@ -7,6 +7,42 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-106 — Hover drops the text of a Markdown doc comment, keeping only its links — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor's hover and MCP `describe_symbol`, on code documented with `///` (JEP 467, JDK 23+).**
+
+Found by the pre-release Hibernate ORM round (2026-11-15); `hibernate-core` documents 973 of its main files with `///`.
+
+### Observed behaviour
+
+Hover on `Session` (`hibernate-core/src/main/java/org/hibernate/Session.java`, `public interface Session`) shows the
+signature, then only the comment's link targets run together (`` `get(Class,Object)``find(Class,Object)` ``…), then
+its `@see` lines: the prose, `@since` and `@author` are gone.
+The same on `AbstractSqlAstTranslator`, and in MCP `describe_symbol`.
+A `/** */` comment on the same kind of member renders in full.
+0.3.1 behaves the same.
+
+### Root cause
+
+`JavadocMarkdownPrinter` has no case for javac's `RawTextTree`, the node holding a `///`
+comment's Markdown text, so the scan skips the text and prints only the reference nodes between it, with no separator.
+
+### Resolution
+
+The printer catches a `MARKDOWN` node in `scan`, before the scanner's own `visitRawText` drops it, and prints its text as it is, as Markdown; links between the text print as code where they stood, and block tags as for a javadoc comment.
+`RawTextTree` is newer than the JDK Lathe compiles against, so the node is known by its kind's name and its text is its `toString`, which equals its content (checked on JDK 26).
+`@since` and `@author` stay out, as for a javadoc comment.
+
+### Regression targets
+
+`JavadocMarkdownPrinterTest.format_markdownDocComment_keepsItsTextLinksAndTags` (JDK 23+).
+
+---
+
 ## EG-105 — Every keystroke cleared the file's diagnostics until the next compile — done
 
 **Status: done.**

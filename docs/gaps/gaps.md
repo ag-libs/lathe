@@ -737,44 +737,6 @@ None yet.
 
 ---
 
-## EG-106 — Hover drops the text of a Markdown doc comment, keeping only its links
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: high — Size: S**
-
-**Affects: the editor's hover and MCP `describe_symbol`, on code documented with `///` (JEP 467, JDK 23+).**
-
-Found by the pre-release Hibernate ORM round (2026-11-15); `hibernate-core` documents 973 of its main files with `///`.
-
-### Observed behaviour
-
-Hover on `Session` (`hibernate-core/src/main/java/org/hibernate/Session.java`, `public interface Session`) shows the
-signature, then only the comment's link targets run together (`` `get(Class,Object)``find(Class,Object)` ``…), then
-its `@see` lines: the prose, `@since` and `@author` are gone.
-The same on `AbstractSqlAstTranslator`, and in MCP `describe_symbol`.
-A `/** */` comment on the same kind of member renders in full.
-0.3.1 behaves the same.
-
-### Root cause
-
-Read, not debugged: `JavadocMarkdownPrinter` has no case for javac's `RawTextTree`, the node holding a `///`
-comment's Markdown text, so the scan skips the text and prints only the reference nodes between it, with no separator.
-
-### Fix direction
-
-Print the raw text as it is (it is Markdown already), with each link rendered as code where it stood.
-`RawTextTree` exists from JDK 23 only, newer than even the `java21` tree, so it cannot be named; a scanner that does
-not override `visitRawText` gets the node in `visitOther`, where the printer can take its text (to be confirmed).
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed
 
 **Status: documented**

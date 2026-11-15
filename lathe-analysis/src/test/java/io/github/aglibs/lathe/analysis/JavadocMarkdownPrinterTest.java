@@ -20,6 +20,8 @@ import java.util.Optional;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
 
 class JavadocMarkdownPrinterTest {
 
@@ -34,6 +36,28 @@ class JavadocMarkdownPrinterTest {
   void format_plainText_returnsTrimmedText() throws IOException {
     final var tree = parseMethodDoc("class T { /** Plain text only. */ void m() {} }");
     assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("Plain text only.");
+  }
+
+  // A `///` comment (JDK 23+) is Markdown already: its text is printed as it is, with its links as
+  // code where they stand and its block tags after it, as for a javadoc comment.
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_23)
+  void format_markdownDocComment_keepsItsTextLinksAndTags() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            """
+            class T {
+              /// The **session** of a [String] and `code`.
+              ///
+              /// Opened with [#m(int)].
+              /// @param count how **many** to open
+              void m(int count) {}
+            }
+            """);
+
+    assertThat(JavadocMarkdownPrinter.format(tree))
+        .startsWith("The **session** of a `String` and `code`.\n\nOpened with `m(int)`.")
+        .contains("`count` how **many** to open");
   }
 
   // --- format: HTML inline elements ---
