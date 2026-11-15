@@ -26,6 +26,9 @@ import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 /** Called from the server event loop; executes all compilation work on its own module thread. */
 public final class CompilationWorker {
 
+  // For work no request can cancel.
+  public static final CancelChecker NOT_CANCELLED = () -> {};
+
   private static final Logger LOG = Logger.getLogger(CompilationWorker.class.getName());
   // At most this many open documents share one analysis task: a refresh chunk, or a file plus the
   // unsaved siblings that join it.
@@ -244,7 +247,7 @@ public final class CompilationWorker {
   // Runs fn on this module's thread against its analysis session; the result is delivered on the
   // event loop.
   public <T> CompletableFuture<T> submit(final Function<SourceAnalysisSession, T> fn) {
-    return submit(fn, () -> {});
+    return submit(fn, NOT_CANCELLED);
   }
 
   // As submit(fn), skipped once cancelChecker reports the request cancelled.

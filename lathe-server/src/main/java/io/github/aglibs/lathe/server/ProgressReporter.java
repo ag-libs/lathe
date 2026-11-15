@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.Stopwatch;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -229,21 +228,10 @@ public final class ProgressReporter {
     }
 
     private String outcome(final Throwable failure) {
-      if (response.isCancelled() || cancellationCause(failure) != null) {
+      if (response.isCancelled() || FeatureAnswers.isCancellation(failure)) {
         return "Cancelled";
       }
       return failure == null ? "Completed" : "Failed";
     }
-  }
-
-  private static CancellationException cancellationCause(final Throwable failure) {
-    Throwable current = failure;
-    while (current != null) {
-      if (current instanceof CancellationException cancellation) {
-        return cancellation;
-      }
-      current = current.getCause();
-    }
-    return null;
   }
 }

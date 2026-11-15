@@ -113,20 +113,27 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
-    return host.onLoopFuture(session -> session.features().completionFuture(uri, pos, context))
-        .thenApply(
-            outcome -> {
-              LOG.fine(
-                  () ->
-                      "[completion:lsp] %s line=%d character=%d items=%d incomplete=%s"
-                          .formatted(
-                              uri,
-                              pos.getLine(),
-                              pos.getCharacter(),
-                              outcome.items().size(),
-                              outcome.incomplete()));
-              return completionResult(outcome);
-            });
+    // Cancellable, as the editor cancels a completion on the next keystroke; the result is shaped
+    // inside the work, so the future the editor cancels is the one the work checks.
+    return host.onLoopCompose(
+        null,
+        (session, cancelChecker, progress) ->
+            session
+                .features()
+                .completionFuture(uri, pos, context, cancelChecker)
+                .thenApply(
+                    outcome -> {
+                      LOG.fine(
+                          () ->
+                              "[completion:lsp] %s line=%d character=%d items=%d incomplete=%s"
+                                  .formatted(
+                                      uri,
+                                      pos.getLine(),
+                                      pos.getCharacter(),
+                                      outcome.items().size(),
+                                      outcome.incomplete()));
+                      return completionResult(outcome);
+                    }));
   }
 
   static Either<List<CompletionItem>, CompletionList> completionResult(
@@ -166,7 +173,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(new SemanticTokens(List.of()));
     }
 
-    return host.onLoopFuture(session -> session.features().semanticTokensFuture(uri));
+    return host.onLoopCompose(
+        null,
+        (session, cancelChecker, progress) ->
+            session.features().semanticTokensFuture(uri, cancelChecker));
   }
 
   @Override
@@ -268,9 +278,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final CompletableFuture<List<DocumentHighlight>> work =
-        host.onLoopFuture(session -> session.search().documentHighlightFuture(uri, pos));
-    return work.thenApply(highlights -> highlights);
+    return host.onLoopCompose(
+        null,
+        (session, cancelChecker, progress) ->
+            session.search().documentHighlightFuture(uri, pos, cancelChecker));
   }
 
   @Override
@@ -281,7 +292,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return host.onLoopFuture(session -> session.features().signatureHelpFuture(uri, pos));
+    return host.onLoopCompose(
+        null,
+        (session, cancelChecker, progress) ->
+            session.features().signatureHelpFuture(uri, pos, cancelChecker));
   }
 
   @Override
@@ -292,7 +306,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return host.onLoopFuture(session -> session.features().hoverFuture(uri, pos));
+    return host.onLoopCompose(
+        null,
+        (session, cancelChecker, progress) ->
+            session.features().hoverFuture(uri, pos, cancelChecker));
   }
 
   @Override

@@ -5,6 +5,7 @@ import static java.util.logging.Level.SEVERE;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.logging.Logger;
@@ -31,9 +32,24 @@ final class FeatureAnswers {
   }
 
   // The same, as the exceptionally step of a feature on a file: the log names the feature and file.
+  // A request the editor cancelled is expected, not a failure: nobody reads its answer.
   static <T> Function<Throwable, T> failedFor(
       final String operation, final String uri, final T fallback) {
-    return ex -> logAndReturn(ex, "[%s] failed for %s".formatted(operation, uri), fallback);
+    return ex ->
+        isCancellation(ex)
+            ? fallback
+            : logAndReturn(ex, "[%s] failed for %s".formatted(operation, uri), fallback);
+  }
+
+  // Whether the failure is a cancellation, however deep a future's completion wrapped it.
+  static boolean isCancellation(final Throwable failure) {
+    for (Throwable current = failure; current != null; current = current.getCause()) {
+      if (current instanceof CancellationException) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // A feature's answer passed on unchanged, logged with how many items it holds and how long it

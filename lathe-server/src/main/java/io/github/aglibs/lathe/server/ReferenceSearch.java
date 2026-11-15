@@ -663,7 +663,7 @@ final class ReferenceSearch {
   // cursor, then reuse the single-file reference search. No workspace/candidate index is touched,
   // so it stays cheap even for fields and methods.
   CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
-      final String uri, final Position pos) {
+      final String uri, final Position pos, final CancelChecker cancelChecker) {
     return router.openDocFeature(
         "documentHighlight",
         uri,
@@ -672,14 +672,18 @@ final class ReferenceSearch {
           final var request = router.featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
-              .submit(session -> session.references().resolveTarget(request))
-              .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
+              .submit(session -> session.references().resolveTarget(request), cancelChecker)
+              .thenCompose(
+                  target -> documentHighlightsForTarget(worker, doc, target, cancelChecker))
               .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"));
         });
   }
 
   private CompletableFuture<List<DocumentHighlight>> documentHighlightsForTarget(
-      final CompilationWorker worker, final OpenDocument doc, final ReferenceTarget target) {
+      final CompilationWorker worker,
+      final OpenDocument doc,
+      final ReferenceTarget target,
+      final CancelChecker cancelChecker) {
     if (target == null) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -690,11 +694,12 @@ final class ReferenceSearch {
                 session
                     .references()
                     .references(
-                        session.analysis(doc.uri(), doc.content(), doc.version(), () -> {}),
+                        session.analysis(doc.uri(), doc.content(), doc.version(), cancelChecker),
                         doc.uri(),
                         target,
                         true,
-                        Set.of()))
+                        Set.of()),
+            cancelChecker)
         .thenApply(found -> toHighlights(found.hits()));
   }
 
@@ -1454,6 +1459,7 @@ final class ReferenceSearch {
             uri,
             pos,
             List.<CallHierarchyItem>of(),
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> session.hierarchy().prepareCallHierarchy(request))
         .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }

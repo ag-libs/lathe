@@ -2,24 +2,32 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionParams;
+import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.CompletionTriggerKind;
 import org.eclipse.lsp4j.DeclarationParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
@@ -37,6 +45,7 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams;
 import org.eclipse.lsp4j.TypeHierarchySupertypesParams;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
@@ -137,6 +146,45 @@ class LspRoutesTest extends ServiceTestBase {
     assertThat(items.isLeft() ? items.getLeft() : items.getRight().getItems())
         .extracting(CompletionItem::getLabel)
         .doesNotContain("Fresh");
+  }
+
+  // The editor cancels these as it types: a request cancelled while it waits for its module's
+  // worker is skipped there, so the worker reaches the request's cancel check before any work. One
+  // not cancelled answers.
+  @Test
+  void typingRequests_cancelled_reachTheWorkerAsCancelled() throws Exception {
+    final ShopFixture shop = openShop();
+    final String uri = shop.use().toUri().toString();
+    final Position pos = positionOf(shop.use(), "ell(1)");
+    final var checks = new AtomicInteger();
+    final CancelChecker cancelled =
+        () -> {
+          checks.incrementAndGet();
+          throw new CancellationException();
+        };
+
+    final var invoked = new CompletionContext(CompletionTriggerKind.Invoked);
+
+    assertThat(answer(session -> session.features().completionFuture(uri, pos, invoked, cancelled)))
+        .isEqualTo(CompletionOutcome.of(List.of()));
+    assertThat(answer(session -> session.features().hoverFuture(uri, pos, cancelled))).isNull();
+    assertThat(answer(session -> session.features().signatureHelpFuture(uri, pos, cancelled)))
+        .isNull();
+    assertThat(answer(session -> session.features().semanticTokensFuture(uri, cancelled))).isNull();
+    assertThat(answer(session -> session.search().documentHighlightFuture(uri, pos, cancelled)))
+        .isEqualTo(List.of());
+    assertThat(checks).hasValue(5);
+    assertThat(
+            answer(
+                session ->
+                    session.features().hoverFuture(uri, pos, CompilationWorker.NOT_CANCELLED)))
+        .isNotNull();
+  }
+
+  private Object answer(final Function<WorkspaceSession, CompletableFuture<?>> feature)
+      throws Exception {
+    return host.onLoopFuture(session -> feature.apply(session).thenApply(Object.class::cast))
+        .get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   @Test

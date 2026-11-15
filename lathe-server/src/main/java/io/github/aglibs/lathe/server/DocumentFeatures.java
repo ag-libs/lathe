@@ -227,24 +227,37 @@ final class DocumentFeatures {
                                 .entrySet())));
   }
 
-  CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
+  CompletableFuture<Hover> hoverFuture(
+      final String uri, final Position pos, final CancelChecker cancelChecker) {
     return router.positionFeature(
-        "hover", uri, pos, null, (session, request) -> session.navigation().hover(request));
+        "hover",
+        uri,
+        pos,
+        null,
+        cancelChecker,
+        (session, request) -> session.navigation().hover(request));
   }
 
   // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
   // check) passes, and the tool gives its own answer.
   CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
     return router.positionFeature(
-        "onName", uri, pos, true, (session, request) -> session.navigation().onName(request));
+        "onName",
+        uri,
+        pos,
+        true,
+        CompilationWorker.NOT_CANCELLED,
+        (session, request) -> session.navigation().onName(request));
   }
 
-  CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
+  CompletableFuture<SignatureHelp> signatureHelpFuture(
+      final String uri, final Position pos, final CancelChecker cancelChecker) {
     return router.positionFeature(
         "signatureHelp",
         uri,
         pos,
         null,
+        cancelChecker,
         (session, request) -> session.navigation().signatureHelp(request));
   }
 
@@ -267,6 +280,7 @@ final class DocumentFeatures {
             uri,
             pos,
             new DefinitionResult(List.of(), false),
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> session.navigation().definitionResult(request))
         .thenApply(this::explain);
   }
@@ -324,6 +338,7 @@ final class DocumentFeatures {
             uri,
             pos,
             List.<Location>of(),
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> find.apply(session.navigation(), request))
         .thenApply(FeatureAnswers::definitionResult);
   }
@@ -338,6 +353,7 @@ final class DocumentFeatures {
             uri,
             pos,
             List.<TypeHierarchyItem>of(),
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> session.hierarchy().prepareTypeHierarchy(request, indexSnapshot))
         .thenApply(FeatureAnswers.logged(LOG, "typeHierarchy:prepare", uri, t, "items"));
   }
@@ -427,7 +443,10 @@ final class DocumentFeatures {
   }
 
   CompletableFuture<CompletionOutcome> completionFuture(
-      final String uri, final Position pos, final CompletionContext context) {
+      final String uri,
+      final Position pos,
+      final CompletionContext context,
+      final CancelChecker cancelChecker) {
     final var route = router.routeCompiler(uri);
     // Narrowed on the loop to the trees the file sees: a value, as the snapshot is.
     final var indexSnapshot = reactorIndex.current().seenFrom(route.seenTrees());
@@ -448,7 +467,8 @@ final class DocumentFeatures {
                         context,
                         indexSnapshot,
                         completionModuleNames(route, uri),
-                        staticImports)));
+                        staticImports),
+                cancelChecker));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
@@ -548,7 +568,8 @@ final class DocumentFeatures {
     return payload != null ? new CodeActionRequest(uri, diag, payload) : null;
   }
 
-  CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
+  CompletableFuture<SemanticTokens> semanticTokensFuture(
+      final String uri, final CancelChecker cancelChecker) {
     return router.openDocFeature(
         "semanticTokens",
         uri,
@@ -556,7 +577,8 @@ final class DocumentFeatures {
         (worker, doc) ->
             worker
                 .submit(
-                    session -> session.files().semanticTokens(uri, doc.content(), doc.version()))
+                    session -> session.files().semanticTokens(uri, doc.content(), doc.version()),
+                    cancelChecker)
                 .thenApply(DocumentFeatures::encodeTokensOrNull));
   }
 
