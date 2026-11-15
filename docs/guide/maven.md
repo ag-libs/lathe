@@ -198,8 +198,10 @@ A cache hit skips compilation, so Lathe would not see the real build and its cap
 - **A module that shades its main jar.** When `maven-shade-plugin` replaces a module's jar with a
   shaded one (no `shadedArtifactAttached`, no `outputFile`), the modules that depend on it compile
   against the classes it relocated, which only that jar holds.
-  Lathe keeps the shaded jar on their classpath, so the editor sees the relocated classes after a
-  `package` build; the module's own classes then reach its dependents at its next `package`.
+  The editor gives them the module's latest classes and then the shaded jar, for the relocated classes,
+  after a `package` build.
+  A run, test or debug uses the shaded jar alone, as its classes call the relocated ones, so it runs the
+  module's own code as the last `package` left it.
   Only `package` makes that jar, so `process-test-classes` cannot compile the dependents, and the build
   warns when it sees such a module: set the phase the sync builds to with `lathe.sync.phase`, in
   `.mvn/maven.config` (`-Dlathe.sync.phase=package`) or as a root POM property

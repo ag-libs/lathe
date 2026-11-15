@@ -208,6 +208,40 @@ class WorkspaceManifestTest {
         .containsExactly(tmp.resolve(".lathe/dup/classes"));
   }
 
+  // The build marks a shaded jar, which holds classes it relocated: analysis takes the mirror and
+  // then the jar, a launch the jar alone, whose own classes name the relocated packages. An
+  // unmarked jar stands for its mirror, even one holding a package the mirror lacks (one renamed
+  // since the jar was built).
+  @Test
+  void load_shadedJarMarked_analysisAddsItLaunchKeepsItAlone_unmarkedNot() throws Exception {
+    final Path lib = tmp.resolve(".lathe/lib");
+    final Path main = source("lib", "Main");
+    TestJavac.compileToDir(lib.resolve(LatheLayout.CLASSES_DIR), main);
+    final Path libJar = jar("lib", main, source("lib.shadow.dep", "Relocated"));
+    final Path app = tmp.resolve(".lathe/app");
+    final Path appMain = source("app", "App");
+    TestJavac.compileToDir(app.resolve(LatheLayout.CLASSES_DIR), appMain);
+    final Path appJar = jar("app", appMain, source("app.renamed", "Old"));
+    writeWorkspaceManifest(
+        LatheLayout.SCHEMA_VERSION,
+        List.of(),
+        null,
+        List.of(),
+        List.of(
+            new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR, true),
+            new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR)));
+
+    final ReactorRewrite rewrite = WorkspaceManifest.load(tmp).reactorRewrite();
+
+    assertThat(rewrite.expand(libJar))
+        .containsExactly(lib.resolve(LatheLayout.CLASSES_DIR), libJar);
+    assertThat(rewrite.toLatheClassPath(List.of(libJar.toString())))
+        .containsExactly(libJar.toString());
+    assertThat(rewrite.expand(appJar)).containsExactly(app.resolve(LatheLayout.CLASSES_DIR));
+    assertThat(rewrite.toLatheClassPath(List.of(appJar.toString())))
+        .containsExactly(app.resolve(LatheLayout.CLASSES_DIR).toString());
+  }
+
   private Path source(final String pkg, final String name) throws Exception {
     return TestCompiler.writeAt(
         tmp.resolve("src/%s/%s.java".formatted(pkg, name)),

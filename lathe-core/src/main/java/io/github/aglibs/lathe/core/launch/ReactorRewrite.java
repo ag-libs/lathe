@@ -5,10 +5,12 @@ import io.github.aglibs.lathe.core.schema.OutputData;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -18,15 +20,21 @@ import java.util.stream.Stream;
  */
 public final class ReactorRewrite {
 
-  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of());
+  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of(), Set.of());
 
   // An output with every mirror it stands for, in the order listed: a Gradle jar that packs a
   // second source set's classes stands for both trees.
   private final Map<Path, List<Path>> allMirrors;
   private final Map<Path, Path> firstMirrors;
+  // Shaded jars: the module's own classes in them name the relocated packages, so a launch runs
+  // the jar alone (the String paths, as launch files hold them), while analysis takes the mirror
+  // and then the jar on a class path (expand), and the mirror alone where one entry stands for it
+  // (toLathe(Path): a module path, which cannot hold both).
+  private final Set<Path> keptJars;
 
-  private ReactorRewrite(final Map<Path, List<Path>> allMirrors) {
+  private ReactorRewrite(final Map<Path, List<Path>> allMirrors, final Set<Path> keptJars) {
     this.allMirrors = allMirrors;
+    this.keptJars = keptJars;
     this.firstMirrors =
         allMirrors.entrySet().stream()
             .collect(
@@ -38,11 +46,15 @@ public final class ReactorRewrite {
     final Path root = workspaceRoot.normalize();
     final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
     final var mirrors = new LinkedHashMap<Path, List<Path>>();
+    final var shaded = new HashSet<Path>();
     for (final OutputData output : outputs) {
+      final Path path = root.resolve(output.path()).normalize();
+      if (Boolean.TRUE.equals(output.shaded())) {
+        shaded.add(path);
+      }
+
       final Path mirror = latheDir.resolve(output.module()).resolve(output.tree()).normalize();
-      final List<Path> listed =
-          mirrors.computeIfAbsent(
-              root.resolve(output.path()).normalize(), path -> new ArrayList<>());
+      final List<Path> listed = mirrors.computeIfAbsent(path, ignored -> new ArrayList<>());
       if (!listed.contains(mirror)) {
         listed.add(mirror);
       }
@@ -52,7 +64,8 @@ public final class ReactorRewrite {
         mirrors.entrySet().stream()
             .collect(
                 Collectors.toUnmodifiableMap(
-                    Map.Entry::getKey, listed -> List.copyOf(listed.getValue()))));
+                    Map.Entry::getKey, listed -> List.copyOf(listed.getValue()))),
+        Set.copyOf(shaded));
   }
 
   public static ReactorRewrite none() {
@@ -64,16 +77,29 @@ public final class ReactorRewrite {
     return firstMirrors;
   }
 
-  // Every mirror the path stands for, or the path itself when it is not a listed output.
+  // Whether a launch runs this output as itself.
+  public boolean kept(final Path path) {
+    return keptJars.contains(path.normalize());
+  }
+
+  // Analysis: every mirror the path stands for (a kept jar itself after them), or the path itself
+  // when it is not a listed output.
   public List<Path> expand(final Path path) {
-    return allMirrors.getOrDefault(path.normalize(), List.of(path));
+    final Path normal = path.normalize();
+    final List<Path> mirrors = allMirrors.getOrDefault(normal, List.of(path));
+    return kept(normal) ? Stream.concat(mirrors.stream(), Stream.of(normal)).toList() : mirrors;
   }
 
   public Path toLathe(final Path path) {
     return firstMirrors.getOrDefault(path.normalize(), path);
   }
 
+  // A launch's path, as its launch file holds it: a kept jar stays itself.
   public String toLathe(final String path) {
+    if (kept(Path.of(path))) {
+      return path;
+    }
+
     return Optional.ofNullable(firstMirrors.get(Path.of(path).normalize()))
         .map(Path::toString)
         .orElse(path);
@@ -91,7 +117,9 @@ public final class ReactorRewrite {
 
   private Stream<String> classPathEntries(final String path) {
     final List<Path> mirrors = allMirrors.get(Path.of(path).normalize());
-    return mirrors == null ? Stream.of(path) : mirrors.stream().map(Path::toString);
+    return mirrors == null || kept(Path.of(path))
+        ? Stream.of(path)
+        : mirrors.stream().map(Path::toString);
   }
 
   public Map<String, String> toLathe(final Map<String, String> paths) {

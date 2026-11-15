@@ -63,16 +63,17 @@ public final class CompletenessGate {
         : CompletenessResult.blocked(reasons);
   }
 
-  // A jar the launch names that no mirror stands for and that is gone: the test JVM would fail to
-  // load its classes midway. Develocity's test acceleration starts the tests through a launcher it
-  // copies to a temporary directory and deletes after the run; a cache cleanup removes a dependency
-  // jar. A missing directory is left alone: builds list output directories never created.
+  // A jar the launch names that no mirror stands for, or a shaded one, and that is gone: the test
+  // JVM would fail to load its classes midway. Develocity's test acceleration starts the tests
+  // through a launcher it copies to a temporary directory and deletes after the run; a cache
+  // cleanup removes a dependency jar. A missing directory is left alone: builds list output
+  // directories never created.
   private static List<String> missingJars(
       final List<String> paths, final ReactorRewrite reactorRewrite) {
     return paths.stream()
         .map(path -> Path.of(path).normalize())
         .filter(FileUtil::isJarFile)
-        .filter(path -> !reactorRewrite.mirrors().containsKey(path))
+        .filter(path -> !reactorRewrite.mirrors().containsKey(path) || reactorRewrite.kept(path))
         .filter(path -> !Files.exists(path))
         .distinct()
         .map(
@@ -86,8 +87,8 @@ public final class CompletenessGate {
   }
 
   // A directory in a reactor module's build directory that no mirror stands for, such as a copy of
-  // the classes the build tests instead of its compile output: the launch runs it as the last build
-  // left it, so it may not hold the latest edits.
+  // the classes the build tests instead of its compile output, or a shaded jar: the launch runs it
+  // as the last build left it, so it may not hold the latest edits.
   private static List<String> lastBuildNotes(
       final List<String> paths, final Path workspaceRoot, final ReactorRewrite reactorRewrite) {
     final Set<Path> buildDirs =
@@ -98,9 +99,12 @@ public final class CompletenessGate {
     final Path root = workspaceRoot.normalize();
     return paths.stream()
         .map(path -> Path.of(path).normalize())
-        .filter(path -> !reactorRewrite.mirrors().containsKey(path))
-        .filter(path -> buildDirs.stream().anyMatch(path::startsWith))
-        .filter(Files::isDirectory)
+        .filter(
+            path ->
+                reactorRewrite.kept(path)
+                    || (!reactorRewrite.mirrors().containsKey(path)
+                        && buildDirs.stream().anyMatch(path::startsWith)
+                        && Files.isDirectory(path)))
         .distinct()
         .map(
             path ->

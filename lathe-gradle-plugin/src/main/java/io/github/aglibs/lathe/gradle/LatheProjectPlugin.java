@@ -602,6 +602,10 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final JavaCompile testCompile =
         tasks.named(test.getCompileJavaTaskName(), JavaCompile.class).get();
     final Jar jar = tasks.named(JavaPlugin.JAR_TASK_NAME, Jar.class).get();
+    final File mainJar = jar.getArchiveFile().get().getAsFile();
+    // A disabled jar task leaves its path to another task: a shaded jar, as JUnit's shadow
+    // convention writes there, which holds relocated classes the mirror lacks.
+    final boolean shaded = !jar.getEnabled();
     final String module = module(project);
     final Path root = project.getRootDir().toPath();
     final List<OutputData> outputs =
@@ -610,7 +614,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                     Map.entry(
                         mainCompile.getDestinationDirectory().get().getAsFile(),
                         LatheLayout.CLASSES_DIR),
-                    Map.entry(jar.getArchiveFile().get().getAsFile(), LatheLayout.CLASSES_DIR),
+                    Map.entry(mainJar, LatheLayout.CLASSES_DIR),
                     Map.entry(main.getOutput().getResourcesDir(), LatheLayout.CLASSES_DIR),
                     Map.entry(
                         testCompile.getDestinationDirectory().get().getAsFile(),
@@ -619,7 +623,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 others.stream().flatMap(sourceSet -> sourceSetOutputs(tasks, sourceSet)))
             .map(
                 output ->
-                    new OutputData(relative(root, output.getKey()), module, output.getValue()))
+                    new OutputData(
+                        relative(root, output.getKey()),
+                        module,
+                        output.getValue(),
+                        shaded && output.getKey().equals(mainJar)))
             .toList();
     final List<ResourceRootData> resourceRoots =
         Stream.concat(Stream.of(main, test), others.stream())

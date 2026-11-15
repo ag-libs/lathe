@@ -223,35 +223,30 @@ public final class ReactorProjects {
         .filter(project -> !escapesReactorRoot(workspaceRoot, project));
   }
 
-  // A shaded main jar is not the module's classes: it also holds the classes it relocated, which
-  // its mirror lacks, so it stays on a dependent's classpath as itself rather than as the mirror.
+  // A shaded main jar is marked: it holds the classes it relocated, which the mirror lacks.
   private static Stream<OutputData> outputs(final Path workspaceRoot, final MavenProject project) {
     final Build build = project.getBuild();
     final String module = FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath()));
     final Path buildDir = Path.of(build.getDirectory());
     final String finalName = build.getFinalName();
-    final Stream<Map.Entry<Path, String>> mainJar =
-        shadesMainJar(project)
-            ? Stream.empty()
-            : Stream.of(
-                Map.entry(
-                    buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR));
+    final Function<Path, String> relative =
+        path -> FileUtil.slashed(workspaceRoot.relativize(path));
     return Stream.of(
-            Stream.of(
-                Map.entry(Path.of(build.getOutputDirectory()), LatheLayout.CLASSES_DIR),
-                Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR)),
-            mainJar,
-            Stream.of(
-                Map.entry(
-                    buildDir.resolve("%s-%s.jar".formatted(finalName, TEST_JAR_CLASSIFIER)),
-                    LatheLayout.TEST_CLASSES_DIR)))
-        .flatMap(entries -> entries)
-        .map(
-            output ->
-                new OutputData(
-                    FileUtil.slashed(workspaceRoot.relativize(output.getKey())),
-                    module,
-                    output.getValue()));
+        new OutputData(
+            relative.apply(Path.of(build.getOutputDirectory())), module, LatheLayout.CLASSES_DIR),
+        new OutputData(
+            relative.apply(Path.of(build.getTestOutputDirectory())),
+            module,
+            LatheLayout.TEST_CLASSES_DIR),
+        new OutputData(
+            relative.apply(buildDir.resolve("%s.jar".formatted(finalName))),
+            module,
+            LatheLayout.CLASSES_DIR,
+            shadesMainJar(project)),
+        new OutputData(
+            relative.apply(buildDir.resolve("%s-%s.jar".formatted(finalName, TEST_JAR_CLASSIFIER))),
+            module,
+            LatheLayout.TEST_CLASSES_DIR));
   }
 
   // Whether maven-shade-plugin replaces the module's main jar: an enabled shade execution that

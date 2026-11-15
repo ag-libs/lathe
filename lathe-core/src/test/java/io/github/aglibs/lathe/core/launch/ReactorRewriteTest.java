@@ -84,6 +84,40 @@ final class ReactorRewriteTest {
     assertThat(REWRITE.expand(Path.of("/repo/a.jar"))).containsExactly(Path.of("/repo/a.jar"));
   }
 
+  // A shaded jar: its own classes there name the relocated packages, so a launch's class and
+  // module paths keep the jar alone, while analysis takes the mirror and then the jar on a class
+  // path, and the mirror alone for one entry. A jar not shaded is unchanged.
+  @Test
+  void of_shadedJar_launchKeepsTheJar_analysisTheMirrorThenTheJar() {
+    final ReactorRewrite rewrite =
+        ReactorRewrite.of(
+            WORKSPACE,
+            List.of(
+                new OutputData("lib/build/libs/lib.jar", "lib", "classes", true),
+                new OutputData("app/target/app-1.0.jar", "app", "classes")));
+    final List<String> path =
+        List.of(
+            os("/workspace/lib/build/libs/lib.jar"),
+            os("/workspace/app/target/app-1.0.jar"),
+            os("/repo/a.jar"));
+    final List<String> launched =
+        List.of(
+            os("/workspace/lib/build/libs/lib.jar"),
+            os("/workspace/.lathe/app/classes"),
+            os("/repo/a.jar"));
+
+    assertThat(rewrite.toLatheClassPath(path)).isEqualTo(launched);
+    assertThat(rewrite.toLathe(path)).isEqualTo(launched);
+    assertThat(rewrite.expand(Path.of(os("/workspace/lib/build/libs/lib.jar"))))
+        .containsExactly(
+            Path.of(os("/workspace/.lathe/lib/classes")),
+            Path.of(os("/workspace/lib/build/libs/lib.jar")));
+    assertThat(rewrite.toLathe(Path.of(os("/workspace/lib/build/libs/lib.jar"))))
+        .isEqualTo(Path.of(os("/workspace/.lathe/lib/classes")));
+    assertThat(rewrite.expand(Path.of(os("/workspace/app/target/app-1.0.jar"))))
+        .containsExactly(Path.of(os("/workspace/.lathe/app/classes")));
+  }
+
   @Test
   void toLathe_unlistedPaths_passThroughUnchanged() {
     assertThat(REWRITE.toLathe(os("/home/user/.m2/repo/lib.jar")))
