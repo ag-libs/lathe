@@ -163,6 +163,18 @@ spec.check(
 
 spec.check("a finished setup run sets up nothing", sync.setting_up("/ws/f/src/A.java"), false)
 
+-- A run's own failure toast replaces the default error, as a warning.
+sync.run("/ws/g", false, nil, {
+  cmd = { "/opt/bin/mvn" },
+  label = "mvn",
+  action = "setup",
+  failure_toast = function(res)
+    return ("set up anyway (exit %d)"):format(res.code)
+  end,
+})
+pending_cb({ code = 1, stdout = "", stderr = "" })
+spec.check("a run's failure toast replaces the default", notes[#notes], "set up anyway (exit 1)")
+
 -- A root reached through a symlink (macOS's /var is /private/var) holds the files under its real
 -- path, a new file's too.
 local real_dir = vim.fn.tempname()

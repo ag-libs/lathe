@@ -202,7 +202,8 @@ local SCRIPT = ".lathe/lathe-sync.sh"
 --- start and completion. `modules` (reactor-relative paths) scope it; empty/nil syncs everything.
 --- `opts.cmd` runs that command instead (`:LatheInit`'s first build, before there is a script), shown
 --- as `opts.label` and named by `opts.action` ("download" or "setup"; "sync" by default);
---- `opts.on_done(result)` runs after the build ends, on the main loop.
+--- `opts.failure_toast(result)` may return a failed run's toast, shown as a warning instead of the
+--- default error; `opts.on_done(result)` runs after the build ends, on the main loop.
 function M.run(root, capture_tests, modules, opts)
   opts = opts or {}
   if not root or root == "" then
@@ -266,14 +267,16 @@ function M.run(root, capture_tests, modules, opts)
           SUCCESS_TIMEOUT_MS
         )
       else
+        local custom = opts.failure_toast and opts.failure_toast(res)
         notify(
           state,
-          ("Lathe: %s failed (`%s`, exit %d) — see the Lathe Sync Output split"):format(
-            action.noun,
-            cmd_str,
-            res.code
-          ),
-          vim.log.levels.ERROR
+          custom
+            or ("Lathe: %s failed (`%s`, exit %d) — see the Lathe Sync Output split"):format(
+              action.noun,
+              cmd_str,
+              res.code
+            ),
+          custom and vim.log.levels.WARN or vim.log.levels.ERROR
         )
         show_failure(action, root, cmd, res.code, (res.stdout or "") .. (res.stderr or ""))
       end
