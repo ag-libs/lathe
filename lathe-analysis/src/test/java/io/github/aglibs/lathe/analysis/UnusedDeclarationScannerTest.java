@@ -30,6 +30,38 @@ class UnusedDeclarationScannerTest {
 
   // --- Unused private methods ---
 
+  // JUnit's ArchUnit tests mark @ArchTest fields, which a framework reads, as unused on purpose.
+  @Test
+  void compile_suppressWarningsUnused_noHintWhereItApplies_otherKeysStillReported() {
+    final var source =
+        """
+        class Test {
+          @SuppressWarnings("unused") private int framework;
+          @SuppressWarnings({"rawtypes", "unused"}) private int both;
+          @SuppressWarnings("rawtypes") private int other;
+
+          @SuppressWarnings("unused")
+          private void hook() { helper(); int local = 1; }
+
+          private void helper() {}
+
+          private void plain() {}
+
+          @SuppressWarnings("unused")
+          private final Runnable task = () -> { int inInitializer = 1; };
+
+          @SuppressWarnings("all")
+          private static class Fixture {
+            private int value;
+          }
+        }
+        """;
+
+    assertThat(unusedHintsFor(source))
+        .extracting(hint -> hint.getMessage().getLeft())
+        .containsExactlyInAnyOrder("Unused private field 'other'", "Unused private method 'plain'");
+  }
+
   @Test
   void compile_unusedPrivateMethod_reportsHintOnName() {
     final var source =

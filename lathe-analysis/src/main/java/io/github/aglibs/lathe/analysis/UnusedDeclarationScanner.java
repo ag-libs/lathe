@@ -17,6 +17,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -40,6 +41,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   private static final Logger LOG = Logger.getLogger(UnusedDeclarationScanner.class.getName());
 
   private static final Set<String> EXCLUDED_FIELD_NAMES = Set.of("serialVersionUID");
+  // The @SuppressWarnings keys IntelliJ and Eclipse take as "unused on purpose".
+  private static final Set<String> UNUSED_KEYS = Set.of("unused", "all");
 
   // Serialization calls these by reflection, matched by name and parameter types.
   private static final Map<String, List<String>> SERIALIZATION_HOOKS =
@@ -134,6 +137,10 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
           && !isSerializationHook(method)) {
         privateMethods.put(
             method, candidateFor(node, node.getName().toString(), Kind.PRIVATE_METHOD));
+        // Kept, not reported: what it calls is used.
+        if (suppressesUnused()) {
+          directlyReached.add(method);
+        }
       }
     }
     return super.visitMethod(node, v);
@@ -157,11 +164,12 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
                   && !element.getModifiers().contains(Modifier.STATIC);
           if (!isRecordComponent
               && element.getModifiers().contains(Modifier.PRIVATE)
-              && !EXCLUDED_FIELD_NAMES.contains(node.getName().toString())) {
+              && !EXCLUDED_FIELD_NAMES.contains(node.getName().toString())
+              && !suppressesUnused()) {
             privateFields.put(
                 element, candidateFor(node, node.getName().toString(), Kind.PRIVATE_FIELD));
           }
-        } else if (!(parent instanceof MethodTree)) {
+        } else if (!(parent instanceof MethodTree) && !suppressesUnused()) {
           localVars.put(
               element, candidateFor(node, node.getName().toString(), localVariableKind(parent)));
         }
@@ -187,6 +195,30 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     }
 
     return Kind.LOCAL_VARIABLE;
+  }
+
+  // @SuppressWarnings("unused") covers the declaration it is on and all the source it encloses, as
+  // IntelliJ and Eclipse read it: a framework reads the field, or the code is kept on purpose. The
+  // source tree is walked, not the elements' owners: javac owns a lambda in a field's initializer
+  // by the class, past the field.
+  private boolean suppressesUnused() {
+    for (TreePath path = getCurrentPath(); path != null; path = path.getParentPath()) {
+      final Tree leaf = path.getLeaf();
+      if (!(leaf instanceof VariableTree
+          || leaf instanceof MethodTree
+          || leaf instanceof ClassTree)) {
+        continue;
+      }
+
+      final Element element = trees.getElement(path);
+      final SuppressWarnings suppressed =
+          element == null ? null : element.getAnnotation(SuppressWarnings.class);
+      if (suppressed != null && Arrays.stream(suppressed.value()).anyMatch(UNUSED_KEYS::contains)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // An unnamed variable `_` (JEP 456) is intentionally unused and cannot be referenced, so it must
