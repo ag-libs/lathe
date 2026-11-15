@@ -375,6 +375,7 @@ local function build(root, cmd, label, version)
   require("lathe.sync").run(root, false, nil, {
     cmd = cmd,
     label = label,
+    action = "setup",
     on_done = function(result)
       attach(root, result, version)
     end,
@@ -418,7 +419,8 @@ local function maven_personal(build_, tool, version)
       "-DincludeScope=runtime",
       "-DoutputDirectory=" .. fetching,
     },
-    label = "fetch Lathe " .. version,
+    label = ("%s copy-dependencies (Lathe %s)"):format(vim.fs.basename(tool), version),
+    action = "download",
     on_done = function(result)
       if result.code ~= 0 then
         return
@@ -482,7 +484,7 @@ local function set_up(found)
     notify(("building %s, which registers Lathe…"):format(found.root))
     if found.kind == "maven" then
       local cmd = vim.list_extend({ tool, "-B" }, MAVEN_FIRST_BUILD)
-      build(found.root, cmd, table.concat(cmd, " "))
+      build(found.root, cmd, ("%s clean test"):format(vim.fs.basename(tool)))
       return
     end
 
@@ -493,7 +495,7 @@ local function set_up(found)
     end
 
     local cmd = vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD)
-    build(found.root, cmd, table.concat(cmd, " "))
+    build(found.root, cmd, ("%s latheSync"):format(vim.fs.basename(tool)))
     return
   end
 

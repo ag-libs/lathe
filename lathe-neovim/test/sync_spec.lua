@@ -115,6 +115,41 @@ spec.check(
 )
 vim.fn.delete(legacy, "rf")
 
+-- :LatheInit's runs: the toasts name the action and the label; the console shows the command
+-- itself, quoted, and the failure split opens at the build's verdict, not the warnings below it.
+sync.run("/ws/f", false, nil, {
+  cmd = { "/opt/bin/mvn", "-B", "-Dx=a b" },
+  label = "mvn clean test",
+  action = "setup",
+})
+spec.check(
+  "a setup run's toast says it is setting up",
+  notes[#notes]:find("Lathe: setting up… 0s — `mvn clean test`", 1, true) ~= nil,
+  true
+)
+pending_cb({
+  code = 1,
+  stdout = "[INFO] BUILD FAILURE\n[ERROR] boom\nWARNING: dumb terminal\n",
+  stderr = "",
+})
+spec.check(
+  "a failed setup run's toast names the action",
+  notes[#notes]:find("Lathe: setup failed (`mvn clean test`, exit 1)", 1, true) ~= nil,
+  true
+)
+local console = vim.fn.bufnr("Lathe Sync Output")
+local console_lines = vim.api.nvim_buf_get_lines(console, 0, -1, false)
+spec.check(
+  "the console shows the command itself, quoted",
+  console_lines[2],
+  "$ cd /ws/f && /opt/bin/mvn -B '-Dx=a b'"
+)
+spec.check(
+  "the failure split opens at the build's verdict",
+  console_lines[vim.api.nvim_win_get_cursor(vim.fn.bufwinid(console))[1]],
+  "[ERROR] boom"
+)
+
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run("/ws/b", false)
 local before = #calls
