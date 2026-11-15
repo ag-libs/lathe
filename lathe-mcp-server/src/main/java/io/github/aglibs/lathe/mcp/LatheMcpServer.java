@@ -161,9 +161,13 @@ public final class LatheMcpServer {
     LOG.info(() -> "[startup] ready");
     clientGone.await();
     LOG.info(() -> "[shutdown] stdin closed by the client exiting");
-    // As the editor's server on shutdown: closing the engine deletes its compile temp dirs.
-    closeEngine.run();
-    System.exit(0);
+    // As the editor's server on shutdown: closing the engine deletes its compile temp dirs. A close
+    // that fails must not keep the process running after its client has gone.
+    try {
+      closeEngine.run();
+    } finally {
+      System.exit(0);
+    }
   }
 
   // An MCP client ends a stdio session by closing the server's stdin, and one that dies sends no
@@ -326,6 +330,8 @@ public final class LatheMcpServer {
 
     private final Path cwd;
     private LatheEngine engine;
+    // A tool call still running when the session ends must not open an engine nothing will close.
+    private boolean closed;
 
     AwaitedEngine(final Path cwd) {
       this.cwd = cwd;
@@ -333,6 +339,10 @@ public final class LatheMcpServer {
 
     @Override
     public synchronized LatheEngine get() {
+      if (closed) {
+        throw new IllegalStateException("the session has ended");
+      }
+
       if (engine == null) {
         final Path root =
             LatheWorkspace.nearestRoot(cwd, null)
@@ -345,6 +355,7 @@ public final class LatheMcpServer {
     }
 
     synchronized void close() {
+      closed = true;
       if (engine != null) {
         engine.close();
       }

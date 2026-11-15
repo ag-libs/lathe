@@ -64,6 +64,8 @@ public final class LatheLayout {
   public static final String JVM_ARGS_FILE = "jvm.args";
   // Lombok's own configuration file, read from a source's directory and each one above it.
   public static final String LOMBOK_CONFIG_FILE = "lombok.config";
+  // A server's compile temp dir, followed by the server's pid: a dir whose server is gone is swept.
+  public static final String COMPILE_TEMP_DIR_PREFIX = "lathe-compile-";
   // A run/test launch too long for one command line passes its arguments in a temp argfile.
   public static final String LAUNCH_ARGFILE_PREFIX = "lathe-launch-";
   public static final String ARGFILE_SUFFIX = ".args";

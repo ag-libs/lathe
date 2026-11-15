@@ -34,8 +34,8 @@ public final class Launcher {
     final List<String> argv = launch.argv();
     LOG.fine(() -> "[launch] argv=%s".formatted(argv));
     final List<String> command = commandLine(argv);
-    // The config, then the command on its own line (copy-pasteable: an argfile stays on disk),
-    // before any process output.
+    // The config, then the command on its own line (copy-pasteable while the server runs, which
+    // keeps its argfile on disk until it exits), before any process output.
     onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, "config: " + configLabel));
     onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, String.join(" ", command)));
     final var processBuilder = new ProcessBuilder(command);

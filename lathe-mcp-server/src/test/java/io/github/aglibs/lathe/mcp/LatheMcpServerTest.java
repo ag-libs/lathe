@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -14,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -94,6 +96,68 @@ class LatheMcpServerTest {
   @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void main_workspaceSessionStdinClosed_leavesNoCompileTempDir() throws Exception {
     final Path workspace = Files.createDirectories(logs.resolve("workspace"));
+    final Path source = writeWorkspace(workspace);
+
+    sessionLeavesNoCompileTempDir(workspace, () -> source);
+  }
+
+  // A server started before the build wrote .lathe/ opens its engine at the first tool call after,
+  // and closes it the same way.
+  @Test
+  @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void main_workspaceCreatedAfterStartStdinClosed_leavesNoCompileTempDir() throws Exception {
+    final Path workspace = Files.createDirectories(logs.resolve("workspace"));
+
+    sessionLeavesNoCompileTempDir(workspace, () -> writeWorkspace(workspace));
+  }
+
+  // Once the session ends, a tool call still running opens no engine nothing would close.
+  @Test
+  void awaitedEngine_closed_opensNone() throws Exception {
+    final Path workspace = Files.createDirectories(logs.resolve("workspace"));
+    writeWorkspace(workspace);
+    final var engine = new LatheMcpServer.AwaitedEngine(workspace);
+
+    engine.close();
+
+    assertThatThrownBy(engine::get).isInstanceOf(IllegalStateException.class);
+  }
+
+  // Answers one tool call on the file workspaceFile gives after the handshake, then closes stdin.
+  private void sessionLeavesNoCompileTempDir(
+      final Path workspace, final Callable<Path> workspaceFile) throws Exception {
+    final Path temp = Files.createDirectories(logs.resolve("tmp"));
+    final Process process = startServer(workspace, temp);
+    try {
+      final var stdin = process.getOutputStream();
+      final var stdout =
+          new BufferedReader(
+              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+      stdin.write(INITIALIZE.getBytes(StandardCharsets.UTF_8));
+      stdin.flush();
+      assertThat(stdout.readLine()).contains("\"result\"");
+      final Path source = workspaceFile.call();
+      stdin.write(
+          DIAGNOSTICS
+              .formatted(source.toString().replace("\\", "\\\\"))
+              .getBytes(StandardCharsets.UTF_8));
+      stdin.flush();
+      assertThat(stdout.readLine()).as("the diagnostics answer").contains("\"result\"");
+      assertThat(compileTempDirs(temp))
+          .as("the compile's temp dir, while the session runs")
+          .isNotEmpty();
+
+      stdin.close();
+
+      assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("exited after stdin closed").isTrue();
+      assertThat(compileTempDirs(temp)).isEmpty();
+    } finally {
+      process.destroyForcibly().waitFor();
+    }
+  }
+
+  // One module, app, with one source in src/, as a sync writes its params; returns the source.
+  private static Path writeWorkspace(final Path workspace) throws IOException {
     final Path source =
         Files.writeString(
             Files.createDirectories(workspace.resolve("src/com/example")).resolve("A.java"),
@@ -118,33 +182,7 @@ class LatheMcpServerTest {
             false,
             false),
         module.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)));
-    final Path temp = Files.createDirectories(logs.resolve("tmp"));
-    final Process process = startServer(workspace, temp);
-    try {
-      final var stdin = process.getOutputStream();
-      final var stdout =
-          new BufferedReader(
-              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-      stdin.write(INITIALIZE.getBytes(StandardCharsets.UTF_8));
-      stdin.flush();
-      assertThat(stdout.readLine()).contains("\"result\"");
-      stdin.write(
-          DIAGNOSTICS
-              .formatted(source.toString().replace("\\", "\\\\"))
-              .getBytes(StandardCharsets.UTF_8));
-      stdin.flush();
-      assertThat(stdout.readLine()).as("the diagnostics answer").contains("\"result\"");
-      assertThat(compileTempDirs(temp))
-          .as("the compile's temp dir, while the session runs")
-          .isNotEmpty();
-
-      stdin.close();
-
-      assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("exited after stdin closed").isTrue();
-      assertThat(compileTempDirs(temp)).isEmpty();
-    } finally {
-      process.destroyForcibly().waitFor();
-    }
+    return source;
   }
 
   // The server as a client starts it, in dir, with its temp files in temp and its logs in logs.
@@ -164,7 +202,11 @@ class LatheMcpServerTest {
 
   private static List<Path> compileTempDirs(final Path temp) throws IOException {
     try (final var entries = Files.list(temp)) {
-      return entries.filter(entry -> entry.getFileName().toString().startsWith("lathe-")).toList();
+      return entries
+          .filter(
+              entry ->
+                  entry.getFileName().toString().startsWith(LatheLayout.COMPILE_TEMP_DIR_PREFIX))
+          .toList();
     }
   }
 
