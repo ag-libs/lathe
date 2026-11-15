@@ -1684,7 +1684,7 @@ Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
 ## MC-26 — `search_symbols` finds types only, not methods or fields
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: M**
 
@@ -1711,7 +1711,7 @@ None yet.
 
 ## MC-27 — No view of a type's API by name: members, supertypes and the first javadoc line
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: M**
 
@@ -1738,7 +1738,7 @@ None yet.
 
 ## MC-29 — No tool maps a stack trace to source
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: M**
 
@@ -1764,7 +1764,7 @@ None yet.
 
 ## MC-31 — `get_definition` cannot return the definition's body
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: medium — Size: M**
 
@@ -1970,7 +1970,7 @@ None yet.
 
 ## MC-55 — No tool finds the `instanceof` and pattern-match sites for a type
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: medium — Size: M**
 
@@ -1999,7 +1999,7 @@ None yet.
 
 ## MC-56 — No map of JAX-RS routes and their wiring
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: medium — Size: L**
 
@@ -2029,7 +2029,7 @@ None yet.
 
 ## MC-57 — No search for code that shares a string identifier
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: M**
 
@@ -2058,7 +2058,7 @@ None yet.
 
 ## MC-61 — No overview of how a type's members are used
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: M**
 
@@ -2087,7 +2087,7 @@ None yet.
 
 ## MC-64 — No safe delete: removing a symbol is find-then-edit by hand
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: M**
 
@@ -2115,7 +2115,7 @@ None yet.
 
 ## MC-65 — No structural search and replace
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: L**
 
@@ -2144,7 +2144,7 @@ None yet.
 
 ## MC-66 — `rename_symbol` has no preview
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Value: low — Size: S**
 
@@ -2403,7 +2403,7 @@ None yet.
 
 ## MC-87 — One MCP server answers for one worktree only
 
-**Status: documented**
+**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
 
 **Affects: MCP, with several git worktrees.**
 
