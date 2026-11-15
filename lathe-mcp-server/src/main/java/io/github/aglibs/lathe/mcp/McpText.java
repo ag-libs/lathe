@@ -609,28 +609,34 @@ final class McpText {
             ? "overrides: %s%noverridden by: %s%s"
                 .formatted(
                     joinOrNone(impact.overrides()),
-                    familyLines(impact.overriddenBy()),
+                    familyLines(impact.overriddenBy(), impact.overriddenByCount()),
                     impact.redeclaredBy().isEmpty()
                         ? ""
-                        : "%nredeclared by: %s".formatted(familyLines(impact.redeclaredBy())))
-            : "override family: %s".formatted(familyLines(impact.overriddenBy()));
+                        : "%nredeclared by: %s"
+                            .formatted(
+                                familyLines(impact.redeclaredBy(), impact.redeclaredByCount())))
+            : "override family: %s"
+                .formatted(familyLines(impact.overriddenBy(), impact.overriddenByCount()));
     final String text =
         String.join(
             System.lineSeparator(),
             impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
-            "references: %d production, %d test%s"
-                .formatted(
-                    impact.productionRefs(),
-                    impact.testRefs(),
-                    impact.referencesTruncated() ? " (truncated)" : ""),
+            "references: %d production, %d test"
+                .formatted(impact.productionRefs(), impact.testRefs()),
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
             family);
     return usesResult(text, notes);
   }
 
-  private static String familyLines(final List<LatheLocation> members) {
-    return members.isEmpty() ? "none" : "%d%n%s".formatted(members.size(), locationLines(members));
+  private static String familyLines(final List<LatheLocation> members, final int count) {
+    if (members.isEmpty()) {
+      return "none";
+    }
+
+    final String shown =
+        count > members.size() ? " (showing first %d)".formatted(members.size()) : "";
+    return "%d%s%n%s".formatted(count, shown, locationLines(members));
   }
 
   static String joinOrNone(final List<String> items) {

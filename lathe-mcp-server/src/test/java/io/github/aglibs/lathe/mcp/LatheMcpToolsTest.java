@@ -477,7 +477,8 @@ class LatheMcpToolsTest {
     assertThat(specs)
         .map(spec -> ((Map<?, ?>) spec.tool().inputSchema().get("properties")).get("maxResults"))
         .filteredOn(Objects::nonNull)
-        .hasSize(4)
+        .as("find_references, find_implementations, call_hierarchy, search_symbols, analyze_change")
+        .hasSize(5)
         .allSatisfy(schema -> assertThat(schema.toString()).contains("minimum=1"));
   }
 

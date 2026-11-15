@@ -47,11 +47,11 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
 
     final var pos = positionOf(ifaceSource, "greet");
     final LatheChangeImpact impact =
-        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
+        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter(), 50).value();
     final String implSource = Files.readString(greeter.impl());
     final var implPos = positionOf(implSource, "greet");
     final LatheChangeImpact ofImpl =
-        engine.analyzeChange(greeter.impl(), implPos.getLine(), implPos.getCharacter()).value();
+        engine.analyzeChange(greeter.impl(), implPos.getLine(), implPos.getCharacter(), 50).value();
 
     assertThat(impact.signature()).contains("greet");
     assertThat(impact.method()).isTrue();
@@ -74,6 +74,30 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         .isEqualTo(1);
     assertThat(impact.testRefs()).isZero();
     assertThat(impact.affectedModules()).containsExactly("module");
+  }
+
+  // The family lists show the first maxResults members; their counts are of all.
+  @Test
+  void analyzeChange_familyOverTheLimit_listsTheFirstCountsAll() throws Exception {
+    final GreeterFixture greeter = greeterFixture();
+    final Path second =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/FrGreeter.java",
+            "package com.example; class FrGreeter implements Greeter { public void greet() {} }");
+    compileIntoMirror(greeter.iface(), greeter.impl(), second);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(greeter.ifaceSource(), "greet");
+
+    final LatheChangeImpact capped =
+        engine.analyzeChange(greeter.iface(), pos.getLine(), pos.getCharacter(), 1).value();
+    final LatheChangeImpact all =
+        engine.analyzeChange(greeter.iface(), pos.getLine(), pos.getCharacter(), 50).value();
+
+    assertThat(capped.overriddenBy()).hasSize(1);
+    assertThat(capped.overriddenByCount()).isEqualTo(2);
+    assertThat(all.overriddenBy()).hasSize(2);
+    assertThat(all.overriddenByCount()).isEqualTo(2);
   }
 
   // A signature change breaks every implementation: a module that implements the method only with
@@ -117,7 +141,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
 
     final var pos = positionOf(ifaceSource, "greet");
     final LatheChangeImpact impact =
-        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
+        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter(), 50).value();
 
     assertThat(impact.overriddenBy())
         .anySatisfy(location -> assertThat(location.uri()).endsWith("Wiring.java"));

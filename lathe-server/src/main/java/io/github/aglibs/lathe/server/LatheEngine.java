@@ -116,7 +116,6 @@ public final class LatheEngine {
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
-  private static final int IMPACT_MAX_RESULTS = 1000;
 
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
   private static final int VERSION = 1;
@@ -1208,7 +1207,8 @@ public final class LatheEngine {
    * the relevant test classes. Read-only — composes definition/reference analysis, no compile of
    * the change.
    */
-  public Noted<LatheChangeImpact> analyzeChange(final Path file, final int line, final int column) {
+  public Noted<LatheChangeImpact> analyzeChange(
+      final Path file, final int line, final int column, final int maxResults) {
     final Noted<ChangeFacts> read =
         noted(
             List.of(file),
@@ -1245,11 +1245,11 @@ public final class LatheEngine {
                                                             references))))));
     final ChangeFacts facts = read.value();
     final String signature = hoverText(facts.hover());
-    final List<LatheLocation> overriddenBy = familyMembers(facts.family(), false);
-    final List<LatheLocation> redeclaredBy = familyMembers(facts.family(), true);
-    final CappedLocations refs = capLocations(facts.references(), IMPACT_MAX_RESULTS);
+    final CappedLocations overriddenBy = familyMembers(facts.family(), false, maxResults);
+    final CappedLocations redeclaredBy = familyMembers(facts.family(), true, maxResults);
+    // Every reference is counted: a count from a capped list would read as the whole.
     final List<Path> paths =
-        refs.locations().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
+        facts.references().stream().map(ref -> LatheUri.toPath(ref.getUri())).toList();
     // A signature change breaks every implementation and redeclaration, in a module that never
     // calls it too.
     final List<Path> implementationPaths =
@@ -1268,8 +1268,8 @@ public final class LatheEngine {
     int test = 0;
     final var affectedModules = new TreeSet<String>();
     final var relevantTests = new TreeSet<String>();
-    for (final LatheLocation ref : refs.locations()) {
-      final ModulePlacement placement = placements.get(LatheUri.toPath(ref.uri()));
+    for (final Path ref : paths) {
+      final ModulePlacement placement = placements.get(ref);
       if (placement == null) {
         continue; // a reference outside the reactor (dependency/JDK) — not in the impact set
       }
@@ -1277,7 +1277,7 @@ public final class LatheEngine {
       affectedModules.add(placement.moduleRel());
       if (placement.test()) {
         test++;
-        relevantTests.add(FileUtil.javaTypeName(LatheUri.toPath(ref.uri())));
+        relevantTests.add(FileUtil.javaTypeName(ref));
       } else {
         production++;
       }
@@ -1301,11 +1301,12 @@ public final class LatheEngine {
             signature,
             facts.method(),
             facts.overrides(),
-            overriddenBy,
-            redeclaredBy,
+            overriddenBy.locations(),
+            overriddenBy.total(),
+            redeclaredBy.locations(),
+            redeclaredBy.total(),
             production,
             test,
-            refs.truncated(),
             List.copyOf(affectedModules),
             List.copyOf(relevantTests)),
         read.notes());
@@ -1331,17 +1332,16 @@ public final class LatheEngine {
     }
   }
 
-  // The family members below the symbol of one kind, implementations or redeclarations, capped as
-  // the references are.
-  private List<LatheLocation> familyMembers(
-      final List<ImplementationHit> family, final boolean redeclarations) {
+  // The family members below the symbol of one kind, implementations or redeclarations: the first
+  // maxResults listed, all counted.
+  private CappedLocations familyMembers(
+      final List<ImplementationHit> family, final boolean redeclarations, final int maxResults) {
     return capLocations(
-            family.stream()
-                .filter(hit -> hit.redeclaration() == redeclarations)
-                .map(ImplementationHit::location)
-                .toList(),
-            IMPACT_MAX_RESULTS)
-        .locations();
+        family.stream()
+            .filter(hit -> hit.redeclaration() == redeclarations)
+            .map(ImplementationHit::location)
+            .toList(),
+        maxResults);
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,

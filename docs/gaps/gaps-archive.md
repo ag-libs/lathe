@@ -12843,6 +12843,39 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-68 — `analyze_change` has no caller-selected output limit or exact capped counts — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP `analyze_change`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+On `Handler.handle` it printed all 225 implementations in its override family,
+while the other tools take `maxResults`.
+
+### Before the fix
+
+`LatheEngine.IMPACT_MAX_RESULTS` already caps references and implementations at 1,000 each.
+`McpText.analyzeResult` marks truncated references, but the tool has no `maxResults` argument, the override-family truncation is not exposed, and the displayed counts are derived from capped references.
+The original claim of no limit at all is inaccurate; the user-controlled limit and exact counts remain open.
+
+### Resolution
+
+`analyze_change` takes `maxResults` (default 50) and lists that many members of each override-family list, under its true count: `overridden by: 225 (showing first 50)`.
+The reference counts, affected modules and relevant tests are of every reference, not a capped list, so the "(truncated)" mark is gone.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.analyzeChange_familyOverTheLimit_listsTheFirstCountsAll`
+- `McpTextTest.analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty`
+
+---
+
 ## MC-52 — External locations still repeat full URIs, with no dependency/JDK path shorthand — done
 
 **Status: done.**
