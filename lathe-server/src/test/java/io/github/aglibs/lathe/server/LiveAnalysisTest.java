@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -143,6 +144,36 @@ class LiveAnalysisTest extends ServiceTestBase {
     change(broken, "package com.example; class Broken { int x; }", 3);
     verify(client, timeout(5_000))
         .publishDiagnostics(argThat(p -> isFor(p, broken) && p.getDiagnostics().isEmpty()));
+  }
+
+  // An edit undone and saved before its analysis: the saved file matches what the build compiled,
+  // so no write runs, and the error of the edit must not stay on the clean file.
+  @Test
+  void didSave_editUndoneBeforeItsAnalysis_clearsTheEditsDiagnostics() throws Exception {
+    final Path file =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/Clean.java", "package com.example; class Clean {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    final String saved = Files.readString(file);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(file, saved);
+    save(file);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
+    awaitWorkerIdle();
+    change(file, "package com.example; class Clean { Missing m; }", 2);
+    verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, file) && hasError(p)));
+    awaitWorkerIdle();
+
+    clearInvocations(client);
+    change(file, saved, 3);
+    save(file);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
   }
 
   private static boolean hasError(final PublishDiagnosticsParams params) {

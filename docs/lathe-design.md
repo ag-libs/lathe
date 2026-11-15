@@ -710,7 +710,7 @@ didChange received (LSP receive thread)
 
 server worker:
   → store the open-document snapshot
-  → publish empty diagnostics
+  → keep the published diagnostics: the debounced analysis replaces them
   → cancel any pending debounce for this URI
   → schedule debounce (500ms)
 
