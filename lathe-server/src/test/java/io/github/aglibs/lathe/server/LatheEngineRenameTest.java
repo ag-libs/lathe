@@ -144,7 +144,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
   }
 
   @Test
-  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText()
+  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTextAndFilesOutsideModules()
       throws Exception {
     final GreetFixture fx = greetFixture();
     final Path labels =
@@ -152,6 +152,14 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
             tmp,
             "com/example/Labels.java",
             "package com.example;\nclass Labels { String key = \"greet\"; }\n");
+    final Path profileTest = tmp.resolve("tests/it/src/test/java/com/example/GreetIT.java");
+    Files.createDirectories(profileTest.getParent());
+    Files.writeString(
+        profileTest, "package com.example;\nclass GreetIT {\n  { new Callee().greet(); }\n}\n");
+    Files.writeString(profileTest.resolveSibling("Other.java"), "class Other { int greeting; }\n");
+    final Path output = tmp.resolve("tests/it/target/generated-sources/Gen.java");
+    Files.createDirectories(output.getParent());
+    Files.writeString(output, "class Gen { void greet() {} }\n");
     engine = new LatheEngine(tmp);
 
     final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
@@ -169,6 +177,16 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         .singleElement()
         .satisfies(mention -> assertThat(mention.uri()).endsWith("Labels.java"));
     assertThat(Files.readString(labels)).contains("\"greet\"");
+    assertThat(rename.outside())
+        .as("a module the build left out is listed, never edited; build output is not searched")
+        .singleElement()
+        .satisfies(
+            mention -> {
+              assertThat(mention.uri()).isEqualTo(profileTest.toUri().toString());
+              assertThat(mention.line()).isEqualTo(2);
+            });
+    assertThat(rename.outsideCount()).isEqualTo(1);
+    assertThat(Files.readString(profileTest)).contains("greet()");
   }
 
   @Test

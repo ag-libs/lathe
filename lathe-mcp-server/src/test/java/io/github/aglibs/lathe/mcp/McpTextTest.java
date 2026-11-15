@@ -534,7 +534,8 @@ class McpTextTest {
         .isEqualTo("No references found.");
   }
 
-  // The places where the old name is still text are listed for the agent to decide, never edited.
+  // The places where the old name is still text are listed for the agent to decide, never edited,
+  // and then the files no synced module compiles that name it.
   @Test
   void renameResult_editsAndMentions_filesThenTheMentionsToReview_orNothingToRename() {
     final var rename =
@@ -550,7 +551,9 @@ class McpTextTest {
                     LatheLocation.Origin.GENERATED,
                     1)),
             List.of(location("app/Shop.java", 7, "// the count of items")),
-            4);
+            4,
+            List.of(location("it/ShopIT.java", 12, "shop.count();")),
+            1);
 
     final String text = text(McpText.renameResult(rename, McpText.NO_NOTES));
 
@@ -563,11 +566,15 @@ class McpTextTest {
         .endsWith(
             lines(
                 "Not renamed — review: the old name is still text in 4 place(s) (showing first 1):",
-                "app/Shop.java:7:1: // the count of items"));
+                "app/Shop.java:7:1: // the count of items",
+                "",
+                "Not checked — 1 file(s) outside the modules the last build compiled name it:",
+                "it/ShopIT.java:12:1: shop.count();"));
     assertThat(
             text(
                 McpText.renameResult(
-                    new LatheRename("total", 0, List.of(), List.of(), 0), McpText.NO_NOTES)))
+                    new LatheRename("total", 0, List.of(), List.of(), 0, List.of(), 0),
+                    McpText.NO_NOTES)))
         .isEqualTo("No references to rename.");
   }
 

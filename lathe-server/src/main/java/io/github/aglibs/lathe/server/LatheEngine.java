@@ -554,7 +554,7 @@ public final class LatheEngine {
     final String oldName = wordAt(file, line, column).orElseThrow();
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
-      return new LatheRename(newName, 0, List.of(), List.of(), 0);
+      return new LatheRename(newName, 0, List.of(), List.of(), 0, List.of(), 0);
     }
 
     final Map<String, String> moves = RenameProvider.fileMoves(edit);
@@ -567,6 +567,11 @@ public final class LatheEngine {
       throw new Refused(
           "the rename would edit files outside the reactor: %s".formatted(nonReactor));
     }
+
+    // Searched before the edits are written, so a failed walk leaves the workspace untouched.
+    final List<Location> outside =
+        OutsideSources.mentioning(
+            workspaceRoot, query(session -> session.verifier().sourceRoots()), oldName);
 
     final List<LatheFileEdit> files =
         textEdits.entrySet().stream()
@@ -607,7 +612,9 @@ public final class LatheEngine {
         total,
         files,
         mentions.stream().limit(LISTED_MENTIONS).map(this::toLatheLocation).toList(),
-        mentions.size());
+        mentions.size(),
+        outside.stream().limit(LISTED_MENTIONS).map(this::toLatheLocation).toList(),
+        outside.size());
   }
 
   private static List<Location> renamedMentions(

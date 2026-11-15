@@ -132,7 +132,7 @@ final class McpText {
     }
 
     final String text =
-        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s"
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s%s"
             .formatted(
                 rename.newName(),
                 rename.totalEdits(),
@@ -141,7 +141,8 @@ final class McpText {
                     .map(McpText::fileEditLine)
                     .collect(Collectors.joining(System.lineSeparator())),
                 RENAME_AUTHORITY,
-                mentionLines(rename));
+                mentionLines(rename),
+                outsideLines(rename));
     return usesResult(text, notes);
   }
 
@@ -157,6 +158,20 @@ final class McpText {
             : "";
     return "%n%nNot renamed — review: the old name is still text in %d place(s)%s:%n%s"
         .formatted(rename.mentionCount(), more, locationLines(rename.mentions()));
+  }
+
+  // A module the build's profiles leave out is not synced, so the rename never saw these files.
+  static String outsideLines(final LatheRename rename) {
+    if (rename.outsideCount() == 0) {
+      return "";
+    }
+
+    final String more =
+        rename.outsideCount() > rename.outside().size()
+            ? " (showing first %d)".formatted(rename.outside().size())
+            : "";
+    return "%n%nNot checked — %d file(s) outside the modules the last build compiled name it%s:%n%s"
+        .formatted(rename.outsideCount(), more, locationLines(rename.outside()));
   }
 
   // A null format: the file was already formatted.

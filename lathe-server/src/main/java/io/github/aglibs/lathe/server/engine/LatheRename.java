@@ -7,13 +7,16 @@ import java.util.List;
 
 // The result of an applied rename: the new name, the total edits made, the files touched, and the
 // first places the old name survives as text (string literals, qualified in resources), of
-// mentionCount in all, which the rename left alone.
+// mentionCount in all, which the rename left alone. Then the first of the files no synced module
+// compiles that name the old name, of outsideCount in all, which it neither edited nor checked.
 public record LatheRename(
     String newName,
     int totalEdits,
     List<LatheFileEdit> files,
     List<LatheLocation> mentions,
-    int mentionCount) {
+    int mentionCount,
+    List<LatheLocation> outside,
+    int outsideCount) {
 
   public LatheRename {
     ValidCheck.check()
@@ -21,9 +24,12 @@ public record LatheRename(
         .notNull(files, "files")
         .notNull(mentions, "mentions")
         .assertTrue(mentionCount >= mentions.size(), "mentionCount")
+        .notNull(outside, "outside")
+        .assertTrue(outsideCount >= outside.size(), "outsideCount")
         .validate();
     files = List.copyOf(files);
     mentions = List.copyOf(mentions);
+    outside = List.copyOf(outside);
   }
 
   // Where the touched files are now: a type rename moved its file, so the asked-about path is gone.
