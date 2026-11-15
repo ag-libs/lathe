@@ -2298,33 +2298,6 @@ None yet.
 
 ---
 
-## MC-71 — `outline` gives nothing for a file outside the reactor
-
-**Status: documented**
-
-**Value: low — Size: M**
-
-**Affects: MCP `outline` (and the editor's document symbols) on files no module compiles.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-Helidon's `tests/`, `examples/` and `webserver/tests/*` are not reactor modules, so they are not indexed.
-For such a file, `outline` answers "No declarations in BookService.java", then adds the "Not checked" note,
-although a file's structure needs no compile.
-
-### Fix direction
-
-Outline a file no module compiles from a parse alone (no attribution), and keep the note saying it is
-not checked.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-85 — `verify_change` says nothing about uses in modules the sync leaves out
 
 **Status: documented**

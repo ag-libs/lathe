@@ -168,4 +168,19 @@ final class FeatureRouter {
     touchAnalysisCache(uri);
     return op.apply(worker.get()).exceptionally(FeatureAnswers.failedFor(operation, uri, fallback));
   }
+
+  // A feature a parse alone answers, as a file's declarations and folds are: a file no module
+  // compiles is parsed on the external-sources worker, as a parse needs no classpath.
+  <T> CompletableFuture<T> parseFeature(
+      final String operation,
+      final String uri,
+      final T fallback,
+      final Function<CompilationWorker, CompletableFuture<T>> op) {
+    if (routeCompiler(uri).analysisWorker().isPresent()) {
+      return routeFeature(operation, uri, fallback, op);
+    }
+
+    return op.apply(state.registry().externalWorker())
+        .exceptionally(FeatureAnswers.failedFor(operation, uri, fallback));
+  }
 }

@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -24,6 +25,8 @@ import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.run.TestCounterparts;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -557,13 +560,22 @@ final class DocumentFeatures {
                 .thenApply(DocumentFeatures::encodeTokensOrNull));
   }
 
+  // An open file is outlined from its buffer; one the agent asks about that no module compiles is
+  // never opened, so it is read from the disk, on the worker.
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
-    return router.openDocFeature(
+    final OpenDocument doc = docs.get(uri);
+    return router.parseFeature(
         "documentSymbol",
         uri,
         List.of(),
-        (worker, doc) ->
-            worker.submit(session -> session.files().documentSymbol(uri, doc.content())));
+        worker ->
+            worker.submit(session -> session.files().documentSymbol(uri, contentOf(doc, uri))));
+  }
+
+  private static String contentOf(final OpenDocument doc, final String uri) {
+    return doc != null
+        ? doc.content()
+        : IOUtil.unchecked(() -> Files.readString(LatheUri.toPath(uri), StandardCharsets.UTF_8));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
@@ -573,7 +585,7 @@ final class DocumentFeatures {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return router.routeFeature(
+    return router.parseFeature(
         "foldingRange",
         uri,
         List.of(),

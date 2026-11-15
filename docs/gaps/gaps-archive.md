@@ -12843,6 +12843,35 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-71 — `outline` gives nothing for a file outside the reactor — done
+
+**Status: done.**
+
+**Value: low — Size: M**
+
+**Affects: MCP `outline` (and the editor's document symbols) on files no module compiles.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Helidon's `tests/`, `examples/` and `webserver/tests/*` are not reactor modules, so they are not indexed.
+For such a file, `outline` answers "No declarations in BookService.java", then adds the "Not checked" note,
+although a file's structure needs no compile.
+
+### Resolution
+
+A file's declarations and folds come from a parse alone, but they were asked only of the worker of the module that compiles the file, so a file no module compiles got none.
+Such a file is now parsed on the worker that already analyzes dependency sources, which needs no module; the agent's outline reads it from the disk, as it never opens it.
+`outline` still notes the file as not checked, and the editor gets the file's outline and folds too.
+
+### Regression targets
+
+`LatheEngineNavigationTest.outline_fileNoModuleCompiles_listsItsDeclarationsAndSaysNotChecked`,
+`LatheTextDocumentServiceTest.documentSymbol_fileNoModuleCompiles_parsesItsDeclarationsAndFolds`.
+
+---
+
 ## MC-77 — `workspace_summary` gives no test status for some modules — done
 
 **Status: done.**
