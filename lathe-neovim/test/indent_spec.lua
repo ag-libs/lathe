@@ -356,6 +356,24 @@ local FIXTURES = {
     2,
   },
   {
+    "statement end: after a text block closed deeper, the next statement returns to its column",
+    { '    String text = """', "    Hello", '      """;', "int after = 1;" },
+    4,
+    4,
+  },
+  {
+    "statement end: a text block opened on a wrapped line returns to the statement's first line",
+    { "    var s =", '        """', "        a", '          """;', "x();" },
+    5,
+    4,
+  },
+  {
+    "statement end: a text block argument closed with its call returns to the call's line",
+    { '    call("""', "        a", '          """);', "x();" },
+    4,
+    4,
+  },
+  {
     "block closer: a javadoc close above the class is not a continuation",
     { "/**", " * Doc.", " */", "class Foo {", "  void m() {}", "}" },
     6,
