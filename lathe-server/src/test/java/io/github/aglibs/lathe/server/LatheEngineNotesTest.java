@@ -45,11 +45,11 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     assertThat(engine.outline(source).notes().notCompiled()).isEmpty();
   }
 
-  // The sync that adds a missing library also compiles the file that needed it, so the file is not
-  // stale and no later write clears its failure; a file the library does not fix keeps its note.
+  // The sync that adds a missing dependency also compiles the file that needed it, so the file is
+  // not stale and no later write clears its failure; a file the dependency does not fix keeps its
+  // note.
   @Test
-  void notes_syncAddsTheMissingLibrary_notCompiledOnlyWhatStillFails() throws Exception {
-    final Path libraryClasses = compileLibrary();
+  void notes_syncAddsTheMissingDependency_notCompiledOnlyWhatStillFails() throws Exception {
     final Path fixed =
         TestCompiler.writeModuleSource(
             tmp, "com/example/Fixed.java", "package com.example; class Fixed {}");
@@ -59,16 +59,21 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
     engine.diagnostics(fixed).value();
 
-    Files.writeString(fixed, "package com.example; class Fixed { com.lib.Lib lib; }");
-    Files.writeString(broken, "package com.example; class Broken { com.lib.Gone gone; }");
+    Files.writeString(fixed, "package com.example; class Fixed { com.example.api.Api api; }");
+    Files.writeString(broken, "package com.example; class Broken { com.example.api.Gone gone; }");
     assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(2);
 
-    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), List.of(libraryClasses), fixed);
+    TestCompiler.writeMirroredModule(
+        tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L);
+    TestJavac.compileToDir(
+        tmp.resolve(".lathe/module/classes"), List.of(tmp.resolve(".lathe/api/classes")), fixed);
     stampModule(fixed);
     TestCompiler.writeModuleParams(
-        tmp, "module", tmp.resolve("module/src/main/java"), null, List.of(libraryClasses));
-    TestCompiler.recordBuildFiles(
-        tmp, List.of(Files.writeString(tmp.resolve("module/pom.xml"), "<project/>")));
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        null,
+        List.of(tmp.resolve("api/target/classes")));
 
     assertThat(engine.diagnostics(fixed).value()).isEmpty();
     assertThat(engine.notes(List.of()).notCompiled())
@@ -92,23 +97,16 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     Files.writeString(fixed, "package com.example; class Fixed { com.lib.Lib lib; }");
     assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(1);
 
-    compileLibrary();
-    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), List.of(libraryClasses), fixed);
-    stampModule(fixed);
-
-    assertThat(engine.diagnostics(fixed).notes().notCompiled()).isEmpty();
-  }
-
-  // com.lib.Lib, compiled into lib-classes.
-  private Path compileLibrary() throws Exception {
     final Path library =
         TestCompiler.writeAt(
             tmp.resolve("lib-src/com/lib/Lib.java"),
             "package com.lib; public class Lib {}",
             1_000L);
-    final Path libraryClasses = tmp.resolve("lib-classes");
     TestJavac.compileToDir(libraryClasses, library);
-    return libraryClasses;
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), List.of(libraryClasses), fixed);
+    stampModule(fixed);
+
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).isEmpty();
   }
 
   // A sync cannot add a file outside a synced module's source roots, nor one in a module the
