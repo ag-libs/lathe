@@ -273,7 +273,8 @@ public final class LatheEngine {
     return switch (match.role()) {
       case READ -> LatheReference.Access.READ;
       case WRITE -> LatheReference.Access.WRITE;
-      default -> LatheReference.Access.OTHER;
+      case DECLARATION, IMPORT, SHARED_STATIC_IMPORT, INVOCATION, TYPE_USE ->
+          LatheReference.Access.OTHER;
     };
   }
 

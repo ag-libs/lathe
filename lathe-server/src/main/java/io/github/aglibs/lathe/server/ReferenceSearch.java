@@ -638,12 +638,21 @@ final class ReferenceSearch {
         .thenApply(SearchHits::merge);
   }
 
-  // A generated getter's call reads the field, a setter's writes it.
+  // A generated getter's call reads the field, a setter's writes it; a wither's returns a copy and
+  // does neither.
   private static ReferenceMatch asFieldAccess(
       final ReferenceMatch call, final ReferenceTarget accessor) {
+    if (isWither(accessor.simpleName())) {
+      return call;
+    }
+
     final ReferenceRole role =
         accessor.erasedDescriptor().startsWith("()") ? ReferenceRole.READ : ReferenceRole.WRITE;
     return new ReferenceMatch(call.uri(), call.range(), role, call.alsoOverrides());
+  }
+
+  private static boolean isWither(final String name) {
+    return name.length() > 4 && name.startsWith("with") && Character.isUpperCase(name.charAt(4));
   }
 
   static List<Location> toLocations(final List<ReferenceMatch> matches) {

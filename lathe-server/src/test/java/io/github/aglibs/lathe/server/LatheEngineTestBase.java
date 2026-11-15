@@ -12,7 +12,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
-import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Position;
@@ -32,7 +31,7 @@ abstract class LatheEngineTestBase {
   }
 
   protected static final Set<LatheReference.Access> ANY_ACCESS =
-      EnumSet.allOf(LatheReference.Access.class);
+      Set.of(LatheReference.Access.values());
 
   protected static final String API_SOURCE =
       "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
