@@ -11,7 +11,6 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.files.ServerFiles;
-import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
@@ -813,7 +812,7 @@ final class WorkspaceSession {
     // queued work and close, and a pass still writing through them ends before the next starts.
     old.closeAsync();
     scheduleAllOpenFiles();
-    formats.styleReloaded(FormatEngines.workspaceSpec(state.root()));
+    formats.reloadStyle();
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
 

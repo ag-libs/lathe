@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
 import java.nio.file.Path;
@@ -45,8 +46,9 @@ final class FormatService {
 
   // Loop state like the rest: a format failure is reported to the user once, then only logged.
   private boolean formatFailureReported;
-  // The formatter a reload found the style files naming in place of the running one, once said.
-  private FormatterSpec announcedSpec;
+  // An editor told at initialize that Lathe does not format never asks it to: a formatter a reload
+  // finds reaches that editor only after a restart.
+  private boolean restartToFormat;
   // Formatting runs here, off the event loop: an external command waits on its process, a build
   // tool for up to a minute. One thread, so two formats never run a build in one module at once.
   private static final Duration STOP_WAIT = Duration.ofSeconds(10);
@@ -78,27 +80,29 @@ final class FormatService {
     this.spec = spec;
   }
 
-  // A sync can change the formatter the style files name, but the server keeps the one it started
-  // with, as the editor learned then whether to ask it to format: say once that a restart applies
-  // the new one.
-  void styleReloaded(final FormatterSpec current) {
+  void advertise(final boolean formatting) {
     eventLoop.checkOnLoop();
+    restartToFormat = !formatting;
+  }
+
+  // A sync can change the formatter the style files name: format with the new one at once.
+  void reloadStyle() {
+    eventLoop.checkOnLoop();
+    final FormatterSpec current = FormatEngines.workspaceSpec(state.root());
     if (Objects.equals(current, spec)) {
-      announcedSpec = null;
       return;
     }
 
-    if (Objects.equals(current, announcedSpec)) {
-      return;
+    LOG.info(() -> "[format] style now names %s".formatted(describe(current)));
+    use(current != null ? FormatEngines.forSpec(current, state.root()) : null, current);
+    formatFailureReported = false;
+    if (engine != null && restartToFormat) {
+      client.showMessage(
+          new MessageParams(
+              MessageType.Warning,
+              "Lathe: the formatter is now %s; restart Lathe to format with it."
+                  .formatted(describe(current))));
     }
-
-    announcedSpec = current;
-    LOG.info(() -> "[format] style now names %s, restart to apply".formatted(describe(current)));
-    client.showMessage(
-        new MessageParams(
-            MessageType.Warning,
-            "Lathe: the formatter is now %s; restart Lathe to apply it."
-                .formatted(describe(current))));
   }
 
   private static String describe(final FormatterSpec formatter) {

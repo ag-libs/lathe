@@ -21,6 +21,7 @@ import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
@@ -52,6 +53,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class LatheWorkspaceServiceTest extends ServiceTestBase {
+
+  // A formatter the style can name without jars; a test that only reloads it never runs it.
+  private static final String COMMAND_STYLE =
+      "{\"formatter\":{\"engine\":\"command\",\"command\":[\"fmt\"]}}";
 
   private LatheWorkspaceService workspace;
 
@@ -531,32 +536,64 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     verify(client).sync(new LatheSyncParams(tmp.toString(), true));
   }
 
-  // A sync can change the formatter the style files name, but the server keeps the one it started
-  // with: a reload says once that a restart applies the new one, and says nothing when it is the
-  // same, or back to the running one. Each reload is a sync that rewrote workspace.json.
+  // A sync can change the formatter the style files name: the agent, which asks on every format,
+  // formats with the new one at once, and nothing needs saying. Each reload is a sync that rewrote
+  // workspace.json.
   @Test
-  void reconcileForVerify_styleNamesAnotherFormatter_saysOnceToRestart() throws Exception {
+  void reconcileForVerify_styleNamesAnotherFormatter_formatsWithItAtOnce() throws Exception {
     final Path style = tmp.resolve(LatheLayout.STYLE_SHARED_FILE);
-    final String google = "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\"}}";
-    final String palantir = "{\"formatter\":{\"engine\":\"palantir\",\"version\":\"2.102.0\"}}";
-    Files.writeString(style, google);
+    Files.writeString(style, COMMAND_STYLE);
     openShop();
-    host.execute(session -> session.formats().use(null, FormatEngines.workspaceSpec(tmp)));
+    host.execute(
+        session -> {
+          final FormatterSpec spec = FormatEngines.workspaceSpec(tmp);
+          session.formats().use(FormatEngines.forSpec(spec, tmp), spec);
+        });
+
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"none\"}}");
+    reloadAddingModule("none");
+
+    final Throwable refusal =
+        catchThrowable(
+            () ->
+                host.onLoopFuture(
+                        session ->
+                            session
+                                .formats()
+                                .formatOrRefuseFuture(LatheUri.fromPath(tmp.resolve("Foo.java"))))
+                    .get(TIMEOUT_S, TimeUnit.SECONDS));
+    assertThat(refusal).hasMessageContaining("declares the engine none");
+    verify(client, never())
+        .showMessage(argThat(m -> m.getMessage().contains("the formatter is now")));
+  }
+
+  // An editor told at initialize that Lathe does not format never asks: a formatter a reload finds
+  // reaches it only after a restart, said once per formatter that appears.
+  @Test
+  void reconcileForVerify_editorStartedWithoutFormatter_saysToRestart() throws Exception {
+    final Path style = tmp.resolve(LatheLayout.STYLE_SHARED_FILE);
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\"}}");
+    openShop();
+    host.execute(
+        session -> {
+          session.formats().use(null, FormatEngines.workspaceSpec(tmp));
+          session.formats().advertise(false);
+        });
 
     reloadAddingModule("same");
-    Files.writeString(style, palantir);
+    Files.writeString(style, COMMAND_STYLE);
     reloadAddingModule("changed");
     reloadAddingModule("again");
-    Files.writeString(style, google);
-    reloadAddingModule("back");
-    Files.writeString(style, palantir);
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"none\"}}");
+    reloadAddingModule("none");
+    Files.writeString(style, COMMAND_STYLE);
     reloadAddingModule("changedAgain");
 
     verify(client, times(2))
         .showMessage(
             new MessageParams(
                 MessageType.Warning,
-                "Lathe: the formatter is now palantir 2.102.0; restart Lathe to apply it."));
+                "Lathe: the formatter is now command; restart Lathe to format with it."));
     verify(client, times(2))
         .showMessage(argThat(m -> m.getMessage().contains("the formatter is now")));
   }

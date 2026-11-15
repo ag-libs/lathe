@@ -76,7 +76,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     textDocumentService.setCodeActionResolveSupported(codeActionResolveSupported(params));
     // An editor's formatting answers no edits without a formatter; only the agent asks why. The
     // spec also tells a reload that the style files now name another formatter.
-    host.execute(session -> session.formats().use(formatEngine, formatSpec));
+    host.execute(
+        session -> {
+          session.formats().use(formatEngine, formatSpec);
+          session.formats().advertise(formattingEnabled);
+        });
     workspaceRoot = rootPath;
     if (rootPath == null) {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
