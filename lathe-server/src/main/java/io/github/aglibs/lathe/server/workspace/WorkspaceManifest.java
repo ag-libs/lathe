@@ -46,8 +46,8 @@ public final class WorkspaceManifest {
   private final String loadProblem;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
-  // The built modules with Kotlin sources, which Lathe does not read: an answer about a symbol's
-  // uses cannot vouch for theirs.
+  // The built modules with Kotlin sources, mixed ones too, which Lathe does not read: an answer
+  // about a symbol's uses cannot vouch for theirs, and the summary names them.
   private final List<Path> kotlinModuleDirs;
   // Why go-to-definition into the JDK finds no source, when the build found no JDK sources; null
   // when they are there.

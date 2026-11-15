@@ -98,17 +98,22 @@ class McpTextTest {
     assertThat(text).doesNotContain("Kotlin");
   }
 
-  // A module of only Kotlin sources is none Lathe compiles: the summary names it apart.
+  // A module of only Kotlin sources is none Lathe compiles: the summary names it apart, and every
+  // one, past the ten a long list of dependents is cut to.
   @Test
-  void modulesResult_workspaceWithKotlin_namesTheKotlinModules() {
+  void modulesResult_workspaceWithKotlin_namesEveryKotlinModule() {
+    final List<String> kotlin = IntStream.rangeClosed(1, 11).mapToObj("kt%02d"::formatted).toList();
     final String text =
         text(
             McpText.modulesResult(
                 List.of(new LatheModuleSummary("app", List.of(), false, false)),
-                new LatheNotes(List.of(), List.of(), List.of(), false, List.of("app-kotlin"))));
+                new LatheNotes(List.of(), List.of(), List.of(), false, kotlin)));
 
     assertThat(text.lines())
-        .contains("app", "Kotlin sources, which Lathe does not analyze, in: app-kotlin");
+        .contains(
+            "app",
+            "Kotlin sources, which Lathe does not analyze, in: %s"
+                .formatted(String.join(", ", kotlin)));
   }
 
   @Test

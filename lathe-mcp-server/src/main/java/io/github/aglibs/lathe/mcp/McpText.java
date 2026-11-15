@@ -199,12 +199,14 @@ final class McpText {
     return result(text, notes);
   }
 
-  // A module of only Kotlin sources is none Lathe compiles, so the list above leaves it out.
+  // Every module with Kotlin sources, which Lathe does not analyze: one of only Kotlin sources is
+  // none Lathe compiles, so the list above leaves it out. All named, as the summary's point is
+  // the names.
   static String kotlinSourcesLine(final LatheNotes notes) {
     return notes.kotlinModules().isEmpty()
         ? ""
         : "%n%nKotlin sources, which Lathe does not analyze, in: %s"
-            .formatted(listed(notes.kotlinModules()));
+            .formatted(String.join(", ", notes.kotlinModules()));
   }
 
   static String moduleLine(final LatheModuleSummary module) {

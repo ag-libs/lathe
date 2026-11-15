@@ -341,8 +341,9 @@ final class LatheMcpTools {
             """
                 The reactor at a glance: every module, the reactor modules it depends on, \
                 and whether its test launch is captured (which run_test needs), plus the sync \
-                command that builds them. Call it first in an unfamiliar project, instead of \
-                reading the build files.\
+                command that builds them, and the modules with Kotlin sources, which Lathe does \
+                not analyze. Call it first in an unfamiliar project, instead of reading the build \
+                files.\
                 """,
             LatheMcpTools::handleWorkspaceSummary));
   }
