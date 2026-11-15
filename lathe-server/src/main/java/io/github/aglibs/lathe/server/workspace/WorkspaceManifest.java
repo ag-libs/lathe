@@ -24,6 +24,9 @@ import java.util.stream.Stream;
 public final class WorkspaceManifest {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
+  // Where Maven's and Gradle's Kotlin plugins look for a module's Kotlin sources by default.
+  private static final List<Path> KOTLIN_SOURCE_DIRS =
+      List.of(Path.of("src", "main", "kotlin"), Path.of("src", "test", "kotlin"));
 
   private final LibrarySources libraries;
   private final List<Path> typeIndexShardPaths;
@@ -39,6 +42,9 @@ public final class WorkspaceManifest {
   private final String loadProblem;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
+  // The built modules with Kotlin sources, which Lathe does not read: an answer about a symbol's
+  // uses cannot vouch for theirs.
+  private final List<Path> kotlinModuleDirs;
   // Why go-to-definition into the JDK finds no source, when the build found no JDK sources; null
   // when they are there.
   private final String jdkSourcesNote;
@@ -65,6 +71,8 @@ public final class WorkspaceManifest {
     this.loadProblem = loadProblem;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
+    this.kotlinModuleDirs =
+        builtModuleDirs.stream().filter(WorkspaceManifest::hasKotlinSources).toList();
     this.jdkSourcesNote = jdkSourcesNote;
   }
 
@@ -177,6 +185,14 @@ public final class WorkspaceManifest {
     return builtModuleDirs.stream()
         .filter(normalized::startsWith)
         .max(Comparator.comparingInt(Path::getNameCount));
+  }
+
+  public List<Path> kotlinModuleDirs() {
+    return kotlinModuleDirs;
+  }
+
+  private static boolean hasKotlinSources(final Path moduleDir) {
+    return KOTLIN_SOURCE_DIRS.stream().map(moduleDir::resolve).anyMatch(Files::isDirectory);
   }
 
   public Optional<String> jdkSourcesNote() {

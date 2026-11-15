@@ -41,14 +41,15 @@ final class McpText {
   private McpText() {}
 
   // Authority lines appended to semantic-result text so the agent trusts the result instead of
-  // re-verifying with grep (the "distrust tax"). True by construction: the search is
-  // javac-resolved.
+  // re-verifying with grep (the "distrust tax"). True by construction for Java: the search is
+  // javac-resolved; Lathe reads no Kotlin, so where there is some the grep advice is left out.
   private static final String REFERENCES_AUTHORITY =
       "All javac-resolved references to this exact declaration; same-named but unrelated symbols are"
-          + " already excluded — no need to re-verify with grep.";
+          + " already excluded";
   private static final String IMPLEMENTATIONS_AUTHORITY =
       "All javac-resolved implementers/overriders across modules; unrelated same-named types are"
-          + " excluded — no need to re-verify with grep.";
+          + " excluded";
+  private static final String NO_GREP_NEEDED = " — no need to re-verify with grep.";
   private static final String RENAME_AUTHORITY =
       "Only javac-resolved uses of this declaration were renamed (overload- and scope-correct);"
           + " same-named unrelated symbols were left untouched.";
@@ -60,7 +61,7 @@ final class McpText {
         refs.truncated(),
         refs.references(),
         notes,
-        REFERENCES_AUTHORITY);
+        vouched(REFERENCES_AUTHORITY, notes));
   }
 
   static CallToolResult implementationsResult(
@@ -71,7 +72,21 @@ final class McpText {
         impls.truncated(),
         impls.implementations(),
         notes,
-        IMPLEMENTATIONS_AUTHORITY);
+        vouched(IMPLEMENTATIONS_AUTHORITY, notes));
+  }
+
+  static String vouched(final String authority, final LatheNotes notes) {
+    return notes.kotlinModules().isEmpty()
+        ? authority + NO_GREP_NEEDED
+        : "%s.%s".formatted(authority, kotlinNote(notes));
+  }
+
+  // An answer about a symbol's uses, in a workspace with Kotlin sources, which Lathe does not read.
+  static String kotlinNote(final LatheNotes notes) {
+    return notes.kotlinModules().isEmpty()
+        ? ""
+        : "%n%nKotlin sources in %s are not searched; check them with grep."
+            .formatted(listed(notes.kotlinModules()));
   }
 
   // Shared rendering for a capped, ranked location list ("N noun(s)"); authority is appended when
@@ -89,18 +104,18 @@ final class McpText {
             : "%d %s(s):".formatted(total, noun);
     final String text =
         locations.isEmpty()
-            ? "No %ss found.".formatted(noun)
+            ? "No %ss found.%s".formatted(noun, kotlinNote(notes))
             : "%s%n%s%n%n%s".formatted(header, locationLines(locations), authority);
     return result(text, notes);
   }
 
   static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
     if (rename.totalEdits() == 0) {
-      return result("No references to rename.", notes);
+      return result("No references to rename.%s".formatted(kotlinNote(notes)), notes);
     }
 
     final String text =
-        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s"
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s%s"
             .formatted(
                 rename.newName(),
                 rename.totalEdits(),
@@ -109,6 +124,7 @@ final class McpText {
                     .map(McpText::fileEditLine)
                     .collect(Collectors.joining(System.lineSeparator())),
                 RENAME_AUTHORITY,
+                kotlinNote(notes),
                 mentionLines(rename));
     return result(text, notes);
   }
@@ -358,7 +374,7 @@ final class McpText {
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
             "override family: %s".formatted(overrides));
-    return result(text, notes);
+    return result(text + kotlinNote(notes), notes);
   }
 
   static String joinOrNone(final List<String> items) {
@@ -384,7 +400,8 @@ final class McpText {
         verifyHeadline(errors, total - errors, notes.notChecked().size())
             + verifyDiagnosticLines(verify.perModule())
             + failedWritesNote(verify)
-            + crossModuleNote(verify, errors),
+            + crossModuleNote(verify, errors)
+            + kotlinNote(notes),
         notes);
   }
 

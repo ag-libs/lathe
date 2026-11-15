@@ -130,6 +130,26 @@ class WorkspaceManifestTest {
     assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
+  // Lathe reads no Kotlin: a built module with Kotlin sources where the Kotlin plugins look by
+  // default is named, so an answer about a symbol's uses can say it did not search there.
+  @Test
+  void kotlinModuleDirs_moduleWithKotlinSources_listed_javaModuleNot() throws Exception {
+    Files.createDirectories(tmp.resolve("app-kotlin/src/test/kotlin"));
+    Files.createDirectories(tmp.resolve("app/src/main/java"));
+    writeWorkspaceManifest(
+        LatheLayout.SCHEMA_VERSION,
+        List.of(),
+        null,
+        List.of(),
+        List.of(
+            new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR),
+            new OutputData(
+                "app-kotlin/target/test-classes", "app-kotlin", LatheLayout.TEST_CLASSES_DIR)));
+
+    assertThat(WorkspaceManifest.load(tmp).kotlinModuleDirs())
+        .containsExactly(tmp.resolve("app-kotlin"));
+  }
+
   private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {
     writeWorkspaceManifest(deps, null, List.of());
   }

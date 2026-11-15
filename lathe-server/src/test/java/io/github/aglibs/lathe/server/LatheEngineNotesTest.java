@@ -29,7 +29,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
     // Each answer carries the notes its own request read, after its compile.
     assertThat(engine.diagnostics(source).notes())
-        .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false));
+        .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false, List.of()));
 
     Files.writeString(source, "package com.example; class Sample { Missing m; }");
     final LatheNotes broken = engine.diagnostics(source).notes();

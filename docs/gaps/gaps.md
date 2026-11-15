@@ -2642,36 +2642,6 @@ None yet.
 
 ---
 
-## MC-83 — Kotlin callers are invisible, yet references and rename call themselves complete
-
-**Status: documented**
-
-**Value: high — Size: M (a note) / L (support)**
-
-**Affects: MCP `find_references`, `rename_symbol`, `analyze_change`, `verify_change`, `workspace_summary`.**
-
-Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
-
-### Observed behaviour
-
-`find_references` on `withPrefabValuesForField` (`SingleTypeEqualsVerifierApi.java:244`) misses `KotlinWithoutReflectTest.kt:110`
-and `:159` and says "no need to re-verify with grep". Renaming it, or `Warning.ALL_FIELDS_SHOULD_BE_USED`, leaves the Kotlin
-uses broken (`KotlinDelegationTest.kt:169`), the review list silent on `.kt` files, and `verify_change` clean.
-`analyze_change` counts no Kotlin callers (`forClass` has 77); `workspace_summary` leaves out the two Kotlin test modules
-that `workspace.json` lists.
-
-### Fix direction
-
-When a module has Kotlin sources, say so in these answers (and stop claiming completeness), and list the `.kt`
-files that mention the name for review.
-Lathe does not read Kotlin: its references, rename and checks stay Java-only.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-85 — Rename and `verify_change` say nothing about uses in modules the sync leaves out
 
 **Status: documented**

@@ -302,7 +302,11 @@ final class ChangeVerifier {
         notCompiled,
         Stream.concat(pendingBuildFiles, state.manifest().loadProblem().stream()).toList(),
         notChecked,
-        writePass.reactorBuildInProgress());
+        writePass.reactorBuildInProgress(),
+        state.manifest().kotlinModuleDirs().stream()
+            .map(dir -> FileUtil.slashed(state.root().relativize(dir)))
+            .sorted()
+            .toList());
   }
 
   // The first source that fails to compile in the file's module or one it depends on: code it runs
