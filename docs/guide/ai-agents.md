@@ -101,7 +101,8 @@ the Claude Code setup above has been validated.
 
 Every located result is one line, `path:line:column: code`, as `grep -n --column` prints it: the path is relative to the
 workspace, and a result outside the project is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
-its URI) or `[GENERATED]`.
+its absolute path, which the tools take back as it is; a dependency's lies under `deps/<group>/<artifact>/<version>/`
+in Lathe's cache, which names the version the module resolved) or `[GENERATED]`.
 Answers are text only, with any notes after the result, so every MCP client shows the agent the same thing.
 
 | Tool | Input | Use it for |

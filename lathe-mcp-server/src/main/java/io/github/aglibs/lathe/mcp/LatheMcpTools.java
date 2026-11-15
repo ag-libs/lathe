@@ -110,7 +110,9 @@ final class LatheMcpTools {
             """
                 Resolve the symbol at a position to its definition — across modules and into \
                 dependency, JDK, and generated sources — returning each target as \
-                `path:line:column: code`, its source line included.\
+                `path:line:column: code`, its source line included. A dependency's source is \
+                given by its absolute path in Lathe's cache, \
+                `deps/<group>/<artifact>/<version>/...`, which names the version resolved.\
                 """,
             LatheMcpTools::handleDefinition),
         tool(
