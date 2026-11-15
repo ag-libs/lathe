@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.install.typeindex;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -10,6 +11,7 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
+import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
 import java.io.Closeable;
@@ -109,6 +111,20 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     final JdkSource source = JdkSource.missing("vendor", "version", "cache-key", null);
 
     assertThat(JdkTypeIndexSync.index(source)).isSameAs(source);
+  }
+
+  // The index is of the JDK the source names, which may not be the one running the build (a
+  // toolchain): a home that holds no JDK has no runtime image to scan.
+  @Test
+  void index_homeIsNoJdk_failsOnItsImageInsteadOfScanningTheRunningJdk() {
+    useTempCache();
+    final Path home = tmp.resolve("not-a-jdk");
+    final JdkSource source = JdkSource.missing("vendor", "version", "cache-key", home);
+
+    assertThatThrownBy(() -> JdkTypeIndexSync.index(source))
+        .isInstanceOf(SyncException.class)
+        .rootCause()
+        .hasMessageContaining(home.toString());
   }
 
   // A build waiting for the cache lock sleeps between attempts; nothing else on its way does.

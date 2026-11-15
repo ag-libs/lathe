@@ -1213,33 +1213,6 @@ None yet.
 
 ---
 
-## WS-30 — The JDK type index lists the build's JDK, not the project's
-
-**Status: in-progress** (fixed in #252; the regression test is missing)
-
-**Value: low — Size: S**
-
-**Affects: completion and type search of JDK types, when a build compiles with a different JDK than it runs on (a toolchain).**
-
-Found while reviewing the JDK cache lock (2026-11-05).
-
-### Observed behaviour
-
-`JdkTypeIndexSync` recorded the index as the project's JDK (`source.home()`, vendor and version, which also key its cache entry), but `scanJdk` read the `jrt:/` file system of the JVM the sync runs in: the build's own JDK.
-When the two differ (Maven or Gradle on JDK 25 compiling with a JDK 17 toolchain), the index listed the build JDK's types: completion and type search offered types the project's JDK lacks, and missed any it has that the build JDK does not.
-The cache entry is keyed by the project's JDK, so the first build to index it decided its content for every later build.
-
-### Delivered
-
-`JdkTypeIndexSync.scanJdk` opens the project JDK's own `jrt:/` image (`java.home` set to `source.home()`), and the index schema was bumped so an index written from the build JDK is rebuilt (#252).
-
-### Regression targets
-
-None yet: the fix changed `JdkTypeIndexSync` and `LatheLayout` only.
-A test that indexes a JDK other than the test JVM's (the toolchain case) and finds a type only that JDK has, or asserts the `java.home` the scan opened, closes the entry.
-
----
-
 ## WS-34 — A build check that scans the whole project finds the class mirror in `.lathe/`
 
 **Status: documented**

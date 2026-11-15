@@ -10040,6 +10040,25 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-30 — The JDK type index lists the build's JDK, not the project's — done
+
+**Status: done.**
+
+**Affects: completion and type search of JDK types, when a build compiles with a different JDK than it runs on (a toolchain).**
+
+Found while reviewing the JDK cache lock (2026-11-05).
+The JDK type index was recorded and cached as the project's JDK but scanned from the JVM the sync ran in, so a build on JDK 25 compiling with a JDK 17 toolchain indexed JDK 25's types under JDK 17's cache entry.
+
+### Resolution
+
+The sync scans the project JDK's own runtime image (`JdkTypeIndexSync.scanJdk` opens `jrt:/` with `java.home` set to that JDK), and the index schema was bumped so an index written from the build's JDK is rebuilt (#252).
+
+### Regression targets
+
+- `JdkTypeIndexSyncTest.index_homeIsNoJdk_failsOnItsImageInsteadOfScanningTheRunningJdk`
+
+---
+
 ## WS-34 — After a sync, an open file keeps the error its last save reported against the old build — done
 
 **Status: done.**
