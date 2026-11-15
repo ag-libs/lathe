@@ -67,6 +67,8 @@ class LatheLayoutTest {
     // The module at the reactor root is the whole build: no module, no trailing space.
     assertThat(LatheLayout.scopedSyncCommand(List.of("")))
         .isEqualTo(LatheLayout.SYNC_SCRIPT_COMMAND);
+    assertThat(LatheLayout.scopedSyncCommand(List.of("", "app")))
+        .isEqualTo(LatheLayout.SYNC_SCRIPT_COMMAND);
     assertThat(LatheLayout.captureTestsCommand(""))
         .isEqualTo("%s --tests".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     // No script exists before the first sync, so setup names each front-end's first command.

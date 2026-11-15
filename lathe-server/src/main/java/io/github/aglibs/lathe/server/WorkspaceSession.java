@@ -43,7 +43,7 @@ final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
   private static final String NO_MODULE =
-      "the workspace has no module yet, so no file can be analyzed: the build that wrote %s/ compiled nothing, as it found the sources up to date. Delete the build's output (`mvn clean` on Maven) and sync again: `%s`."
+      "the workspace has no module yet, so no file can be analyzed: the build that wrote %s/ compiled none through Lathe (Maven skips a module it finds up to date). Delete the build's output (`mvn clean` on Maven) and sync again: `%s`."
           .formatted(LatheLayout.LATHE_DIR, LatheLayout.SYNC_SCRIPT_COMMAND);
 
   // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter

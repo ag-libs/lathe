@@ -120,8 +120,12 @@ public final class LatheLayout {
   }
 
   // Scoped form: refresh the given modules and their upstream. The module at the reactor root ("")
-  // is the whole build, so it names no module.
+  // is the whole build, so with it the command names no module.
   public static String scopedSyncCommand(final Collection<String> modules) {
+    if (modules.contains("")) {
+      return SYNC_SCRIPT_COMMAND;
+    }
+
     return command(Stream.concat(Stream.of(SYNC_SCRIPT_COMMAND), modules.stream()));
   }
 
