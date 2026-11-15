@@ -96,14 +96,18 @@ public final class ReactorRewrite {
     return keptJars.contains(path.normalize());
   }
 
-  // Analysis: every mirror the path stands for (a kept jar, or one with extra classes, itself after
-  // them), or the path itself when it is not a listed output.
+  // Whether a class path holding this output reads the jar itself, alone or after its mirror: a
+  // kept jar, or one with extra classes.
+  public boolean readsJar(final Path path) {
+    return kept(path) || extraClassJars.contains(path.normalize());
+  }
+
+  // Analysis: every mirror the path stands for (a jar it reads itself after them), or the path
+  // itself when it is not a listed output.
   public List<Path> expand(final Path path) {
     final Path normal = path.normalize();
     final List<Path> mirrors = allMirrors.getOrDefault(normal, List.of(path));
-    return kept(normal) || extraClassJars.contains(normal)
-        ? Stream.concat(mirrors.stream(), Stream.of(normal)).toList()
-        : mirrors;
+    return readsJar(normal) ? Stream.concat(mirrors.stream(), Stream.of(normal)).toList() : mirrors;
   }
 
   public Path toLathe(final Path path) {

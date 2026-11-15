@@ -327,28 +327,33 @@ class LatheSyncTaskFunctionalTest {
             new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR));
   }
 
-  // A library whose main classes another compiler also writes (Groovy here, Kotlin alike): its jar
-  // is listed as holding extra classes, which the mirror of javac's output lacks. The app, Java
-  // only, is not.
+  // A library whose classes another compiler also writes (Groovy here, Kotlin alike): its jars, the
+  // main one and the test fixtures', are listed as holding extra classes, which the mirror of
+  // javac's output lacks. The app, Java only, is not.
   @Test
-  void sync_groovyMainSources_marksTheJarAsHoldingExtraClasses() throws Exception {
+  void sync_groovySources_marksTheJarsAsHoldingExtraClasses() throws Exception {
     final var fixture =
         multiProject()
             .file(
                 "lib/build.gradle",
                 """
-                plugins { id 'java-library'; id 'groovy' }
+                plugins { id 'java-library'; id 'groovy'; id 'java-test-fixtures' }
                 dependencies { implementation localGroovy() }
                 """)
             .file(
                 "lib/src/main/groovy/com/example/lib/Greeting.groovy",
-                "package com.example.lib\nclass Greeting { String text = 'hi' }\n");
+                "package com.example.lib\nclass Greeting { String text = 'hi' }\n")
+            .file(
+                "lib/src/testFixtures/java/com/example/lib/LibFixture.java",
+                "package com.example.lib; public class LibFixture {}\n");
 
     fixture.runner("latheSync").build();
 
     assertThat(workspace().outputs())
         .contains(
             new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR, false, true),
+            new OutputData(
+                "lib/build/libs/lib-test-fixtures.jar", "lib", "classes-testFixtures", false, true),
             new OutputData("lib/build/classes/java/main", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR));
   }
