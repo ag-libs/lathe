@@ -74,8 +74,8 @@ class LombokTest {
         .contains("User.java")
         .contains("Person.java");
     assertThat(mcp.callTool("analyze_change", "{%s}".formatted(field)))
-        .as("the declaration, and the getter's calls in Person and User")
-        .contains("references: 3 production");
+        .as("the getter's calls in Person and User; the declaration is no use")
+        .contains("references: 2 production");
 
     final String person = Files.readString(PERSON);
     assertThat(mcp.callTool("rename_symbol", "{%s,\"newName\":\"label\"}".formatted(field)))
