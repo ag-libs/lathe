@@ -462,6 +462,30 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(symbols).isNotEmpty();
   }
 
+  // A file's declarations and folds need only a parse: a file no module compiles has them too.
+  @Test
+  void documentSymbol_fileNoModuleCompiles_parsesItsDeclarationsAndFolds() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    Files.createDirectories(sourceRoot);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    host.initialize(tmp);
+    final var uri = tmp.resolve("examples/Book.java").toUri().toString();
+    final var content =
+        "import java.util.List;\nimport java.util.Map;\nclass Book {\n  void read() {\n  }\n}\n";
+    service.didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, content)));
+    final var document = new TextDocumentIdentifier(uri);
+
+    final List<Either<SymbolInformation, DocumentSymbol>> symbols =
+        service.documentSymbol(new DocumentSymbolParams(document)).get(TIMEOUT_S, TimeUnit.SECONDS);
+    final List<FoldingRange> folds =
+        service
+            .foldingRange(new FoldingRangeRequestParams(document))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(symbols).extracting(symbol -> symbol.getRight().getName()).containsExactly("Book");
+    assertThat(folds).extracting(FoldingRange::getKind).contains("imports");
+  }
+
   @Test
   void instantiations_multiConstructorType_progressAlwaysEnds() throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");

@@ -22,6 +22,7 @@ import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
+import io.github.aglibs.lathe.server.engine.Noted;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -710,6 +711,27 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             item ->
                 assertThat(item.location().path())
                     .isEqualTo(FileUtil.slashed(tmp.relativize(source))));
+  }
+
+  // A file's structure needs no compile: a file no module compiles is outlined from a parse, and
+  // still noted as not checked.
+  @Test
+  void outline_fileNoModuleCompiles_listsItsDeclarationsAndSaysNotChecked() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/Shop.java", "package com.example; class Shop {}");
+    final Path outside =
+        TestCompiler.writeAt(
+            tmp.resolve("examples/src/main/java/com/example/Book.java"),
+            "package com.example;\nclass Book {\n  String title() { return \"\"; }\n}\n",
+            1_000L);
+    engine = new LatheEngine(tmp);
+
+    final Noted<List<LatheOutlineItem>> outline = engine.outline(outside);
+
+    assertThat(outline.value())
+        .extracting(LatheOutlineItem::kind, LatheOutlineItem::name, LatheOutlineItem::depth)
+        .containsExactly(tuple("class", "Book", 0), tuple("method", "title", 1));
+    assertThat(outline.notes().notChecked()).isNotEmpty();
   }
 
   @Test
