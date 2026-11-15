@@ -27,9 +27,11 @@ import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.LatheTestFailure;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -123,14 +125,83 @@ class McpTextTest {
             outlineItem("class", "Shop", 0, 3, "public class Shop {"),
             outlineItem("method", "sell", 1, 8, "int sell(int count) {"));
 
-    assertThat(text(McpText.outlineResult(tmp.resolve("Shop.java"), items, McpText.NO_NOTES)))
+    assertThat(text(McpText.outlineResult(tmp.resolve("Shop.java"), items, null, McpText.NO_NOTES)))
         .isEqualTo(
             lines(
                 "2 declaration(s) in app/Shop.java:",
                 "class Shop  3:1: public class Shop {",
                 "  method sell  8:1: int sell(int count) {"));
-    assertThat(text(McpText.outlineResult(tmp.resolve("Empty.java"), List.of(), McpText.NO_NOTES)))
+    assertThat(
+            text(
+                McpText.outlineResult(
+                    tmp.resolve("Empty.java"), List.of(), null, McpText.NO_NOTES)))
         .isEqualTo("No declarations in Empty.java.");
+  }
+
+  // A file over the cap answers its types with their own member counts, so the answer fits; one
+  // type is then asked for by name, its nested types as one line each.
+  @Test
+  void outlineResult_fileOverTheCap_answersItsTypes_oneTypeByName() {
+    final List<LatheOutlineItem> items = bigOutline();
+
+    assertThat(text(McpText.outlineResult(tmp.resolve("Shop.java"), items, null, McpText.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "app/Shop.java is too large for one outline: 205 declarations. Its types, with their own members; call outline with type=<Name> for one:",
+                "class Big  1:1  202 member(s)",
+                "  struct Inner  203:1  2 member(s)"));
+    assertThat(
+            text(McpText.outlineResult(tmp.resolve("Shop.java"), items, "Inner", McpText.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "struct Inner in app/Shop.java, 2 member(s):",
+                "  struct Inner  203:1: record Inner(int a, int b) {",
+                "    field a  204:1: int a",
+                "    field b  205:1: int b"));
+  }
+
+  // A type whose own members still pass the cap lists them without their code, which fits; a name
+  // the file has no type of is an error that lists its types.
+  @Test
+  void outlineResult_typeOverTheCapOrUnknown_membersWithoutCodeOrAnErrorListingTheTypes() {
+    final List<LatheOutlineItem> items = bigOutline();
+
+    final String big =
+        text(McpText.outlineResult(tmp.resolve("Shop.java"), items, "Big", McpText.NO_NOTES));
+    assertThat(big.lines())
+        .startsWith(
+            "class Big in app/Shop.java, 202 member(s) (their code left out: over 200):",
+            "class Big  1:1: public class Big {",
+            "  method m1  2:1")
+        .contains("  struct Inner  203:1  2 member(s)")
+        .hasSize(204);
+    final CallToolResult unknown =
+        McpText.outlineResult(tmp.resolve("Shop.java"), items, "Missing", McpText.NO_NOTES);
+    assertThat(unknown.isError()).isTrue();
+    assertThat(text(unknown))
+        .isEqualTo(
+            lines(
+                "No type Missing in Shop.java; its types:",
+                "class Big  1:1  202 member(s)",
+                "  struct Inner  203:1  2 member(s)"));
+  }
+
+  // Class Big with 201 methods and a nested record Inner of two fields: 205 declarations, over the
+  // cap.
+  private static List<LatheOutlineItem> bigOutline() {
+    return Stream.of(
+            Stream.of(outlineItem("class", "Big", 0, 1, "public class Big {")),
+            IntStream.rangeClosed(1, 201)
+                .mapToObj(
+                    i ->
+                        outlineItem(
+                            "method", "m%d".formatted(i), 1, i + 1, "void m%d() {".formatted(i))),
+            Stream.of(
+                outlineItem("struct", "Inner", 1, 203, "record Inner(int a, int b) {"),
+                outlineItem("field", "a", 2, 204, "int a"),
+                outlineItem("field", "b", 2, 205, "int b")))
+        .flatMap(stream -> stream)
+        .toList();
   }
 
   @Test

@@ -12771,6 +12771,28 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-59 — `outline` overflows on a large file — done
+
+**Status: done.**
+
+**Affects: MCP `outline`.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+`outline` on `WorkspaceSession.java` (428 declarations) answered 57,670 characters, over Claude Code's result limit, so the client saved it to a file and the agent sliced it with `jq`.
+
+### Resolution
+
+A file of more than 200 declarations answers its types instead, each with its position and own member count, and says to pass `type=<Name>` for one (`McpText.OUTLINE_MAX_DECLARATIONS`).
+With `type`, `outline` answers that type's own members, a nested type as one line with its member count; a type whose own members pass the cap lists them without their code, about 35 characters each.
+An unknown type name is an error listing the file's types.
+
+### Regression targets
+
+- `McpTextTest.outlineResult_fileOverTheCap_answersItsTypes_oneTypeByName`
+- `McpTextTest.outlineResult_typeOverTheCapOrUnknown_membersWithoutCodeOrAnErrorListingTheTypes`
+
+---
+
 ## MC-69 — `analyze_change` names too few affected modules — done
 
 **Status: done.**

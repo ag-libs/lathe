@@ -86,7 +86,7 @@ class LatheMcpToolsTest {
         .contains("file", "line", "column");
     assertThat(tool("format_file").tool().inputSchema().toString()).contains("file");
     assertThat(tool("fix_imports").tool().inputSchema().toString()).contains("file");
-    assertThat(tool("outline").tool().inputSchema().toString()).contains("file");
+    assertThat(tool("outline").tool().inputSchema().toString()).contains("file", "type");
   }
 
   @Test
