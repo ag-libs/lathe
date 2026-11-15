@@ -47,6 +47,38 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(impact.affectedModules()).containsExactly("module");
   }
 
+  // A signature change breaks every implementation: a module that implements the method only with
+  // a lambda, which declares no method of its name and never calls it, is affected too.
+  @Test
+  void analyzeChange_methodImplementedInAModuleThatNeverCallsIt_countsThatModule()
+      throws Exception {
+    final String ifaceSource =
+        "package com.example.api;\npublic interface Greeter {\n  void greet();\n}\n";
+    final var api = new LinkedHashMap<String, String>();
+    api.put("com/example/api/Greeter.java", ifaceSource);
+    api.put(
+        "com/example/api/Caller.java",
+        "package com.example.api;\nclass Caller {\n  void run(Greeter g) { g.greet(); }\n}\n");
+    final Path iface = TestCompiler.writeMirroredModule(tmp, "api", api, List.of(), 1_000L).get(0);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "impl",
+        Map.of(
+            "com/example/impl/Wiring.java",
+            "package com.example.impl;\nclass Wiring {\n  com.example.api.Greeter greeter = () -> {};\n}\n"),
+        List.of("api"),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    final var pos = positionOf(ifaceSource, "greet");
+    final LatheChangeImpact impact =
+        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
+
+    assertThat(impact.overrideFamily())
+        .anySatisfy(location -> assertThat(location.uri()).endsWith("Wiring.java"));
+    assertThat(impact.affectedModules()).containsExactly("api", "impl");
+  }
+
   @Test
   void verifyChange_externalEditBreaksSibling_reportsDiagnostic() throws Exception {
     final GreetFixture fx = greetFixture();

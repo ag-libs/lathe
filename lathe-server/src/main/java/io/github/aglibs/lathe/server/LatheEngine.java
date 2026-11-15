@@ -54,6 +54,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -1103,8 +1104,19 @@ public final class LatheEngine {
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
+    // A signature change breaks every implementation, in a module that never calls it too.
+    final List<Path> implementationPaths =
+        (facts.implementations().isLeft() ? facts.implementations().getLeft() : List.<Location>of())
+            .stream().map(location -> LatheUri.toPath(location.getUri())).toList();
     final Map<Path, ModulePlacement> placements =
-        query(session -> session.verifier().classifyPaths(paths));
+        query(
+            session ->
+                session
+                    .verifier()
+                    .classifyPaths(
+                        Stream.concat(paths.stream(), implementationPaths.stream())
+                            .distinct()
+                            .toList()));
 
     int production = 0;
     int test = 0;
@@ -1125,6 +1137,11 @@ public final class LatheEngine {
       }
     }
 
+    implementationPaths.stream()
+        .map(placements::get)
+        .filter(Objects::nonNull)
+        .map(ModulePlacement::moduleRel)
+        .forEach(affectedModules::add);
     return new Noted<>(
         new LatheChangeImpact(
             signature,

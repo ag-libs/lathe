@@ -283,8 +283,7 @@ def consistency_checks(b, ws, cfg, f, pos):
         wide = ws / cfg["wide"][0]
         wide_pos = {"file": str(wide), "line": locate(wide, cfg["wide"][1])[0], "symbol": cfg["wide"][2]}
         mc.analyze_modules_cover_implementations(
-            b, ws, wide_pos, "analyze_change modules cover the implementations",
-            known="analyze_change names too few affected modules: not the implementations' modules")
+            b, ws, wide_pos, "analyze_change modules cover the implementations")
         impls = b.raw("find_implementations", wide_pos)[0]
         mc.list_shape(b, ws, impls, "find_implementations",
                       grouped_known="locations come back in discovery order, modules mixed")
