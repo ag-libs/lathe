@@ -10,14 +10,17 @@ import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.UnreadSources;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
+import io.github.aglibs.lathe.server.workspace.UnreadLanguage;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -435,10 +438,21 @@ final class ChangeVerifier {
         Stream.concat(pendingBuildFiles, state.manifest().loadProblem().stream()).toList(),
         notChecked,
         writePass.reactorBuildInProgress(),
-        state.manifest().kotlinModuleDirs().stream()
+        Arrays.stream(UnreadLanguage.values())
+            .map(this::unreadSources)
+            .flatMap(Optional::stream)
+            .toList());
+  }
+
+  private Optional<UnreadSources> unreadSources(final UnreadLanguage language) {
+    final List<String> modules =
+        state.manifest().unreadModuleDirs(language).stream()
             .map(dir -> SourceLayout.displayed(FileUtil.slashed(state.root().relativize(dir))))
             .sorted()
-            .toList());
+            .toList();
+    return modules.isEmpty()
+        ? Optional.empty()
+        : Optional.of(new UnreadSources(language.displayName(), modules));
   }
 
   // The first source that fails to compile in the file's module or one it depends on: code it runs

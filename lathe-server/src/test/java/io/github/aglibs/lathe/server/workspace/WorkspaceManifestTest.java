@@ -133,13 +133,17 @@ class WorkspaceManifestTest {
     assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
-  // Lathe reads no Kotlin: a built module with Kotlin sources where the Kotlin plugins look by
-  // default, in any source set, is named, so an answer about a symbol's uses can say it did not
-  // search there; the root module too.
+  // Lathe reads no Kotlin or Groovy: a built module with such sources where their plugins look by
+  // default, in any source set, is named under its language, so an answer about a symbol's uses can
+  // say it did not search there; the root module too, and a module with both under each.
   @Test
-  void kotlinModuleDirs_moduleWithKotlinSources_listed_javaModuleNot() throws Exception {
+  void unreadModuleDirs_modulesWithKotlinOrGroovySources_listedByLanguage_javaModuleNot()
+      throws Exception {
     Files.createDirectories(tmp.resolve("app-kotlin/src/integrationTest/kotlin"));
     Files.createDirectories(tmp.resolve("app/src/main/java"));
+    Files.createDirectories(tmp.resolve("specs/src/test/groovy"));
+    Files.createDirectories(tmp.resolve("mixed/src/main/kotlin"));
+    Files.createDirectories(tmp.resolve("mixed/src/test/groovy"));
     Files.createDirectories(tmp.resolve("src/main/kotlin"));
     writeWorkspaceManifest(
         LatheLayout.SCHEMA_VERSION,
@@ -150,10 +154,16 @@ class WorkspaceManifestTest {
             new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR),
             new OutputData(
                 "app-kotlin/target/test-classes", "app-kotlin", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("specs/build/classes/java/test", "specs", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("mixed/build/classes/java/main", "mixed", LatheLayout.CLASSES_DIR),
             new OutputData("target/classes", "", LatheLayout.CLASSES_DIR)));
 
-    assertThat(WorkspaceManifest.load(tmp).kotlinModuleDirs())
-        .containsExactlyInAnyOrder(tmp.resolve("app-kotlin"), tmp);
+    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
+
+    assertThat(manifest.unreadModuleDirs(UnreadLanguage.KOTLIN))
+        .containsExactlyInAnyOrder(tmp.resolve("app-kotlin"), tmp.resolve("mixed"), tmp);
+    assertThat(manifest.unreadModuleDirs(UnreadLanguage.GROOVY))
+        .containsExactlyInAnyOrder(tmp.resolve("specs"), tmp.resolve("mixed"));
   }
 
   // A Gradle jar that packs a second source set's classes (generated code) is listed under its own
