@@ -123,6 +123,12 @@ sync.run("/ws/f", false, nil, {
   action = "setup",
 })
 spec.check(
+  "a setup run sets up the files under its root",
+  sync.setting_up("/ws/f/src/A.java"),
+  true
+)
+spec.check("and no others", sync.setting_up("/ws/fx/src/A.java"), false)
+spec.check(
   "a setup run's toast says it is setting up",
   notes[#notes]:find("Lathe: setting up… 0s — `mvn clean test`", 1, true) ~= nil,
   true
@@ -150,8 +156,11 @@ spec.check(
   "[ERROR] boom"
 )
 
+spec.check("a finished setup run sets up nothing", sync.setting_up("/ws/f/src/A.java"), false)
+
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run("/ws/b", false)
+spec.check("a plain sync is not a setup", sync.setting_up("/ws/b/src/A.java"), false)
 local before = #calls
 sync.run("/ws/b", false)
 spec.check("concurrent sync for the same root is a no-op", #calls, before)

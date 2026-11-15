@@ -107,8 +107,18 @@ spec.check(
   true
 )
 
--- 5) Configured, a first build that stopped before its sync: run :LatheInit again, not "older".
+-- 5) Configured, a first build still running: it attaches when it ends, so nothing to say yet.
 lathe.setup({})
+local sync = require("lathe.sync")
+local setting_up = sync.setting_up
+sync.setting_up = function(path)
+  return vim.startswith(path, unfinished .. "/")
+end
+lathe.warn_if_not_ready(vim.fn.bufadd(unfinished .. "/src/main/java/Running.java"))
+sync.setting_up = setting_up
+spec.check("first build running: silent", #notes, 3)
+
+-- 6) Configured, a first build that stopped before its sync: run :LatheInit again, not "older".
 lathe.warn_if_not_ready(vim.fn.bufadd(unfinished .. "/src/main/java/F.java"))
 spec.check("unfinished first build: notify", #notes, 4)
 spec.check(
@@ -119,7 +129,7 @@ spec.check(
   true
 )
 
--- 6) Configured, a file in no build: nothing to set up, so no :LatheInit.
+-- 7) Configured, a file in no build: nothing to set up, so no :LatheInit.
 lathe.setup({})
 lathe.warn_if_not_ready(vim.fn.bufadd(plain .. "/G.java"))
 spec.check("no build: notify", #notes, 5)

@@ -95,6 +95,15 @@ function M.start(bufnr)
   vim.lsp.start(config, { bufnr = bufnr })
 end
 
+-- Whether a buffer under root may start its server: the build wrote a launcher, and :LatheInit is
+-- not setting it up, as its first build can write the launcher before it captures any module and a
+-- server started then would know none. The run starts it when it ends.
+local function startable(root)
+  return root ~= nil
+    and vim.fn.executable(workspace.launcher_path(root)) == 1
+    and not require("lathe.sync").setting_up(root)
+end
+
 -- Nudge for the silent failure modes: a Java buffer is open but Lathe can't serve it because the
 -- client was never configured, the file is in no build Lathe can set up, no `.lathe/` workspace
 -- exists (the project isn't set up yet), the first build stopped before it set Lathe up, or the
@@ -110,6 +119,11 @@ function M.warn_if_not_ready(bufnr)
   end
   local root = M._configured and M.get_root(bufnr) or nil
   if root ~= nil and vim.fn.executable(workspace.launcher_path(root)) == 1 then
+    return
+  end
+
+  -- :LatheInit is setting the build up: it attaches the buffer when it ends.
+  if require("lathe.sync").setting_up(vim.api.nvim_buf_get_name(bufnr)) then
     return
   end
 
@@ -249,7 +263,7 @@ function M.setup(opts)
     end,
     root_dir = function(bufnr, on_dir)
       local r = M.get_root(bufnr)
-      if r and vim.fn.executable(workspace.launcher_path(r)) == 1 then
+      if startable(r) then
         on_dir(r)
       end
     end,
@@ -278,8 +292,7 @@ function M.setup(opts)
           return
         end
 
-        local r = M.get_root(ev.buf)
-        if not r or vim.fn.executable(workspace.launcher_path(r)) ~= 1 then
+        if not startable(M.get_root(ev.buf)) then
           return
         end
 

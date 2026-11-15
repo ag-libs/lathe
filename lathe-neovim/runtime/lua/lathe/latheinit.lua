@@ -12,7 +12,12 @@ local workspace = require("lathe.workspace")
 local POM = "pom.xml"
 local GRADLE_SETTINGS = { "settings.gradle", "settings.gradle.kts" }
 local MAVEN_EXTENSION = "lathe-maven-extension"
-local MAVEN_REGISTRATION = "<artifactId>%s*lathe%-maven%-extension%s*</artifactId>"
+-- The extension, or the plugin a build wires by hand with the compiler shim (the Maven guide's
+-- manual configuration).
+local MAVEN_REGISTRATIONS = {
+  "<artifactId>%s*lathe%-maven%-extension%s*</artifactId>",
+  "<artifactId>%s*lathe%-maven%-plugin%s*</artifactId>",
+}
 local GRADLE_PLUGIN_ID = "io.github.ag-libs.lathe"
 local DEV_VERSION = "0.0.0-dev"
 local COPY_DEPENDENCIES = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies"
@@ -144,7 +149,10 @@ local function registers_lathe(root, kind)
   if kind == "maven" then
     local files = read(vim.fs.joinpath(root, POM))
       .. read(vim.fs.joinpath(root, ".mvn", "extensions.xml"))
-    return files:gsub("<!%-%-.-%-%->", ""):find(MAVEN_REGISTRATION) ~= nil
+    local uncommented = files:gsub("<!%-%-.-%-%->", "")
+    return vim.iter(MAVEN_REGISTRATIONS):any(function(registration)
+      return uncommented:find(registration) ~= nil
+    end)
   end
 
   return false
@@ -275,7 +283,7 @@ end
 
 -- The Lathe version the build set up, which the workspace records.
 local function server_version(root)
-  local manifest = vim.fs.joinpath(root, workspace.ROOT_MARKER, "workspace.json")
+  local manifest = workspace.manifest_path(root)
   return exists(manifest) and vim.json.decode(read(manifest)).serverVersion or nil
 end
 
@@ -299,27 +307,26 @@ local function report_version(root, running, wanted)
   notify(("server %s set up at %s."):format(running, root))
 end
 
+-- A buffer opened before the setup took the fallback indent; the project's style is there now.
 local function start_servers(root)
   for _, buf in ipairs(java_buffers_under(root)) do
+    require("lathe.indent").apply_project_indent(buf)
     require("lathe").start(buf)
   end
 end
 
--- The root's running servers of another version than the one set up, which they would go on
--- serving until restarted.
-local function stale_servers(root, version)
+local function servers_at(root)
   local wanted = real(root)
   return vim.tbl_filter(function(client)
     return real(client.root_dir) == wanted
-      and vim.tbl_get(client, "server_info", "version") ~= version
   end, vim.lsp.get_clients({ name = "lathe" }))
 end
 
 local STOP_POLL_MS = 100
-local STOP_FORCE_AFTER = 30
+local STOP_GIVE_UP_AFTER = 100
 
--- Starts the new servers once the old ones have exited; one that has not exited after a few
--- seconds is killed.
+-- Starts the new servers once the old ones have exited. One that is still running after ten
+-- seconds is left alone rather than killed, which would read as a crash.
 local function restart_when_stopped(root, clients, polls)
   local running = vim.tbl_filter(function(client)
     return not client:is_stopped()
@@ -329,10 +336,12 @@ local function restart_when_stopped(root, clients, polls)
     return
   end
 
-  if polls == STOP_FORCE_AFTER then
-    for _, client in ipairs(running) do
-      client:stop(true)
-    end
+  if polls == STOP_GIVE_UP_AFTER then
+    notify(
+      ("the server running at %s did not stop: `:lsp restart` starts the one set up."):format(root),
+      vim.log.levels.WARN
+    )
+    return
   end
 
   vim.defer_fn(function()
@@ -343,13 +352,14 @@ end
 -- A build that failed may still have written the launcher (a module failed after Lathe set up the
 -- rest): attach, and the server serves what was set up. One that succeeded without a
 -- launcher ran where Lathe set nothing up: most often a module, as Lathe sets up a build only from
--- its root, or a build tool too old to load Lathe. A server already running on another version is
--- restarted on the one set up.
-local function attach(root, result, version)
+-- its root, or a build tool too old to load Lathe. When the build changed the version the
+-- workspace records, a server already running there serves the old one: it is restarted. The
+-- workspace, not the server, says what changed, as a development server reports no version.
+local function attach(root, result, version, before)
   if vim.fn.executable(workspace.launcher_path(root)) == 1 then
     local installed = server_version(root)
     report_version(root, installed, version)
-    local stale = installed and stale_servers(root, installed) or {}
+    local stale = before and installed ~= before and servers_at(root) or {}
     for _, client in ipairs(stale) do
       client:stop()
     end
@@ -372,12 +382,13 @@ end
 -- `label` names the build in the toast and the output split: the ext class path is too long for either.
 -- `version` is the Lathe brought in from outside, nil for a build that registers its own.
 local function build(root, cmd, label, version)
+  local before = server_version(root)
   require("lathe.sync").run(root, false, nil, {
     cmd = cmd,
     label = label,
     action = "setup",
     on_done = function(result)
-      attach(root, result, version)
+      attach(root, result, version, before)
     end,
   })
 end
@@ -422,14 +433,10 @@ local function maven_personal(build_, tool, version)
     label = ("%s copy-dependencies (Lathe %s)"):format(vim.fs.basename(tool), version),
     action = "download",
     on_done = function(result)
-      -- A first fetch that failed leaves no folder behind; an earlier lib/ stays, as does an init
-      -- script beside it.
+      -- A failed fetch leaves no partial download; the bootstrap POM stays for the output
+      -- split's retry, which runs the same command.
       if result.code ~= 0 then
         vim.fn.delete(fetching, "rf")
-        if not exists(lib) then
-          vim.fn.delete(vim.fs.joinpath(dir, POM))
-          vim.fn.delete(dir, "d")
-        end
         return
       end
 

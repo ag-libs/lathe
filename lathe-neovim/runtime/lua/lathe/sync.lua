@@ -20,7 +20,8 @@ M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project); "
 M.UNFINISHED_HINT = "the first Lathe build of this project stopped before it set Lathe up: "
   .. "fix what stopped it and run `:LatheInit` again."
 
--- Guard against overlapping syncs for the same root (a second prompt/command while one is running).
+-- Guard against overlapping syncs for the same root (a second prompt/command while one is running):
+-- each running root with its run's action.
 local running = {}
 
 -- The last sync's parameters, so the output buffer's `r` keymap can replay it after a failure.
@@ -229,7 +230,7 @@ function M.run(root, capture_tests, modules, opts)
     cmd_str = table.concat(vim.list_extend({ SCRIPT }, args), " ")
   end
 
-  running[root] = true
+  running[root] = opts.action or "sync"
   last_sync = { root = root, capture_tests = capture_tests, modules = modules, opts = opts }
 
   local action = ACTIONS[opts.action or "sync"]
@@ -278,6 +279,18 @@ function M.run(root, capture_tests, modules, opts)
       end
     end)
   end)
+end
+
+--- Whether :LatheInit is setting up the build that holds path (its download or first build): its
+--- `.lathe/` is incomplete until the run ends and starts the server.
+function M.setting_up(path)
+  for root, action in pairs(running) do
+    if action ~= "sync" and (path == root or vim.startswith(path, root .. "/")) then
+      return true
+    end
+  end
+
+  return false
 end
 
 local function sync_current(capture_tests)

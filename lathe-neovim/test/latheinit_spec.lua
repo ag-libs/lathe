@@ -119,6 +119,7 @@ write(work .. "/mixed/settings.gradle")
 write(work .. "/mixed/tools/pom.xml")
 write(work .. "/team/pom.xml", "<extension><artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/core-ext/pom.xml")
+write(work .. "/manual/pom.xml", "<plugin><artifactId>lathe-maven-plugin</artifactId></plugin>")
 write(work .. "/core-ext/.mvn/extensions.xml", "<artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/team-gradle/settings.gradle", 'plugins { id("io.github.ag-libs.lathe") }')
 write(
@@ -179,6 +180,11 @@ spec.check(
 spec.check(
   "the settings script registers Lathe",
   latheinit.find_build(work .. "/team-gradle").registered,
+  true
+)
+spec.check(
+  "the plugin wired by hand registers Lathe",
+  latheinit.find_build(work .. "/manual").registered,
   true
 )
 spec.check(
@@ -244,8 +250,11 @@ vim.fn.bufload(java)
 vim.bo[java].filetype = "java"
 executable(work .. "/multi/.lathe/lathe-launcher.sh")
 write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "9.9.9"}')
+write(work .. "/multi/.lathe/style.json", '{"indent": {"profile": "google", "block": 2}}')
+vim.bo[java].shiftwidth = 4
 finish_build(0)
 spec.check("a build that wrote a launcher attaches the root's Java buffers", started[1], java)
+spec.check("and gives them the project's indent", vim.bo[java].shiftwidth, 2)
 spec.check("and names the version set up", last_note_has("Lathe: server 9.9.9 set up at"), true)
 
 -- A fetch interrupted before it ended left no lib/: the next run fetches again.
@@ -264,9 +273,14 @@ spec.check(
   true
 )
 spec.check(
-  "a failed first fetch leaves no folder behind",
-  vim.uv.fs_stat(work .. "/cache/bootstrap/8.8.8"),
+  "a failed fetch leaves no partial download",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/8.8.8/lib.fetching"),
   nil
+)
+spec.check(
+  "but keeps the bootstrap POM for the retry",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/8.8.8/pom.xml") ~= nil,
+  true
 )
 
 -- A snapshot is fetched every time, for its newest build.
@@ -350,22 +364,28 @@ spec.check(
   true
 )
 
--- A server of another version keeps serving the old one: it is stopped, and the buffers get the
--- new one once it has exited. One of the version set up, or of another root, is left alone.
-local stale = server(work .. "/multi", "1.0.0")
-local current = server(work .. "/multi", "1.2.3")
+-- A build that changes the version the workspace records restarts the root's running servers, which
+-- serve the old one, once they exited; a server of another root is left alone. A build that keeps
+-- the version restarts nothing.
+local here = server(work .. "/multi", "1.0.0")
 local elsewhere = server(work .. "/gradle", "1.0.0")
-clients = { stale, current, elsewhere }
+clients = { here, elsewhere }
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.0.0"}')
 local starts = #started
 run_from("/multi")
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.2.3"}')
 finish_build(0)
 vim.wait(1000, function()
   return #started > starts
 end)
-spec.check("a server of another version is stopped", stale.stopped, true)
-spec.check("one of the version set up is left running", current.stopped, nil)
+spec.check("a server of the root is stopped", here.stopped, true)
 spec.check("one of another root is left running", elsewhere.stopped, nil)
 spec.check("the buffers start again once it exited", started[#started], java)
+local same = server(work .. "/multi", nil)
+clients = { same }
+run_from("/multi")
+finish_build(0)
+spec.check("a build that keeps the version restarts nothing", same.stopped, nil)
 clients = {}
 
 -- A wrapper wins over the tool on PATH.
