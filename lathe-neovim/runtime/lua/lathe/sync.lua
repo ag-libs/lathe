@@ -102,17 +102,21 @@ local function set_output(lines)
   vim.bo[out_buf].modifiable = false
 end
 
--- The build's verdict, else the last line: mvnd ends a failed build's output with terminal
--- warnings, below Maven's [ERROR] summary.
+-- The build's verdict, else Lathe's own last word (a setup that installed no server says why in a
+-- `[lathe]` line, above the build's success), else the last line: mvnd ends a failed build's output
+-- with terminal warnings, below Maven's [ERROR] summary.
 local function verdict_line()
   local lines = vim.api.nvim_buf_get_lines(out_buf, 0, -1, false)
+  local lathe_line
   for i = #lines, 1, -1 do
     if lines[i]:find("^%[ERROR%]") or lines[i]:find("BUILD FAIL", 1, true) then
       return i
     end
+
+    lathe_line = lathe_line or (lines[i]:find("[lathe]", 1, true) and i)
   end
 
-  return #lines
+  return lathe_line or #lines
 end
 
 --- Opens the sync-console buffer in a bottom split and scrolls it to the build's verdict, so Maven's
@@ -160,14 +164,11 @@ local function show_success(action, cmd_str, secs)
   set_output({ ("Lathe: %s succeeded (%s, %.1fs)"):format(action.noun, cmd_str, secs) })
 end
 
---- Fills the console with the full captured build output and opens the split. The header prints
---- the exact command and working directory so the run is reproducible by hand.
-local function show_failure(action, root, cmd, code, output)
+--- Fills the console with the full captured build output under `verdict` and opens the split. The
+--- header prints the exact command and working directory so the run is reproducible by hand.
+local function show_output(verdict, root, cmd, output)
   local lines = {
-    ("Lathe: %s FAILED (exit %d) — :LatheSyncOutput jumps here; r retries, q closes"):format(
-      action.noun,
-      code
-    ),
+    ("Lathe: %s — :LatheSyncOutput jumps here; r retries, q closes"):format(verdict),
     command_header(root, cmd),
     "",
   }
@@ -206,7 +207,9 @@ local SCRIPT = ".lathe/lathe-sync.sh"
 --- `opts.cmd` runs that command instead (`:LatheInit`'s first build, before there is a script), shown
 --- as `opts.label` and named by `opts.action` ("download" or "setup"; "sync" by default);
 --- `opts.failure_toast(result)` may return a failed run's toast, shown as a warning instead of the
---- default error; `opts.on_done(result)` runs after the build ends, on the main loop.
+--- default error; `opts.success_warning(result)` may return a warning for a run that succeeded but
+--- did not do what it ran for, shown with the build's output as a failure is;
+--- `opts.on_done(result)` runs after the build ends, on the main loop.
 function M.run(root, capture_tests, modules, opts)
   opts = opts or {}
   if not root or root == "" then
@@ -261,7 +264,12 @@ function M.run(root, capture_tests, modules, opts)
     timer:close()
     local secs = elapsed_s(state.started)
     vim.schedule(function()
-      if res.code == 0 then
+      local output = (res.stdout or "") .. (res.stderr or "")
+      local warning = res.code == 0 and opts.success_warning and opts.success_warning(res)
+      if warning then
+        notify(state, warning, vim.log.levels.WARN)
+        show_output(("%s succeeded, with a warning"):format(action.noun), root, cmd, output)
+      elseif res.code == 0 then
         show_success(action, cmd_str, secs)
         notify(
           state,
@@ -281,7 +289,7 @@ function M.run(root, capture_tests, modules, opts)
             ),
           custom and vim.log.levels.WARN or vim.log.levels.ERROR
         )
-        show_failure(action, root, cmd, res.code, (res.stdout or "") .. (res.stderr or ""))
+        show_output(("%s FAILED (exit %d)"):format(action.noun, res.code), root, cmd, output)
       end
 
       if opts.on_done then

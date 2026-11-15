@@ -82,10 +82,17 @@ local function executable(path)
   write(path, "#!/bin/sh\n")
   vim.fn.setfperm(path, "rwxr-xr-x")
 end
-local function finish_build(code)
+local function finish_build(code, stdout)
   local cb = pending_cb
   pending_cb = nil
-  cb({ code = code, stdout = "", stderr = "" })
+  cb({ code = code, stdout = stdout or "", stderr = "" })
+end
+local function console_has(text)
+  return vim
+    .iter(vim.api.nvim_buf_get_lines(vim.fn.bufnr("Lathe Sync Output"), 0, -1, false))
+    :any(function(line)
+      return line:find(text, 1, true) ~= nil
+    end)
 end
 local function last_cmd()
   return calls[#calls].cmd
@@ -398,6 +405,45 @@ spec.check(
   last_note_has("no `.lathe/` was written at " .. work .. "/marked/app"),
   true
 )
+spec.check(
+  "and keeps the build's output, as a failure does",
+  console_has("setup succeeded, with a warning"),
+  true
+)
+
+-- A build that set up the workspace but could not fetch the server (the project's repositories
+-- lack it): the warning says so, and the build's `[lathe]` line that says why stays in the split.
+run_from("/marked/app")
+write(work .. "/marked/app/.lathe/workspace.json", "{}")
+finish_build(
+  0,
+  "> Task :latheSync\n[lathe] the Lathe server could not be resolved; not installed\n\n"
+    .. "BUILD SUCCESSFUL in 9s\n3 actionable tasks: 3 executed"
+)
+spec.check(
+  "a workspace set up without a server says so",
+  last_note_has(
+    "the build set up `.lathe/` at " .. work .. "/marked/app but installed no Lathe server"
+  ),
+  true
+)
+spec.check(
+  "the build's reason stays in the split",
+  console_has("[lathe] the Lathe server could not be resolved; not installed"),
+  true
+)
+local console_win = vim.fn.bufwinid(vim.fn.bufnr("Lathe Sync Output"))
+spec.check(
+  "the split opens at it, not at the build's success below",
+  vim.api.nvim_buf_get_lines(
+    vim.fn.bufnr("Lathe Sync Output"),
+    vim.api.nvim_win_get_cursor(console_win)[1] - 1,
+    vim.api.nvim_win_get_cursor(console_win)[1],
+    false
+  )[1],
+  "[lathe] the Lathe server could not be resolved; not installed"
+)
+vim.fn.delete(work .. "/marked/app/.lathe", "rf")
 
 -- Gradle personal: the init script, written for the version.
 run_from("/gradle/lib")
