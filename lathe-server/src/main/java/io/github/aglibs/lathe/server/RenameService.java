@@ -280,7 +280,8 @@ final class RenameService {
         fileScoped
             ? Stream.empty()
             : state.candidateIndex().candidateUris(newName).stream()
-                .filter(uri -> !moved.containsValue(uri));
+                .filter(uri -> !moved.containsValue(uri))
+                .filter(uri -> couldClash(target, uri));
     final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig =
         Stream.concat(renamed.keySet().stream(), usingNewName)
             .distinct()
@@ -347,6 +348,23 @@ final class RenameService {
         .flatMap(entry -> entry.getValue().stream())
         .filter(RenameBindingCheck.CheckedFile::edited)
         .toList();
+  }
+
+  // A package-private member is seen only in its package, in whichever module: a file elsewhere
+  // that spells the new name cannot clash with it.
+  private boolean couldClash(final ReferenceTarget target, final String uri) {
+    if (target.scope() != ReferenceTarget.SearchScope.DECLARING_PACKAGE) {
+      return true;
+    }
+
+    final Path packageRel =
+        ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName());
+    return compilingConfig(uri)
+        .filter(
+            config ->
+                ReferenceSearch.isInPackageScope(
+                    LatheUri.toPath(uri), config.searchRoots(), packageRel))
+        .isPresent();
   }
 
   // The module source config that compiles the file, unless it is generated.

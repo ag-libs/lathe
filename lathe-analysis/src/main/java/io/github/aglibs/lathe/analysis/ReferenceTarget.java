@@ -49,7 +49,9 @@ public record ReferenceTarget(
 
   public enum SearchScope {
     DECLARING_FILE,
-    DECLARING_MODULE,
+    // A package-private member: its package, in every module that can see the declaration, as a
+    // module sharing the package (a test module, say) may use it.
+    DECLARING_PACKAGE,
     REACTOR_MODULES
   }
 
@@ -230,7 +232,7 @@ public record ReferenceTarget(
       return SearchScope.REACTOR_MODULES;
     }
 
-    return SearchScope.DECLARING_MODULE;
+    return SearchScope.DECLARING_PACKAGE;
   }
 
   ExecutableElement resolveMethodElement(final Elements elements, final Types types) {

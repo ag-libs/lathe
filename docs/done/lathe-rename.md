@@ -108,7 +108,7 @@ Reuse the references pipeline end to end.
 1. Build the `ReferenceTarget` for the resolved element exactly as `references()` does — including
    override-family expansion for methods and record-component normalization (accessor + backing field +
    canonical-constructor parameter).
-2. Run the existing scoped search (`DECLARING_FILE` / `DECLARING_MODULE` / `REACTOR_MODULES` from
+2. Run the existing scoped search (`DECLARING_FILE` / `DECLARING_PACKAGE` / `REACTOR_MODULES` from
    `ReferenceTarget.scopeFor`), across open and closed files, honoring the existing work-done progress,
    cancellation, and the process-wide compilation admission cap.
 3. Map every occurrence `Range` — the declaration included — to a `TextEdit(range, newName)`.

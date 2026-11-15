@@ -41,7 +41,7 @@ class CallHierarchyPrepareTest {
       assertThat(data.ownerBinaryName()).isEqualTo("Service");
       assertThat(data.methodName()).isEqualTo("execute");
       assertThat(data.kind()).isEqualTo(ElementKind.METHOD);
-      assertThat(data.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+      assertThat(data.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_PACKAGE);
     }
   }
 

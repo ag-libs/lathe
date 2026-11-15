@@ -372,7 +372,7 @@ final class ReferenceSearch {
   private List<ModuleSearchPlan> planSearch(
       final ModuleSourceConfig cursorConfig, final ReferenceTarget target) {
     final Path packageRel =
-        target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_PACKAGE
             ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
             : null;
     return planSearchScope(target, declaringConfigFor(target, cursorConfig)).stream()
@@ -597,9 +597,9 @@ final class ReferenceSearch {
     final List<ModuleSourceConfig> candidates =
         switch (target.scope()) {
           case DECLARING_FILE -> List.of();
-          case DECLARING_MODULE ->
+          case DECLARING_PACKAGE ->
               cursorConfig != null
-                  ? state.moduleGraph().configsForModule(cursorConfig.moduleDir())
+                  ? state.moduleGraph().referenceSearchScope(cursorConfig)
                   : List.of();
           case REACTOR_MODULES ->
               cursorConfig != null
@@ -700,18 +700,6 @@ final class ReferenceSearch {
 
   private static List<DocumentHighlight> toHighlights(final List<ReferenceMatch> matches) {
     return matches.stream().map(ReferenceMatch::toHighlight).toList();
-  }
-
-  private static Path declaringPackageRel(final Path cursorPath, final ModuleSourceConfig config) {
-    if (config == null) {
-      return null;
-    }
-
-    return config.sourceRoots().stream()
-        .filter(cursorPath::startsWith)
-        .map(root -> root.relativize(cursorPath.getParent()))
-        .findFirst()
-        .orElse(null);
   }
 
   static boolean isInPackageScope(
@@ -1269,8 +1257,8 @@ final class ReferenceSearch {
     }
 
     final Path packageRel =
-        target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
-            ? declaringPackageRel(declaringPath, declaringConfig.orElse(null))
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_PACKAGE
+            ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
             : null;
 
     final IncomingScope scope = incomingSearchScope(target, data, declaringConfig.orElse(null));

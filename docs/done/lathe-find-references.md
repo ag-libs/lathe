@@ -593,11 +593,12 @@ Generated sources are not synced: only a Maven sync rewrites them, and that rebu
 
 ### Slice 7 — Scope Tightening ✅
 
-`SearchScope` has three values: `DECLARING_FILE`, `DECLARING_MODULE`, and `REACTOR_MODULES`.
+`SearchScope` has three values: `DECLARING_FILE`, `DECLARING_PACKAGE`, and `REACTOR_MODULES`.
 Locals, parameters, and private members use `DECLARING_FILE` and short-circuit to the cursor file
 only, with no index lookup and no disk reads.
-Package-private symbols (`DECLARING_MODULE`) filter candidates to the declaring package directory
-across all source trees of the module.
+Package-private symbols (`DECLARING_PACKAGE`) filter candidates to the declaring package directory,
+in every module that can see the declaration: a module sharing the package, such as a test module,
+may use them.
 Performance caps (partial results, file-count limits) are deferred post-v1.
 
 ### Slice 8 — Rename Foundation ✅
