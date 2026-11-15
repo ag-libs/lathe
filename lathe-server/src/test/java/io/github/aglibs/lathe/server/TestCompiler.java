@@ -414,13 +414,14 @@ public final class TestCompiler {
         false);
   }
 
-  // A Gradle source set's tree beyond main and test, as a sync writes its params: test code.
+  // A Gradle source set's tree beyond main and test, as a sync writes its params.
   public static void writeSourceSetParams(
       final Path workspaceRoot,
       final String moduleName,
       final String sourceSet,
       final Path sourceRoot,
-      final List<Path> classpath)
+      final List<Path> classpath,
+      final boolean testCode)
       throws IOException {
     writeTreeParams(
         workspaceRoot,
@@ -431,7 +432,7 @@ public final class TestCompiler {
         classpath,
         List.of(),
         List.of(),
-        true);
+        testCode);
   }
 
   private static void writeTreeParams(

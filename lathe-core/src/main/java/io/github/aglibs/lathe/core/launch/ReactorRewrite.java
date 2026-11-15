@@ -90,10 +90,8 @@ public final class ReactorRewrite {
   }
 
   private Stream<String> classPathEntries(final String path) {
-    final Path entry = Path.of(path);
-    return allMirrors.containsKey(entry.normalize())
-        ? expand(entry).stream().map(Path::toString)
-        : Stream.of(path);
+    final List<Path> mirrors = allMirrors.get(Path.of(path).normalize());
+    return mirrors == null ? Stream.of(path) : mirrors.stream().map(Path::toString);
   }
 
   public Map<String, String> toLathe(final Map<String, String> paths) {
