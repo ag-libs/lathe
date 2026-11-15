@@ -95,6 +95,25 @@ class McpTextTest {
         .asString()
         .startsWith("3 module(s); build them with `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(text).endsWith("`%s`.".formatted(LatheLayout.captureTestsCommand("<module>")));
+    assertThat(text).doesNotContain("Kotlin");
+  }
+
+  // A module of only Kotlin sources is none Lathe compiles: the summary names it apart, and every
+  // one, past the ten a long list of dependents is cut to.
+  @Test
+  void modulesResult_workspaceWithKotlin_namesEveryKotlinModule() {
+    final List<String> kotlin = IntStream.rangeClosed(1, 11).mapToObj("kt%02d"::formatted).toList();
+    final String text =
+        text(
+            McpText.modulesResult(
+                List.of(new LatheModuleSummary("app", List.of(), false, false)),
+                new LatheNotes(List.of(), List.of(), List.of(), false, kotlin)));
+
+    assertThat(text.lines())
+        .contains(
+            "app",
+            "Kotlin sources, which Lathe does not analyze, in: %s"
+                .formatted(String.join(", ", kotlin)));
   }
 
   @Test

@@ -7,7 +7,7 @@ import java.util.List;
 // and are unchanged since (path:line: message, fixed in code), what only a sync can fix (each with
 // its command), the asked-about files no module compiles (and whether a sync would), whether a
 // build holds the reactor lock, and the modules with Kotlin sources, which Lathe does not read:
-// only an answer about a symbol's uses shows those.
+// answers about a symbol's uses and the workspace summary show those, no other answer.
 public record LatheNotes(
     List<String> notCompiled,
     List<String> syncRequired,
