@@ -86,7 +86,7 @@ class LatheMcpToolsTest {
         .contains("file", "line", "column");
     assertThat(tool("format_file").tool().inputSchema().toString()).contains("file");
     assertThat(tool("fix_imports").tool().inputSchema().toString()).contains("file");
-    assertThat(tool("outline").tool().inputSchema().toString()).contains("file");
+    assertThat(tool("outline").tool().inputSchema().toString()).contains("file", "type");
   }
 
   @Test
@@ -288,6 +288,17 @@ class LatheMcpToolsTest {
     assertThat(text(result))
         .isEqualTo(
             "%s is outside the workspace and its dependency and JDK sources".formatted(link));
+  }
+
+  // A blank type names none: the outline is the whole file's, not an unknown type's error.
+  @Test
+  void outline_blankType_outlinesTheWholeFile() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final CallToolResult result = call("outline", Map.of("file", file.toString(), "type", " "));
+
+    assertThat(result.isError()).isFalse();
+    assertThat(text(result)).doesNotContain("No type");
   }
 
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the

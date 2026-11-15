@@ -321,15 +321,22 @@ final class LatheMcpTools {
             engine,
             mapper,
             "outline",
-            FILE_SCHEMA,
+            """
+                {"type":"object","required":["file"],
+                 "properties":{"file":{"type":"string",
+                   "description":"Absolute path to a .java file in this project."},
+                  "type":{"type":"string",
+                   "description":"Simple name of one type in the file: outline only its members."}}}""",
             READ_ONLY,
             """
                 A Java file's structure without reading it: every type, field, constructor and \
                 method in source order, indented by nesting, each with the line and column of its \
                 name and its declaration (`method sell  8:7: int sell(int count) {`), the position \
                 the other tools take. Use it to find a member before reading or editing that part \
-                of a large file.\
-                """,
+                of a large file. A file of more than %d declarations answers its types with their \
+                member counts; then pass `type` for one type's members.\
+                """
+                .formatted(McpText.OUTLINE_MAX_DECLARATIONS),
             LatheMcpTools::handleOutline),
         tool(
             engine,
@@ -577,7 +584,15 @@ final class LatheMcpTools {
         request,
         file ->
             render(
-                engine.outline(file), (items, notes) -> McpText.outlineResult(file, items, notes)));
+                engine.outline(file),
+                (items, notes) -> McpText.outlineResult(file, items, typeArg(request), notes)));
+  }
+
+  // A blank type names none: the whole file.
+  private static String typeArg(final CallToolRequest request) {
+    return Optional.ofNullable(stringArg(request, "type"))
+        .filter(name -> !name.isBlank())
+        .orElse(null);
   }
 
   // An enum argument by its constant's name, case-insensitive.

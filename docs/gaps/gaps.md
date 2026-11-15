@@ -2126,38 +2126,6 @@ None yet.
 
 ---
 
-## MC-59 — `outline` overflows on a large file
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `outline`.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-`outline` on `WorkspaceSession.java` (5,324 lines, 428 declarations) answered 57,670 characters, over
-Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
-The largest file is where an outline saves the most reading, and the one where the tool fails.
-Part of the size was the JSON form, gone since answers are text only ([MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)),
-but 428 lines of text would still be about 50k characters: the text form is about 120 characters per declaration
-(re-probed 2026-11-15; Helidon's largest test file, 157 declarations, answers 19k characters, uncapped).
-
-### Fix direction
-
-An optional `depth` (1 = the top-level types and their members, without nested types' members)
-and a `kinds` filter (types only, methods only).
-Above a size cap, answer with the types and their member counts and say how to ask for one type's members,
-instead of an answer the client cuts.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-61 — No overview of how a type's members are used
 
 **Status: documented**
