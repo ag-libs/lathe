@@ -384,6 +384,54 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
                     .doesNotContain("run"));
   }
 
+  // A package-private member is used wherever its package is, in another module too: a test module
+  // that shares the package of the code it tests, as JUnit's does. A same-named member of another
+  // type there is not it.
+  @Test
+  void rename_packagePrivateMethodUsedFromADependentModule_findsAndRenamesThere() throws Exception {
+    final String formatter =
+        "package com.example;\npublic class Formatter {\n  String format(String s) { return s; }\n}\n";
+    final Path declaration =
+        TestCompiler.writeMirroredModule(
+                tmp, "lib", Map.of("com/example/Formatter.java", formatter), List.of(), 1_000L)
+            .get(0);
+    final String caller =
+        "package com.example;\nclass FormatterCheck {\n"
+            + "  String run() { return new Formatter().format(\"a\"); }\n}\n";
+    final Path callerFile =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "check",
+                Map.of("com/example/FormatterCheck.java", caller),
+                List.of("lib"),
+                1_000L)
+            .get(0);
+    final String unrelated =
+        "package com.example;\nclass Other {\n  String format(String s) { return s; }\n"
+            + "  String run() { return format(\"b\"); }\n}\n";
+    final Path unrelatedFile =
+        TestCompiler.writeMirroredModule(
+                tmp, "tool", Map.of("com/example/Other.java", unrelated), List.of("lib"), 1_000L)
+            .get(0);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(formatter, "format");
+
+    assertThat(
+            engine
+                .references(declaration, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .references())
+        .extracting(reference -> reference.location().uri())
+        .anyMatch(uri -> uri.endsWith("FormatterCheck.java"))
+        .noneMatch(uri -> uri.endsWith("Other.java"));
+
+    renameAt(declaration, formatter, "format", "render");
+
+    assertThat(declaration).content().contains("String render(String s)");
+    assertThat(callerFile).content().contains("new Formatter().render(\"a\")");
+    assertThat(unrelatedFile).content().isEqualTo(unrelated);
+  }
+
   // A subtype implementing the interface method through a superclass outside the family, Thread's
   // (Worker) or a project class's that overrides nothing (Job), would lose its implementation. One
   // implemented through a superclass in the family renames with it.

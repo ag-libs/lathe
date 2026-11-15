@@ -1214,7 +1214,7 @@ class ReferenceLocatorTest {
   void searchScope_packagePrivateField_declaringModule() {
     final var analysis = compile(FIELD_SOURCE);
     final var target = targetAt(analysis, "String name", "name");
-    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_MODULE);
+    assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.DECLARING_PACKAGE);
   }
 
   @Test

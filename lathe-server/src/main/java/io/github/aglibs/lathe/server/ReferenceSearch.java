@@ -372,7 +372,7 @@ final class ReferenceSearch {
   private List<ModuleSearchPlan> planSearch(
       final ModuleSourceConfig cursorConfig, final ReferenceTarget target) {
     final Path packageRel =
-        target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_PACKAGE
             ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
             : null;
     return planSearchScope(target, declaringConfigFor(target, cursorConfig)).stream()
@@ -597,11 +597,7 @@ final class ReferenceSearch {
     final List<ModuleSourceConfig> candidates =
         switch (target.scope()) {
           case DECLARING_FILE -> List.of();
-          case DECLARING_MODULE ->
-              cursorConfig != null
-                  ? state.moduleGraph().configsForModule(cursorConfig.moduleDir())
-                  : List.of();
-          case REACTOR_MODULES ->
+          case DECLARING_PACKAGE, REACTOR_MODULES ->
               cursorConfig != null
                   ? state.moduleGraph().referenceSearchScope(cursorConfig)
                   : state.registry().allConfigs();
@@ -1269,7 +1265,7 @@ final class ReferenceSearch {
     }
 
     final Path packageRel =
-        target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_PACKAGE
             ? declaringPackageRel(declaringPath, declaringConfig.orElse(null))
             : null;
 
