@@ -49,13 +49,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
   // stale and no later write clears its failure; a file the library does not fix keeps its note.
   @Test
   void notes_syncAddsTheMissingLibrary_notCompiledOnlyWhatStillFails() throws Exception {
-    final Path library =
-        TestCompiler.writeAt(
-            tmp.resolve("lib-src/com/lib/Lib.java"),
-            "package com.lib; public class Lib {}",
-            1_000L);
-    final Path libraryClasses = tmp.resolve("lib-classes");
-    TestJavac.compileToDir(libraryClasses, library);
+    final Path libraryClasses = compileLibrary();
     final Path fixed =
         TestCompiler.writeModuleSource(
             tmp, "com/example/Fixed.java", "package com.example; class Fixed {}");
@@ -81,6 +75,40 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
         .singleElement()
         .asString()
         .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Broken.java")));
+  }
+
+  // A build that compiles the failed file without changing the workspace (no reload) stamps it.
+  @Test
+  void notes_buildCompilesTheFailedFile_notCompiledGoneWithoutAReload() throws Exception {
+    final Path libraryClasses = Files.createDirectories(tmp.resolve("lib-classes"));
+    final Path fixed =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Fixed.java", "package com.example; class Fixed {}");
+    TestCompiler.writeModuleParams(
+        tmp, "module", tmp.resolve("module/src/main/java"), null, List.of(libraryClasses));
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fixed).value();
+
+    Files.writeString(fixed, "package com.example; class Fixed { com.lib.Lib lib; }");
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(1);
+
+    compileLibrary();
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), List.of(libraryClasses), fixed);
+    stampModule(fixed);
+
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).isEmpty();
+  }
+
+  // com.lib.Lib, compiled into lib-classes.
+  private Path compileLibrary() throws Exception {
+    final Path library =
+        TestCompiler.writeAt(
+            tmp.resolve("lib-src/com/lib/Lib.java"),
+            "package com.lib; public class Lib {}",
+            1_000L);
+    final Path libraryClasses = tmp.resolve("lib-classes");
+    TestJavac.compileToDir(libraryClasses, library);
+    return libraryClasses;
   }
 
   // A sync cannot add a file outside a synced module's source roots, nor one in a module the

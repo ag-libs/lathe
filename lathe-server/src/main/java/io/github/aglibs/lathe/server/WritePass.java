@@ -154,13 +154,11 @@ final class WritePass {
   }
 
   // A reload replaces the configs and workers a running pass writes through: the pass started
-  // before it stops writing, and the lombok.config state is read afresh. Failures came from the old
-  // build: the sync compiled the sources, and one still failing is stale and fails again.
+  // before it stops writing, and the lombok.config state is read afresh.
   void onReload() {
     eventLoop.checkOnLoop();
     lombokChangedSources.clear();
     lombokConfigMtimes = null;
-    failedCompiles.clear();
     passGeneration++;
   }
 
@@ -310,6 +308,8 @@ final class WritePass {
     }
 
     final StaleScan scan = withReported(staleModules(trees));
+    // A failed write keeps its source stale; once a build compiled the source, the failure is gone.
+    failedCompiles.keySet().retainAll(Set.copyOf(scan.staleFiles()));
     final long sourcesMs = scanned.elapsedMs();
     // By mtime, not stamp: the MCP engine stamps the files it writes, so an editor's server on the
     // same workspace never finds them stale.
