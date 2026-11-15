@@ -947,7 +947,9 @@ public final class LatheEngine {
     // its callers are analyzed with its edited source instead, so they see what it declares now.
     final List<TransientSource> failedSources =
         plan.failedWrites().keySet().stream()
-            .map(file -> new TransientSource(LatheUri.fromPath(file), read(file)))
+            .map(LatheUri::fromPath)
+            .filter(contents::containsKey)
+            .map(uri -> new TransientSource(uri, contents.get(uri)))
             .toList();
     final Map<String, List<Diagnostic>> analyses =
         withFailedWrites(
@@ -1010,7 +1012,8 @@ public final class LatheEngine {
                     file -> changed.contains(file.getKey()),
                     Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
     return FeatureAnswers.concatAll(
-            byChanged.get(true).entrySet().stream().map(file -> checkedAlone(session, file)))
+            byChanged.get(true).entrySet().stream()
+                .map(file -> checkedAlone(session, file, context, cancel)))
         .thenCombine(
             session.features().diagnosticsTransientFuture(byChanged.get(false), context, cancel),
             (alone, batched) ->
@@ -1018,12 +1021,26 @@ public final class LatheEngine {
                     .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
+  // A changed file another changed file's failing write leaves stale classes for is checked with
+  // that file's edited source; the failing file itself, and any other file, alone.
   private static CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>> checkedAlone(
-      final WorkspaceSession session, final Map.Entry<String, String> file) {
+      final WorkspaceSession session,
+      final Map.Entry<String, String> file,
+      final List<TransientSource> context,
+      final CancelChecker cancel) {
+    final List<TransientSource> others =
+        context.stream().filter(source -> !source.uri().equals(file.getKey())).toList();
+    if (others.isEmpty()) {
+      return session
+          .features()
+          .diagnosticsTransientFuture(file.getKey(), file.getValue())
+          .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
+    }
+
     return session
         .features()
-        .diagnosticsTransientFuture(file.getKey(), file.getValue())
-        .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
+        .diagnosticsTransientFuture(Map.of(file.getKey(), file.getValue()), others, cancel)
+        .thenApply(checked -> List.copyOf(checked.entrySet()));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones

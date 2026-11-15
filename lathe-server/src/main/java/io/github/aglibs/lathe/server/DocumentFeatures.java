@@ -22,6 +22,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
+import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.run.TestCounterparts;
 import java.nio.file.Path;
 import java.util.*;
@@ -150,9 +151,9 @@ final class DocumentFeatures {
       final List<TransientSource> context,
       final CancelChecker cancelChecker) {
     eventLoop.checkOnLoop();
-    final Map<CompilationWorker, List<TransientSource>> byTree =
+    final Map<ModuleSourceConfig, List<TransientSource>> byTree =
         contents.entrySet().stream()
-            .flatMap(this::withTreeWorker)
+            .flatMap(this::withTree)
             .collect(
                 Collectors.groupingBy(
                     Map.Entry::getKey,
@@ -161,20 +162,42 @@ final class DocumentFeatures {
             byTree.entrySet().stream()
                 .flatMap(
                     tree ->
-                        checkedInChunks(tree.getKey(), tree.getValue(), context, cancelChecker)))
+                        checkedInChunks(
+                            state.registry().workerFor(tree.getKey()),
+                            tree.getValue(),
+                            seenBy(tree.getKey(), context),
+                            cancelChecker)))
         .thenApply(
             checked ->
                 checked.stream()
                     .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
-  private Stream<Map.Entry<CompilationWorker, TransientSource>> withTreeWorker(
+  private Stream<Map.Entry<ModuleSourceConfig, TransientSource>> withTree(
       final Map.Entry<String, String> file) {
     return state
         .registry()
-        .moduleWorkerFor(LatheUri.toPath(file.getKey()))
-        .map(worker -> Map.entry(worker, new TransientSource(file.getKey(), file.getValue())))
+        .moduleSourceFor(LatheUri.toPath(file.getKey()))
+        .map(tree -> Map.entry(tree, new TransientSource(file.getKey(), file.getValue())))
         .stream();
+  }
+
+  // The context a tree's files can see: of the tree itself or one it compiles against. Elsewhere a
+  // context source fails to resolve, and an error in a task makes javac skip flow analysis there.
+  private List<TransientSource> seenBy(
+      final ModuleSourceConfig tree, final List<TransientSource> context) {
+    return context.stream()
+        .filter(
+            source ->
+                state
+                    .registry()
+                    .moduleSourceFor(LatheUri.toPath(source.uri()))
+                    .filter(
+                        own ->
+                            own.equals(tree)
+                                || tree.compiledAgainst().contains(own.latheClassesDir()))
+                    .isPresent())
+        .toList();
   }
 
   private static Stream<CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>>>

@@ -12785,11 +12785,14 @@ a change that both removed a method its callers used and added a warning `-Werro
 
 The callers of a changed file whose write failed are analyzed with its edited source, which declares what they see, and the answer says so.
 The source is placed as rename's meaning check places another module's files; its own diagnostics stay those of its check alone.
+The other changed files are checked with it too, and it goes only into the trees that can see it: in another, it would fail to resolve and make javac skip flow analysis there.
 Errors in it make javac skip flow analysis for the callers analyzed with it, as an error in any file of a batch does.
 
 ### Regression targets
 
 - `LatheEngineVerifyTest.verifyChange_changeFailsTheBuildsCompileAndBreaksACaller_reportsTheCaller`
+- `LatheEngineVerifyTest.verifyChange_anotherChangedFileBrokenByAFailingChange_reportsIt`
+- `LatheEngineVerifyTest.verifyChange_failingChangeBesideAnUnrelatedModule_keepsThatModulesFlowErrors`
 
 ---
 
