@@ -77,6 +77,7 @@ final class RunCoordinator {
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
   private final ReactorTypeIndex reactorIndex;
+  private final ChangeVerifier verifier;
   // In-flight replays keyed by run token, from the moment a launch leaves the loop, so a cancel
   // reaches the right one. Loop-only: launch threads hand their JVM back through a rejoin.
   private final Map<String, RunSlot> activeRuns = new HashMap<>();
@@ -90,11 +91,13 @@ final class RunCoordinator {
       final LatheLanguageClient client,
       final ServerEventLoop eventLoop,
       final WorkspaceState state,
-      final ReactorTypeIndex reactorIndex) {
+      final ReactorTypeIndex reactorIndex,
+      final ChangeVerifier verifier) {
     this.client = client;
     this.eventLoop = eventLoop;
     this.state = state;
     this.reactorIndex = reactorIndex;
+    this.verifier = verifier;
   }
 
   CompletableFuture<LaunchOutcome> runFuture(final LaunchTarget target, final String token) {
@@ -134,25 +137,43 @@ final class RunCoordinator {
   private CompletableFuture<LaunchOutcome> startRun(
       final LaunchTarget target, final String token, final RunItem overlay) {
     final LaunchInputs inputs = launchInputs();
+    final Optional<String> failing = failingUnder(target);
     return run(
         target.module(),
         target.label(),
         token,
         overlay,
-        () -> prepare(inputs, target, overlay, JdwpOptions.NONE));
+        () ->
+            failing.isPresent()
+                ? notCompiling(failing.get())
+                : prepare(inputs, target, overlay, JdwpOptions.NONE));
   }
 
   private CompletableFuture<DebugStartResult> startDebug(
       final LaunchTarget target, final String token, final RunItem overlay) {
     final LaunchInputs inputs = launchInputs();
     final var jdwp = new JdwpOptions(IOUtil.unchecked(PortUtil::free));
+    final Optional<String> failing = failingUnder(target);
     return debug(
         target.module(),
         target.label(),
         token,
         overlay,
         jdwp,
-        () -> prepare(inputs, target, overlay, jdwp));
+        () ->
+            failing.isPresent()
+                ? notCompiling(failing.get())
+                : prepare(inputs, target, overlay, jdwp));
+  }
+
+  // A source of the target's module, or of one it depends on, that failed to compile: the launch
+  // would replay the last good classes, not the code on disk.
+  private Optional<String> failingUnder(final LaunchTarget target) {
+    return verifier.failingInModule(SourceLayout.moduleLatheDir(state.root(), target.module()));
+  }
+
+  private static Replay notCompiling(final String failing) {
+    return Replay.blocked(List.of("code it runs does not compile: %s".formatted(failing)));
   }
 
   private static Replay prepare(

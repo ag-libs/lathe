@@ -115,6 +115,7 @@ When sources or resources change **outside** the editor — a branch switch, a `
 It looks every 2 seconds while you work, and every 10 seconds once a minute has passed with no request from the editor and no change; the first change it finds brings it back to every 2 seconds.
 Saves, outside changes, and renames all go through the same write: changed files are compiled module by module in dependency order, and the open files they affect are re-checked once afterwards.
 A file that does not compile keeps its last good classes and is retried when it or a file it depends on changes.
+Until it compiles, a run, test or debug of its module, or of a module that depends on it, is blocked with its first error rather than replaying those classes.
 Several Lathe servers on one workspace (your editor's and an agent's) take turns writing `.lathe/`, so a change is compiled once, by whichever sees it first.
 While one of them writes, an agent's question waits at most 2 s for it, then is answered from `.lathe/` as it is; `verify_change` asks to re-check in a moment.
 

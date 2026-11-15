@@ -312,13 +312,14 @@ final class ChangeVerifier {
   // The first source that fails to compile in the file's module or one it depends on: code it runs
   // would be the last good classes, not what is on disk.
   Optional<String> failingUnder(final Path file) {
+    return moduleDirOf(file).flatMap(this::failingInModule);
+  }
+
+  // The same for a module, by its directory under .lathe.
+  Optional<String> failingInModule(final Path moduleDir) {
     final Set<Path> reach =
-        moduleDirOf(file)
-            .map(
-                dir ->
-                    Stream.concat(
-                        Stream.of(dir), state.moduleGraph().upstreamModuleDirs(dir).stream()))
-            .orElse(Stream.empty())
+        Stream.concat(
+                Stream.of(moduleDir), state.moduleGraph().upstreamModuleDirs(moduleDir).stream())
             .collect(Collectors.toUnmodifiableSet());
     return stillFailing()
         .filter(entry -> moduleDirOf(entry.getKey()).filter(reach::contains).isPresent())
