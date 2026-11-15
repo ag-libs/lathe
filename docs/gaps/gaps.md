@@ -778,6 +778,12 @@ Refuse a blueprint rename with the reason, as for Lombok members, or rename the 
 
 Also (exploratory round, 2026-11-04): renaming Dropwizard's JMH `parseDuration` leaves 10 generated callers with no note; `verify_change` says clean while `get_diagnostics` on the generated file shows the errors.
 
+Also (pre-release Gradle round, 2026-11-15): a generator that is not an annotation processor writes into a plain source root, which Lathe takes for hand-written code.
+Caffeine's `codeGen` source set compiles `build/generated/sources/local-cache`, written by its own JavaPoet task;
+`rename_symbol` on `FrequencySketch.ensureCapacity` edits 16 of its `*EvictionPolicy.java` files, which the next build overwrites and `git checkout` cannot undo,
+and only flags the generator's template (`AddMaximum.java:173`) as "Not renamed — review".
+Taking a source root inside the Gradle build directory as generated would leave those files to the generator, as annotation-processor output is.
+
 ### Regression targets
 
 None yet.
@@ -1246,6 +1252,33 @@ Two ways to need no exclusion are open:
 - **Move the mirror out of the project** into the per-user cache, leaving `.lathe/` the small files.
   No scanner or Docker context would see it, at the cost of a per-workspace cache and its cleanup.
   The mirror must stay outside `target/` and `build/`: it outlives a clean and a failed build (`lathe-gradle-support.md`).
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
+
+**Status: documented**
+
+**Value: low — Size: unknown**
+
+**Affects: MCP and editor answers right after a sync, on a module with many generated sources.**
+
+Found by the pre-release Gradle round (2026-11-15) on Caffeine.
+
+### Observed behaviour
+
+After `.lathe/lathe-sync.sh caffeine`, the MCP server recompiled the module's 493 generated sources twice in a row
+(28 s, then 22 s), and a `get_diagnostics` asked meanwhile answered after 43.8 s.
+Two reduced attempts (add a file, sync, delete it, sync) did not repeat it.
+
+### Fix direction
+
+Reproduce first: find what made the pass write the generated sources twice (a reload landing mid-pass, or stamps the sync
+rewrote after the first write).
 
 ### Regression targets
 
