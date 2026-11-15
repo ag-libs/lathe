@@ -476,7 +476,7 @@ None yet.
 
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
-**Status: accepted (server and Neovim shipped; VS Code pending).**
+**Status: deferred** (server and Neovim shipped; the VS Code command waits until VS Code client work resumes)
 
 **Value: high — Size: M**
 
