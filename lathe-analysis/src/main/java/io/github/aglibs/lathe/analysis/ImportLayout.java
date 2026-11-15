@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Position;
@@ -25,6 +26,7 @@ public record ImportLayout(List<ImportLine> imports, Position packageEnd) {
 
   public static final Position NO_PACKAGE = new Position(0, 0);
   private static final String STATIC_PREFIX = "static ";
+  private static final Set<String> JDK_PACKAGES = Set.of("java", "javax", "jdk");
   // Statics first, as google-java-format orders them, then by name.
   private static final Comparator<String> ORDER =
       Comparator.comparing((String spelling) -> !isStatic(spelling))
@@ -78,11 +80,9 @@ public record ImportLayout(List<ImportLine> imports, Position packageEnd) {
 
   // The kind's imports in blank-line-separated runs.
   private static List<List<ImportLine>> groups(final List<ImportLine> kind) {
-    final List<List<ImportLine>> groups = new ArrayList<>();
+    final var groups = new ArrayList<List<ImportLine>>();
     for (final ImportLine line : kind) {
-      if (groups.isEmpty()
-          || line.start().getLine()
-              > CollectionUtil.last(CollectionUtil.last(groups)).end().getLine() + 1) {
+      if (groups.isEmpty() || line.afterBlankLine()) {
         groups.add(new ArrayList<>());
       }
 
@@ -107,17 +107,17 @@ public record ImportLayout(List<ImportLine> imports, Position packageEnd) {
         .filter(
             group -> group.stream().anyMatch(line -> topLevelPackage(line.spelling()).equals(top)))
         .max(Comparator.comparingInt(group -> sharedSegments(group, spelling)))
-        .or(
-            () ->
-                groups.stream()
-                    .filter(
-                        group ->
-                            group.stream()
-                                    .map(line -> topLevelPackage(line.spelling()))
-                                    .distinct()
-                                    .count()
-                                > 1)
-                    .findFirst());
+        .or(() -> groups.stream().filter(ImportLayout::mixesPackages).findFirst());
+  }
+
+  // A group of several top-level packages, other than IntelliJ's block of the JDK's own (java,
+  // javax): a catch-all for the packages the order names no group for.
+  private static boolean mixesPackages(final List<ImportLine> group) {
+    final Set<String> packages =
+        group.stream()
+            .map(line -> topLevelPackage(line.spelling()))
+            .collect(Collectors.toUnmodifiableSet());
+    return packages.size() > 1 && !JDK_PACKAGES.containsAll(packages);
   }
 
   private static Insertion sortedInto(final List<ImportLine> group, final String spelling) {
@@ -178,8 +178,9 @@ public record ImportLayout(List<ImportLine> imports, Position packageEnd) {
     return spelling.startsWith(STATIC_PREFIX);
   }
 
-  // An existing import, where it starts and ends.
-  public record ImportLine(String spelling, Position start, Position end) {
+  // An existing import, where it starts and ends, and whether a blank line separates it from the
+  // import before it.
+  public record ImportLine(String spelling, Position start, Position end, boolean afterBlankLine) {
     public ImportLine {
       ValidCheck.check()
           .notNull(spelling, "spelling")

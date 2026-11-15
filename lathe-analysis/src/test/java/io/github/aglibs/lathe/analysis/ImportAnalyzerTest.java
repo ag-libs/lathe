@@ -110,8 +110,30 @@ class ImportAnalyzerTest {
             tuple(new Position(6, 41), "\nimport org.junit.Assert;\n\nimport zz.Last;"));
   }
 
+  // IntelliJ's default layout, its "all other imports" holding one package: the JDK's block is not
+  // a catch-all, so a new top-level package does not land in it.
+  @Test
+  void layout_intellijJdkBlock_keepsANewPackageOutOfIt() throws IOException {
+    final var layout =
+        layoutOf(
+            """
+            package com.example;
+
+            import org.a.A;
+
+            import javax.swing.JPanel;
+            import java.io.File;
+
+            class Foo {}
+            """);
+
+    assertThat(layout.edit("com.b.B"))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(new Position(2, 0), "import com.b.B;\n\n");
+  }
+
   // A single block may be a formatter's that never groups (google-java-format): a new top-level
-  // package joins it, without a blank line.
+  // package joins it, without a blank line, also when a comment line sits inside it.
   @Test
   void layout_singleBlock_sortsANewTopLevelPackageIntoIt() throws IOException {
     final var layout =
@@ -120,6 +142,7 @@ class ImportAnalyzerTest {
             package com.example;
 
             import org.apiguardian.api.API;
+            // a comment line, not a group break
             import org.jspecify.annotations.Nullable;
 
             class Foo {}

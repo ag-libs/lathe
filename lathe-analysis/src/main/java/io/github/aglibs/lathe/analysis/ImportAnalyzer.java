@@ -6,10 +6,14 @@ import com.sun.source.util.SourcePositions;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.TextEdit;
 
 public final class ImportAnalyzer {
+
+  private static final Pattern BLANK_LINE = Pattern.compile("\\n[ \\t\\r]*\\n");
 
   private final AttributedFileAnalysis analysis;
 
@@ -25,16 +29,24 @@ public final class ImportAnalyzer {
 
     final CompilationUnitTree cu = analysis.tree();
     final SourcePositions positions = analysis.trees().getSourcePositions();
+    // An import still being typed may have no end position yet.
+    final List<? extends ImportTree> complete =
+        cu.getImports().stream().filter(imp -> positions.getEndPosition(cu, imp) >= 0).toList();
+    final String source = DeclarationNames.source(cu).orElse("");
     final List<ImportLayout.ImportLine> lines =
-        cu.getImports().stream()
-            // An import still being typed may have no end position yet.
-            .filter(imp -> positions.getEndPosition(cu, imp) >= 0)
-            .map(
-                imp ->
-                    new ImportLayout.ImportLine(
-                        spelling(imp),
-                        Positions.offsetToPosition(cu, positions.getStartPosition(cu, imp)),
-                        Positions.offsetToPosition(cu, positions.getEndPosition(cu, imp))))
+        IntStream.range(0, complete.size())
+            .mapToObj(
+                i -> {
+                  final ImportTree imp = complete.get(i);
+                  final long start = positions.getStartPosition(cu, imp);
+                  return new ImportLayout.ImportLine(
+                      spelling(imp),
+                      Positions.offsetToPosition(cu, start),
+                      Positions.offsetToPosition(cu, positions.getEndPosition(cu, imp)),
+                      i > 0
+                          && blankLineBetween(
+                              source, positions.getEndPosition(cu, complete.get(i - 1)), start));
+                })
             .toList();
     final long packageEnd =
         cu.getPackage() == null ? -1 : positions.getEndPosition(cu, cu.getPackage());
@@ -42,6 +54,14 @@ public final class ImportAnalyzer {
         new ImportLayout(
             lines,
             packageEnd < 0 ? ImportLayout.NO_PACKAGE : Positions.offsetToPosition(cu, packageEnd)));
+  }
+
+  // Whether a blank line separates two imports: a comment line or an import still being typed
+  // between them does not.
+  private static boolean blankLineBetween(final String source, final long from, final long to) {
+    return from >= 0
+        && to <= source.length()
+        && BLANK_LINE.matcher(source.substring((int) from, (int) to)).find();
   }
 
   private static String spelling(final ImportTree imp) {

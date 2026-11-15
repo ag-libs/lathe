@@ -235,7 +235,7 @@ public final class DeclarationNames {
   }
 
   // The compilation unit's source text, empty when it cannot be read (logged).
-  private static Optional<String> source(final CompilationUnitTree cu) {
+  static Optional<String> source(final CompilationUnitTree cu) {
     try {
       return Optional.of(cu.getSourceFile().getCharContent(false).toString());
     } catch (final IOException e) {
