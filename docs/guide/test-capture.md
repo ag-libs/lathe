@@ -68,6 +68,12 @@ mvn test -Dlathe.capture.only=true                    # Maven
   `-DskipTests` is **not** a substitute: it skips the fork entirely, so nothing is captured.
   On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add
   `-DfailIfNoTests=false` so the test-free run stays green.
+  Such a run prints two kinds of `[WARNING]` lines, both expected:
+  Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, as each module starts one test class
+  and its tests are skipped, not run;
+  and `The following dependencies could not be resolved at this point of the build but seem to be part of
+  the reactor`, as the sync, which runs on the root project, resolves the modules before they are built.
+  The sync still completes.
 - **Gradle:** a capture-only run always starts the test JVM, never serving the task from the build cache or as
   up to date, and does not fail for running no tests. `-Plathe.capture.only=true` works on a plain test run
   too (`./gradlew test -Plathe.capture.only=true`).
