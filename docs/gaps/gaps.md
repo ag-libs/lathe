@@ -1259,6 +1259,36 @@ None yet.
 
 ---
 
+## WS-35 — Lombok in the analysis compile reads a `lombok.config` up to 2 seconds old
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: the editor's diagnostics of Lombok classes right after a `lombok.config` edit; `verify_change` is not affected.**
+
+Found while batching `verify_change`'s checks (2026-11-15).
+
+### Observed behaviour
+
+Lombok runs inside the analysis compile, which stays loaded between compiles, and caches each `lombok.config` it read:
+it looks at the file again only when more than 2 seconds passed since it last did (`FileSystemSourceCache.RECHECK_FILESYSTEM`, Lombok 1.18.48).
+An analysis within those 2 seconds of an edit to `lombok.config` generates members from the old settings:
+after removing `lombok.accessors.prefix += f`, a class still gets `getCount()` for its field `fCount`, and a caller of it shows no error.
+The write pass runs a fresh Lombok for each compile and is not affected.
+`verify_change` checks a changed file alone, against the classes its write produced, so it is not affected either;
+the editor's batched refresh of open files is.
+
+### Fix direction
+
+Analyze again the open Lombok classes below an edited `lombok.config` once 2 seconds passed, or run Lombok in the analysis from a fresh class loader after such an edit.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
 
 **Status: documented**
@@ -2632,8 +2662,9 @@ that `workspace.json` lists.
 
 ### Fix direction
 
-At least: when a module has Kotlin sources, say so in these answers (and stop claiming completeness), and list the `.kt`
-files that mention the name for review. Reading Kotlin is a separate decision.
+When a module has Kotlin sources, say so in these answers (and stop claiming completeness), and list the `.kt`
+files that mention the name for review.
+Lathe does not read Kotlin: its references, rename and checks stay Java-only.
 
 ### Regression targets
 
@@ -2747,6 +2778,34 @@ The cause is not found yet; `ChangeVerifier.moduleSummaries` lists every config 
 ### Fix direction
 
 Find why the registry or the summary drops the module, and list every module the last build compiled.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-89 — `verify_change` checks the callers of a change the build's compile fails against its old classes
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `verify_change`.**
+
+Found by the review of the MC-82 fix (2026-11-15).
+
+### Observed behaviour
+
+When a changed file's write fails, its classes in `.lathe/` stay the ones of its last good compile, and its callers are checked against those.
+A change that both removes a method its callers use and adds a warning `-Werror` fails reports the warning but no caller:
+`Caller` still compiles against the old `Callee.class`.
+The answer says the callers were checked against the last good compile, so it does not read as clean,
+but the broken callers appear only on the next check, after the warning is fixed.
+
+### Fix direction
+
+Check the callers of a changed file whose write failed against its edited source, analyzed with them, instead of its old classes.
 
 ### Regression targets
 
