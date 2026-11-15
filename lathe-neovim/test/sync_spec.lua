@@ -1,6 +1,6 @@
 -- Verifies lathe.sync: run executes the workspace's .lathe/lathe-sync.sh with --tests and module
--- arguments, at the workspace root; a missing script (a workspace synced by an older Lathe) is
--- reported instead of run; the toast names the script invocation the client ran; a
+-- arguments, at the workspace root; a missing script (a first build that stopped before its sync,
+-- or a workspace synced by an older Lathe) is reported instead of run; the toast names the script invocation the client ran; a
 -- concurrent sync for the same root is a no-op; an empty root does nothing; and the lathe/sync
 -- handler dispatches to run. Stubs vim.system so no build is spawned.
 --
@@ -87,16 +87,33 @@ spec.check(
   true
 )
 
--- A workspace synced by an older Lathe has no script: say so and run nothing.
+-- A first build that stopped before its sync left no workspace.json and no script: run
+-- :LatheInit again.
 missing["/ws/old/.lathe/lathe-sync.sh"] = true
 local before_old = #calls
 sync.run("/ws/old", false)
 spec.check("missing script runs nothing", #calls, before_old)
 spec.check(
+  "missing script after an unfinished first build names :LatheInit",
+  notes[#notes]:find("stopped before it set Lathe up", 1, true) ~= nil,
+  true
+)
+
+-- A workspace synced by an older Lathe has workspace.json but no script: say so.
+local legacy = vim.fn.tempname()
+vim.fn.mkdir(legacy .. "/.lathe", "p")
+local manifest = assert(io.open(legacy .. "/.lathe/workspace.json", "w"))
+manifest:write("{}")
+manifest:close()
+missing[legacy .. "/.lathe/lathe-sync.sh"] = true
+sync.run(legacy, false)
+spec.check("missing script runs nothing for an older sync", #calls, before_old)
+spec.check(
   "missing script names the older Lathe",
   notes[#notes]:find("older Lathe", 1, true) ~= nil,
   true
 )
+vim.fn.delete(legacy, "rf")
 
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run("/ws/b", false)

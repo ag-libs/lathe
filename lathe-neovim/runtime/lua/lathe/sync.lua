@@ -15,6 +15,9 @@ local M = {}
 -- own first command).
 M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project); "
   .. "for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`."
+-- A first build that stopped before its sync left `.lathe/` with no launcher and no script.
+M.UNFINISHED_HINT = "the first Lathe build of this project stopped before it set Lathe up: "
+  .. "fix what stopped it and run `:LatheInit` again."
 
 -- Guard against overlapping syncs for the same root (a second prompt/command while one is running).
 local running = {}
@@ -180,9 +183,10 @@ function M.run(root, capture_tests, modules, opts)
     local script = vim.fs.joinpath(root, SCRIPT)
     if vim.fn.executable(script) ~= 1 then
       vim.notify(
-        "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the "
-          .. "Lathe build plugin and sync once: "
-          .. M.SETUP_HINT,
+        require("lathe.workspace").first_build_unfinished(root) and "Lathe: " .. M.UNFINISHED_HINT
+          or "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. "
+            .. "Update the Lathe build plugin and sync once: "
+            .. M.SETUP_HINT,
         vim.log.levels.WARN
       )
       return

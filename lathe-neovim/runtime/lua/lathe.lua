@@ -96,9 +96,10 @@ function M.start(bufnr)
 end
 
 -- Nudge for the silent failure modes: a Java buffer is open but Lathe can't serve it because the
--- client was never configured, no `.lathe/` workspace exists (the Lathe Maven build isn't
--- configured, or the project hasn't been synced), or the workspace was synced by a Lathe older than
--- the per-workspace launcher link (so the server never starts). All otherwise fail silently.
+-- client was never configured, the file is in no build Lathe can set up, no `.lathe/` workspace
+-- exists (the project isn't set up yet), the first build stopped before it set Lathe up, or the
+-- workspace was synced by a Lathe older than the per-workspace launcher link (so the server never
+-- starts). All otherwise fail silently.
 --
 -- Called from ftplugin/java.lua, the one place that runs even when `setup()` was
 -- never called. Fires at most once per session (re-armed by setup()).
@@ -116,10 +117,18 @@ function M.warn_if_not_ready(bufnr)
   local msg
   if not M._configured then
     msg = 'Lathe: plugin installed but not configured -- call `require("lathe").setup()`.'
+  elseif
+    root == nil
+    and not require("lathe.latheinit").find_build(vim.fs.dirname(vim.api.nvim_buf_get_name(bufnr)))
+  then
+    msg = "Lathe: no Maven, Gradle or OpenJDK build around this file, and Lathe sets up only a "
+      .. "build (a folder of plain Java files is not supported yet)."
   elseif root == nil then
     msg = "Lathe: this project isn't set up yet (no `.lathe/` workspace): "
       .. require("lathe.sync").SETUP_HINT
       .. " Then `:LatheSync` keeps it synced."
+  elseif workspace.first_build_unfinished(root) then
+    msg = "Lathe: " .. require("lathe.sync").UNFINISHED_HINT
   else
     msg = "Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. "
       .. "Update the Lathe build plugin (Maven: lathe-maven-extension 0.1.16 or later) and sync again: "
@@ -161,7 +170,7 @@ end
 -- pinned by the `lathe-maven-extension` in the build, so an older/absent server means that pin must
 -- be bumped (re-running the sync alone reinstalls the same version); a newer server means the client
 -- must be updated. Called from on_init, so it runs once per server (re)start.
-function M.check_protocol(server_protocol)
+function M.check_protocol(server_protocol, root)
   local client_protocol = require("lathe.version").PROTOCOL
   if server_protocol == client_protocol then
     return
@@ -169,8 +178,14 @@ function M.check_protocol(server_protocol)
 
   local msg
   if type(server_protocol) ~= "number" or server_protocol < client_protocol then
-    msg = "Lathe: server is older than this client -- update the Lathe build plugin in your build "
-      .. "(Maven: the `lathe-maven-extension` version) and sync again."
+    -- A project set up from outside by :LatheInit has no version in its build to bump.
+    local build = root and require("lathe.latheinit").build_at(root)
+    local remedy = build
+        and not build.registered
+        and "run `:LatheInit` to set this project up at this client's version."
+      or "update the Lathe build plugin in your build (Maven: the `lathe-maven-extension` version) "
+        .. "and sync again."
+    msg = "Lathe: server is older than this client -- " .. remedy
   else
     msg =
       "Lathe: client is older than this server -- update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull)."
@@ -227,7 +242,10 @@ function M.setup(opts)
       M.on_server_exit(code)
     end,
     on_init = function(client)
-      M.check_protocol(vim.tbl_get(client, "server_capabilities", "experimental", "latheProtocol"))
+      M.check_protocol(
+        vim.tbl_get(client, "server_capabilities", "experimental", "latheProtocol"),
+        client.root_dir
+      )
     end,
     root_dir = function(bufnr, on_dir)
       local r = M.get_root(bufnr)

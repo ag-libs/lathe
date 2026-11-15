@@ -28,6 +28,12 @@ function M.launcher_path(root)
   return vim.fs.normalize(root) .. "/" .. M.ROOT_MARKER .. "/lathe-launcher.sh"
 end
 
+--- Whether the build that made root's `.lathe/` stopped before its sync (at a POM or dependency
+--- error): the sync writes workspace.json, so `.lathe/` without it was never set up.
+function M.first_build_unfinished(root)
+  return vim.uv.fs_stat(vim.fs.joinpath(root, M.ROOT_MARKER, "workspace.json")) == nil
+end
+
 -- The last root a buffer resolved to, for a cache buffer that has no marker of its own.
 local last_root = nil
 
