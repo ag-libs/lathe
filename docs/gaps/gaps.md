@@ -2003,7 +2003,7 @@ None yet.
 
 ## MC-50 — `call_hierarchy` returns one level per call
 
-**Status: documented**
+**Status: deferred** (2026-11-15: a new capability, not a defect; one level per call is what the tool says it answers)
 
 **Value: medium — Size: M**
 
