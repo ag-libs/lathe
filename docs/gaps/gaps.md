@@ -2615,32 +2615,6 @@ None yet.
 
 ---
 
-## MC-81 — `verify_change` after a `module-info.java` edit checks only `module-info.java`
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP `verify_change`.**
-
-Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
-
-### Observed behaviour
-
-Removing `requires static java.sql;` (or `requires org.objenesis;`) from `equalsverifier-core`'s `module-info.java`:
-`verify_change` says "No errors", and the log shows `[verify] 1 file(s)`. `get_diagnostics` on `JavaSqlValueSupplier.java`
-reports "package java.sql is not visible".
-
-### Fix direction
-
-A changed `module-info.java` affects every source of its module (and the modules reading it): check the module's sources.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-82 — `verify_change` says clean when the change fails only the build's Error Prone and `-Werror`
 
 **Status: documented**

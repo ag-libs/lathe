@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
@@ -134,12 +135,12 @@ final class ChangeVerifier {
     return Files.notExists(file) ? compiled == null : ServerFiles.hasContent(file, compiled);
   }
 
-  // Files to diagnose for verify_change, by module: each changed file, then the files that mention
-  // its type in its module or one downstream of it, the changed files' modules first.
+  // Files to diagnose for verify_change, by module: each changed file, then the files that see it,
+  // the changed files' modules first.
   Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
     final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
     changed.forEach(file -> addVerifyTarget(byModule, file));
-    changed.forEach(file -> referrers(file).forEach(path -> addVerifyTarget(byModule, path)));
+    changed.forEach(file -> seenBy(file).forEach(path -> addVerifyTarget(byModule, path)));
     return Collections.unmodifiableMap(
         byModule.entrySet().stream()
             .collect(
@@ -163,6 +164,24 @@ final class ChangeVerifier {
                     .computeIfAbsent(
                         SourceLayout.moduleRel(state.root(), dir), k -> new LinkedHashSet<>())
                     .add(file));
+  }
+
+  // A module descriptor is named by no file, yet decides what every source of its module may read,
+  // so all of them see it; the modules reading it are left to the sync the answer suggests.
+  private List<Path> seenBy(final Path file) {
+    return file.getFileName().toString().equals(LatheLayout.MODULE_INFO_JAVA)
+        ? moduleSources(file)
+        : referrers(file);
+  }
+
+  private List<Path> moduleSources(final Path descriptor) {
+    final Optional<Path> moduleDir = moduleDirOf(descriptor);
+    return state.registry().allConfigs().stream()
+        .filter(config -> moduleDir.filter(config.moduleDir()::equals).isPresent())
+        .flatMap(config -> config.sourceRoots().stream())
+        .flatMap(
+            root -> IOUtil.unchecked(() -> FileUtil.walkFiles(root, FileUtil::isJavaFile)).stream())
+        .toList();
   }
 
   // Matched by type-name token: may over-select (a file that only mentions the name) but never
