@@ -15,6 +15,9 @@ import java.util.logging.Logger;
 public final class LatheLogging {
 
   private static final String LATHE_LOGGER = "io.github.aglibs.lathe";
+  // Held so the filter set on it outlives a collection of loggers nothing else references.
+  private static final Logger RPC_LOGGER =
+      Logger.getLogger("org.eclipse.lsp4j.jsonrpc.RemoteEndpoint");
 
   private LatheLogging() {}
 
@@ -33,6 +36,11 @@ public final class LatheLogging {
     if (System.getenv("LATHE_DEBUG") != null) {
       lathe.setLevel(Level.FINE);
     }
+
+    // lsp4j warns when an editor cancels a request it has already answered, which the protocol
+    // allows (Neovim does it while typing); its other warnings stay.
+    RPC_LOGGER.setFilter(
+        record -> !String.valueOf(record.getMessage()).startsWith("Unmatched cancel notification"));
   }
 
   // Attach an appending file sink beside the console one, so the server's logs land in a fixed,
