@@ -12861,7 +12861,7 @@ and a long answer is hard to scan.
 ### Resolution
 
 The engine sorts every capped location list in one order before capping it (`find_references`, `find_implementations`, `analyze_change`'s family, incoming `call_hierarchy`): the project's own sources, then its generated ones, then the JDK's and dependencies', by file within each, then by position.
-By file keeps a module's results together and its main sources before its tests; outgoing calls keep their source order.
+By file keeps a module's results together, and in the usual layout its main sources before its tests; outgoing calls keep their source order.
 `search_symbols` ranks the reactor's generated types after its hand-written ones (MC-39).
 
 ### Regression targets

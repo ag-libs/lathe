@@ -950,8 +950,9 @@ public final class LatheEngine {
   }
 
   // The order every capped list answers in: the project's own sources, then its generated ones,
-  // then the JDK's and dependencies'; by file within each, which keeps a module's together and its
-  // main sources before its tests, then by position. A cap then keeps what the agent edits.
+  // then the JDK's and dependencies'; by file within each, which keeps a module's together (in the
+  // usual layout its main sources before its tests), then by position. A cap then keeps what the
+  // agent edits.
   private Comparator<Location> locationOrder() {
     return Comparator.comparing((Location location) -> origin(LatheUri.toPath(location.getUri())))
         .thenComparing(Location::getUri)
