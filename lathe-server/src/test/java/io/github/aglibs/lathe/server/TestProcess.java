@@ -27,11 +27,16 @@ public final class TestProcess {
     return Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), LatheLayout.BIN_DIR, "java");
   }
 
-  // What follows the tool in a template whose tool is this JDK's java (%MVN%).
+  // What follows the tool in a template whose tool is this JDK's java (%MVN%). Without perf data
+  // the JVM keeps no hsperfdata file, whose lock, when another process holds it, makes it print a
+  // warning on stdout, into the output a test compares.
   public static List<String> toolArgs(final String... args) {
     return Stream.concat(
             Stream.of(
-                "-cp", TestJavac.jarOf(TestProcess.class).toString(), TestProcess.class.getName()),
+                "-XX:-UsePerfData",
+                "-cp",
+                TestJavac.jarOf(TestProcess.class).toString(),
+                TestProcess.class.getName()),
             Stream.of(args))
         .toList();
   }
