@@ -2729,32 +2729,6 @@ None yet.
 
 ---
 
-## MC-88 — `workspace_summary` leaves out a compiled module
-
-**Status: documented**
-
-**Affects: MCP `workspace_summary`.**
-
-Found by the re-probe of MC-83 (2026-11-15) on EqualsVerifier.
-
-### Observed behaviour
-
-After a sync on JDK 26, `.lathe/` holds compile parameters for 8 Java modules, but `workspace_summary` reports 7:
-`equalsverifier-26` is missing.
-It has a test tree only and no `test-discovery.json`, and sits in the `modules-jdk26` profile (`<jdk>[26,)</jdk>`), which that sync ran.
-Other test-only modules (`equalsverifier-test`, `equalsverifier-test-mockito`) are listed.
-The cause is not found yet; `ChangeVerifier.moduleSummaries` lists every config in the module registry, so the module is likely not loaded.
-
-### Fix direction
-
-Find why the registry or the summary drops the module, and list every module the last build compiled.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-89 — `verify_change` checks the callers of a change the build's compile fails against its old classes
 
 **Status: documented**
