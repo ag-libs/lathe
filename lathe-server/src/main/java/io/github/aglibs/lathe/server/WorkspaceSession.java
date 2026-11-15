@@ -22,7 +22,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -58,6 +59,10 @@ final class WorkspaceSession {
   private final long debounceMs;
   private final WorkspaceState state;
   private final ReactorTypeIndex reactorIndex;
+  // The type index refresh after a build scans here, off the event loop: one thread, as one scan
+  // runs at a time, apart from the common pool the index rebuilds use.
+  private final ExecutorService typeIndexScans =
+      Executors.newSingleThreadExecutor(WorkspaceSession::newTypeIndexScanThread);
   private final RunCoordinator runs;
   private final FeatureRouter router;
   private final DocumentFeatures features;
@@ -109,7 +114,7 @@ final class WorkspaceSession {
     this.publisher = new DiagnosticPublisher(client, docs);
     this.state = new WorkspaceState(eventLoop);
     this.reactorIndex =
-        new ReactorTypeIndex(eventLoop, state, this::openSourcePaths, ForkJoinPool.commonPool());
+        new ReactorTypeIndex(eventLoop, state, this::openSourcePaths, typeIndexScans);
     this.router = new FeatureRouter(eventLoop, state, docs);
     this.features = new DocumentFeatures(state, reactorIndex, router, docs, client, eventLoop);
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
@@ -229,7 +234,14 @@ final class WorkspaceSession {
     }
 
     formats.close();
+    typeIndexScans.shutdownNow();
     state.registry().close();
+  }
+
+  private static Thread newTypeIndexScanThread(final Runnable task) {
+    final var thread = new Thread(task, "lathe-type-index");
+    thread.setDaemon(true);
+    return thread;
   }
 
   // The heap is still mostly full after a collection: the sessions of modules with no open document
@@ -790,7 +802,7 @@ final class WorkspaceSession {
   private void refreshReactorTypeIndex() {
     final var t = Stopwatch.start();
     reactorIndex.load();
-    LOG.info(() -> "[refresh] reactor type index %dms".formatted(t.elapsedMs()));
+    LOG.info(() -> "[reload] reactor type index %dms".formatted(t.elapsedMs()));
   }
 
   private void refreshOpenDocuments() {
