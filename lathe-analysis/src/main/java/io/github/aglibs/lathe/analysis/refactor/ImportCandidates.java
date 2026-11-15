@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis.refactor;
 
+import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
@@ -26,9 +27,12 @@ public final class ImportCandidates {
 
   private ImportCandidates() {}
 
+  // typeArguments: how many the use passes (List<String> passes one); 0 for a bare name, which any
+  // type of the name fits.
   public static List<String> resolve(
       final String simpleName,
       final Scope scope,
+      final int typeArguments,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex,
       final Set<String> alreadyImported) {
@@ -40,9 +44,36 @@ public final class ImportCandidates {
                     && !entry.packageName().isEmpty()
                     && !alreadyImported.contains(entry.binaryName()))
         .filter(entry -> IndexTypes.usable(entry, analysis, scope, typeIndex))
+        .filter(entry -> takes(entry, typeArguments, analysis))
         .map(TypeIndexEntry::binaryName)
         .distinct()
         .toList();
+  }
+
+  // A type that cannot be loaded is kept: nothing says it does not fit.
+  private static boolean takes(
+      final TypeIndexEntry entry, final int typeArguments, final AttributedFileAnalysis analysis) {
+    if (typeArguments == 0) {
+      return true;
+    }
+
+    final TypeElement type = analysis.elements().getTypeElement(entry.qualifiedName());
+    return type == null || type.getTypeParameters().size() == typeArguments;
+  }
+
+  // How many type arguments the name at a position is given: one for List in List<String>, none
+  // for a bare name or a diamond.
+  public static int typeArgumentsAt(final Position at, final AttributedFileAnalysis analysis) {
+    final long offset = Positions.toOffset(analysis.tree(), at.getLine(), at.getCharacter());
+    final TreePath path = CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);
+    if (path == null
+        || path.getParentPath() == null
+        || !(path.getParentPath().getLeaf() instanceof final ParameterizedTypeTree generic)
+        || generic.getType() != path.getLeaf()) {
+      return 0;
+    }
+
+    return generic.getTypeArguments().size();
   }
 
   // The nested types of this simple name accessible in the scope, to write qualified (Map.Entry),

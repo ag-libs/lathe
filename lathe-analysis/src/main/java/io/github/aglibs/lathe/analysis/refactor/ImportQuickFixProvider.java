@@ -19,6 +19,7 @@ import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -29,14 +30,21 @@ public final class ImportQuickFixProvider {
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
-    final Scope scope = ImportCandidates.scopeAt(request.diag().getRange().getStart(), analysis);
+    final Position at = request.diag().getRange().getStart();
+    final Scope scope = ImportCandidates.scopeAt(at, analysis);
+    final int typeArguments = ImportCandidates.typeArgumentsAt(at, analysis);
     final List<Either<Command, CodeAction>> imports =
         importActions(
             request,
             analysis,
             alreadyImported ->
                 ImportCandidates.resolve(
-                    request.payload().name(), scope, analysis, typeIndex, alreadyImported));
+                    request.payload().name(),
+                    scope,
+                    typeArguments,
+                    analysis,
+                    typeIndex,
+                    alreadyImported));
     return Stream.concat(
             imports.stream(), qualifyActions(request, analysis, typeIndex, scope).stream())
         .toList();

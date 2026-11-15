@@ -164,6 +164,57 @@ class LatheEngineEditTest extends LatheEngineTestBase {
             new MissingImport("Slot", List.of(), List.of("com.example.util.Registry.Slot")));
   }
 
+  // A name a missing supertype nests waits for that supertype's import, which makes it resolve, so
+  // the other type of that name is never imported in its place.
+  @Test
+  void fixImports_supertypeNestsAName_importsTheSupertypeOnly() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/health/Check.java",
+        "package com.example.health; public abstract class Check {"
+            + " public static class Result {} protected abstract Result check(); }");
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/xml/Result.java", "package com.example.xml; public class Result {}");
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/app/Probe.java",
+            "package com.example.app;\nclass Probe extends Check {\n"
+                + "  protected Result check() { return null; }\n}\n");
+    engine = new LatheEngine(tmp);
+
+    final LatheImports imports = engine.fixImports(source);
+
+    assertThat(imports.added()).containsExactly("com.example.health.Check");
+    assertThat(imports.unresolved()).isEmpty();
+    assertThat(Files.readString(source)).doesNotContain("com.example.xml.Result");
+  }
+
+  // A use with type arguments takes only a type with as many parameters; a bare name takes any.
+  @Test
+  void fixImports_genericUse_onlyTheTypeTakingItsTypeArguments() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/a/Box.java", "package com.example.a; public class Box {}");
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/b/Box.java", "package com.example.b; public class Box<T> {}");
+    final Path generic =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/app/Generic.java",
+            "package com.example.app;\nclass Generic {\n  Box<String> box;\n}\n");
+    final Path bare =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/app/Bare.java",
+            "package com.example.app;\nclass Bare {\n  Box box;\n}\n");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.fixImports(generic).added()).containsExactly("com.example.b.Box");
+    assertThat(engine.fixImports(bare).unresolved())
+        .extracting(MissingImport::name, MissingImport::candidates)
+        .containsExactly(tuple("Box", List.of("com.example.a.Box", "com.example.b.Box")));
+  }
+
   // A call that another file of the same scope imports statically gets that static import, learned
   // from the workspace's own import lines with nothing configured.
   @Test
