@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -18,15 +19,19 @@ import java.util.stream.Stream;
  */
 public final class ReactorRewrite {
 
-  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of());
+  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of(), Set.of());
 
   // An output with every mirror it stands for, in the order listed: a Gradle jar that packs a
   // second source set's classes stands for both trees.
   private final Map<Path, List<Path>> allMirrors;
   private final Map<Path, Path> firstMirrors;
+  // Shaded jars: the module's own classes in them name the relocated packages, so a launch runs
+  // the jar alone, while analysis takes the mirror and then the jar for the relocated classes.
+  private final Set<Path> keptJars;
 
-  private ReactorRewrite(final Map<Path, List<Path>> allMirrors) {
+  private ReactorRewrite(final Map<Path, List<Path>> allMirrors, final Set<Path> keptJars) {
     this.allMirrors = allMirrors;
+    this.keptJars = keptJars;
     this.firstMirrors =
         allMirrors.entrySet().stream()
             .collect(
@@ -52,7 +57,13 @@ public final class ReactorRewrite {
         mirrors.entrySet().stream()
             .collect(
                 Collectors.toUnmodifiableMap(
-                    Map.Entry::getKey, listed -> List.copyOf(listed.getValue()))));
+                    Map.Entry::getKey, listed -> List.copyOf(listed.getValue()))),
+        Set.of());
+  }
+
+  // The same rewrite keeping each of the jars (shaded ones) as described at keptJars.
+  public ReactorRewrite keeping(final Set<Path> jars) {
+    return new ReactorRewrite(allMirrors, Set.copyOf(jars));
   }
 
   public static ReactorRewrite none() {
@@ -64,16 +75,29 @@ public final class ReactorRewrite {
     return firstMirrors;
   }
 
-  // Every mirror the path stands for, or the path itself when it is not a listed output.
+  // Whether a launch runs this output as itself.
+  public boolean kept(final Path path) {
+    return keptJars.contains(path.normalize());
+  }
+
+  // Analysis: every mirror the path stands for (a kept jar itself after them), or the path itself
+  // when it is not a listed output.
   public List<Path> expand(final Path path) {
-    return allMirrors.getOrDefault(path.normalize(), List.of(path));
+    final Path normal = path.normalize();
+    final List<Path> mirrors = allMirrors.getOrDefault(normal, List.of(path));
+    return kept(normal) ? Stream.concat(mirrors.stream(), Stream.of(normal)).toList() : mirrors;
   }
 
   public Path toLathe(final Path path) {
     return firstMirrors.getOrDefault(path.normalize(), path);
   }
 
+  // A launch's path, as its launch file holds it: a kept jar stays itself.
   public String toLathe(final String path) {
+    if (kept(Path.of(path))) {
+      return path;
+    }
+
     return Optional.ofNullable(firstMirrors.get(Path.of(path).normalize()))
         .map(Path::toString)
         .orElse(path);
@@ -91,7 +115,9 @@ public final class ReactorRewrite {
 
   private Stream<String> classPathEntries(final String path) {
     final List<Path> mirrors = allMirrors.get(Path.of(path).normalize());
-    return mirrors == null ? Stream.of(path) : mirrors.stream().map(Path::toString);
+    return mirrors == null || kept(Path.of(path))
+        ? Stream.of(path)
+        : mirrors.stream().map(Path::toString);
   }
 
   public Map<String, String> toLathe(final Map<String, String> paths) {

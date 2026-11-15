@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
@@ -13,6 +14,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -170,6 +173,44 @@ final class CompletenessGateTest {
         .singleElement()
         .asString()
         .startsWith("%s no longer exists".formatted(deleted));
+  }
+
+  // A shaded jar runs as itself, not as its mirror: the run says it takes the last build's jar, and
+  // once the jar is gone it is blocked, naming it.
+  @Test
+  void verify_shadedJar_openWithNote_blockedOnceDeleted() throws IOException {
+    seedModule("dep", LatheLayout.CLASSES_DIR);
+    seedModule("app", LatheLayout.TEST_CLASSES_DIR);
+    final Path shaded = Path.of(jar("dep/target/dep-1.jar"));
+    final ReactorRewrite rewrite =
+        ReactorRewrite.of(
+                workspaceRoot,
+                Stream.concat(
+                        TestCompiler.targetOutputs("dep", "app").stream(),
+                        Stream.of(
+                            new OutputData("dep/target/dep-1.jar", "dep", LatheLayout.CLASSES_DIR)))
+                    .toList())
+            .keeping(Set.of(shaded));
+    final var data =
+        testLaunch(
+            List.of(),
+            List.of(
+                workspaceRoot.resolve("app/target/test-classes").toString(), shaded.toString()));
+
+    final CompletenessResult built = CompletenessGate.verify(data, workspaceRoot, rewrite);
+    Files.delete(shaded);
+    final CompletenessResult deleted = CompletenessGate.verify(data, workspaceRoot, rewrite);
+
+    assertThat(built.complete()).isTrue();
+    assertThat(built.notes())
+        .singleElement()
+        .asString()
+        .startsWith("dep/target/dep-1.jar runs as the last build left it");
+    assertThat(deleted.complete()).isFalse();
+    assertThat(deleted.reasons())
+        .singleElement()
+        .asString()
+        .startsWith("%s no longer exists".formatted(shaded));
   }
 
   private void mavenBuilt(final String outputDir) throws IOException {

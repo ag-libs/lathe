@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.schema.OutputData;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class ReactorRewriteTest {
@@ -82,6 +83,36 @@ final class ReactorRewriteTest {
     assertThat(REWRITE.expand(Path.of("/workspace/lib/build/libs/lib.jar")))
         .containsExactly(Path.of("/workspace/.lathe/lib/classes"));
     assertThat(REWRITE.expand(Path.of("/repo/a.jar"))).containsExactly(Path.of("/repo/a.jar"));
+  }
+
+  // A kept (shaded) jar: its own classes there name the relocated packages, so a launch's class
+  // and module paths keep the jar alone, while analysis takes the mirror and then the jar. A jar
+  // not kept is unchanged.
+  @Test
+  void keeping_shadedJar_launchKeepsTheJar_analysisTheMirrorThenTheJar() {
+    final ReactorRewrite rewrite =
+        REWRITE.keeping(Set.of(Path.of(os("/workspace/lib/build/libs/lib.jar"))));
+    final List<String> path =
+        List.of(
+            os("/workspace/lib/build/libs/lib.jar"),
+            os("/workspace/app/target/app-1.0.jar"),
+            os("/repo/a.jar"));
+    final List<String> launched =
+        List.of(
+            os("/workspace/lib/build/libs/lib.jar"),
+            os("/workspace/.lathe/app/classes"),
+            os("/repo/a.jar"));
+
+    assertThat(rewrite.toLatheClassPath(path)).isEqualTo(launched);
+    assertThat(rewrite.toLathe(path)).isEqualTo(launched);
+    assertThat(rewrite.expand(Path.of(os("/workspace/lib/build/libs/lib.jar"))))
+        .containsExactly(
+            Path.of(os("/workspace/.lathe/lib/classes")),
+            Path.of(os("/workspace/lib/build/libs/lib.jar")));
+    assertThat(rewrite.toLathe(Path.of(os("/workspace/lib/build/libs/lib.jar"))))
+        .isEqualTo(Path.of(os("/workspace/.lathe/lib/classes")));
+    assertThat(rewrite.expand(Path.of(os("/workspace/app/target/app-1.0.jar"))))
+        .containsExactly(Path.of(os("/workspace/.lathe/app/classes")));
   }
 
   @Test

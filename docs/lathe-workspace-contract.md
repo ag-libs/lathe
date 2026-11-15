@@ -148,6 +148,8 @@ Workspace-wide data: `WorkspaceManifestData`.
 
 Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`.
 The server and launch planner rewrite a listed path to `.lathe/<module>/<tree>`; an unlisted path, such as a jar committed in the repo, is used as written.
+A listed jar holding classes in a package none of its module's mirrors has is a shaded jar, holding relocated classes:
+the server's analysis takes the mirror and then the jar, and a launch the jar as written, since its own classes call the relocated ones.
 A front-end lists what its build actually produces, so custom output locations need nothing special;
 a front-end whose outputs are read in place (`externalOutput`) lists none.
 
