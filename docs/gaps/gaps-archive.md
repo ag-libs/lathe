@@ -12833,13 +12833,15 @@ It checked only the files that name the changed file's type, so 5 errors in thre
 
 ### Resolution
 
-The callers checked are also the files whose compiled classes refer to a class of the changed file, in the modules that can see it (`ChangeVerifier.referrers`): a class refers to every type it uses in its bytecode, whatever its source spells.
-They come from the `.lathe/` mirror, read when `verify_change` asks and kept nowhere, once per check for both the files to check and the sync it suggests: reading all 9,586 classes of Helidon's mirror takes 1–2.5 s, and a check reads only the modules downstream of the change.
+The callers checked are also the files whose compiled classes use a class of the changed file, in the modules that can see it (`ChangeVerifier.referrers`): a class names every type it uses in its constant pool, as a class entry or inside a descriptor or signature, whatever its source spells.
+The file's own type and the types nested in it are matched by name too, so the callers of a deleted or renamed type are still found after its classes left the mirror.
+The `.lathe/` mirror is read once per check, for all changed files and for both the files to check and the sync suggested, and kept nowhere: reading all 9,586 classes of Helidon's mirror takes 1.3–1.8 s, and a check reads only the modules downstream of the change.
 The editor is unchanged: it re-analyzes every open file downstream of a write.
 
 ### Regression targets
 
 - `LatheEngineVerifyTest.verifyChange_callerReachesTheChangedTypeOnlyThroughAChain_reportsIt`
+- `LatheEngineVerifyTest.verifyChange_typeReachedOnlyThroughAChainDeleted_reportsTheCaller`
 
 ---
 

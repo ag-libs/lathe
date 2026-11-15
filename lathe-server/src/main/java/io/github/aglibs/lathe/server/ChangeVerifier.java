@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -182,10 +183,13 @@ final class ChangeVerifier {
   // as reading the mirrored classes takes a second on a large reactor. A module or package
   // declaration has none: no file names it, and its reach is its module's.
   private Map<Path, List<Path>> referrersOf(final List<Path> changed) {
-    return changed.stream()
-        .distinct()
-        .filter(file -> !isDeclaration(file))
-        .collect(Collectors.toUnmodifiableMap(file -> file, this::referrers));
+    final List<Path> files =
+        changed.stream().distinct().filter(file -> !isDeclaration(file)).toList();
+    final Map<Path, Set<Path>> byBytecode = bytecodeReferrers(files);
+    return files.stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                file -> file, file -> referrers(file, byBytecode.getOrDefault(file, Set.of()))));
   }
 
   private static boolean isDeclaration(final Path file) {
@@ -204,48 +208,117 @@ final class ChangeVerifier {
   }
 
   // The files that name the file's type, a token match that may over-select (an extra candidate
-  // just compiles clean), and those whose compiled classes refer to a class of the file, which a
-  // caller reaching it through a chain of calls never names.
-  private List<Path> referrers(final Path file) {
-    final Set<Path> reach =
-        moduleDirOf(file).map(state.moduleGraph()::downstreamModuleDirs).orElse(Set.of());
+  // just compiles clean), and those whose compiled classes use a class of the file, which a caller
+  // reaching it through a chain of calls never names.
+  private List<Path> referrers(final Path file, final Set<Path> byBytecode) {
+    final Set<Path> reach = reach(file);
     return Stream.concat(
             state.candidateIndex().candidateUris(FileUtil.javaTypeName(file)).stream()
                 .map(LatheUri::toPath),
-            bytecodeReferrers(file, reach))
+            byBytecode.stream())
         .filter(path -> !path.equals(file))
         .filter(path -> moduleDirOf(path).filter(reach::contains).isPresent())
         .distinct()
         .toList();
   }
 
-  // From the mirrored classes of the trees the file reaches, as the last write left them; read only
-  // when verify_change or its sync hint asks, so nothing is kept between checks.
-  private Stream<Path> bytecodeReferrers(final Path file, final Set<Path> reach) {
-    final Set<String> classes =
+  private Set<Path> reach(final Path file) {
+    return moduleDirOf(file).map(state.moduleGraph()::downstreamModuleDirs).orElse(Set.of());
+  }
+
+  // One pass over the mirrored classes of the trees the changed files reach, as the last write left
+  // them, read only when verify_change asks: each changed file's referrers by their sources.
+  private Map<Path, Set<Path>> bytecodeReferrers(final List<Path> files) {
+    final Map<Path, TypeNeedles> needles =
+        files.stream().collect(Collectors.toUnmodifiableMap(file -> file, this::typeNeedles));
+    final Map<Path, Set<Path>> found = new HashMap<>();
+    for (final ModuleSourceConfig config : state.registry().allConfigs()) {
+      final List<Path> seeing =
+          files.stream().filter(file -> reach(file).contains(config.moduleDir())).toList();
+      if (seeing.isEmpty()) {
+        continue;
+      }
+
+      for (final Path classFile :
+          IOUtil.unchecked(
+              () -> FileUtil.walkFiles(config.latheClassesDir(), FileUtil::isClassFile))) {
+        addReferrer(found, config, classFile, seeing, needles);
+      }
+    }
+
+    return Map.copyOf(found);
+  }
+
+  private static void addReferrer(
+      final Map<Path, Set<Path>> found,
+      final ModuleSourceConfig config,
+      final Path classFile,
+      final List<Path> seeing,
+      final Map<Path, TypeNeedles> needles) {
+    final List<String> constants = ClassFileTypeScanner.constantStrings(classFile);
+    final List<Path> using =
+        seeing.stream().filter(file -> needles.get(file).foundIn(constants)).toList();
+    if (using.isEmpty()) {
+      return;
+    }
+
+    ClassOutputs.sourceOf(config, classFile)
+        .ifPresent(
+            source ->
+                using.forEach(
+                    file -> found.computeIfAbsent(file, k -> new HashSet<>()).add(source)));
+  }
+
+  // The file's classes in internal form: those the mirror holds, and its own type, which a deleted
+  // or renamed type has no class for any more, with any type nested in it.
+  private TypeNeedles typeNeedles(final Path file) {
+    final Set<String> types =
         state
             .registry()
             .moduleSourceFor(file)
-            .map(config -> ClassOutputs.classNamesOf(config, file))
+            .map(
+                config ->
+                    Stream.concat(
+                            config.sourceRootOf(file).stream()
+                                .map(root -> FileUtil.slashed(root.relativize(file)))
+                                .map(path -> path.substring(0, path.length() - ".java".length())),
+                            ClassOutputs.classNamesOf(config, file).stream()
+                                .map(name -> name.replace('.', '/')))
+                        .collect(Collectors.toUnmodifiableSet()))
             .orElse(Set.of());
-    if (classes.isEmpty()) {
-      return Stream.empty();
-    }
-
-    return state.registry().allConfigs().stream()
-        .filter(config -> reach.contains(config.moduleDir()))
-        .flatMap(config -> referringSources(config, classes));
+    return new TypeNeedles(types);
   }
 
-  private static Stream<Path> referringSources(
-      final ModuleSourceConfig config, final Set<String> classes) {
-    return IOUtil.unchecked(
-            () -> FileUtil.walkFiles(config.latheClassesDir(), FileUtil::isClassFile))
-        .stream()
-        .filter(
-            classFile ->
-                !Collections.disjoint(ClassFileTypeScanner.referencedTypes(classFile), classes))
-        .flatMap(classFile -> ClassOutputs.sourceOf(config, classFile).stream());
+  // How a class's constant pool names a type: a class entry for it or a type nested in it, and
+  // L<type>; inside a descriptor or signature, also as L<type>$ or L<type><.
+  private record TypeNeedles(Set<String> types, List<String> nested, List<String> inSignatures) {
+    TypeNeedles {
+      types = Set.copyOf(types);
+      nested = List.copyOf(nested);
+      inSignatures = List.copyOf(inSignatures);
+    }
+
+    TypeNeedles(final Set<String> types) {
+      this(
+          types,
+          types.stream().map("%s$"::formatted).toList(),
+          types.stream()
+              .flatMap(
+                  type ->
+                      Stream.of(
+                          "L%s;".formatted(type), "L%s$".formatted(type), "L%s<".formatted(type)))
+              .toList());
+    }
+
+    boolean foundIn(final List<String> constants) {
+      return constants.stream().anyMatch(this::names);
+    }
+
+    private boolean names(final String constant) {
+      return types.contains(constant)
+          || nested.stream().anyMatch(constant::startsWith)
+          || inSignatures.stream().anyMatch(constant::contains);
+    }
   }
 
   private Optional<Path> moduleDirOf(final Path file) {
