@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
 import io.github.aglibs.lathe.analysis.LibrarySources;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -151,6 +154,52 @@ class WorkspaceManifestTest {
 
     assertThat(WorkspaceManifest.load(tmp).kotlinModuleDirs())
         .containsExactlyInAnyOrder(tmp.resolve("app-kotlin"), tmp);
+  }
+
+  // A Gradle jar that packs a second source set's classes (generated code) is listed under its own
+  // tree only: the jar's entries tell which other mirrors a classpath holding it needs.
+  @Test
+  void load_jarPackingAnotherTreesClasses_standsForBothMirrors_plainJarItsOwn() throws Exception {
+    final Path lib = tmp.resolve(".lathe/lib");
+    final Path main =
+        TestCompiler.writeAt(
+            tmp.resolve("src/lib/Main.java"), "package lib; public class Main {}", 1_000L);
+    final Path gen =
+        TestCompiler.writeAt(
+            tmp.resolve("src/lib/Gen.java"), "package lib; public class Gen {}", 1_000L);
+    final Path bench =
+        TestCompiler.writeAt(
+            tmp.resolve("src/lib/Bench.java"), "package lib; public class Bench {}", 1_000L);
+    TestJavac.compileToDir(lib.resolve(LatheLayout.CLASSES_DIR), main);
+    TestJavac.compileToDir(lib.resolve("classes-gen"), gen);
+    TestJavac.compileToDir(lib.resolve("classes-jmh"), bench);
+    final Path libJar = tmp.resolve("lib/build/libs/lib.jar");
+    Files.createDirectories(libJar.getParent());
+    TestJavac.compileToJar(libJar, tmp.resolve("jar-lib"), List.of(), main, gen);
+    final Path appMain =
+        TestCompiler.writeAt(
+            tmp.resolve("src/app/App.java"), "package app; public class App {}", 1_000L);
+    TestJavac.compileToDir(tmp.resolve(".lathe/app/classes"), appMain);
+    final Path appJar = tmp.resolve("app/build/libs/app.jar");
+    Files.createDirectories(appJar.getParent());
+    TestJavac.compileToJar(appJar, tmp.resolve("jar-app"), List.of(), appMain);
+    writeWorkspaceManifest(
+        LatheLayout.SCHEMA_VERSION,
+        List.of(),
+        null,
+        List.of(),
+        List.of(
+            new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR),
+            new OutputData("lib/build/classes/java/gen", "lib", "classes-gen"),
+            new OutputData("lib/build/classes/java/jmh", "lib", "classes-jmh"),
+            new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR),
+            new OutputData("app/build/classes/java/it", "app", "classes-it")));
+
+    final ReactorRewrite rewrite = WorkspaceManifest.load(tmp).reactorRewrite();
+
+    assertThat(rewrite.expand(libJar))
+        .containsExactly(lib.resolve(LatheLayout.CLASSES_DIR), lib.resolve("classes-gen"));
+    assertThat(rewrite.expand(appJar)).containsExactly(tmp.resolve(".lathe/app/classes"));
   }
 
   private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {

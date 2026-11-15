@@ -132,7 +132,7 @@ public record ModuleSourceConfig(
   }
 
   private List<Path> remapped(final List<Path> paths) {
-    return paths.stream().map(reactorRewrite::toLathe).toList();
+    return paths.stream().flatMap(path -> reactorRewrite.expand(path).stream()).toList();
   }
 
   public static ModuleSourceConfig load(
