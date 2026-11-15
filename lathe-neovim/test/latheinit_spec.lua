@@ -417,6 +417,25 @@ spec.check(
 )
 finish_build(0)
 
+-- A workspace an earlier setup wrote says nothing about a build that failed before Lathe ran.
+vim.uv.fs_utime(work .. "/team/.lathe/workspace.json", 1000, 1000)
+run_from("/team")
+finish_build(1)
+spec.check(
+  "a failed build with only an earlier setup's workspace keeps the setup error",
+  last_note_has("setup failed") and not last_note_has("but the build failed"),
+  true
+)
+
+-- A build that failed before Lathe set it up keeps the failed setup's error.
+run_from("/gradle/lib")
+finish_build(1)
+spec.check(
+  "a failed build without a launcher keeps the setup error",
+  last_note_has("setup failed") and not last_note_has("but the build failed"),
+  true
+)
+
 -- A forced kind runs that kind's build.
 run_from("/mixed/tools", "gradle")
 spec.check("a forced kind builds at its own root", calls[#calls].opts.cwd, work .. "/mixed")
@@ -442,8 +461,22 @@ spec.check(
   "/opt/bin/mvn -B clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false"
 )
 executable(work .. "/team/.lathe/lathe-launcher.sh")
+write(work .. "/team/.lathe/workspace.json", '{"serverVersion": "9.9.9"}')
 finish_build(1)
 spec.check("a failed build that wrote a launcher attaches", started[#started], team_java)
+spec.check(
+  "and says once that Lathe is set up but the build failed",
+  notes[#notes]:find(
+    "server 9.9.9 set up at " .. work .. "/team, but the build failed (exit 1)",
+    1,
+    true
+  )
+      ~= nil
+    and not vim.iter(notes):any(function(note)
+      return note:find("setup failed", 1, true) ~= nil and note:find("team", 1, true) ~= nil
+    end),
+  true
+)
 run_from("/team-gradle")
 local keep_errors = work .. "/cache/bootstrap/lathe.failonerror.gradle.kts"
 spec.check(

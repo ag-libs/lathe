@@ -358,7 +358,10 @@ end
 local function attach(root, result, version, before)
   if vim.fn.executable(workspace.launcher_path(root)) == 1 then
     local installed = server_version(root)
-    report_version(root, installed, version)
+    if result.code == 0 then
+      report_version(root, installed, version)
+    end
+
     local stale = before and installed ~= before and servers_at(root) or {}
     for _, client in ipairs(stale) do
       client:stop()
@@ -380,13 +383,34 @@ local function attach(root, result, version, before)
 end
 
 -- `label` names the build in the toast and the output split: the ext class path is too long for either.
+-- A build that failed after Lathe set it up (a module that does not build): one warning that says
+-- both, rather than the failed setup's error followed by the server set up.
+-- Only when this build wrote the workspace: a launcher left by an earlier setup says nothing about
+-- a build that failed before Lathe ran.
+local function set_up_but_failed(root, result, started)
+  local manifest = vim.uv.fs_stat(workspace.manifest_path(root))
+  if not manifest or manifest.mtime.sec < started then
+    return nil
+  end
+
+  local installed = server_version(root)
+  return (
+    "Lathe: %s set up at %s, but the build failed (exit %d): what failed to build may not be "
+    .. "analysed — see the Lathe Sync Output split."
+  ):format(installed and ("server %s"):format(installed) or "Lathe", root, result.code)
+end
+
 -- `version` is the Lathe brought in from outside, nil for a build that registers its own.
 local function build(root, cmd, label, version)
   local before = server_version(root)
+  local started = os.time()
   require("lathe.sync").run(root, false, nil, {
     cmd = cmd,
     label = label,
     action = "setup",
+    failure_toast = function(result)
+      return set_up_but_failed(root, result, started)
+    end,
     on_done = function(result)
       attach(root, result, version, before)
     end,

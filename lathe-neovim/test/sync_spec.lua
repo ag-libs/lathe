@@ -22,8 +22,10 @@ vim.system = function(cmd, opts, on_exit)
   return { pid = 1 }
 end
 local notes = {}
-vim.notify = function(msg)
+local levels = {}
+vim.notify = function(msg, level)
   table.insert(notes, msg)
+  table.insert(levels, level)
 end
 vim.schedule = function(fn)
   fn()
@@ -144,6 +146,11 @@ spec.check(
   true
 )
 local console = vim.fn.bufnr("Lathe Sync Output")
+spec.check(
+  "the failure split opens without taking the cursor",
+  vim.api.nvim_get_current_buf() ~= console and vim.fn.bufwinid(console) ~= -1,
+  true
+)
 local console_lines = vim.api.nvim_buf_get_lines(console, 0, -1, false)
 spec.check(
   "the console shows the command itself, quoted",
@@ -157,6 +164,33 @@ spec.check(
 )
 
 spec.check("a finished setup run sets up nothing", sync.setting_up("/ws/f/src/A.java"), false)
+
+-- A run's own failure toast replaces the default error, as a warning.
+sync.run("/ws/g", false, nil, {
+  cmd = { "/opt/bin/mvn" },
+  label = "mvn",
+  action = "setup",
+  failure_toast = function(res)
+    return ("set up anyway (exit %d)"):format(res.code)
+  end,
+})
+pending_cb({ code = 1, stdout = "", stderr = "" })
+spec.check("a run's failure toast replaces the default", notes[#notes], "set up anyway (exit 1)")
+spec.check("as a warning", levels[#levels], vim.log.levels.WARN)
+sync.run("/ws/g", false, nil, {
+  cmd = { "/opt/bin/mvn" },
+  label = "mvn",
+  action = "setup",
+  failure_toast = function()
+    return nil
+  end,
+})
+pending_cb({ code = 1, stdout = "", stderr = "" })
+spec.check(
+  "a run whose failure toast has nothing to say keeps the default error",
+  notes[#notes]:find("setup failed", 1, true) ~= nil and levels[#levels] == vim.log.levels.ERROR,
+  true
+)
 
 -- A root reached through a symlink (macOS's /var is /private/var) holds the files under its real
 -- path, a new file's too.
@@ -195,6 +229,13 @@ spec.check("lathe/sync handler forwards capture", table.concat(last_args(), " ")
 spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
+vim.cmd("LatheSyncOutput")
+spec.check(
+  ":LatheSyncOutput moves the cursor into the split",
+  vim.api.nvim_get_current_buf(),
+  vim.fn.bufnr("Lathe Sync Output")
+)
+vim.cmd("wincmd p")
 
 -- :LatheSync from a file outside any workspace says so, and runs nothing.
 local before_outside = #calls
