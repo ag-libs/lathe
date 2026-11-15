@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -22,6 +24,11 @@ final class CompileTempDirs {
   private static final Pattern OWNED =
       Pattern.compile(
           "%s(\\d{1,18})-.*".formatted(Pattern.quote(LatheLayout.COMPILE_TEMP_DIR_PREFIX)));
+  // Another PID namespace sharing the temp dir (a container) runs servers whose pid this one does
+  // not
+  // see: a dir its server still compiles in changes on every compile, so one untouched this long is
+  // gone too.
+  private static final Duration ORPHAN_AGE = Duration.ofDays(1);
   // Once per process: the first compiler created sweeps.
   private static final AtomicBoolean SWEPT = new AtomicBoolean();
 
@@ -29,17 +36,18 @@ final class CompileTempDirs {
 
   static Path create() throws IOException {
     if (SWEPT.compareAndSet(false, true)) {
-      deleteOrphaned(Path.of(System.getProperty("java.io.tmpdir")));
+      deleteOrphaned(Path.of(System.getProperty("java.io.tmpdir")), Instant.now());
     }
 
     return Files.createTempDirectory(
         "%s%d-".formatted(LatheLayout.COMPILE_TEMP_DIR_PREFIX, ProcessHandle.current().pid()));
   }
 
-  // The dirs of servers no longer running. A live server's is left, and so is one this user cannot
-  // delete (another user's server, on a shared temp dir). Only root's own level is read: below it
+  // The dirs of servers no longer running, untouched for a day. A live server's is left, and so is
+  // one this user cannot delete (another user's server, on a shared temp dir), and a link: deleting
+  // the files behind one could reach out of the temp dir. Only root's own level is read: below it
   // lie other users' entries this one cannot read, and the cleanup must never fail a compile.
-  static void deleteOrphaned(final Path root) {
+  static void deleteOrphaned(final Path root, final Instant now) {
     final List<Path> dirs;
     try {
       dirs = ServerFiles.childDirectories(root);
@@ -50,7 +58,10 @@ final class CompileTempDirs {
 
     for (final Path dir : dirs) {
       final Matcher owner = OWNED.matcher(dir.getFileName().toString());
-      if (owner.matches() && ProcessHandle.of(Long.parseLong(owner.group(1))).isEmpty()) {
+      if (owner.matches()
+          && !Files.isSymbolicLink(dir)
+          && ProcessHandle.of(Long.parseLong(owner.group(1))).isEmpty()
+          && untouchedSince(dir, now.minus(ORPHAN_AGE))) {
         try {
           FileUtil.deleteDir(dir);
           LOG.fine(() -> "[cache] orphaned temp dir %s deleted".formatted(dir));
@@ -58,6 +69,14 @@ final class CompileTempDirs {
           LOG.log(Level.FINE, e, () -> "[cache] orphaned temp dir %s not deleted".formatted(dir));
         }
       }
+    }
+  }
+
+  private static boolean untouchedSince(final Path dir, final Instant cutoff) {
+    try {
+      return Files.getLastModifiedTime(dir).toInstant().isBefore(cutoff);
+    } catch (final IOException e) {
+      return false;
     }
   }
 }
