@@ -1261,7 +1261,7 @@ None yet.
 
 ## WS-35 — Lombok in the analysis compile reads a `lombok.config` up to 2 seconds old
 
-**Status: documented**
+**Status: deferred** (documented in the [troubleshooting guide](../guide/troubleshooting.md); fix only if Lombok users ask)
 
 **Value: low — Size: S**
 
@@ -1281,7 +1281,8 @@ the editor's batched refresh of open files is.
 
 ### Fix direction
 
-Analyze again the open Lombok classes below an edited `lombok.config` once 2 seconds passed, or run Lombok in the analysis from a fresh class loader after such an edit.
+Release the analysis sessions of the trees below an edited `lombok.config` before the refresh of their open files:
+each session loads Lombok in a class loader of its own, so the refresh runs a fresh Lombok that reads the new settings.
 
 ### Regression targets
 
