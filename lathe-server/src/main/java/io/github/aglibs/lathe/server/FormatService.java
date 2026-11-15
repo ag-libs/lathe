@@ -38,7 +38,8 @@ final class FormatService {
   private final DocumentRegistry docs;
   private final Formatted onFormatted;
   // The workspace's formatter, null for none, and the spec it was built from, null when the
-  // workspace names none: what says why there is no engine.
+  // workspace names none: what says why there is no engine or why it failed, and what a reload
+  // compares the style files with.
   private FormatEngine engine;
   private FormatterSpec spec;
 
@@ -82,7 +83,12 @@ final class FormatService {
   // the new one.
   void styleReloaded(final FormatterSpec current) {
     eventLoop.checkOnLoop();
-    if (Objects.equals(current, spec) || Objects.equals(current, announcedSpec)) {
+    if (Objects.equals(current, spec)) {
+      announcedSpec = null;
+      return;
+    }
+
+    if (Objects.equals(current, announcedSpec)) {
       return;
     }
 

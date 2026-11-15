@@ -533,24 +533,32 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   // A sync can change the formatter the style files name, but the server keeps the one it started
   // with: a reload says once that a restart applies the new one, and says nothing when it is the
-  // same. Each reload is a sync that rewrote workspace.json.
+  // same, or back to the running one. Each reload is a sync that rewrote workspace.json.
   @Test
   void reconcileForVerify_styleNamesAnotherFormatter_saysOnceToRestart() throws Exception {
     final Path style = tmp.resolve(LatheLayout.STYLE_SHARED_FILE);
-    Files.writeString(style, "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\"}}");
+    final String google = "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\"}}";
+    final String palantir = "{\"formatter\":{\"engine\":\"palantir\",\"version\":\"2.102.0\"}}";
+    Files.writeString(style, google);
     openShop();
     host.execute(session -> session.formats().use(null, FormatEngines.workspaceSpec(tmp)));
 
     reloadAddingModule("same");
-    Files.writeString(style, "{\"formatter\":{\"engine\":\"palantir\",\"version\":\"2.102.0\"}}");
+    Files.writeString(style, palantir);
     reloadAddingModule("changed");
     reloadAddingModule("again");
+    Files.writeString(style, google);
+    reloadAddingModule("back");
+    Files.writeString(style, palantir);
+    reloadAddingModule("changedAgain");
 
-    verify(client, times(1))
+    verify(client, times(2))
         .showMessage(
             new MessageParams(
                 MessageType.Warning,
                 "Lathe: the formatter is now palantir 2.102.0; restart Lathe to apply it."));
+    verify(client, times(2))
+        .showMessage(argThat(m -> m.getMessage().contains("the formatter is now")));
   }
 
   private void reloadAddingModule(final String name) throws Exception {
