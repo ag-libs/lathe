@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.gradle;
 
-import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
@@ -139,7 +138,7 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Internal
   public abstract Property<LatheBuildLockService> getBuildLock();
 
-  // Where the compile task recorded its sources' mtimes as it started (SourceMtimes).
+  // Where the snapshot task recorded the sources' mtimes before the compile (SourceMtimes).
   @Internal
   public abstract RegularFileProperty getSourceMtimesFile();
 
@@ -148,6 +147,9 @@ public abstract class LatheCaptureTask extends DefaultTask {
     getBuildLock().get();
     final Path moduleDir = getModuleDir().get().getAsFile().toPath();
     final ModuleConfigData config = moduleConfig();
+    // Read, and the file gone, before anything can end the capture early.
+    final Map<Path, Long> mtimesBeforeCompile =
+        SourceMtimes.take(getSourceMtimesFile().get().getAsFile().toPath());
     final Path lock = LatheLayout.moduleLockFile(moduleDir);
     // Best-effort, as Maven's compile shim: the build goes on and keeps the last capture.
     try {
@@ -167,17 +169,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
           moduleDir,
           config,
           List.of(getResourcesDir().get().getAsFile().toPath()),
-          mtimesBeforeCompile(config));
+          mtimesBeforeCompile);
     } finally {
       LatheLock.release(lock);
     }
-  }
-
-  // As the compile task recorded them before javac ran; when it did not run, there was no compile
-  // to race, and the sources now are what it last compiled.
-  private Map<Path, Long> mtimesBeforeCompile(final ModuleConfigData config) throws IOException {
-    return SourceMtimes.take(getSourceMtimesFile().get().getAsFile().toPath())
-        .orElseGet(() -> CompileCapture.sourceMtimes(CompiledStamps.sourcesByKey(config).values()));
   }
 
   // Whether the compile wrote a class for every source, asked only with failOnError off (a personal

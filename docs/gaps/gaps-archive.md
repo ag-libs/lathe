@@ -10054,13 +10054,14 @@ Any write during a compile raced the same way: an editor save, a `git checkout`.
 
 The build records each source's mtime just before javac runs, and after it leaves unstamped, and out of the built record, every source whose mtime differs then or that was not there (`CompileCapture.sourceMtimes`).
 The server compiles an unstamped source as never built.
-Maven takes the snapshot in the compiler wrapper (`LatheCompiler.performCompile`); Gradle in a task the compile task depends on (`LatheSourceMtimesTask`), as an action of the compile task itself would change its build cache key.
+Maven takes the snapshot in the compiler wrapper (`LatheCompiler.performCompile`); Gradle in a task the compile task depends on (`LatheSourceMtimesTask`), after whatever generates sources into the source set, as an action of the compile task itself would change its build cache key.
+The stamps hash each source first and keep only those whose mtime still is the snapshot's, so a write while hashing does not slip through; with no snapshot, no source is stamped.
 It holds as long as a write moves the file's mtime, as the server's own staleness check assumes.
 
 ### Regression targets
 
 - `CompileCaptureTest.mirror_sourceWrittenOrAddedDuringTheCompile_leftUnstamped`
-- `SourceMtimesTest.take_recordedAtTheCompilesStart_readsTheMtimesOnce_noneWhenNothingWasRecorded`
+- `SourceMtimesTest.take_recordedBeforeTheCompile_readsTheMtimesOnce_noneWithoutASnapshot`
 - `LatheCaptureTaskFunctionalTest.capture_javaProject_capturesFromCacheRefillsAWipedLatheAndKeepsTheLastGoodOne`: the snapshot task leaves the compile's build cache key alone.
 
 ---

@@ -14,20 +14,19 @@ class SourceMtimesTest {
 
   @TempDir Path tmp;
 
-  // What the compile task records as it starts, the capture after it reads once: the file goes, so
-  // a later capture with no compile before it finds none and stamps the sources as they are.
+  // What the snapshot task records before the compile, the capture after it reads once: the file
+  // goes, so a capture with no snapshot before it finds none and stamps no source.
   @Test
-  void take_recordedAtTheCompilesStart_readsTheMtimesOnce_noneWhenNothingWasRecorded()
-      throws Exception {
-    final Path source =
-        Files.writeString(
-            Files.createDirectories(tmp.resolve("src")).resolve("Foo.java"), "class Foo {}");
+  void take_recordedBeforeTheCompile_readsTheMtimesOnce_noneWithoutASnapshot() throws Exception {
+    final Path root = Files.createDirectories(tmp.resolve("src"));
+    final Path source = Files.writeString(root.resolve("Foo.java"), "class Foo {}");
     Files.setLastModifiedTime(source, FileTime.fromMillis(1_000L));
-    final Path file = tmp.resolve("build/tmp/compileJava").resolve(SourceMtimes.FILE_NAME);
+    Files.writeString(root.resolve("notes.txt"), "not a source");
+    final Path file = tmp.resolve(".lathe/app").resolve(SourceMtimes.fileName("classes"));
 
-    SourceMtimes.write(List.of(source), file);
+    SourceMtimes.write(List.of(root), file);
 
-    assertThat(SourceMtimes.take(file)).contains(Map.of(source.toAbsolutePath(), 1_000L));
+    assertThat(SourceMtimes.take(file)).isEqualTo(Map.of(source.toAbsolutePath(), 1_000L));
     assertThat(file).doesNotExist();
     assertThat(SourceMtimes.take(file)).isEmpty();
   }

@@ -16,7 +16,7 @@ import org.gradle.api.tasks.UntrackedTask;
 public abstract class LatheSourceMtimesTask extends DefaultTask {
 
   @Internal
-  public abstract ConfigurableFileCollection getSources();
+  public abstract ConfigurableFileCollection getSourceRoots();
 
   @Internal
   public abstract RegularFileProperty getMtimesFile();
@@ -24,7 +24,7 @@ public abstract class LatheSourceMtimesTask extends DefaultTask {
   @TaskAction
   public void record() throws IOException {
     SourceMtimes.write(
-        getSources().getFiles().stream().map(File::toPath).toList(),
+        getSourceRoots().getFiles().stream().map(File::toPath).toList(),
         getMtimesFile().get().getAsFile().toPath());
   }
 }

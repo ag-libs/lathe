@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -75,10 +76,8 @@ public final class LatheCompiler implements Compiler {
     final boolean locked = tryAcquireLock(moduleDir, moduleRel);
 
     try {
-      // Before javac runs: a source written while it compiles is then left unstamped.
       final Map<Path, Long> mtimesBeforeCompile =
-          CompileCapture.sourceMtimes(
-              CompiledStamps.sourcesByKey(MavenModuleConfig.of(config)).values());
+          locked ? mtimesBeforeCompile(config, moduleRel) : Map.of();
       final var result = javacCompiler.performCompile(config);
       if (locked) {
         syncOutput(config, moduleDir, moduleRel, result, mtimesBeforeCompile);
@@ -95,6 +94,20 @@ public final class LatheCompiler implements Compiler {
           LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
         }
       }
+    }
+  }
+
+  // Before javac runs: a source written while it compiles is then left unstamped. Sources that
+  // cannot be listed get no stamp at all, which only has the server compile them itself, and the
+  // build goes on, as with the capture's other steps.
+  private static Map<Path, Long> mtimesBeforeCompile(
+      final CompilerConfiguration config, final Path moduleRel) {
+    try {
+      return CompileCapture.sourceMtimes(
+          CompiledStamps.sourcesByKey(MavenModuleConfig.of(config)).values());
+    } catch (final UncheckedIOException e) {
+      LOG.warn("[lathe] {} sources not listed before the compile; none stamped", moduleRel, e);
+      return Map.of();
     }
   }
 

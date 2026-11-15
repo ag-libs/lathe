@@ -80,17 +80,25 @@ public final class CompileCapture {
       final ModuleConfigData config,
       final Map<Path, Long> mtimesBeforeCompile)
       throws IOException {
-    final Map<Path, Path> sources =
-        CompiledStamps.sourcesByKey(config).entrySet().stream()
-            .filter(source -> unchangedSince(mtimesBeforeCompile, source.getValue()))
-            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
-    final Map<Path, ContentFingerprint> built = CompiledStamps.builtOf(sources);
-    final Map<Path, SourceStamp> stamps =
+    final Map<Path, Path> sources = CompiledStamps.sourcesByKey(config);
+    // Hashed first, then kept only if the mtime is still the one before javac ran: a write while
+    // hashing moves it too, so the content hashed is what javac read.
+    final Map<Path, ContentFingerprint> hashed = CompiledStamps.builtOf(sources);
+    final Map<Path, Long> unchanged =
         sources.entrySet().stream()
+            .filter(source -> unchangedSince(mtimesBeforeCompile, source.getValue()))
             .collect(
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey,
-                    entry -> new SourceStamp(mtime(entry.getValue()), built.get(entry.getKey()))));
+                    source -> mtimesBeforeCompile.get(normalized(source.getValue()))));
+    final Map<Path, ContentFingerprint> built =
+        unchanged.keySet().stream().collect(Collectors.toUnmodifiableMap(key -> key, hashed::get));
+    final Map<Path, SourceStamp> stamps =
+        unchanged.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey,
+                    entry -> new SourceStamp(entry.getValue(), built.get(entry.getKey()))));
     CompiledStamps.writeAll(moduleDir, config.sourceTree(), stamps, built);
   }
 

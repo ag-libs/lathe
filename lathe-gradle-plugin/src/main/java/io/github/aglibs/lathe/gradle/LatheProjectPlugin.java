@@ -40,7 +40,6 @@ import org.gradle.api.artifacts.result.ResolvedDependencyResult;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.configuration.BuildFeatures;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.file.RegularFile;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -699,12 +698,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
       final Path moduleDir) {
     final TaskProvider<JavaCompile> compile =
         project.getTasks().named(sourceSet.getCompileJavaTaskName(), JavaCompile.class);
-    final Provider<RegularFile> sourceMtimes =
-        project
-            .getLayout()
-            .getBuildDirectory()
-            .file(
-                "tmp/%s/%s".formatted(sourceSet.getCompileJavaTaskName(), SourceMtimes.FILE_NAME));
+    final File sourceMtimes = moduleDir.resolve(SourceMtimes.fileName(sourceTree)).toFile();
     final TaskProvider<LatheCaptureTask> capture =
         project
             .getTasks()
@@ -750,7 +744,9 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 sourceSet.getTaskName("lathe", "sourceMtimes"),
                 LatheSourceMtimesTask.class,
                 task -> {
-                  task.getSources().from(sourceSet.getJava());
+                  // After whatever generates sources into the source set, as the compile is.
+                  task.dependsOn(sourceSet.getJava());
+                  task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());
                   task.getMtimesFile().set(sourceMtimes);
                 });
     compile.configure(
