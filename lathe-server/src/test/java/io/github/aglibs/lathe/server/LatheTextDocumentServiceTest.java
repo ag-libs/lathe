@@ -20,6 +20,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
@@ -28,6 +29,7 @@ import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import io.github.aglibs.lathe.server.run.LaunchTarget;
 import java.nio.file.Files;
@@ -238,6 +240,36 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                     m.getType() == MessageType.Warning
                         && m.getMessage().startsWith("Lathe: formatting failed: ")
                         && m.getMessage().endsWith("(further failures are only logged)")));
+  }
+
+  // A formatter release built for a newer Java than the server's fails to load: the failure names
+  // the formatter and the way out, not the JVM's class file versions. The class directory holds the
+  // first class the engine loads, stamped with a class file version no JDK reads yet; a directory,
+  // as the loader keeps a jar open, which Windows then cannot delete.
+  @Test
+  void formatting_formatterNeedsNewerJava_namesTheFormatterAndTheWayOut() throws Exception {
+    final Path classes = tmp.resolve("too-new");
+    final Path options =
+        classes.resolve("com/google/googlejavaformat/java/JavaFormatterOptions.class");
+    Files.createDirectories(options.getParent());
+    Files.write(
+        options, new byte[] {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 99});
+    final var spec =
+        new FormatterSpec("google", List.of(), "9.9.9", Map.of(), List.of(classes.toString()));
+    host.initialize(tmp);
+    host.execute(session -> session.formats().use(FormatEngines.forSpec(spec, tmp), spec));
+    service.didOpen(
+        new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class Foo {}")));
+
+    assertThat(service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+    verify(client, timeout(2000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getMessage()
+                        .startsWith(
+                            "Lathe: formatting failed: formatter google 9.9.9 does not run on Java %d, the server's: declare a version that runs on it in lathe-style.json"
+                                .formatted(Runtime.version().feature()))));
   }
 
   @Test

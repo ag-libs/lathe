@@ -722,9 +722,11 @@ final class WorkspaceSession {
         writePass.forgetPendingStale();
         LOG.fine(() -> "[reload] pending-stale reset");
       }
+      // Every sync touches workspace.json: one that only resolved the formatter changed no more.
       case REACTOR_REFRESH -> {
         reactorIndex.refresh();
         writePass.forgetPendingStale();
+        formats.reloadStyle();
       }
       case BUILD_FILES_CHANGED -> {
         promptForSync("Build files changed. Lathe will run a full refresh.");
@@ -812,6 +814,7 @@ final class WorkspaceSession {
     // queued work and close, and a pass still writing through them ends before the next starts.
     old.closeAsync();
     scheduleAllOpenFiles();
+    formats.reloadStyle();
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
 

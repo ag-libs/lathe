@@ -66,7 +66,7 @@ public final class FormatEngines {
     if (spec.classpath().isEmpty()) {
       LOG.warning(
           () ->
-              "[initialize] %s formatter has no resolved classpath; run %s (its output says why when it cannot resolve it), then restart"
+              "[format] %s formatter has no resolved classpath; run %s (its output says why when it cannot resolve it)"
                   .formatted(spec.engine(), LatheLayout.SYNC_SCRIPT_COMMAND));
       return null;
     }

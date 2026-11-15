@@ -101,7 +101,7 @@ class LatheEngineEditTest extends LatheEngineTestBase {
 
     assertThatThrownBy(() -> engine.format(source))
         .hasMessage(
-            "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it), then restart Lathe."
+            "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it)."
                 .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 

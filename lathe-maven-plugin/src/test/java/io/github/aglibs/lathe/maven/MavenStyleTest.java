@@ -217,6 +217,7 @@ class MavenStyleTest {
             tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE),
             WorkspaceStyleData.class);
     assertThat(generated.indent().block()).isEqualTo(2);
+    assertThat(generated.formatter().engine()).isEqualTo("none");
     assertThat(generated.formatter().classpath()).isEmpty();
   }
 

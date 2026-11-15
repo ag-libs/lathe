@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
 import java.nio.file.Path;
@@ -38,12 +39,16 @@ final class FormatService {
   private final DocumentRegistry docs;
   private final Formatted onFormatted;
   // The workspace's formatter, null for none, and the spec it was built from, null when the
-  // workspace names none: what says why there is no engine.
+  // workspace names none: what says why there is no engine or why it failed, and what a reload
+  // compares the style files with.
   private FormatEngine engine;
   private FormatterSpec spec;
 
   // Loop state like the rest: a format failure is reported to the user once, then only logged.
   private boolean formatFailureReported;
+  // An editor told at initialize that Lathe does not format never asks it to: a formatter a reload
+  // finds reaches that editor only after a restart.
+  private boolean restartToFormat;
   // Formatting runs here, off the event loop: an external command waits on its process, a build
   // tool for up to a minute. One thread, so two formats never run a build in one module at once.
   private static final Duration STOP_WAIT = Duration.ofSeconds(10);
@@ -73,6 +78,53 @@ final class FormatService {
     eventLoop.checkOnLoop();
     this.engine = engine;
     this.spec = spec;
+  }
+
+  void advertise(final boolean formatting) {
+    eventLoop.checkOnLoop();
+    restartToFormat = !formatting;
+  }
+
+  // A sync can change the formatter the style files name: format with the new one at once.
+  void reloadStyle() {
+    eventLoop.checkOnLoop();
+    final FormatterSpec current = FormatEngines.workspaceSpec(state.root());
+    if (Objects.equals(current, spec)) {
+      return;
+    }
+
+    LOG.info(() -> "[format] style now names %s".formatted(describe(current)));
+    use(current != null ? FormatEngines.forSpec(current, state.root()) : null, current);
+    formatFailureReported = false;
+    if (engine != null && restartToFormat) {
+      client.showMessage(
+          new MessageParams(
+              MessageType.Warning,
+              "Lathe: the formatter is now %s; restart Lathe to format with it."
+                  .formatted(describe(current))));
+    }
+  }
+
+  private static String describe(final FormatterSpec formatter) {
+    if (formatter == null) {
+      return LatheFlags.FORMATTER_NONE;
+    }
+
+    return formatter.version().isBlank()
+        ? formatter.engine()
+        : "%s %s".formatted(formatter.engine(), formatter.version());
+  }
+
+  // A formatter release built for a newer Java than the server's fails to load: the JVM's text
+  // names class file versions, not the formatter or what to do about it.
+  private String failureReason(final Throwable failure) {
+    final Throwable root = ExceptionUtil.rootCause(failure);
+    if (root instanceof UnsupportedClassVersionError && spec != null) {
+      return "formatter %s does not run on Java %d, the server's: declare a version that runs on it in %s, or set LATHE_JAVA_HOME to a newer JDK"
+          .formatted(describe(spec), Runtime.version().feature(), LatheLayout.STYLE_SHARED_FILE);
+    }
+
+    return root.getMessage();
   }
 
   void close() {
@@ -148,7 +200,7 @@ final class FormatService {
   // project's own choice.
   private String unavailable() {
     if (spec != null && LatheFlags.PINNED_FORMATTERS.contains(spec.engine())) {
-      return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it), then restart Lathe."
+      return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it)."
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
     }
 
@@ -180,9 +232,7 @@ final class FormatService {
             failure -> {
               throw FeatureAnswers.refused(
                   "Could not format %s: %s"
-                      .formatted(
-                          LatheUri.toPath(uri).getFileName(),
-                          ExceptionUtil.rootCause(failure).getMessage()));
+                      .formatted(LatheUri.toPath(uri).getFileName(), failureReason(failure)));
             });
   }
 
@@ -226,7 +276,7 @@ final class FormatService {
                     new MessageParams(
                         MessageType.Warning,
                         "Lathe: formatting failed: %s (further failures are only logged)"
-                            .formatted(ExceptionUtil.rootCause(cause).getMessage())));
+                            .formatted(failureReason(cause))));
               }
 
               return List.of();
