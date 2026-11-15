@@ -30,10 +30,7 @@ class UnusedDeclarationScannerTest {
 
   // --- Unused private methods ---
 
-  // @SuppressWarnings("unused") covers the declaration it is on and all it encloses, as IntelliJ
-  // and Eclipse read it; a private method it covers still uses what it calls. Other warnings
-  // suppressed say
-  // nothing about use.
+  // JUnit's ArchUnit tests mark @ArchTest fields, which a framework reads, as unused on purpose.
   @Test
   void compile_suppressWarningsUnused_noHintWhereItApplies_otherKeysStillReported() {
     final var source =
@@ -51,6 +48,9 @@ class UnusedDeclarationScannerTest {
           private void plain() {}
 
           @SuppressWarnings("unused")
+          private final Runnable task = () -> { int inInitializer = 1; };
+
+          @SuppressWarnings("all")
           private static class Fixture {
             private int value;
           }
