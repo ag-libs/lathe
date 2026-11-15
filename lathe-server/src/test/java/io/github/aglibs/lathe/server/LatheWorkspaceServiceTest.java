@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -544,14 +545,16 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     final Path style = tmp.resolve(LatheLayout.STYLE_SHARED_FILE);
     Files.writeString(style, COMMAND_STYLE);
     openShop();
-    host.execute(
-        session -> {
-          final FormatterSpec spec = FormatEngines.workspaceSpec(tmp);
-          session.formats().use(FormatEngines.forSpec(spec, tmp), spec);
-        });
+    // Read here: the loop runs the task later, perhaps after the test changed the style.
+    final FormatterSpec started = FormatEngines.workspaceSpec(tmp);
+    host.execute(session -> session.formats().use(FormatEngines.forSpec(started, tmp), started));
 
+    // A sync that changed only the style touches workspace.json without changing it.
     Files.writeString(style, "{\"formatter\":{\"engine\":\"none\"}}");
-    reloadAddingModule("none");
+    final Path manifest = tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    Files.setLastModifiedTime(
+        manifest, FileTime.fromMillis(Files.getLastModifiedTime(manifest).toMillis() + 10_000));
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     final Throwable refusal =
         catchThrowable(
@@ -574,9 +577,10 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     final Path style = tmp.resolve(LatheLayout.STYLE_SHARED_FILE);
     Files.writeString(style, "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\"}}");
     openShop();
+    final FormatterSpec started = FormatEngines.workspaceSpec(tmp);
     host.execute(
         session -> {
-          session.formats().use(null, FormatEngines.workspaceSpec(tmp));
+          session.formats().use(null, started);
           session.formats().advertise(false);
         });
 

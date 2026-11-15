@@ -200,7 +200,7 @@ final class FormatService {
   // project's own choice.
   private String unavailable() {
     if (spec != null && LatheFlags.PINNED_FORMATTERS.contains(spec.engine())) {
-      return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it), then restart Lathe."
+      return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it)."
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
     }
 
