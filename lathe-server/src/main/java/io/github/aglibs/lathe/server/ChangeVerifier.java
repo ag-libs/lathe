@@ -403,15 +403,15 @@ final class ChangeVerifier {
         failedWrites(changed));
   }
 
-  // The changed files whose write failed and that are unchanged since, with what the write
-  // reported: their callers were checked against the classes of their last good compile.
+  // The changed files the build's compile fails for a cause of their own, unchanged since, with
+  // those causes: their callers were checked against the classes of their last good compile.
   private Map<Path, List<Diagnostic>> failedWrites(final List<Path> changed) {
     final Set<Path> changedFiles = Set.copyOf(changed);
     return stillFailing()
         .filter(entry -> changedFiles.contains(entry.getKey()))
+        .filter(entry -> !entry.getValue().causes().isEmpty())
         .collect(
-            Collectors.toUnmodifiableMap(
-                Map.Entry::getKey, entry -> entry.getValue().diagnostics()));
+            Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().causes()));
   }
 
   record VerifyPlan(

@@ -50,6 +50,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -975,20 +976,14 @@ public final class LatheEngine {
             .toList());
   }
 
-  // A changed file whose write failed reports what the write found: the build's own compile, with
-  // the processors and plugins the analysis compile runs without, fails where the check may pass.
+  // A changed file the build's compile fails also reports why: the processors and plugins that
+  // compile runs, and the analysis compile does not, fail it where the check passes.
   private static Map<String, List<Diagnostic>> withFailedWrites(
       final Map<String, List<Diagnostic>> checked, final Map<Path, List<Diagnostic>> failedWrites) {
-    final Map<String, List<Diagnostic>> written =
-        failedWrites.entrySet().stream()
-            .filter(failed -> !failed.getValue().isEmpty())
-            .collect(
-                Collectors.toUnmodifiableMap(
-                    failed -> LatheUri.fromPath(failed.getKey()), Map.Entry::getValue));
-    return Stream.concat(
-            checked.entrySet().stream().filter(entry -> !written.containsKey(entry.getKey())),
-            written.entrySet().stream())
-        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+    final var merged = new HashMap<>(checked);
+    failedWrites.forEach(
+        (file, causes) -> merged.merge(LatheUri.fromPath(file), causes, WritePass::withWriteOnly));
+    return Map.copyOf(merged);
   }
 
   // A changed file is checked alone, against the classes its write produced, as the build sees it:

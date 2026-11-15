@@ -165,8 +165,8 @@ public final class TestCompiler {
         ReactorRewrite.none());
   }
 
-  // Compiles, under root, a processor that warns "noted by processor" on every root element.
-  // Analysis runs without annotation processors, so only a write sees it.
+  // Compiles, under root, a processor that warns "noted by processor" on every root element but one
+  // named Quiet*. Analysis runs without annotation processors, so only a write sees it.
   public static Path noteProcessor(final Path root) throws IOException {
     final Path processorSource =
         TestCompiler.writeAt(
@@ -184,8 +184,10 @@ public final class TestCompiler {
                 return SourceVersion.latestSupported();
               }
               @Override public boolean process(Set<? extends TypeElement> types, RoundEnvironment round) {
-                round.getRootElements().forEach(element -> processingEnv.getMessager()
-                    .printMessage(Diagnostic.Kind.WARNING, "noted by processor", element));
+                round.getRootElements().stream()
+                    .filter(element -> !element.getSimpleName().toString().startsWith("Quiet"))
+                    .forEach(element -> processingEnv.getMessager()
+                        .printMessage(Diagnostic.Kind.WARNING, "noted by processor", element));
                 return false;
               }
             }

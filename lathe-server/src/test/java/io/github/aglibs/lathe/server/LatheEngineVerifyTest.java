@@ -408,15 +408,19 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
 
   // A change only the build's own compile fails, here a processor's warning under -Werror, which
   // Lathe's analysis compile (no processors) passes: the answer reports the write's failure, names
-  // the warning, and says the callers saw the change's old classes. Without -Werror it compiles.
+  // the warning, and says the callers saw the change's old classes. A clean file written with it
+  // fails the same compile but for no cause of its own, so it stays clean. Without -Werror it all
+  // compiles.
   @Test
   void verifyChange_changeFailsOnlyTheBuildsCompile_reportsTheWriteAndItsCallersOldClasses()
       throws Exception {
     final Path callee = moduleBuiltWithTheNoteProcessor(List.of("-Werror"));
+    final Path quiet = callee.resolveSibling("QuietPeer.java");
     engine = new LatheEngine(tmp);
 
     writeNewer(
         callee, "package com.example;\nclass Callee {\n  void greet() {}\n  void wave() {}\n}\n");
+    writeNewer(quiet, "package com.example;\nclass QuietPeer {\n  void hush() {}\n}\n");
     final LatheVerifyChange verify = engine.verifyChange(List.of());
 
     final String path = FileUtil.slashed(tmp.relativize(callee));
@@ -426,11 +430,14 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             module ->
                 assertThat(module.diagnostics())
                     .allMatch(d -> d.path().equals(path))
-                    .anyMatch(d -> d.severity() == LatheDiagnostic.Severity.ERROR)
-                    .anyMatch(d -> d.message().contains("noted by processor")));
+                    .anyMatch(
+                        d ->
+                            d.severity() == LatheDiagnostic.Severity.ERROR
+                                && d.message().equals("noted by processor (-Werror)"))
+                    .noneMatch(d -> d.message().contains("-Werror specified")));
     assertThat(verify.failedWrites()).containsExactly(path);
     assertThat(engine.diagnostics(callee).notes().notCompiled())
-        .containsExactly("%s:2: noted by processor (-Werror)".formatted(tmp.relativize(callee)));
+        .contains("%s:2: noted by processor (-Werror)".formatted(tmp.relativize(callee)));
   }
 
   @Test
@@ -446,11 +453,13 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(verify.failedWrites()).isEmpty();
   }
 
-  // Callee and its Caller, built by a build that runs NoteProcessor with the given extra arguments.
+  // Callee, a QuietPeer the processor leaves alone, and Callee's Caller, built by a build that runs
+  // NoteProcessor with the given extra arguments.
   private Path moduleBuiltWithTheNoteProcessor(final List<String> extraArgs) throws Exception {
     final var sources = new LinkedHashMap<String, String>();
     sources.put(
         "com/example/Callee.java", "package com.example;\nclass Callee {\n  void greet() {}\n}\n");
+    sources.put("com/example/QuietPeer.java", "package com.example;\nclass QuietPeer {}\n");
     sources.put(
         "com/example/Caller.java",
         "package com.example;\nclass Caller {\n  void run(Callee c) { c.greet(); }\n}\n");

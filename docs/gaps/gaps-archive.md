@@ -12783,9 +12783,10 @@ The other tools' note named only `Formatter.java:1: warnings found and -Werror s
 
 ### Resolution
 
-The write pass keeps what the build's compile reported for a file it failed to write (`WritePass.FailedWrite`).
-`verify_change` reports those diagnostics for a changed file whose write failed, in place of the analysis check's, and says its callers were checked against the classes of the last good compile.
-When `-Werror` is the only error, the "Not compiled" note on every tool, and `run_test`'s refusal, name the warning it failed on, recognised by javac's code `compiler.err.warnings.and.werror`.
+The write pass keeps why the build's compile failed a file it could not write (`WritePass.FailedWrite`): its own errors or, when `-Werror` failed the compile, its own warnings as errors.
+javac's `-Werror` error itself, recognised by its code `compiler.err.warnings.and.werror`, is no cause: it lands on whichever file of the compile javac reached last.
+`verify_change` adds those causes to what the analysis compile finds for a changed file, and says its callers were checked against the classes of the last good compile.
+The "Not compiled" note on every tool, and `run_test`'s refusal, name the first cause.
 The editor's open compile still runs without the build's plugins (EG-084).
 
 ### Regression targets

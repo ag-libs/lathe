@@ -564,34 +564,42 @@ final class WritePass {
 
   private static FailedWrite failedWrite(
       final long mtime, final BatchWrite written, final Path source) {
-    final List<Diagnostic> diagnostics =
-        written.diagnosticsByUri().getOrDefault(LatheUri.fromPath(source), List.of());
-    return new FailedWrite(mtime, firstError(diagnostics), diagnostics);
+    final List<Diagnostic> causes =
+        causes(written.diagnosticsByUri().getOrDefault(LatheUri.fromPath(source), List.of()));
+    return new FailedWrite(
+        mtime,
+        causes.stream().findFirst().map(WritePass::errorLine).orElse("no class was written"),
+        causes);
   }
 
-  // "line: message" of the source's first error in the write, for the MCP "Not compiled" note.
-  // -Werror's own error says only that warnings were found, at line 1, so the warning it failed on
-  // is named instead.
-  private static String firstError(final List<Diagnostic> diagnostics) {
-    return first(diagnostics, DiagnosticSeverity.Error, diagnostic -> !isWerror(diagnostic))
-        .map(WritePass::errorLine)
-        .or(
-            () ->
-                diagnostics.stream().anyMatch(WritePass::isWerror)
-                    ? first(diagnostics, DiagnosticSeverity.Warning, diagnostic -> true)
-                        .map(warning -> "%s (-Werror)".formatted(errorLine(warning)))
-                    : Optional.empty())
-        .orElse("no class was written");
-  }
+  // Why the build's compile failed the source: its own errors. -Werror's error says only that
+  // warnings were found, at line 1, and javac puts it on whichever file of the compile it reached
+  // last, so it is no cause: when it is all there is, the source's own warnings are, as errors.
+  private static List<Diagnostic> causes(final List<Diagnostic> diagnostics) {
+    final List<Diagnostic> errors =
+        diagnostics.stream()
+            .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+            .filter(diagnostic -> !isWerror(diagnostic))
+            .toList();
+    if (!errors.isEmpty() || diagnostics.stream().noneMatch(WritePass::isWerror)) {
+      return errors;
+    }
 
-  private static Optional<Diagnostic> first(
-      final List<Diagnostic> diagnostics,
-      final DiagnosticSeverity severity,
-      final Predicate<Diagnostic> keep) {
     return diagnostics.stream()
-        .filter(diagnostic -> diagnostic.getSeverity() == severity)
-        .filter(keep)
-        .findFirst();
+        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Warning)
+        .map(WritePass::failedWithWerror)
+        .toList();
+  }
+
+  private static Diagnostic failedWithWerror(final Diagnostic warning) {
+    final var error =
+        new Diagnostic(
+            warning.getRange(),
+            "%s (-Werror)".formatted(warning.getMessage().getLeft()),
+            DiagnosticSeverity.Error,
+            warning.getSource());
+    error.setCode(warning.getCode());
+    return error;
   }
 
   private static boolean isWerror(final Diagnostic diagnostic) {
@@ -605,14 +613,30 @@ final class WritePass {
             diagnostic.getMessage().getLeft().lines().findFirst().orElse(""));
   }
 
-  // diagnostics: what the write reported for the source, which verify_change shows for a changed
-  // file the analysis compile passes but the build's own compile, with its processors and plugins,
-  // fails.
-  record FailedWrite(long mtime, String error, List<Diagnostic> diagnostics) {
+  // error: the first cause, as the MCP "Not compiled" note shows it. causes: what failed the
+  // build's own compile, with its processors and plugins, which verify_change adds to what the
+  // analysis compile finds; empty when the compile failed for no reason of the source's own.
+  record FailedWrite(long mtime, String error, List<Diagnostic> causes) {
     FailedWrite {
-      ValidCheck.check().notNull(error, "error").notNull(diagnostics, "diagnostics").validate();
-      diagnostics = List.copyOf(diagnostics);
+      ValidCheck.check().notNull(error, "error").notNull(causes, "causes").validate();
+      causes = List.copyOf(causes);
     }
+  }
+
+  // The analysis compile's diagnostics plus those only the build's compile found: the processors
+  // and plugins it runs report what the analysis cannot.
+  static List<Diagnostic> withWriteOnly(
+      final List<Diagnostic> analyzed, final List<Diagnostic> written) {
+    final Set<String> seen =
+        analyzed.stream().map(WritePass::diagnosticKey).collect(Collectors.toUnmodifiableSet());
+    return Stream.concat(
+            analyzed.stream(),
+            written.stream().filter(diagnostic -> !seen.contains(diagnosticKey(diagnostic))))
+        .toList();
+  }
+
+  private static String diagnosticKey(final Diagnostic diagnostic) {
+    return "%s|%s".formatted(diagnostic.getRange(), diagnostic.getMessage());
   }
 
   static Map<Path, Long> withoutFailedCompiles(
