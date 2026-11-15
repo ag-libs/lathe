@@ -86,7 +86,8 @@ the server when the build ends:
 
 - It walks up from the current file (or `:pwd`) to the build's root, an OpenJDK checkout, the nearest
   `settings.gradle(.kts)`, or a Maven root (a `pom.xml` with `.mvn/` or `mvnw` beside it, else the
-  topmost of the folders holding one), and asks you to confirm it: Enter accepts, or edit the path.
+  topmost of the folders holding one), and asks you to confirm it: Enter accepts, or edit the path
+  (a relative one is taken from the root shown). The prompt names the Lathe version it sets up.
   A kind given looks only for that kind's root.
 - A Maven or Gradle build that does not register Lathe gets it from outside, so **your project files
   are not changed**: Maven through `-Dmaven.ext.class.path` (the jars fetched once per Lathe version

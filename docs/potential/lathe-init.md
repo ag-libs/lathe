@@ -96,11 +96,13 @@ A menu that offered Sync beside the setup modes mixed two questions: how Lathe g
 
 ```
 :LatheInit [maven|gradle|openjdk]
-Lathe: set up the Maven build in: ~/work/app█
+Lathe: set up Lathe 0.3.1 (now 0.3.0) for the Maven build in: ~/work/app█
 ```
 
 - **No argument:** the kind and the root are detected ([below](#finding-the-builds-root)); a kind given looks only for that kind's root.
-- **The root is confirmed in a prompt**, pre-filled and editable, with folder completion: Enter accepts it, an edited root is taken as typed (no walking up), its kind read from its own files. Arguments mixing a kind and a folder were set aside as awkward to type and read.
+- **The root is confirmed in a prompt**, pre-filled and editable, with folder completion: Enter accepts it, an edited root is taken as typed (no walking up), a relative one from the root offered, its kind read from its own files. Arguments mixing a kind and a folder were set aside as awkward to type and read.
+- **The prompt says what will happen:** the version brought in and the one set up now, or that the build registers Lathe and just builds. A root typed inside the one found gets a warning that a module is not set up alone; the build still runs, as the guess may be the wrong one.
+- **A development client** without `LATHE_VERSION` is told so before the prompt, unless the build registers Lathe.
 - **It never syncs:** with no build found but a `.lathe/` present, it says `:LatheSync` refreshes it.
 - **`plain`** joins the kinds when plain mode ships; team modes after it.
 

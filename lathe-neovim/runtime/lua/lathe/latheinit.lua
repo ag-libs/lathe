@@ -422,7 +422,14 @@ local function maven_personal(build_, tool, version)
     label = ("%s copy-dependencies (Lathe %s)"):format(vim.fs.basename(tool), version),
     action = "download",
     on_done = function(result)
+      -- A first fetch that failed leaves no folder behind; an earlier lib/ stays, as does an init
+      -- script beside it.
       if result.code ~= 0 then
+        vim.fn.delete(fetching, "rf")
+        if not exists(lib) then
+          vim.fn.delete(vim.fs.joinpath(dir, POM))
+          vim.fn.delete(dir, "d")
+        end
         return
       end
 
@@ -468,6 +475,18 @@ local function openjdk(found, tool, version)
   build(found.root, { tool, "-B", goal }, ("mvn %s"):format(goal))
 end
 
+-- The version to set up, else nil once it said how a development client names one.
+local function version_to_set_up()
+  local version = M.version()
+  if not version then
+    notify(
+      "this is a development client: set LATHE_VERSION to the Lathe version to set up.",
+      vim.log.levels.ERROR
+    )
+  end
+  return version
+end
+
 local function set_up(found)
   local tool = build_tool(found)
   if not tool then
@@ -499,12 +518,8 @@ local function set_up(found)
     return
   end
 
-  local version = M.version()
+  local version = version_to_set_up()
   if not version then
-    notify(
-      "this is a development client: set LATHE_VERSION to the Lathe version to set up.",
-      vim.log.levels.ERROR
-    )
     return
   end
 
@@ -548,6 +563,34 @@ local function start_dir()
   return vim.fs.dirname(vim.fs.normalize(name))
 end
 
+-- What :LatheInit is about to do at the root it found, and the version it moves from.
+local function prompt_for(found)
+  if found.registered then
+    return ("Lathe: build the %s project, which registers Lathe, in: "):format(KINDS[found.kind])
+  end
+
+  local version = M.version()
+  local installed = server_version(found.root)
+  local from = installed and installed ~= version and (" (now %s)"):format(installed) or ""
+  return ("Lathe: set up Lathe %s%s for the %s build in: "):format(version, from, KINDS[found.kind])
+end
+
+-- A root typed below the one found is most often a module, which Lathe does not set up alone.
+local function warn_if_module(chosen, found)
+  local inner, outer = real(chosen.root), real(found.root)
+  if chosen.kind ~= found.kind or not vim.startswith(inner, outer .. "/") then
+    return
+  end
+
+  notify(
+    (
+      "%s is inside the %s build at %s: if it is one of its modules, set up %s instead, as Lathe "
+      .. "sets a build up from its root."
+    ):format(chosen.root, KINDS[found.kind], found.root, found.root),
+    vim.log.levels.WARN
+  )
+end
+
 local function not_found(start, kind)
   if vim.fs.root(start, workspace.ROOT_MARKER) then
     notify("Lathe is set up here already: `:LatheSync` refreshes it.")
@@ -561,7 +604,8 @@ local function not_found(start, kind)
 end
 
 --- Sets Lathe up for the build around the current file (else `:pwd`), of `kind` if given, after
---- the user confirms or edits its root; an edited root is taken as typed.
+--- the user confirms or edits its root; an edited root is taken as typed, a relative one from the
+--- root offered.
 function M.run(kind)
   if kind and not KINDS[kind] then
     notify(
@@ -578,8 +622,12 @@ function M.run(kind)
     return
   end
 
+  if not found.registered and not version_to_set_up() then
+    return
+  end
+
   vim.ui.input({
-    prompt = ("Lathe: set up the %s build in: "):format(KINDS[found.kind]),
+    prompt = prompt_for(found),
     default = found.root,
     completion = "dir",
   }, function(answer)
@@ -587,7 +635,12 @@ function M.run(kind)
       return
     end
 
-    local typed = vim.fn.fnamemodify(vim.fn.expand(vim.trim(answer)), ":p")
+    -- A relative path is taken from the root offered, which the prompt shows.
+    local typed = vim.fn.expand(vim.trim(answer))
+    if vim.fn.isabsolutepath(typed) == 0 then
+      typed = vim.fs.joinpath(found.root, typed)
+    end
+
     local root = real(typed)
     local chosen = root and (root == real(found.root) and found or M.build_at(root, kind))
     if not chosen then
@@ -598,6 +651,7 @@ function M.run(kind)
       return
     end
 
+    warn_if_module(chosen, found)
     set_up(chosen)
   end)
 end

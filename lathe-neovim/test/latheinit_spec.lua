@@ -196,9 +196,9 @@ spec.check(
 local boot = work .. "/cache/bootstrap/9.9.9"
 run_from("/multi/core")
 spec.check(
-  "the prompt names the kind",
+  "the prompt names the version and the kind",
   prompts[#prompts].prompt,
-  "Lathe: set up the Maven build in: "
+  "Lathe: set up Lathe 9.9.9 for the Maven build in: "
 )
 spec.check("the prompt offers the root it found", prompts[#prompts].default, work .. "/multi")
 spec.check("Maven fetches first, with the Maven on PATH", last_cmd()[1], "/opt/bin/mvn")
@@ -263,6 +263,11 @@ spec.check(
   last_cmd()[#last_cmd()]:find("lib.fetching", 1, true) ~= nil,
   true
 )
+spec.check(
+  "a failed first fetch leaves no folder behind",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/8.8.8"),
+  nil
+)
 
 -- A snapshot is fetched every time, for its newest build.
 vim.fn.mkdir(work .. "/cache/bootstrap/1.0-SNAPSHOT/lib", "p")
@@ -274,6 +279,11 @@ spec.check(
   "-DoutputDirectory=" .. work .. "/cache/bootstrap/1.0-SNAPSHOT/lib.fetching"
 )
 finish_build(1)
+spec.check(
+  "a failed fetch keeps the jars fetched before",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/1.0-SNAPSHOT/lib") ~= nil,
+  true
+)
 vim.env.LATHE_VERSION = "9.9.9"
 
 local before = #calls
@@ -284,8 +294,31 @@ finish_build(0)
 
 -- The root prompt: an edited root is taken as typed; a cancel runs nothing.
 next_answer = work .. "/multi/core/"
+local notes_before = #notes
 run_from("/multi/core")
 spec.check("an edited root builds there", calls[#calls].opts.cwd, work .. "/multi/core")
+spec.check(
+  "a root inside the one found may be a module: say so",
+  vim.iter(vim.list_slice(notes, notes_before + 1)):any(function(note)
+    return note:find(
+      work .. "/multi/core is inside the Maven build at " .. work .. "/multi",
+      1,
+      true
+    ) ~= nil
+  end),
+  true
+)
+finish_build(0)
+
+next_answer = "core"
+vim.cmd.cd(work .. "/gradle")
+vim.cmd.edit(work .. "/multi/core/pom.xml")
+latheinit.run()
+spec.check(
+  "a relative root is taken from the root offered, not :pwd",
+  calls[#calls].opts.cwd,
+  work .. "/multi/core"
+)
 finish_build(0)
 
 before = #calls
@@ -305,6 +338,11 @@ spec.check(
 -- A build that pins another Lathe (a parent POM, say) runs its own: say which.
 write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.2.3"}')
 run_from("/multi")
+spec.check(
+  "the prompt names the version set up now",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 (now 1.2.3) for the Maven build in: "
+)
 finish_build(0)
 spec.check(
   "a version the build pins is named instead of the one asked for",
@@ -373,6 +411,11 @@ local team_java = vim.fn.bufadd(work .. "/team/src/Team.java")
 vim.fn.bufload(team_java)
 vim.bo[team_java].filetype = "java"
 run_from("/team")
+spec.check(
+  "the prompt says the build registers Lathe",
+  prompts[#prompts].prompt,
+  "Lathe: build the Maven project, which registers Lathe, in: "
+)
 spec.check(
   "a registered Maven build runs the same first build, without the activation",
   table.concat(last_cmd(), " "),
@@ -465,9 +508,11 @@ vim.api.nvim_get_runtime_file = get_runtime_file
 spec.check("a missing template runs nothing", #calls, before)
 spec.check("and says to reinstall", last_note_has("reinstall the plugin"), true)
 
--- A development client sets up nothing without LATHE_VERSION.
+-- A development client sets up nothing without LATHE_VERSION, and says so before the prompt.
 vim.env.LATHE_VERSION = nil
+local prompts_before = #prompts
 run_from("/gradle")
+spec.check("a development version asks nothing", #prompts, prompts_before)
 spec.check("a development version runs nothing", #calls, before)
 spec.check("and says to set LATHE_VERSION", last_note_has("LATHE_VERSION"), true)
 run_from("/team-gradle")
