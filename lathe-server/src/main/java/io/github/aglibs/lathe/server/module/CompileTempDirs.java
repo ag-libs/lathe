@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -35,12 +37,13 @@ final class CompileTempDirs {
   }
 
   // The dirs of servers no longer running. A live server's is left, and so is one this user cannot
-  // delete (another user's server, on a shared temp dir).
+  // delete (another user's server, on a shared temp dir). Only root's own level is read: below it
+  // lie other users' entries this one cannot read, and the cleanup must never fail a compile.
   static void deleteOrphaned(final Path root) {
     final List<Path> dirs;
     try {
-      dirs = FileUtil.subdirectories(root);
-    } catch (final IOException e) {
+      dirs = ServerFiles.childDirectories(root);
+    } catch (final IOException | UncheckedIOException e) {
       LOG.log(Level.WARNING, e, () -> "[cache] temp dir %s not listed".formatted(root));
       return;
     }
