@@ -53,6 +53,37 @@ final class ReactorRewriteTest {
         .isEqualTo(os("/workspace/.lathe/lib/classes-testFixtures"));
   }
 
+  // A Gradle jar that packs a second source set's classes (generated code) is listed under both
+  // trees: a class path holding it gets both mirrors, in the order listed; a module path, where a
+  // second directory would hold no module, and a single path get the first.
+  @Test
+  void toLathe_jarOfTwoTrees_classPathGetsBothMirrors_modulePathTheFirst() {
+    final ReactorRewrite rewrite =
+        ReactorRewrite.of(
+            WORKSPACE,
+            List.of(
+                new OutputData("lib/build/libs/lib.jar", "lib", "classes"),
+                new OutputData("lib/build/libs/lib.jar", "lib", "classes-codeGen")));
+    final List<String> path = List.of(os("/workspace/lib/build/libs/lib.jar"), os("/repo/a.jar"));
+
+    assertThat(rewrite.toLatheClassPath(path))
+        .containsExactly(
+            os("/workspace/.lathe/lib/classes"),
+            os("/workspace/.lathe/lib/classes-codeGen"),
+            os("/repo/a.jar"));
+    assertThat(rewrite.toLathe(path))
+        .containsExactly(os("/workspace/.lathe/lib/classes"), os("/repo/a.jar"));
+    assertThat(rewrite.expand(Path.of("/workspace/lib/build/libs/lib.jar")))
+        .containsExactly(
+            Path.of("/workspace/.lathe/lib/classes"),
+            Path.of("/workspace/.lathe/lib/classes-codeGen"));
+    assertThat(rewrite.toLathe(os("/workspace/lib/build/libs/lib.jar")))
+        .isEqualTo(os("/workspace/.lathe/lib/classes"));
+    assertThat(REWRITE.expand(Path.of("/workspace/lib/build/libs/lib.jar")))
+        .containsExactly(Path.of("/workspace/.lathe/lib/classes"));
+    assertThat(REWRITE.expand(Path.of("/repo/a.jar"))).containsExactly(Path.of("/repo/a.jar"));
+  }
+
   @Test
   void toLathe_unlistedPaths_passThroughUnchanged() {
     assertThat(REWRITE.toLathe(os("/home/user/.m2/repo/lib.jar")))

@@ -180,7 +180,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         }
         """);
     TestCompiler.writeSourceSetParams(
-        tmp, "module", "integrationTest", sourceSetRoot, TestJavac.JUNIT_CLASSPATH);
+        tmp, "module", "integrationTest", sourceSetRoot, TestJavac.JUNIT_CLASSPATH, true);
     final Path testFile = prepareFooTestWorkspace();
     openDoc(sourceSetFile, Files.readString(sourceSetFile));
     openDoc(testFile, Files.readString(testFile));

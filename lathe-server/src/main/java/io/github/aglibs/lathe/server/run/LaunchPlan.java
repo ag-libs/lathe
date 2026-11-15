@@ -33,7 +33,7 @@ public final class LaunchPlan {
     final List<String> classPath =
         Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
             .toList();
-    final List<String> rewrittenClassPath = reactorRewrite.toLathe(classPath);
+    final List<String> rewrittenClassPath = reactorRewrite.toLatheClassPath(classPath);
     final Map<String, String> patchModules = reactorRewrite.toLathe(data.patchModules());
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
@@ -64,7 +64,7 @@ public final class LaunchPlan {
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
     final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
-    final List<String> classPath = reactorRewrite.toLathe(data.classPath());
+    final List<String> classPath = reactorRewrite.toLatheClassPath(data.classPath());
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
     if (jdwp.enabled()) {
@@ -99,7 +99,7 @@ public final class LaunchPlan {
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
     final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
-    final List<String> classPath = reactorRewrite.toLathe(data.classPath());
+    final List<String> classPath = reactorRewrite.toLatheClassPath(data.classPath());
     final Map<String, String> patchModules = reactorRewrite.toLathe(data.patchModules());
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());

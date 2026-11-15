@@ -119,8 +119,10 @@ public record ModuleSourceConfig(
     return testCode;
   }
 
+  // A jar that packs another source set's classes takes that tree's mirror too; a module path keeps
+  // one mirror per entry, as a second directory there would hold no module.
   public List<Path> remappedClasspath() {
-    return remapped(classpath);
+    return classpath.stream().flatMap(path -> reactorRewrite.expand(path).stream()).toList();
   }
 
   public List<Path> remappedModulepath() {
