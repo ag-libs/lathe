@@ -194,8 +194,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   }
 
   // @SuppressWarnings("unused") covers the declaration it is on and all it encloses, as IntelliJ
-  // and
-  // Eclipse read it: a framework reads the field, or the code is kept on purpose.
+  // and Eclipse read it: a framework reads the field, or the code is kept on purpose.
   private static boolean suppressesUnused(final Element element) {
     for (Element scope = element; scope != null; scope = scope.getEnclosingElement()) {
       final SuppressWarnings suppressed = scope.getAnnotation(SuppressWarnings.class);
