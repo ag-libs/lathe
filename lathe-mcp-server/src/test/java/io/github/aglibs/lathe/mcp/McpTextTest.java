@@ -733,15 +733,7 @@ class McpTextTest {
             text(
                 McpText.analyzeResult(
                     new LatheChangeImpact(
-                        "",
-                        false,
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        0,
-                        0,
-                        false,
-                        List.of(),
+                        "", false, List.of(), List.of(), List.of(), 0, 0, false, List.of(),
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
