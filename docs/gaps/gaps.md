@@ -2419,30 +2419,32 @@ None yet.
 
 ---
 
-## MC-85 — Rename and `verify_change` say nothing about uses in modules the sync leaves out
+## MC-85 — `verify_change` says nothing about uses in modules the sync leaves out
 
 **Status: documented**
 
 **Value: medium — Size: S**
 
-**Affects: MCP `rename_symbol` and `verify_change`.**
+**Affects: MCP `verify_change`.**
 
 Found by the exploratory MCP round (2026-11-04) on Helidon.
 
 ### Observed behaviour
 
 Renaming `ServerFeature.setup` left `webserver/tests/webserver/.../FeaturesOrderingTest.java:268` broken: that module is
-behind the root `tests` profile and not synced. Neither the rename nor `verify_change` mentions it, though
-`get_diagnostics` on the file says it is outside the compiled modules.
+behind the root `tests` profile and not synced.
+`rename_symbol` now lists the Java files outside the built modules that name the symbol;
+`verify_change` still checks only the synced modules and says nothing about the others.
 
 ### Fix direction
 
-When the reactor has profile-gated modules not synced, say in a rename's and `verify_change`'s answer that they were not
-checked, and list their files that mention the name.
+List the files outside the built modules that name a changed type only when its API changed:
+for a change inside a method body the same list would come back on every call, and agents learn to skip it.
+Waits on `verify_change` telling an API change from a body change.
 
 ### Regression targets
 
-None yet.
+`LatheEngineRenameTest.rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTextAndFilesOutsideModules` (the rename half).
 
 ---
 

@@ -56,6 +56,11 @@ final class ChangeVerifier {
         state.manifest().resourceSourceDirs());
   }
 
+  // Every synced module's source roots: a Java file below none is one the last build left out.
+  List<Path> sourceRoots() {
+    return state.registry().allSourceRoots();
+  }
+
   // The changed files whose content is not what the last build compiled: a change put back is no
   // change, so verify_change neither checks it nor asks for a sync. A deleted file stays, as its
   // callers break. Each module's stamps are read once.
