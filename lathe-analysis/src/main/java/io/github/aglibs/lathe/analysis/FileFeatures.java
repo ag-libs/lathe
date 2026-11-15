@@ -315,7 +315,13 @@ public final class FileFeatures {
 
                   final Scope scope = ImportCandidates.scopeAt(typeAt, analysis);
                   final List<String> types =
-                      ImportCandidates.resolve(name, scope, analysis, typeIndex, alreadyImported);
+                      ImportCandidates.resolve(
+                          name,
+                          scope,
+                          ImportCandidates.typeArgumentsAt(typeAt, analysis),
+                          analysis,
+                          typeIndex,
+                          alreadyImported);
                   final List<String> nested =
                       ImportCandidates.nestedTypes(name, scope, analysis, typeIndex).stream()
                           .map(type -> type.getQualifiedName().toString())

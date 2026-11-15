@@ -739,25 +739,54 @@ public final class LatheEngine {
   }
 
   // Adds the imports that have one candidate; the rest are the agent's to choose (ambiguous) or
-  // fix (unknown names).
+  // fix (unknown names). An import can make another name resolve: a supertype brings the types
+  // nested in it, so the names left are read again after each round that added any.
   public LatheImports fixImports(final Path file) {
     requireReactorFile(file);
     final String uri = LatheUri.fromPath(file);
-    // Missing imports are read from the file's document, so it is registered first.
-    final MissingImportsResult missing =
-        request(
-            fileWork(
-                file,
-                (session, fileUri, diagnostics, cancel, progress) ->
-                    session.features().missingImportsFuture(fileUri)));
-    final Map<Boolean, List<MissingImport>> byUnambiguous =
-        missing.items().stream()
-            .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
-    final List<String> added =
-        byUnambiguous.get(true).stream().map(item -> item.candidates().get(0)).sorted().toList();
-    final String path =
-        added.isEmpty() ? displayPath(file, uri) : writeFile(file, uri, missing.edits(added));
-    return new LatheImports(path, added, byUnambiguous.get(false));
+    final var added = new ArrayList<String>();
+    MissingImportsResult missing = missingImports(file);
+    List<String> round = unambiguous(missing, added);
+    while (!round.isEmpty()) {
+      writeFile(file, uri, missing.edits(round));
+      added.addAll(round);
+      missing = missingImports(file);
+      round = unambiguous(missing, added);
+    }
+
+    return new LatheImports(
+        displayPath(file, uri), added.stream().sorted().toList(), missing.items());
+  }
+
+  // Missing imports are read from the file's document, so it is registered first.
+  private MissingImportsResult missingImports(final Path file) {
+    return request(
+        fileWork(
+            file,
+            (session, fileUri, diagnostics, cancel, progress) ->
+                session.features().missingImportsFuture(fileUri)));
+  }
+
+  // A name with one candidate, unless a type nested in one of the file's other missing names is
+  // named so too: once that type is imported the name may be the nested one, inherited from it
+  // (HealthCheck.Result), so the name waits for the next round.
+  private static List<String> unambiguous(
+      final MissingImportsResult missing, final List<String> added) {
+    final Set<String> missingNames =
+        missing.items().stream().map(MissingImport::name).collect(Collectors.toUnmodifiableSet());
+    return missing.items().stream()
+        .filter(item -> item.candidates().size() == 1)
+        .filter(
+            item -> item.nested().stream().noneMatch(nested -> nestedInAny(nested, missingNames)))
+        .map(item -> item.candidates().get(0))
+        .filter(candidate -> !added.contains(candidate))
+        .toList();
+  }
+
+  // Whether the nested type's enclosing type is one of the names (a.b.Outer.Inner is in Outer).
+  private static boolean nestedInAny(final String nested, final Set<String> names) {
+    final String outer = nested.substring(0, nested.lastIndexOf('.'));
+    return names.contains(outer.substring(outer.lastIndexOf('.') + 1));
   }
 
   // The tools that write one file leave dependency, JDK and generated sources alone.
