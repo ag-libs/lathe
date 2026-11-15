@@ -81,17 +81,20 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     Files.writeString(broken, "package com.example; class Broken { com.example.api.Gone gone; }");
     assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(2);
 
-    TestCompiler.writeMirroredModule(
-        tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L);
-    TestJavac.compileToDir(
-        tmp.resolve(".lathe/module/classes"), List.of(tmp.resolve(".lathe/api/classes")), fixed);
-    stampModule(fixed);
+    // In a sync's order: the params first, then the workspace.json rewrite that writing the api
+    // module makes, which the server reloads on. Written after it, the params would be missed by a
+    // reload a scan tick started in between.
     TestCompiler.writeModuleParams(
         tmp,
         "module",
         tmp.resolve("module/src/main/java"),
         null,
         List.of(tmp.resolve("api/target/classes")));
+    TestCompiler.writeMirroredModule(
+        tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L);
+    TestJavac.compileToDir(
+        tmp.resolve(".lathe/module/classes"), List.of(tmp.resolve(".lathe/api/classes")), fixed);
+    stampModule(fixed);
 
     assertThat(engine.diagnostics(fixed).value()).isEmpty();
     assertThat(engine.notes(List.of()).notCompiled())
