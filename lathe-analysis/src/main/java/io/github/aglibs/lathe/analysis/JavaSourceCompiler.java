@@ -126,6 +126,13 @@ public interface JavaSourceCompiler extends AutoCloseable {
         .toList();
   }
 
+  // analyzeOpenBatch for a check whose results nobody keeps: like compileDetached, the files' own
+  // compiles are left undisturbed.
+  default List<CompilerResult> analyzeOpenBatchDetached(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    return sources.stream().map(source -> compileDetached(source.uri(), source.content())).toList();
+  }
+
   StandardJavaFileManager fileManager();
 
   @Override

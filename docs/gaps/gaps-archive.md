@@ -12731,6 +12731,28 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-81 — `verify_change` after a `module-info.java` edit checks only `module-info.java` — done
+
+**Status: done.**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+Removing `requires static java.sql;` from `equalsverifier-core`'s `module-info.java` got "No errors" from `verify_change`, which checked only the descriptor, while `JavaSqlValueSupplier.java` no longer compiled.
+
+### Resolution
+
+A changed `module-info.java` brings every source of its module into the check (`ChangeVerifier.seenBy`): callers are otherwise found by the changed file's type name, which no file spells for a descriptor.
+The modules reading it are left to the sync the answer suggests, as before.
+So that a descriptor edit stays fast on a large module, a change's callers are now checked up to 50 files of a source tree per javac task;
+the changed files themselves are still checked one by one, against the classes their write produced.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.verifyChange_moduleInfoDropsARequires_reportsTheModuleSourceThatNeedsIt`
+
+---
+
 ## MC-76 — Two hits on one line show as duplicate rows without columns — done
 
 **Status: done.**

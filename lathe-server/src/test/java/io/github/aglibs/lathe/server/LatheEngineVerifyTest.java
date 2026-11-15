@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -373,6 +374,35 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
                 assertThat(module.diagnostics())
                     .extracting(located -> located.message())
                     .anySatisfy(message -> assertThat(message).contains("getCount()")));
+  }
+
+  // A module descriptor is named by no source, yet decides what every source of its module reads.
+  @Test
+  void verifyChange_moduleInfoDropsARequires_reportsTheModuleSourceThatNeedsIt() throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put("module-info.java", "module app { requires java.sql; }\n");
+    sources.put(
+        "com/example/Db.java",
+        "package com.example;\nclass Db { java.sql.Connection connection; }\n");
+    sources.put("com/example/Plain.java", "package com.example;\nclass Plain {}\n");
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    final Path descriptor = files.get(0);
+    engine = new LatheEngine(tmp);
+
+    writeNewer(descriptor, "module app {}\n");
+
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .allMatch(d -> d.path().equals(FileUtil.slashed(tmp.relativize(files.get(1)))))
+                    .anyMatch(d -> d.message().contains("java.sql")));
+
+    writeNewer(descriptor, "module app {\n  requires java.sql;\n}\n");
+
+    assertThat(engine.verifyChange(List.of()).perModule()).isEmpty();
   }
 
   @Test
