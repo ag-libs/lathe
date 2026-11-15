@@ -346,6 +346,13 @@
                 <goal>report</goal>
               </goals>
               <phase>verify</phase>
+              <configuration>
+                <!-- A multi-release jar's newer-JDK copy of a class has its name; JaCoCo refuses
+                     two classes of one name in a report. -->
+                <excludes>
+                  <exclude>META-INF/versions/**</exclude>
+                </excludes>
+              </configuration>
             </execution>
           </executions>
         </plugin>
@@ -422,7 +429,8 @@
 
   <profiles>
     <profile>
-      <!-- Coverage costs about 8% of test CPU and nothing reads the report yet: run it on demand with -Pcoverage. -->
+      <!-- Coverage costs about 8% of test CPU and nothing reads the report yet: run it on demand with
+           -Pcoverage, the invoker fixtures included, then dev/coverage.py for one report of all. -->
       <id>coverage</id>
       <build>
         <plugins>
