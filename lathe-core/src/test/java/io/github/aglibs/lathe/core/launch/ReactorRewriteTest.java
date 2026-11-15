@@ -119,7 +119,7 @@ final class ReactorRewriteTest {
   }
 
   // A jar that also holds classes another compiler wrote (Kotlin, Groovy): the mirror holds javac's
-  // only, so a class path, at analysis and at launch alike, takes the mirror and then the jar, and a
+  // only, so a class path, at analysis and at launch alike, takes the mirror and then the jar; a
   // module path, which cannot hold both, the mirror alone.
   @Test
   void of_jarWithExtraClasses_classPathTakesTheMirrorThenTheJar() {
