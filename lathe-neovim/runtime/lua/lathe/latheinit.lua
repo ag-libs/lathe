@@ -280,8 +280,7 @@ local function server_version(root)
 end
 
 -- Names the version set up, and says when the build pinned another than the one asked for.
-local function report_version(root, wanted)
-  local running = server_version(root)
+local function report_version(root, running, wanted)
   if not running then
     return
   end
@@ -300,16 +299,62 @@ local function report_version(root, wanted)
   notify(("server %s set up at %s."):format(running, root))
 end
 
+local function start_servers(root)
+  for _, buf in ipairs(java_buffers_under(root)) do
+    require("lathe").start(buf)
+  end
+end
+
+-- The root's running servers of another version than the one set up, which they would go on
+-- serving until restarted.
+local function stale_servers(root, version)
+  local wanted = real(root)
+  return vim.tbl_filter(function(client)
+    return real(client.root_dir) == wanted
+      and vim.tbl_get(client, "server_info", "version") ~= version
+  end, vim.lsp.get_clients({ name = "lathe" }))
+end
+
+local STOP_POLL_MS = 100
+local STOP_FORCE_AFTER = 30
+
+-- Starts the new servers once the old ones have exited; one that has not exited after a few
+-- seconds is killed.
+local function restart_when_stopped(root, clients, polls)
+  local running = vim.tbl_filter(function(client)
+    return not client:is_stopped()
+  end, clients)
+  if #running == 0 then
+    start_servers(root)
+    return
+  end
+
+  if polls == STOP_FORCE_AFTER then
+    for _, client in ipairs(running) do
+      client:stop(true)
+    end
+  end
+
+  vim.defer_fn(function()
+    restart_when_stopped(root, running, polls + 1)
+  end, STOP_POLL_MS)
+end
+
 -- A build that failed may still have written the launcher (a module failed after Lathe set up the
 -- rest): attach, and the server serves what was set up. One that succeeded without a
 -- launcher ran where Lathe set nothing up: most often a module, as Lathe sets up a build only from
--- its root, or a build tool too old to load Lathe.
+-- its root, or a build tool too old to load Lathe. A server already running on another version is
+-- restarted on the one set up.
 local function attach(root, result, version)
   if vim.fn.executable(workspace.launcher_path(root)) == 1 then
-    report_version(root, version)
-    for _, buf in ipairs(java_buffers_under(root)) do
-      require("lathe").start(buf)
+    local installed = server_version(root)
+    report_version(root, installed, version)
+    local stale = installed and stale_servers(root, installed) or {}
+    for _, client in ipairs(stale) do
+      client:stop()
     end
+
+    restart_when_stopped(root, stale, 0)
     return
   end
 

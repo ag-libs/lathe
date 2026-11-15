@@ -193,7 +193,7 @@ The Gradle script already replays the `--init-script` files that registered Lath
 
 1. **Pinned at init.** `~/.cache/lathe/bootstrap/<v>/` holds the activation jars and the init script for one version and never changes; the sync script names those exact paths, so editor, terminal and MCP syncs all run one version.
    No pointer that follows the newest version: it would need a link ([Multi-OS](../done/lathe-multi-os.md) forbids them), and a sync would change versions under the user.
-2. **`:LatheInit` again upgrades.** On a personal workspace it re-runs the build at the client's version, which renders a new sync script.
+2. **`:LatheInit` again upgrades.** On a personal workspace it re-runs the build at the client's version, which renders a new sync script, and restarts a running server of another version, which would otherwise go on serving the old one.
 3. **Messages.** No registration found and `.lathe/` present means a personal workspace (the same text check as `:LatheInit`); there, the client's protocol-mismatch warning says "run `:LatheInit`" instead of "update the Lathe build plugin".
    A different version with the same protocol stays silent, as today.
 4. **A missing bootstrap file fails the sync.** [Spiked](#spike-results-2026-11-11): Maven ignores a missing `maven.ext.class.path` jar and the build succeeds without Lathe, leaving `.lathe/` stale with no message; Gradle stops on a missing `--init-script`, in its own words.

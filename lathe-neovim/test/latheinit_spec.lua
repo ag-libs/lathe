@@ -42,6 +42,23 @@ package.loaded["lathe"] = {
   end,
   warn_if_not_ready = function() end,
 }
+-- The running Lathe servers :LatheInit sees; none unless a check sets them.
+local clients = {}
+vim.lsp.get_clients = function()
+  return clients
+end
+local function server(root, version)
+  return {
+    root_dir = root,
+    server_info = { version = version },
+    stop = function(self)
+      self.stopped = true
+    end,
+    is_stopped = function(self)
+      return self.stopped == true
+    end,
+  }
+end
 -- The root prompt: accepts the default unless the next answer is set (false cancels).
 local prompts = {}
 local next_answer
@@ -294,6 +311,24 @@ spec.check(
   last_note_has("Lathe: server 1.2.3 set up at " .. work .. "/multi: the project's build pins it"),
   true
 )
+
+-- A server of another version keeps serving the old one: it is stopped, and the buffers get the
+-- new one once it has exited. One of the version set up, or of another root, is left alone.
+local stale = server(work .. "/multi", "1.0.0")
+local current = server(work .. "/multi", "1.2.3")
+local elsewhere = server(work .. "/gradle", "1.0.0")
+clients = { stale, current, elsewhere }
+local starts = #started
+run_from("/multi")
+finish_build(0)
+vim.wait(1000, function()
+  return #started > starts
+end)
+spec.check("a server of another version is stopped", stale.stopped, true)
+spec.check("one of the version set up is left running", current.stopped, nil)
+spec.check("one of another root is left running", elsewhere.stopped, nil)
+spec.check("the buffers start again once it exited", started[#started], java)
+clients = {}
 
 -- A wrapper wins over the tool on PATH.
 executable(work .. "/marked/app/mvnw")
