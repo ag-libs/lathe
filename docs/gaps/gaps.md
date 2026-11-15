@@ -2323,9 +2323,7 @@ Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier an
 
 - `fix_imports` imports `javax.xml.transform.Result` where the inherited `HealthCheck.Result` was meant (Dropwizard
   `JdbiHealthCheck` with every import removed), and offers `java.awt.List` for `List<String>` (not generic).
-- `verify_change` lists at most javac's 100 errors per compile without saying so: `seconds(long)` to `seconds(long, int)`
-  reports "156 error(s)" of about 221.
-  Callers are checked 50 to a javac task, and javac skips flow analysis once a task has an error, as a Maven build does:
+- `verify_change` checks callers 50 to a javac task, and javac skips flow analysis once a task has an error, as a Maven build does:
   while one caller fails, another in its batch that only lacks a `return` or an exception declaration is not listed.
 - `describe_symbol`'s `source:` label is the JPMS module name from one caller (`nl.jqno.equalsverifier`) and the Maven
   module from another (`equalsverifier-core`).
@@ -2342,6 +2340,7 @@ Each is small; take them one by one when touching the tool.
 ### Regression targets
 
 - `LatheEngineVerifyTest.analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences` (`analyze_change` counts uses, not declarations; fixed 2026-11-15)
+- `LatheEngineNavigationTest.diagnostics_moreThanAHundredErrors_reportsEveryOne` (analysis reports past javac's 100-error limit; fixed 2026-11-15)
 
 ---
 
