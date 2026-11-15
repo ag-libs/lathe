@@ -151,6 +151,41 @@ class CompileCaptureTest {
     return Files.createDirectories(tmp.resolve(".lathe/module-a"));
   }
 
+  // A compile without --release records its -source and -target ahead of its own args; one whose
+  // args already name a version or preview, or with a release or preview of its own, or without
+  // both versions, records its args as they are.
+  @Test
+  void withSourceAndTarget_noReleaseOrVersionArgs_addsThem_otherwiseArgsAsTheyAre() {
+    final List<String> args =
+        List.of("-Xlint:all", "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED");
+
+    assertThat(CompileCapture.withSourceAndTarget(args, "17", "17", null, false))
+        .containsExactly(
+            "-source",
+            "17",
+            "-target",
+            "17",
+            "-Xlint:all",
+            "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED");
+    assertThat(CompileCapture.withSourceAndTarget(args, "1.8", "11", "", false))
+        .startsWith("-source", "1.8", "-target", "11");
+    assertThat(CompileCapture.withSourceAndTarget(args, "17", "17", "17", false)).isEqualTo(args);
+    assertThat(CompileCapture.withSourceAndTarget(args, "17", "17", null, true)).isEqualTo(args);
+    assertThat(CompileCapture.withSourceAndTarget(args, null, "17", null, false)).isEqualTo(args);
+    assertThat(CompileCapture.withSourceAndTarget(args, "17", " ", null, false)).isEqualTo(args);
+    for (final List<String> own :
+        List.of(
+            List.of("--release", "17"),
+            List.of("--release=17"),
+            List.of("-source", "17"),
+            List.of("--target=17"),
+            List.of("--enable-preview"))) {
+      assertThat(CompileCapture.withSourceAndTarget(own, "11", "11", null, false))
+          .as("%s", own)
+          .isEqualTo(own);
+    }
+  }
+
   private ModuleConfigData config(
       final String sourceTree, final Path generatedSourcesDir, final List<String> sourceRoots) {
     return new ModuleConfigData(

@@ -36,7 +36,10 @@ class LatheCaptureTaskFunctionalTest {
             .file(
                 "settings.gradle",
                 SETTINGS + "buildCache { local { directory = file(\"build-cache\") } }\n")
-            .file("build.gradle", GradleFixture.JAVA)
+            .file(
+                "build.gradle",
+                GradleFixture.JAVA
+                    + "java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }\n")
             // A file declaring a type of another name: a normal build stops on a compile error,
             // so the capture trusts it and mirrors, without asking for a class per source.
             .file(
@@ -73,10 +76,11 @@ class LatheCaptureTaskFunctionalTest {
     final var main = params("", LatheLayout.CLASSES_DIR);
     assertThat(main.sourceRoots()).containsExactly(fixture.path("src/main/java"));
     assertThat(main.outputDir()).isEqualTo(fixture.path("build/classes/java/main"));
-    // No --release recorded: Gradle compiled with -source/-target, as nothing set options.release.
+    // No --release: Gradle compiled with -source/-target, as nothing set options.release, and the
+    // args carry them, so the server compiles for 17 on a newer JDK too.
     assertThat(main.release()).isNull();
     assertThat(main.proc()).isEqualTo("none");
-    assertThat(main.compilerArgs()).containsExactly("-proc:none");
+    assertThat(main.compilerArgs()).containsExactly("-source", "17", "-target", "17", "-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
         .contains(fixture.path("build/classes/java/main"));
   }
@@ -265,7 +269,7 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(app.release()).isEqualTo("17");
     assertThat(app.processorPath()).isNotEmpty();
     assertThat(app.proc()).isNull();
-    assertThat(app.compilerArgs()).doesNotContain("-proc:none");
+    assertThat(app.compilerArgs()).doesNotContain("-proc:none", "-source", "-target");
     assertThat(app.generatedSourcesDir())
         .isEqualTo(fixture.path("app/build/generated/sources/annotationProcessor/java/main"));
     assertThat(app.classpath()).contains(fixture.path("lib/build/classes/java/main"));

@@ -136,6 +136,25 @@ class MavenModuleConfigTest {
         .containsExactly("--module-version", "27.0.0-SNAPSHOT", "-Werror");
   }
 
+  // Without a release, Maven passes javac its source and target beside the custom args: they are
+  // recorded with them, so the server compiles for the same version. A release is recorded as one.
+  @Test
+  void of_sourceAndTargetWithoutRelease_recordedAheadOfTheArgs_releaseAlone() {
+    final var config = new CompilerConfiguration();
+    config.setOutputLocation(tmp.resolve("target/classes").toString());
+    config.setSourceVersion("11");
+    config.setTargetVersion("11");
+    config.addCompilerCustomArgument("-Werror", null);
+    final List<String> withoutRelease = MavenModuleConfig.of(config).compilerArgs();
+    config.setReleaseVersion("17");
+
+    final ModuleConfigData withRelease = MavenModuleConfig.of(config);
+
+    assertThat(withoutRelease).containsExactly("-source", "11", "-target", "11", "-Werror");
+    assertThat(withRelease.compilerArgs()).containsExactly("-Werror");
+    assertThat(withRelease.release()).isEqualTo("17");
+  }
+
   @Test
   void write_producesReadableJsonFile() throws Exception {
     final var moduleRoot = tmp.resolve("module-f");

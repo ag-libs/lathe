@@ -89,6 +89,9 @@ The compiler configuration of one source tree: `ModuleConfigData`.
 | `externalOutput` | true when the server reads `outputDir` in place instead of a `.lathe/` mirror |
 | `testCode` | whether the tree is test code: Maven's test compile, a Gradle source set by Gradle's own convention (a JVM test suite's source set, or a name containing `test`); absent, the `test-classes` tree is. Drives go-to-test, suggestions and the create-type scope, never visibility |
 
+A compile with no `--release` (and no preview) has its `-source` and `-target` at the head of `compilerArgs`, unless its own args already name a version:
+the server's javac, which may be a newer JDK's, then writes the class file version the build does and checks the same language level.
+
 Without it, files under the module are "not in a Lathe module" and get no compiler, and runs are blocked as not compiled.
 Classpath entries that point at a sibling module's build output are rewritten by the server to that module's mirror,
 looked up in `workspace.json`'s `outputs`; any other path is used as written.

@@ -13,18 +13,54 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 // What one compile leaves in .lathe/<module>: its lsp-params, and, after a successful compile, the
 // bytecode and generated-sources mirrors and the compile stamps. The build tool decides when each
 // runs: a failed compile keeps the last good mirror, so its sources stay stale for the server.
 public final class CompileCapture {
 
+  private static final Set<String> VERSION_AND_PREVIEW_ARGS =
+      Set.of("--release", "-source", "--source", "-target", "--target", "--enable-preview");
+
   private CompileCapture() {}
 
   public static void writeParams(final Path moduleDir, final ModuleConfigData config)
       throws IOException {
     Json.write(config, moduleDir.resolve(LatheLayout.paramsFileName(config.sourceTree())));
+  }
+
+  // A compile with no --release passes javac the -source and -target the build tool keeps apart
+  // from the args it lists: added to them, so the server's javac, maybe a newer JDK's, writes the
+  // same class file version and checks the same language level. Not where the args name a version
+  // themselves (javac refuses --release beside -source), nor with preview, which javac allows only
+  // at its own version.
+  public static List<String> withSourceAndTarget(
+      final List<String> args,
+      final String source,
+      final String target,
+      final String release,
+      final boolean enablePreview) {
+    if (isBlank(source)
+        || isBlank(target)
+        || !isBlank(release)
+        || enablePreview
+        || args.stream().anyMatch(CompileCapture::isVersionOrPreviewArg)) {
+      return List.copyOf(args);
+    }
+
+    return Stream.concat(Stream.of("-source", source, "-target", target), args.stream()).toList();
+  }
+
+  private static boolean isVersionOrPreviewArg(final String arg) {
+    return VERSION_AND_PREVIEW_ARGS.stream()
+        .anyMatch(flag -> arg.equals(flag) || arg.startsWith("%s=".formatted(flag)));
+  }
+
+  private static boolean isBlank(final String value) {
+    return value == null || value.isBlank();
   }
 
   // Each source's mtime, taken just before javac runs: compared after it, they tell which sources

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.compiler;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.install.CompileCapture;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -29,7 +30,12 @@ final class MavenModuleConfig {
         config.isParameters(),
         enablePreview(config),
         config.getProc(),
-        compilerArgs(config),
+        CompileCapture.withSourceAndTarget(
+            compilerArgs(config),
+            config.getSourceVersion(),
+            config.getTargetVersion(),
+            config.getReleaseVersion(),
+            enablePreview(config)),
         AnalysisMode.CLASSPATH,
         false,
         LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));

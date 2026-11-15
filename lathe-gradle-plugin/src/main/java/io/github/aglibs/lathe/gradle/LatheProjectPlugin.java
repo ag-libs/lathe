@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.install.CompileCapture;
 import io.github.aglibs.lathe.install.JvmArgsWriter;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import java.io.File;
@@ -746,7 +747,19 @@ public class LatheProjectPlugin implements Plugin<Project> {
                           (Callable<FileCollection>)
                               () -> javac.getOptions().getAnnotationProcessorPath());
                   task.getCompilerArgs()
-                      .set(project.provider(() -> javac.getOptions().getAllCompilerArgs()));
+                      .set(
+                          project.provider(
+                              () ->
+                                  CompileCapture.withSourceAndTarget(
+                                      javac.getOptions().getAllCompilerArgs(),
+                                      javac.getSourceCompatibility(),
+                                      javac.getTargetCompatibility(),
+                                      javac
+                                          .getOptions()
+                                          .getRelease()
+                                          .map(String::valueOf)
+                                          .getOrNull(),
+                                      false)));
                   task.getFailOnError()
                       .set(project.provider(() -> javac.getOptions().isFailOnError()));
                   // Only a --release the compile used, as on Maven: one Gradle did not pass
