@@ -440,6 +440,7 @@ final class LatheMcpTools {
   private static CallToolResult handleDiagnostics(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
+        engine,
         tool,
         request,
         file ->
@@ -509,7 +510,10 @@ final class LatheMcpTools {
     }
 
     return atFile(
-        tool, request, file -> render(engine.runTest(file, scope, method), McpText::testRunResult));
+        engine,
+        tool,
+        request,
+        file -> render(engine.runTest(file, scope, method), McpText::testRunResult));
   }
 
   private static CallToolResult handleAnalyzeChange(
@@ -544,6 +548,7 @@ final class LatheMcpTools {
   private static CallToolResult handleFormatFile(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
+        engine,
         tool,
         request,
         file ->
@@ -554,6 +559,7 @@ final class LatheMcpTools {
   private static CallToolResult handleFixImports(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
+        engine,
         tool,
         request,
         file -> McpText.importsResult(engine.fixImports(file), engine.notes(List.of(file))));
@@ -562,6 +568,7 @@ final class LatheMcpTools {
   private static CallToolResult handleOutline(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
+        engine,
         tool,
         request,
         file ->
@@ -648,6 +655,7 @@ final class LatheMcpTools {
   // Shared body for the file tools: an existing .java file, then the handler, an engine failure
   // becoming an isError result.
   private static CallToolResult atFile(
+      final LatheEngine engine,
       final String tool,
       final CallToolRequest request,
       final Function<Path, CallToolResult> handler) {
@@ -658,6 +666,10 @@ final class LatheMcpTools {
 
     if (!isJavaSource(file)) {
       return McpText.error(notAJavaSource(file));
+    }
+
+    if (!engine.inWorkspaceOrSources(file)) {
+      return McpText.error(outsideTheWorkspace(file));
     }
 
     return guarded(tool, file, () -> handler.apply(file));
@@ -682,6 +694,10 @@ final class LatheMcpTools {
 
     if (!isJavaSource(file)) {
       return McpText.error(notAJavaSource(file));
+    }
+
+    if (!engine.inWorkspaceOrSources(file)) {
+      return McpText.error(outsideTheWorkspace(file));
     }
 
     if (line < 1 || (column != null && column < 1)) {
@@ -794,6 +810,10 @@ final class LatheMcpTools {
     return FileUtil.isJavaFile(file)
         ? "%s does not exist".formatted(file)
         : "%s is not a .java file".formatted(file);
+  }
+
+  private static String outsideTheWorkspace(final Path file) {
+    return "%s is outside the workspace and its dependency and JDK sources".formatted(file);
   }
 
   // A call may carry no arguments at all, which the SDK passes on as null.

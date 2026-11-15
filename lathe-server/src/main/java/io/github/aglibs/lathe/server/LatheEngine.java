@@ -1159,6 +1159,20 @@ public final class LatheEngine {
         snippet(targetPath, location.getRange()));
   }
 
+  // Whether the read tools answer for an existing file: one in the workspace, or among the
+  // dependency and JDK sources Lathe extracted. By real path, so a link in the workspace to a file
+  // outside it is outside too, and a workspace under a linked directory still counts.
+  public boolean inWorkspaceOrSources(final Path file) {
+    final Path real = IOUtil.unchecked(() -> file.toRealPath());
+    return Stream.of(
+            workspaceRoot,
+            LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR),
+            LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_JDKS_DIR))
+        .filter(Files::isDirectory)
+        .map(root -> IOUtil.unchecked(() -> root.toRealPath()))
+        .anyMatch(real::startsWith);
+  }
+
   private LatheLocation.Origin origin(final Path target) {
     if (target.startsWith(latheDir)) {
       return LatheLocation.Origin.GENERATED;

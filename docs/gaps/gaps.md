@@ -1859,38 +1859,6 @@ None yet.
 
 ---
 
-## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-The read tools accept a `.java`-named path outside the workspace, including a symlink to `/etc/passwd`.
-Writes outside the reactor are refused.
-No content leaks (2026-11-15): `outline`, `get_definition` and `get_diagnostics` on the symlink answer "not checked".
-But the file is accepted silently, and the reason given is wrong for a file outside the workspace:
-"`../../../../../tmp/mc45/Passwd.java` is outside the modules the last build compiled (a profile may leave its module out)".
-
-### Fix direction
-
-Resolve the real path and refuse a file that is not under the workspace, its dependency sources or the JDK's, saying so ("outside the workspace"), instead of the profile explanation.
-
-Cause: the only check is `LatheMcpTools.isJavaSource` (a `.java` name and a regular file); the engine knows the
-workspace root (`LatheEngine.displayPath`) and the manifest knows the dependency and JDK source dirs (`LibrarySources`),
-but no read tool compares the file against them, and nothing calls `toRealPath`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-50 — `call_hierarchy` returns one level per call
 
 **Status: documented**

@@ -12750,6 +12750,27 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too — done
+
+**Status: done.**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+The read tools accepted any existing `.java`-named file, including a symlink to `/etc/passwd`, and explained the refusal to check it as a module a profile left out.
+
+### Resolution
+
+The file and position tools answer only for a file whose real path is in the workspace or among the dependency and JDK sources Lathe extracted (`LatheEngine.inWorkspaceOrSources`).
+Any other file is refused with "`<file>` is outside the workspace and its dependency and JDK sources", a link in the workspace to a file outside it included.
+
+### Regression targets
+
+- `LatheMcpToolsTest.fileTools_fileOutsideTheWorkspace_returnError`
+- `LatheMcpToolsTest.fileTools_linkInTheWorkspaceToAFileOutside_returnError`
+
+---
+
 ## MC-81 — `verify_change` after a `module-info.java` edit checks only `module-info.java` — done
 
 **Status: done.**
