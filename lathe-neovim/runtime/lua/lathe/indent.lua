@@ -50,35 +50,36 @@ local function resolve(bufnr)
     local pinned = project.profile == "google"
       or (project.block or 0) > 0
       or (project.continuation or 0) > 0
-    return block, continuation, pinned, project.profile
+    return block, continuation, pinned
   end
 
   local fallback_block, fallback_continuation = widths(M.config)
-  return fallback_block, fallback_continuation, false, M.config.profile
+  return fallback_block, fallback_continuation, false
 end
 
 -- Lines read to tell a file's indent character: enough for a file's first members.
 local DETECT_LINES = 200
 
 -- Whether the file already indents with tabs: more of its first lines start with a tab than with
--- two spaces or more. A single space is left out: in a tab-indented file a top-level Javadoc's
--- " *" lines start with one.
+-- two spaces or more, counting only lines with code after the indent. A single space is left out:
+-- in a tab-indented file a top-level Javadoc's " *" lines start with one.
 local function indents_with_tabs(bufnr)
   local tabs, spaces = 0, 0
   for _, text in ipairs(vim.api.nvim_buf_get_lines(bufnr, 0, DETECT_LINES, false)) do
-    if text:find("^\t") then
+    if text:find("^\t%s*%S") then
       tabs = tabs + 1
-    elseif text:find("^  ") then
+    elseif text:find("^  +%S") then
       spaces = spaces + 1
     end
   end
   return tabs > spaces
 end
 
--- The google profile is spaces by definition; otherwise the file keeps the character it indents
--- with, as IntelliJ does, until .editorconfig's indent_style (applied after this) says otherwise.
-local function set_widths(bufnr, block, continuation, profile)
-  vim.bo[bufnr].expandtab = profile == "google" or not indents_with_tabs(bufnr)
+-- Widths the project pins come from its formatter, which indents with spaces. Otherwise the file
+-- keeps the character it indents with, as IntelliJ does; this runs before native EditorConfig,
+-- whose indent_style then decides where the project sets it.
+local function set_widths(bufnr, block, continuation, pinned)
+  vim.bo[bufnr].expandtab = pinned or not indents_with_tabs(bufnr)
   vim.bo[bufnr].shiftwidth = block
   vim.bo[bufnr].softtabstop = block
   vim.bo[bufnr].tabstop = block
@@ -89,24 +90,24 @@ end
 -- FileType time; native EditorConfig applies afterward and takes precedence, until
 -- apply_project_indent restores what the project owns.
 function M.apply_buffer_options(bufnr)
-  local block, continuation, _, profile = resolve(bufnr)
-  set_widths(bufnr, block, continuation, profile)
+  local block, continuation, pinned = resolve(bufnr)
+  set_widths(bufnr, block, continuation, pinned)
 end
 
 -- Restore the project's own widths once native EditorConfig has run, so its formatter's indent
 -- wins over .editorconfig for Java, as format-on-save would rewrite anything else. EditorConfig
 -- keeps every other property, and the indent wherever the project leaves it open.
 function M.apply_project_indent(bufnr)
-  local block, continuation, project, profile = resolve(bufnr)
+  local block, continuation, project = resolve(bufnr)
   if project then
-    set_widths(bufnr, block, continuation, profile)
+    set_widths(bufnr, block, continuation, true)
   end
 end
 
 -- Block indent width, in display columns, for the current buffer: the effective 'shiftwidth',
 -- falling back to 'tabstop' when 'shiftwidth' is 0 (Vim's own rule). Those buffer-local options are
 -- set by native EditorConfig (editor_config profile) or the ftplugin baseline (google, or the
--- 4-space fallback), so the indenter follows whichever width the profile resolved.
+-- 4-wide fallback), so the indenter follows whichever width the profile resolved.
 local function block_width()
   local sw = vim.bo.shiftwidth
   if sw > 0 then

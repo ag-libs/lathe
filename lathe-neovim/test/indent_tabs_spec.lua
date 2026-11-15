@@ -1,6 +1,7 @@
 -- Verifies a Java buffer keeps the indent character its file already uses: a tab-indented file
 -- keeps tabs (new lines too), a space-indented or empty one spaces. .editorconfig's indent_style and
--- the google profile, which is spaces by definition, still decide over the file.
+-- an indent the project's style pins, which its formatter writes with spaces, still decide over the
+-- file.
 --
 -- Run headless from the repo root (or via run-specs.sh):
 --   nvim --headless --clean -u NONE \
@@ -34,9 +35,9 @@ local TABS = table.concat({
 
 local SPACES = "class Foo {\n    void run() {\n        int a = 1;\n    }\n}\n"
 
--- A project holding Foo.java with the given content, and an .editorconfig and a generated style
--- file when given.
-local function project(content, editorconfig, style)
+-- A project holding Foo.java with the given content, and an .editorconfig and generated and
+-- committed style files when given.
+local function project(content, editorconfig, style, committed)
   local dir = vim.fn.tempname()
   vim.fn.mkdir(dir .. "/.lathe", "p")
   vim.fn.mkdir(dir .. "/src/main/java", "p")
@@ -44,6 +45,7 @@ local function project(content, editorconfig, style)
     [".editorconfig"] = editorconfig or "root = true\n\n[*]\ncharset = utf-8\n",
     ["src/main/java/Foo.java"] = content,
     [".lathe/style.json"] = style,
+    ["lathe-style.json"] = committed,
   }
   for name, text in pairs(files) do
     local f = assert(io.open(dir .. "/" .. name, "w"))
@@ -81,11 +83,18 @@ spec.check("space-indented file: a new line indents with spaces", spaces_typed, 
 local empty = open(project("class Foo {\nint a = 1;\n}\n"))
 spec.check("file without indented lines: spaces", empty, true)
 
+local blank_tabs =
+  open(project("class Foo {\n\t\n\t\n\t\n\t\n    void run() {\n        int a = 1;\n    }\n}\n"))
+spec.check("space-indented file with whitespace-only tab lines: spaces", blank_tabs, true)
+
 local editorconfig = open(project(TABS, "root = true\n\n[*.java]\nindent_style = space\n"))
 spec.check(".editorconfig's indent_style over the file's tabs", editorconfig, true)
 
 local google =
   open(project(TABS, nil, '{"indent":{"profile":"google","block":2,"continuation":4}}'))
 spec.check("google profile: spaces over the file's tabs", google, true)
+
+local committed = open(project(TABS, nil, nil, '{"indent":{"block":4,"continuation":8}}'))
+spec.check("committed widths: spaces over the file's tabs", committed, true)
 
 spec.finish()

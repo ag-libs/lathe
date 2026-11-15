@@ -17,7 +17,7 @@
 --                       formatter is the project's own, declared in lathe-style.json.
 --                         style.indent    { profile = "google"|"editorconfig", block, continuation }
 --                                         editorconfig follows Neovim's built-in EditorConfig
---                                         (4-space fallback); google uses 2/4-space widths. block and
+--                                         (4-wide fallback); google uses 2/4-space widths. block and
 --                                         continuation (when > 0) override the profile widths.
 --   format_on_save      boolean; format on write when the server advertises formatting (default: false).
 --   pom                 table; client-side pom.xml support via `xmllint` (no server involvement):
