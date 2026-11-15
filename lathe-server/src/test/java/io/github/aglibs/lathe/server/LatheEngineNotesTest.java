@@ -20,6 +20,24 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
   private static final String BUILD_FILES_NOTE =
       "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 
+  // A module with Kotlin sources, which Lathe does not read, is named by its workspace path for an
+  // answer about uses; the first test shows a workspace without any names none.
+  @Test
+  void notes_moduleWithKotlinSources_namesIt() throws Exception {
+    final Path source =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/Sample.java", "package com.example; class Sample {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    Files.createDirectories(tmp.resolve("module/src/test/kotlin"));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of(source)).kotlinModules()).containsExactly("module");
+  }
+
   @Test
   void notes_agentEditDoesNotCompile_notCompiledWithItsError_noSyncSuggested_untilFixed()
       throws Exception {

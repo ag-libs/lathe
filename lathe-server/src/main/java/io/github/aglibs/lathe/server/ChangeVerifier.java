@@ -304,7 +304,7 @@ final class ChangeVerifier {
         notChecked,
         writePass.reactorBuildInProgress(),
         state.manifest().kotlinModuleDirs().stream()
-            .map(dir -> FileUtil.slashed(state.root().relativize(dir)))
+            .map(dir -> SourceLayout.displayed(FileUtil.slashed(state.root().relativize(dir))))
             .sorted()
             .toList());
   }

@@ -131,11 +131,13 @@ class WorkspaceManifestTest {
   }
 
   // Lathe reads no Kotlin: a built module with Kotlin sources where the Kotlin plugins look by
-  // default is named, so an answer about a symbol's uses can say it did not search there.
+  // default, in any source set, is named, so an answer about a symbol's uses can say it did not
+  // search there; the root module too.
   @Test
   void kotlinModuleDirs_moduleWithKotlinSources_listed_javaModuleNot() throws Exception {
-    Files.createDirectories(tmp.resolve("app-kotlin/src/test/kotlin"));
+    Files.createDirectories(tmp.resolve("app-kotlin/src/integrationTest/kotlin"));
     Files.createDirectories(tmp.resolve("app/src/main/java"));
+    Files.createDirectories(tmp.resolve("src/main/kotlin"));
     writeWorkspaceManifest(
         LatheLayout.SCHEMA_VERSION,
         List.of(),
@@ -144,10 +146,11 @@ class WorkspaceManifestTest {
         List.of(
             new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR),
             new OutputData(
-                "app-kotlin/target/test-classes", "app-kotlin", LatheLayout.TEST_CLASSES_DIR)));
+                "app-kotlin/target/test-classes", "app-kotlin", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("target/classes", "", LatheLayout.CLASSES_DIR)));
 
     assertThat(WorkspaceManifest.load(tmp).kotlinModuleDirs())
-        .containsExactly(tmp.resolve("app-kotlin"));
+        .containsExactlyInAnyOrder(tmp.resolve("app-kotlin"), tmp);
   }
 
   private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {

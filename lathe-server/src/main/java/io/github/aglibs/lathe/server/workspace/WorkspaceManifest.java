@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.workspace;
 
 import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
@@ -9,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -24,9 +26,11 @@ import java.util.stream.Stream;
 public final class WorkspaceManifest {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
-  // Where Maven's and Gradle's Kotlin plugins look for a module's Kotlin sources by default.
-  private static final List<Path> KOTLIN_SOURCE_DIRS =
-      List.of(Path.of("src", "main", "kotlin"), Path.of("src", "test", "kotlin"));
+  // Maven's and Gradle's Kotlin plugins look for a module's Kotlin sources in src/<source
+  // set>/kotlin
+  // by default.
+  private static final String SOURCES_DIR = "src";
+  private static final String KOTLIN_DIR = "kotlin";
 
   private final LibrarySources libraries;
   private final List<Path> typeIndexShardPaths;
@@ -192,7 +196,9 @@ public final class WorkspaceManifest {
   }
 
   private static boolean hasKotlinSources(final Path moduleDir) {
-    return KOTLIN_SOURCE_DIRS.stream().map(moduleDir::resolve).anyMatch(Files::isDirectory);
+    return IOUtil.unchecked(() -> ServerFiles.childDirectories(moduleDir.resolve(SOURCES_DIR)))
+        .stream()
+        .anyMatch(sourceSet -> Files.isDirectory(sourceSet.resolve(KOTLIN_DIR)));
   }
 
   public Optional<String> jdkSourcesNote() {

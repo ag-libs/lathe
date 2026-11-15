@@ -287,7 +287,8 @@ class McpTextTest {
   }
 
   // Lathe reads no Kotlin: where there is some, an answer about uses no longer says grep is
-  // needless and names the modules to check, an empty answer and verify_change's too.
+  // needless and names the modules to check: an empty one, verify_change's, deferred too, and the
+  // callers in a call hierarchy, though not its callees.
   @Test
   void referencesResult_workspaceWithKotlin_namesItsModulesInsteadOfTheGrepAdvice() {
     final var use =
@@ -316,6 +317,34 @@ class McpTextTest {
                     new LatheVerifyChange(null, List.of(), List.of(), null, List.of()),
                     withKotlin)))
         .endsWith(kotlinLine);
+    assertThat(
+            text(
+                McpText.verifyChangeResult(
+                    new LatheVerifyChange(
+                        ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING,
+                        List.of(),
+                        List.of(),
+                        null,
+                        List.of()),
+                    withKotlin)))
+        .endsWith(kotlinLine);
+    final var caller = new LatheCall("run", location("app/App.java", 12, "shop.sell(1);"));
+    assertThat(
+            text(
+                McpText.callHierarchyResult(
+                    new LatheCallHierarchy(true, 1, false, List.of(caller)),
+                    SymbolScope.REACTOR,
+                    withKotlin)))
+        .as("its callers may be in Kotlin")
+        .endsWith(kotlinLine);
+    assertThat(
+            text(
+                McpText.callHierarchyResult(
+                    new LatheCallHierarchy(false, 1, false, List.of(caller)),
+                    SymbolScope.REACTOR,
+                    withKotlin)))
+        .as("its callees are on the classpath")
+        .doesNotContain("Kotlin");
   }
 
   // Two uses on one line are two rows the column tells apart, not one row printed twice.

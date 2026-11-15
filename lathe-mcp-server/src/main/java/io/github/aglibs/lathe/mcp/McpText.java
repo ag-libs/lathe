@@ -76,17 +76,18 @@ final class McpText {
   }
 
   static String vouched(final String authority, final LatheNotes notes) {
-    return notes.kotlinModules().isEmpty()
-        ? authority + NO_GREP_NEEDED
-        : "%s.%s".formatted(authority, kotlinNote(notes));
+    return notes.kotlinModules().isEmpty() ? authority + NO_GREP_NEEDED : authority + ".";
   }
 
-  // An answer about a symbol's uses, in a workspace with Kotlin sources, which Lathe does not read.
-  static String kotlinNote(final LatheNotes notes) {
-    return notes.kotlinModules().isEmpty()
-        ? ""
-        : "%n%nKotlin sources in %s are not searched; check them with grep."
-            .formatted(listed(notes.kotlinModules()));
+  // An answer about a symbol's uses: in a workspace with Kotlin sources, which Lathe does not read,
+  // it names the modules to check with grep.
+  static CallToolResult usesResult(final String text, final LatheNotes notes) {
+    return result(
+        notes.kotlinModules().isEmpty()
+            ? text
+            : "%s%n%nKotlin sources in %s are not searched; check them with grep."
+                .formatted(text, listed(notes.kotlinModules())),
+        notes);
   }
 
   // Shared rendering for a capped, ranked location list ("N noun(s)"); authority is appended when
@@ -104,18 +105,18 @@ final class McpText {
             : "%d %s(s):".formatted(total, noun);
     final String text =
         locations.isEmpty()
-            ? "No %ss found.%s".formatted(noun, kotlinNote(notes))
+            ? "No %ss found.".formatted(noun)
             : "%s%n%s%n%n%s".formatted(header, locationLines(locations), authority);
-    return result(text, notes);
+    return usesResult(text, notes);
   }
 
   static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
     if (rename.totalEdits() == 0) {
-      return result("No references to rename.%s".formatted(kotlinNote(notes)), notes);
+      return usesResult("No references to rename.", notes);
     }
 
     final String text =
-        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s%s"
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s"
             .formatted(
                 rename.newName(),
                 rename.totalEdits(),
@@ -124,9 +125,8 @@ final class McpText {
                     .map(McpText::fileEditLine)
                     .collect(Collectors.joining(System.lineSeparator())),
                 RENAME_AUTHORITY,
-                kotlinNote(notes),
                 mentionLines(rename));
-    return result(text, notes);
+    return usesResult(text, notes);
   }
 
   // The rename edits no text; the agent decides about each place the old name still stands.
@@ -286,7 +286,8 @@ final class McpText {
                     ch.calls().stream()
                         .map(call -> callLine(arrow, call))
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(text, notes);
+    // Its callees are on the classpath, Kotlin ones too; its callers may be in unread Kotlin.
+    return ch.incoming() ? usesResult(text, notes) : result(text, notes);
   }
 
   static CallToolResult describeResult(final String markup, final LatheNotes notes) {
@@ -374,7 +375,7 @@ final class McpText {
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
             "override family: %s".formatted(overrides));
-    return result(text + kotlinNote(notes), notes);
+    return usesResult(text, notes);
   }
 
   static String joinOrNone(final List<String> items) {
@@ -390,18 +391,19 @@ final class McpText {
           verify.suggestedSync() == null
               ? "Re-check in a moment."
               : "Run `%s`, then re-check.".formatted(verify.suggestedSync());
-      return result(
+      return usesResult(
           "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next), notes);
     }
 
     final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
     final long errors = errorCount(verify);
-    return result(
-        verifyHeadline(errors, total - errors, notes.notChecked().size())
-            + verifyDiagnosticLines(verify.perModule())
-            + failedWritesNote(verify)
-            + crossModuleNote(verify, errors)
-            + kotlinNote(notes),
+    return usesResult(
+        "%s%s%s%s"
+            .formatted(
+                verifyHeadline(errors, total - errors, notes.notChecked().size()),
+                verifyDiagnosticLines(verify.perModule()),
+                failedWritesNote(verify),
+                crossModuleNote(verify, errors)),
         notes);
   }
 

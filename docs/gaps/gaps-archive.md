@@ -12783,7 +12783,7 @@ Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
 ### Resolution
 
 Lathe does not read Kotlin: its references, rename and checks stay Java-only.
-In a workspace whose built modules hold Kotlin sources where the Kotlin plugins look by default (`src/main/kotlin`, `src/test/kotlin`), the answers of `find_references`, `find_implementations`, `rename_symbol`, `analyze_change` and `verify_change` no longer say grep is needless, and name those modules: "Kotlin sources in … are not searched; check them with grep."
+In a workspace whose built modules hold Kotlin sources where the Kotlin plugins look by default (`src/<source set>/kotlin`), the answers of `find_references`, `find_implementations`, `rename_symbol`, `analyze_change`, `verify_change` and an incoming `call_hierarchy` no longer say grep is needless, and name those modules: "Kotlin sources in … are not searched; check them with grep."
 Kotlin sources elsewhere (a custom source directory, or `.kt` files beside the Java ones) go unnoticed.
 
 ### Regression targets
@@ -12791,6 +12791,7 @@ Kotlin sources elsewhere (a custom source directory, or `.kt` files beside the J
 - `WorkspaceManifestTest.kotlinModuleDirs_moduleWithKotlinSources_listed_javaModuleNot`
 - `McpTextTest.referencesResult_workspaceWithKotlin_namesItsModulesInsteadOfTheGrepAdvice`
 - `McpTextTest.noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay`
+- `LatheEngineNotesTest.notes_moduleWithKotlinSources_namesIt`
 
 ---
 
