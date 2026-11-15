@@ -137,7 +137,8 @@ final class LatheMcpTools {
                 with overrides/implementations or a common/overloaded name; for a rare, distinctive \
                 name a plain grep is fine. A field's or variable's uses are tagged [read] or \
                 [write] (assignments, increments, a generated setter's calls); `access` keeps one \
-                kind, e.g. write for where a field changes.\
+                kind, e.g. write for where a field changes. To see which methods call a method, \
+                use call_hierarchy (incoming): one line per calling method.\
                 """,
             LatheMcpTools::handleReferences),
         tool(

@@ -2085,33 +2085,6 @@ None yet.
 
 ---
 
-## MC-63 — `find_references` cannot group its answer by the calling method
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `find_references`.**
-
-Found by the survey of other Java MCP servers (2026-11-01).
-
-### Gap
-
-A method with forty call sites in ten methods answers forty lines; the agent's question is usually
-"which methods call it", and it reads the list to work that out.
-NetBeans' Dukehoff MCP takes `group_by: "caller"` and names each containing method by signature.
-
-### Fix direction
-
-An optional `groupBy` (`file`, `caller`): one heading per containing method (or file), its call lines
-below it. The enclosing method is already known to the reference search's tree path.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-64 — No safe delete: removing a symbol is find-then-edit by hand
 
 **Status: documented**

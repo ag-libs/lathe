@@ -12843,6 +12843,34 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-63 — `find_references` cannot group its answer by the calling method — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+A method with forty call sites in ten methods answers forty lines; the agent's question is usually
+"which methods call it", and it reads the list to work that out.
+NetBeans' Dukehoff MCP takes `group_by: "caller"` and names each containing method by signature.
+
+### Resolution
+
+`call_hierarchy` (incoming) already answers "which methods call it": one line per calling method, named, following overrides and other modules.
+`find_references`' description now points there; a `groupBy` would repeat it.
+For a field, the `[write]` tag and the `access` filter (MC-53) name each place it changes.
+
+### Regression targets
+
+None: the answer exists; only the description changed.
+
+---
+
 ## MC-53 — `find_references` does not tell reads from writes — done
 
 **Status: done.**
