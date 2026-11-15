@@ -57,6 +57,10 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   re-sync after adding it. The server stopping on open means the JDK is newer than the project's Lombok
   supports, which fails the build too: upgrade Lombok. See [Lombok](how-it-works.md#lombok) for what
   works and its limits.
+- **Lombok: right after editing `lombok.config`, an open file shows errors as if the old settings still
+  applied** — Lombok in the editor's analysis reads `lombok.config` again at most every 2 seconds, so a
+  check within that time uses the old settings. Edit the file, or reopen it, to check it again.
+  What Lathe writes to `.lathe/`, and `verify_change`, use the new settings at once.
 - **Errors like `package <relocated package> does not exist`, or Lathe's sync failing to compile a module,
   on a Maven project that shades a library** — a module whose main jar `maven-shade-plugin` replaces holds
   the relocated classes its dependents compile against, and only `package` builds that jar. Build with
