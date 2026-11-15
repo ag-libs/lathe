@@ -404,6 +404,18 @@ local FIXTURES = {
     4,
   },
   {
+    "old-style case label: its first statement indents one block",
+    { "    switch (x) {", "      case A:", "foo();" },
+    3,
+    8,
+  },
+  {
+    "old-style default label: its first statement indents one block, past a comment",
+    { "    switch (x) {", "      default: // the rest", "foo();" },
+    3,
+    8,
+  },
+  {
     "statement end: an old-style case label does not continue into its body",
     { "    switch (x) {", "      case A:", "        foo();", "" },
     4,

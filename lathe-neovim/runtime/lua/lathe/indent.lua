@@ -705,6 +705,10 @@ local function heuristic_indent(lnum, current, prev_lnum, prev)
 
     return prev_indent
   end
+  -- An old-style `case X:` label's statements are its body, one block in.
+  if starts_with_switch_label(prev) and trim(code_only(prev)):match(":$") then
+    return prev_indent + block_width()
+  end
   if starts_with_block_comment_open(prev) then
     -- A self-contained single-line block comment (`/** ... */`) is transparent: the following line
     -- stays at the comment's own indent. Only a genuine multi-line opener indents the continuation
