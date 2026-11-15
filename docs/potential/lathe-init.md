@@ -106,14 +106,16 @@ Lathe: set up the Maven build in: ~/work/app█
 
 | The build at the root | `:LatheInit` runs |
 |---|---|
-| Maven, Lathe not registered (the client text-checks `.mvn/extensions.xml` and the POM for `lathe-maven-extension`) | the bootstrap fetch if needed, then the first build with the activation |
-| Gradle, Lathe not registered (the client text-checks the settings script for `io.github.ag-libs.lathe`) | the first build with the init script |
+| Maven, Lathe not registered (the client text-checks `.mvn/extensions.xml` and the POM for an `<artifactId>lathe-maven-extension</artifactId>` outside comments) | the bootstrap fetch if needed, then the first build with the activation |
+| Gradle, Lathe not registered (the client text-checks the settings script for a quoted `io.github.ag-libs.lathe` outside comments) | the first build with the init script |
 | Maven or Gradle that registers Lathe | the same first build, without the activation; on Gradle with an init script that only keeps compile errors |
 | OpenJDK | Lathe's OpenJDK goal at the client's version, once the JDK is configured and built in exactly one configuration |
 
 The first build is the documented first run, with compile errors kept from stopping it: Maven `clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false`, Gradle `latheSync -Plathe.capture.only=true --continue`.
 `clean`, as Maven compiles nothing it finds up to date, and Lathe captures a module only as it compiles it: a project built before would otherwise set up with no module. Gradle reruns a compile whose inputs changed, so it needs no clean.
 The tests are captured, not run, so the first test run needs no sync.
+
+A parent POM that registers Lathe is not seen by the text check; the build's own Lathe then wins over the one brought in, so after the build the client names the version `.lathe/workspace.json` records and says when it is not the one asked for.
 
 When the build ends with a launcher, the client starts the server for the open Java buffers under the root; without one, it asks whether the root is the build's root.
 

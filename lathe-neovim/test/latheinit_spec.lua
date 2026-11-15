@@ -104,6 +104,14 @@ write(work .. "/team/pom.xml", "<extension><artifactId>lathe-maven-extension</ar
 write(work .. "/core-ext/pom.xml")
 write(work .. "/core-ext/.mvn/extensions.xml", "<artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/team-gradle/settings.gradle", 'plugins { id("io.github.ag-libs.lathe") }')
+write(
+  work .. "/commented/pom.xml",
+  "<project>\n<!-- later: <artifactId>lathe-maven-extension</artifactId> -->\n</project>"
+)
+write(
+  work .. "/commented-gradle/settings.gradle.kts",
+  '// id("io.github.ag-libs.lathe")\n/* id("io.github.ag-libs.lathe") */\nrootProject.name = "x"'
+)
 vim.fn.mkdir(work .. "/nothing/src", "p")
 for _, jdk in ipairs({ "/jdk", "/jdk-unbuilt", "/jdk-unconfigured", "/jdk-two" }) do
   write(work .. jdk .. "/configure")
@@ -155,6 +163,16 @@ spec.check(
   "the settings script registers Lathe",
   latheinit.find_build(work .. "/team-gradle").registered,
   true
+)
+spec.check(
+  "a registration in an XML comment does not count",
+  latheinit.find_build(work .. "/commented").registered,
+  false
+)
+spec.check(
+  "a registration in a Gradle comment does not count",
+  latheinit.find_build(work .. "/commented-gradle").registered,
+  false
 )
 
 -- Maven personal: fetch, then build with the activation, then attach.
@@ -208,8 +226,10 @@ local java = vim.fn.bufadd(work .. "/multi/core/src/Foo.java")
 vim.fn.bufload(java)
 vim.bo[java].filetype = "java"
 executable(work .. "/multi/.lathe/lathe-launcher.sh")
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "9.9.9"}')
 finish_build(0)
 spec.check("a build that wrote a launcher attaches the root's Java buffers", started[1], java)
+spec.check("and names the version set up", last_note_has("Lathe: server 9.9.9 set up at"), true)
 
 -- A fetch interrupted before it ended left no lib/: the next run fetches again.
 vim.fn.mkdir(work .. "/cache/bootstrap/8.8.8/lib.fetching", "p")
@@ -262,6 +282,16 @@ spec.check("an edited root without a build runs nothing", #calls, before)
 spec.check(
   "and says so",
   last_note_has("no Maven, Gradle or OpenJDK build at " .. work .. "/nothing"),
+  true
+)
+
+-- A build that pins another Lathe (a parent POM, say) runs its own: say which.
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.2.3"}')
+run_from("/multi")
+finish_build(0)
+spec.check(
+  "a version the build pins is named instead of the one asked for",
+  last_note_has("Lathe: server 1.2.3 set up at " .. work .. "/multi: the project's build pins it"),
   true
 )
 

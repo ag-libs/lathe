@@ -12,6 +12,7 @@ local workspace = require("lathe.workspace")
 local POM = "pom.xml"
 local GRADLE_SETTINGS = { "settings.gradle", "settings.gradle.kts" }
 local MAVEN_EXTENSION = "lathe-maven-extension"
+local MAVEN_REGISTRATION = "<artifactId>%s*lathe%-maven%-extension%s*</artifactId>"
 local GRADLE_PLUGIN_ID = "io.github.ag-libs.lathe"
 local DEV_VERSION = "0.0.0-dev"
 local COPY_DEPENDENCIES = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies"
@@ -128,15 +129,22 @@ local AT = {
   maven = has_pom,
 }
 
+-- Lathe named in the build's own files, comments left out: a registration commented out loads
+-- nothing. A text check: a parent POM that registers Lathe is not seen, and the build's own Lathe
+-- then wins over the one :LatheInit brings in.
 local function registers_lathe(root, kind)
   if kind == "gradle" then
-    return read(gradle_settings(root)):find(GRADLE_PLUGIN_ID, 1, true) ~= nil
+    local script = ("\n" .. read(gradle_settings(root)))
+      :gsub("/%*.-%*/", "")
+      :gsub("\n%s*//[^\n]*", "")
+    return script:find(('"%s"'):format(GRADLE_PLUGIN_ID), 1, true) ~= nil
+      or script:find(("'%s'"):format(GRADLE_PLUGIN_ID), 1, true) ~= nil
   end
 
   if kind == "maven" then
     local files = read(vim.fs.joinpath(root, POM))
       .. read(vim.fs.joinpath(root, ".mvn", "extensions.xml"))
-    return files:find(MAVEN_EXTENSION, 1, true) ~= nil
+    return files:gsub("<!%-%-.-%-%->", ""):find(MAVEN_REGISTRATION) ~= nil
   end
 
   return false
@@ -265,12 +273,40 @@ local function java_buffers_under(root)
   end, vim.api.nvim_list_bufs())
 end
 
--- A build that failed may still have written the launcher (a compile error in a build that
--- registers Lathe): attach, and the server reports the errors. One that succeeded without a
+-- The Lathe version the build set up, which the workspace records.
+local function server_version(root)
+  local manifest = vim.fs.joinpath(root, workspace.ROOT_MARKER, "workspace.json")
+  return exists(manifest) and vim.json.decode(read(manifest)).serverVersion or nil
+end
+
+-- Names the version set up, and says when the build pinned another than the one asked for.
+local function report_version(root, wanted)
+  local running = server_version(root)
+  if not running then
+    return
+  end
+
+  if wanted and running ~= wanted then
+    notify(
+      ("server %s set up at %s: the project's build pins it, so it runs instead of %s."):format(
+        running,
+        root,
+        wanted
+      )
+    )
+    return
+  end
+
+  notify(("server %s set up at %s."):format(running, root))
+end
+
+-- A build that failed may still have written the launcher (a module failed after Lathe set up the
+-- rest): attach, and the server serves what was set up. One that succeeded without a
 -- launcher ran where Lathe set nothing up: most often a module, as Lathe sets up a build only from
 -- its root, or a build tool too old to load Lathe.
-local function attach(root, result)
+local function attach(root, result, version)
   if vim.fn.executable(workspace.launcher_path(root)) == 1 then
+    report_version(root, version)
     for _, buf in ipairs(java_buffers_under(root)) do
       require("lathe").start(buf)
     end
@@ -289,12 +325,13 @@ local function attach(root, result)
 end
 
 -- `label` names the build in the toast and the output split: the ext class path is too long for either.
-local function build(root, cmd, label)
+-- `version` is the Lathe brought in from outside, nil for a build that registers its own.
+local function build(root, cmd, label, version)
   require("lathe.sync").run(root, false, nil, {
     cmd = cmd,
     label = label,
     on_done = function(result)
-      attach(root, result)
+      attach(root, result, version)
     end,
   })
 end
@@ -311,7 +348,8 @@ local function maven_personal(build_, tool, version)
         { tool, "-B", "-Dmaven.ext.class.path=" .. table.concat(jars, ":") },
         MAVEN_FIRST_BUILD
       ),
-      ("%s clean test (Lathe %s)"):format(vim.fs.basename(tool), version)
+      ("%s clean test (Lathe %s)"):format(vim.fs.basename(tool), version),
+      version
     )
   end
   -- lib/ appears only whole: the fetch fills a temporary folder renamed into place when it ends, so
@@ -448,7 +486,8 @@ local function set_up(found)
   build(
     found.root,
     vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD),
-    ("%s latheSync (Lathe %s)"):format(vim.fs.basename(tool), version)
+    ("%s latheSync (Lathe %s)"):format(vim.fs.basename(tool), version),
+    version
   )
 end
 
