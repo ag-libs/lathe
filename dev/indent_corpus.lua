@@ -52,7 +52,8 @@ for path in io.lines(list) do
   for lnum, current in ipairs(text) do
     if vim.trim(current) ~= "" then
       lines = lines + 1
-      local want = #current:match("^%s*")
+      -- Display columns, so a tab-indented file (tab = the block width) measures like a spaced one.
+      local want = vim.fn.strdisplaywidth(current:match("^%s*"))
       local got = indent.compute(lnum, buf)
       if got ~= want then
         disagreements = disagreements + 1

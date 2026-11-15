@@ -306,6 +306,25 @@ local function is_closer(char)
   return char == ")" or char == "]" or char == "}"
 end
 
+-- Whether the line leaves a `(` or `[` open at its end: the line opened an argument or parameter
+-- list that continues below.
+local function leaves_list_open(text)
+  local open = {}
+  for char in code_only(text):gmatch("[%(%)%[%]{}]") do
+    if is_opener(char) then
+      table.insert(open, char)
+    else
+      table.remove(open)
+    end
+  end
+  for _, char in ipairs(open) do
+    if char ~= "{" then
+      return true
+    end
+  end
+  return false
+end
+
 -- Walking up, the part of a line that is code. Seen from below, a text block or a block comment
 -- is closed first and opened further up, so `state` carries whether the walk is inside one.
 local function code_walking_up(text, state)
@@ -567,6 +586,13 @@ local function continuation_indent(prev_lnum, prev)
     return prev_indent + continuation_width()
   end
   if ends_with_comma(prev) then
+    -- An item after one on the line that opened its list (`void m(String a,`) is that list's first
+    -- wrapped line: one continuation in, as when the list breaks right after its bracket. Later items
+    -- keep the column of the one above.
+    if leaves_list_open(prev) then
+      return prev_indent + continuation_width()
+    end
+
     return prev_indent
   end
   if ends_with_operator(prev) then
