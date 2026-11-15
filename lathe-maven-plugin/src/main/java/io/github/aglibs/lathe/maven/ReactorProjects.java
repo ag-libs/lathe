@@ -223,29 +223,19 @@ public final class ReactorProjects {
         .filter(project -> !escapesReactorRoot(workspaceRoot, project));
   }
 
-  // A shaded main jar is not the module's classes: it also holds the classes it relocated, which
-  // its mirror lacks, so it stays on a dependent's classpath as itself rather than as the mirror.
+  // A shaded main jar is listed too: the server tells it by the relocated classes it holds.
   private static Stream<OutputData> outputs(final Path workspaceRoot, final MavenProject project) {
     final Build build = project.getBuild();
     final String module = FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath()));
     final Path buildDir = Path.of(build.getDirectory());
     final String finalName = build.getFinalName();
-    final Stream<Map.Entry<Path, String>> mainJar =
-        shadesMainJar(project)
-            ? Stream.empty()
-            : Stream.of(
-                Map.entry(
-                    buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR));
     return Stream.of(
-            Stream.of(
-                Map.entry(Path.of(build.getOutputDirectory()), LatheLayout.CLASSES_DIR),
-                Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR)),
-            mainJar,
-            Stream.of(
-                Map.entry(
-                    buildDir.resolve("%s-%s.jar".formatted(finalName, TEST_JAR_CLASSIFIER)),
-                    LatheLayout.TEST_CLASSES_DIR)))
-        .flatMap(entries -> entries)
+            Map.entry(Path.of(build.getOutputDirectory()), LatheLayout.CLASSES_DIR),
+            Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR),
+            Map.entry(buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR),
+            Map.entry(
+                buildDir.resolve("%s-%s.jar".formatted(finalName, TEST_JAR_CLASSIFIER)),
+                LatheLayout.TEST_CLASSES_DIR))
         .map(
             output ->
                 new OutputData(
