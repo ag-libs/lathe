@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 /**
@@ -19,7 +18,6 @@ public final class LatheLogging {
   // Held so the filter set on it outlives a collection of loggers nothing else references.
   private static final Logger RPC_LOGGER =
       Logger.getLogger("org.eclipse.lsp4j.jsonrpc.RemoteEndpoint");
-  private static final String UNMATCHED_CANCEL = "Unmatched cancel notification";
 
   private LatheLogging() {}
 
@@ -35,21 +33,14 @@ public final class LatheLogging {
     // The config's lathe level binds only to a logger that exists; a caller's static LOG predates
     // this call, so without creating the parent here its first lines fall back to root WARNING.
     final var lathe = Logger.getLogger(LATHE_LOGGER);
-    final boolean debug = System.getenv("LATHE_DEBUG") != null;
-    if (debug) {
+    if (System.getenv("LATHE_DEBUG") != null) {
       lathe.setLevel(Level.FINE);
     }
 
-    RPC_LOGGER.setFilter(record -> shown(record, debug));
-  }
-
-  // lsp4j warns when a $/cancelRequest names a request it has already answered, which the protocol
-  // allows: an editor cancels a request still pending on its side while the reply is on its way,
-  // as Neovim does when typing cancels completion and semantic tokens. Shown only when debugging;
-  // lsp4j's other warnings stay.
-  static boolean shown(final LogRecord record, final boolean debug) {
-    final String message = record.getMessage();
-    return debug || message == null || !message.startsWith(UNMATCHED_CANCEL);
+    // lsp4j warns when an editor cancels a request it has already answered, which the protocol
+    // allows (Neovim does it while typing); its other warnings stay.
+    RPC_LOGGER.setFilter(
+        record -> !String.valueOf(record.getMessage()).startsWith("Unmatched cancel notification"));
   }
 
   // Attach an appending file sink beside the console one, so the server's logs land in a fixed,

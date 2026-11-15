@@ -10,8 +10,6 @@ import java.time.ZonedDateTime;
 import java.util.Properties;
 import java.util.logging.FileHandler;
 import java.util.logging.Handler;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -64,19 +62,6 @@ class LatheLoggingTest {
                 "");
 
     assertThat(line).startsWith("2026-10-24T16:21:40.134+0200 INFO    [startup] ready");
-  }
-
-  // An editor cancelling a request already answered is legal; lsp4j's other warnings are not
-  // noise.
-  @Test
-  void shown_unmatchedCancel_onlyWhenDebugging_otherWarningsAlways() {
-    final var cancel =
-        new LogRecord(Level.WARNING, "Unmatched cancel notification for request id 42");
-    final var response = new LogRecord(Level.WARNING, "Unmatched response message: {}");
-
-    assertThat(LatheLogging.shown(cancel, false)).isFalse();
-    assertThat(LatheLogging.shown(cancel, true)).isTrue();
-    assertThat(LatheLogging.shown(response, false)).isTrue();
   }
 
   @Test
