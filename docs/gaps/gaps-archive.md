@@ -12843,6 +12843,34 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-70 — Tool results come back unsorted, with modules mixed together — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP tools that list locations (`find_implementations`, `analyze_change`, and the like).**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Locations come in discovery order, so one module's results are scattered among another's,
+and a long answer is hard to scan.
+
+### Resolution
+
+The engine sorts every capped location list in one order before capping it (`find_references`, `find_implementations`, `analyze_change`'s family, incoming `call_hierarchy`): the project's own sources, then its generated ones, then the JDK's and dependencies', by file within each, then by position.
+By file keeps a module's results together, and in the usual layout its main sources before its tests; outgoing calls keep their source order.
+`search_symbols` ranks the reactor's generated types after its hand-written ones (MC-39).
+
+### Regression targets
+
+- `LatheEngineNavigationTest.referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten`
+- `dev/mcp_battery.py`'s check "find_implementations: modules grouped".
+
+---
+
 ## MC-74 — `search_symbols` lists types the project cannot use, though its description says it excludes them — done
 
 **Status: done.**

@@ -1793,37 +1793,30 @@ None yet.
 
 ---
 
-## MC-39 — `find_references` lists generated code before the user's call sites
+## MC-39 — `rename_symbol` refuses a generated symbol without naming the blueprint method to rename
 
 **Status: documented**
 
 **Value: low — Size: S**
 
-**Affects: MCP `find_references`.**
+**Affects: MCP `rename_symbol`.**
 
 Found by the pre-release probes (2026-10-27) on Helidon.
 
 ### Observed behaviour
 
-On a Helidon builder method (`allowAll`), all of the first `maxResults=4` results were `[GENERATED]` builder
-internals, and none a user call site (2026-10-27).
-From the blueprint declaration (`AllowListConfigBlueprint.java:51`) the first four of 8 references are hand-written
-(`TrustedProxyMatcher`, `AllowList`, the blueprint), because the generated `Builder.allowAll(boolean)` and its callers
-are not among them at all (FR-020's generator link); the ordering still matters once FR-020 adds them (2026-11-15).
-`rename_symbol` on generated code correctly refuses it, but does not name the blueprint method to rename
-instead.
+`rename_symbol` on a Helidon generated builder method (`allowAll`) correctly refuses it, but does not name the
+blueprint method (`AllowListConfigBlueprint.java:51`) to rename instead.
+The ordering half of this gap is done: capped answers list hand-written sources before generated ones (MC-70).
 
 ### Fix direction
 
-Order hand-written sources before generated ones (and production before tests, as `analyze_change`
-counts them), so a capped answer shows what an agent edits.
-When refusing a generated symbol, name its blueprint declaration when the generator links one.
-
-Also (exploratory round, 2026-11-04): `search_symbols` lists the generated `ListenerConfig` and `ListenerConfigImpl` before the hand-written `ListenerConfigBlueprint`.
+When refusing a generated symbol, name its blueprint declaration. Waits on FR-020's generator link, which
+connects a generated member to the declaration it was generated from.
 
 ### Regression targets
 
-None yet.
+`LatheEngineNavigationTest.referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten` (the ordering half).
 
 ---
 
@@ -2199,31 +2192,6 @@ Take `maxResults` like the other tools, cap the listed locations, and keep the c
 ### Regression targets
 
 None yet.
-
----
-
-## MC-70 — Tool results come back unsorted, with modules mixed together
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP tools that list locations (`find_implementations`, `analyze_change`, and the like).**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-Locations come in discovery order, so one module's results are scattered among another's,
-and a long answer is hard to scan.
-
-### Fix direction
-
-Sort listed locations by module, then file, then line, in one shared place the tools format through.
-
-### Regression targets
-
-`dev/mcp_battery.py`'s check "find_implementations: modules grouped" on Helidon's `Handler.handle`, known until fixed (on 2026-11-07: 2 modules scattered in 50 rows).
 
 ---
 
