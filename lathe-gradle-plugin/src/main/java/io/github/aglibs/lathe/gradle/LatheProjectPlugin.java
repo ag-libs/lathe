@@ -590,9 +590,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
   }
 
   // Every shape a sibling takes on another project's classpath, its classes and resources
-  // directories and its jar, maps to the mirror, which holds both. A disabled jar task leaves its
-  // path to another task: a shaded jar (JUnit's shadow convention) holds relocated classes the
-  // mirror lacks, so replay keeps that jar as the build made it.
+  // directories and its jar, maps to the mirror, which holds both.
   private static ProjectFacts javaFacts(
       final Project project,
       final SourceSet main,
@@ -606,25 +604,19 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final Jar jar = tasks.named(JavaPlugin.JAR_TASK_NAME, Jar.class).get();
     final String module = module(project);
     final Path root = project.getRootDir().toPath();
-    final Stream<Map.Entry<File, String>> mainJar =
-        jar.getEnabled()
-            ? Stream.of(Map.entry(jar.getArchiveFile().get().getAsFile(), LatheLayout.CLASSES_DIR))
-            : Stream.empty();
     final List<OutputData> outputs =
-        Stream.of(
+        Stream.concat(
                 Stream.of(
                     Map.entry(
                         mainCompile.getDestinationDirectory().get().getAsFile(),
-                        LatheLayout.CLASSES_DIR)),
-                mainJar,
-                Stream.of(
+                        LatheLayout.CLASSES_DIR),
+                    Map.entry(jar.getArchiveFile().get().getAsFile(), LatheLayout.CLASSES_DIR),
                     Map.entry(main.getOutput().getResourcesDir(), LatheLayout.CLASSES_DIR),
                     Map.entry(
                         testCompile.getDestinationDirectory().get().getAsFile(),
                         LatheLayout.TEST_CLASSES_DIR),
                     Map.entry(test.getOutput().getResourcesDir(), LatheLayout.TEST_CLASSES_DIR)),
                 others.stream().flatMap(sourceSet -> sourceSetOutputs(tasks, sourceSet)))
-            .flatMap(entries -> entries)
             .map(
                 output ->
                     new OutputData(relative(root, output.getKey()), module, output.getValue()))

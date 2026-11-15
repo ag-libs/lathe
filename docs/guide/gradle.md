@@ -153,10 +153,6 @@ The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build prin
   editor is blocked with a reason naming the missing jar.
   Turn those features off for the capture-only sync (JUnit's build:
   `-Pjunit.develocity.predictiveTestSelection.enabled=false`).
-- **A project whose jar is shaded** (its `jar` task disabled, and a shadow task writing the jar in its place, as
-  JUnit's build does): the projects that use it compile and run against that jar, which holds the classes it
-  relocated, so the editor sees the project's own classes there as the last build left them, until the next
-  build or sync rebuilds the jar.
 - **Gradle 8.x with Isolated Projects on:** only a build of the root's `build`, `check`, or `test` refreshes the
   workspace files; a build of one project refreshes that project's part, and the rest waits for the next root
   build or sync. Gradle 9 has no such limit.
