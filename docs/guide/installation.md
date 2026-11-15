@@ -160,7 +160,7 @@ first failure names the cause.
 The formatter is the exact release the project's Spotless pins (its `<version>`, else that Spotless
 version's default), resolved by sync and run in-process from an isolated classloader — no Maven at
 format time, so a format takes milliseconds (the first one in a session also loads the formatter).
-A change of formatter takes effect after the sync and a restart of the language server.
+A change of formatter takes effect after the sync and a restart of the language server; the sync's reload says so.
 
 Lathe runs the **formatter step only**.
 Other steps in the same `<java>` section — `importOrder`, `removeUnusedImports` (beyond what

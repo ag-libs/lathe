@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,7 +19,9 @@ import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.LatheCommands;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -526,6 +529,40 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
     verify(client).sync(new LatheSyncParams(tmp.toString(), true));
+  }
+
+  // A sync can change the formatter the style files name, but the server keeps the one it started
+  // with: a reload says once that a restart applies the new one, and says nothing when it is the
+  // same. Each reload is a sync that rewrote workspace.json.
+  @Test
+  void reconcileForVerify_styleNamesAnotherFormatter_saysOnceToRestart() throws Exception {
+    final Path style = tmp.resolve(LatheLayout.STYLE_SHARED_FILE);
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"google\",\"version\":\"1.28.0\"}}");
+    openShop();
+    host.execute(session -> session.formats().use(null, FormatEngines.workspaceSpec(tmp)));
+
+    reloadAddingModule("same");
+    Files.writeString(style, "{\"formatter\":{\"engine\":\"palantir\",\"version\":\"2.102.0\"}}");
+    reloadAddingModule("changed");
+    reloadAddingModule("again");
+
+    verify(client, times(1))
+        .showMessage(
+            new MessageParams(
+                MessageType.Warning,
+                "Lathe: the formatter is now palantir 2.102.0; restart Lathe to apply it."));
+  }
+
+  private void reloadAddingModule(final String name) throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        name,
+        Map.of(
+            "com/%s/Lib.java".formatted(name),
+            "package com.%s;\npublic class Lib {}\n".formatted(name)),
+        List.of(),
+        1_000L);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // A sync that rewrites workspace.json reloads it: a module the sync added is there at once.

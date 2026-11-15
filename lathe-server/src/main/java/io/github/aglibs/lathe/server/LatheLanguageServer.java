@@ -61,7 +61,10 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   public CompletableFuture<InitializeResult> initialize(final InitializeParams params) {
     final var rootUri = rootUri(params);
     final Path rootPath = rootUri != null ? LatheUri.toPath(rootUri) : null;
-    final FormatEngine formatEngine = resolveFormatEngine(rootPath);
+    // Formatting comes only from the project: its style files, never an editor-wide default.
+    final FormatterSpec formatSpec = FormatEngines.workspaceSpec(rootPath);
+    final FormatEngine formatEngine =
+        formatSpec != null ? FormatEngines.forSpec(formatSpec, rootPath) : null;
     final boolean formattingEnabled = formatEngine != null;
     LOG.fine(
         () ->
@@ -71,8 +74,9 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     host.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     textDocumentService.setFileRenameSupported(fileRenameSupported(params));
     textDocumentService.setCodeActionResolveSupported(codeActionResolveSupported(params));
-    // An editor's formatting answers no edits without a formatter; only the agent asks why.
-    host.execute(session -> session.formats().use(formatEngine, null));
+    // An editor's formatting answers no edits without a formatter; only the agent asks why. The
+    // spec also tells a reload that the style files now name another formatter.
+    host.execute(session -> session.formats().use(formatEngine, formatSpec));
     workspaceRoot = rootPath;
     if (rootPath == null) {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
@@ -184,12 +188,6 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     }
 
     return params.getRootUri();
-  }
-
-  // Formatting comes only from the project: its style files, never an editor-wide default.
-  private static FormatEngine resolveFormatEngine(final Path workingDir) {
-    final FormatterSpec spec = FormatEngines.workspaceSpec(workingDir);
-    return spec != null ? FormatEngines.forSpec(spec, workingDir) : null;
   }
 
   private static boolean workDoneProgressSupported(final InitializeParams params) {
