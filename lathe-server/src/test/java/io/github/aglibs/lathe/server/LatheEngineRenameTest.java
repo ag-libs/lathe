@@ -390,14 +390,23 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
   @Test
   void rename_packagePrivateMethodUsedFromADependentModule_findsAndRenamesThere() throws Exception {
     final String formatter =
-        "package com.example;\npublic class Formatter {\n  String format(String s) { return s; }\n}\n";
+        """
+        package com.example;
+        public class Formatter {
+          String format(String s) { return s; }
+        }
+        """;
     final Path declaration =
         TestCompiler.writeMirroredModule(
                 tmp, "lib", Map.of("com/example/Formatter.java", formatter), List.of(), 1_000L)
             .get(0);
     final String caller =
-        "package com.example;\nclass FormatterCheck {\n"
-            + "  String run() { return new Formatter().format(\"a\"); }\n}\n";
+        """
+        package com.example;
+        class FormatterCheck {
+          String run() { return new Formatter().format("a"); }
+        }
+        """;
     final Path callerFile =
         TestCompiler.writeMirroredModule(
                 tmp,
@@ -407,8 +416,13 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
                 1_000L)
             .get(0);
     final String unrelated =
-        "package com.example;\nclass Other {\n  String format(String s) { return s; }\n"
-            + "  String run() { return format(\"b\"); }\n}\n";
+        """
+        package com.example;
+        class Other {
+          String format(String s) { return s; }
+          String run() { return format("b"); }
+        }
+        """;
     final Path unrelatedFile =
         TestCompiler.writeMirroredModule(
                 tmp, "tool", Map.of("com/example/Other.java", unrelated), List.of("lib"), 1_000L)

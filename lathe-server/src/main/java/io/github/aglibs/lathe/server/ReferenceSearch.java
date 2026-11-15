@@ -597,7 +597,11 @@ final class ReferenceSearch {
     final List<ModuleSourceConfig> candidates =
         switch (target.scope()) {
           case DECLARING_FILE -> List.of();
-          case DECLARING_PACKAGE, REACTOR_MODULES ->
+          case DECLARING_PACKAGE ->
+              cursorConfig != null
+                  ? state.moduleGraph().referenceSearchScope(cursorConfig)
+                  : List.of();
+          case REACTOR_MODULES ->
               cursorConfig != null
                   ? state.moduleGraph().referenceSearchScope(cursorConfig)
                   : state.registry().allConfigs();
@@ -696,18 +700,6 @@ final class ReferenceSearch {
 
   private static List<DocumentHighlight> toHighlights(final List<ReferenceMatch> matches) {
     return matches.stream().map(ReferenceMatch::toHighlight).toList();
-  }
-
-  private static Path declaringPackageRel(final Path cursorPath, final ModuleSourceConfig config) {
-    if (config == null) {
-      return null;
-    }
-
-    return config.sourceRoots().stream()
-        .filter(cursorPath::startsWith)
-        .map(root -> root.relativize(cursorPath.getParent()))
-        .findFirst()
-        .orElse(null);
   }
 
   static boolean isInPackageScope(
@@ -1266,7 +1258,7 @@ final class ReferenceSearch {
 
     final Path packageRel =
         target.scope() == ReferenceTarget.SearchScope.DECLARING_PACKAGE
-            ? declaringPackageRel(declaringPath, declaringConfig.orElse(null))
+            ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
             : null;
 
     final IncomingScope scope = incomingSearchScope(target, data, declaringConfig.orElse(null));

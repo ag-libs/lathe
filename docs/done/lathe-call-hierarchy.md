@@ -55,7 +55,7 @@ record CallHierarchyItemData(
     String erasedDescriptor,         // erased parameter descriptor, e.g. "(java.lang.String,int)"
     ElementKind kind,                // METHOD or CONSTRUCTOR
     String routingUri,               // file:// URI of the declaring source file
-    ReferenceTarget.SearchScope scope // DECLARING_FILE / DECLARING_MODULE / REACTOR_MODULES
+    ReferenceTarget.SearchScope scope // DECLARING_FILE / DECLARING_PACKAGE / REACTOR_MODULES
 ) {}
 ```
 
@@ -265,8 +265,8 @@ private List<ModuleSourceConfig> planSearchScope(
     ReferenceTarget target, Optional<ModuleSourceConfig> cursorConfig) {
   return switch (target.scope()) {
     case DECLARING_FILE -> List.of();   // handled separately upstream
-    case DECLARING_MODULE ->
-        cursorConfig.map(c -> moduleGraph.configsForModule(c.moduleDir())).orElse(List.of());
+    case DECLARING_PACKAGE ->
+        cursorConfig.map(moduleGraph::referenceSearchScope).orElse(List.of());
     case REACTOR_MODULES ->
         cursorConfig.map(moduleGraph::referenceSearchScope).orElseGet(workspace::allConfigs);
   };
@@ -275,16 +275,10 @@ private List<ModuleSourceConfig> planSearchScope(
 
 ### `packageRel` for package-private incoming calls
 
-`referencesFuture` computes a `packageRel` path for `DECLARING_MODULE` scope that restricts
-candidate files to the declaring class's package directory.
-The existing `declaringPackageRel(toPath(uri), cursorConfig)` derives this from the **cursor URI**.
-
-For incoming calls there is no cursor — the declaring file is `CallHierarchyItemData.routingUri`.
-The shared candidate fan-out helper must accept a `packageRel` parameter and callers must supply it:
-
-- `referencesFuture` passes `declaringPackageRel(toPath(cursorUri), cursorConfig)` as before.
-- `incomingCallsFuture` passes `declaringPackageRel(toPath(data.routingUri()), declaringConfig)`
-  where `declaringConfig = workspace.moduleSourceFor(toPath(data.routingUri()))`.
+References and incoming calls compute a `packageRel` path for `DECLARING_PACKAGE` scope that
+restricts candidate files to the declaring class's package directory, in every module searched.
+Both derive it from the target's qualified name (`packageRelForQualifiedName`), so it never depends
+on where a cursor or a routing URI sits.
 
 This ensures package-private incoming-call searches are restricted to the correct package, exactly
 as Find References does today.
