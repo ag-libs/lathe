@@ -234,6 +234,31 @@ class UnusedDeclarationScannerTest {
         .isEmpty();
   }
 
+  // Serialization calls these hooks by reflection, matched by name and parameter types: the same
+  // names with other parameters are ordinary methods.
+  @Test
+  void compile_serializationHooks_noHintButSameNamesWithOtherParametersDo() {
+    final List<Diagnostic> hints =
+        unusedHintsFor(
+            """
+            import java.io.*;
+            class Test implements Serializable {
+              private void writeObject(ObjectOutputStream out) throws IOException {}
+              private void readObject(ObjectInputStream in) throws IOException {}
+              private void readObjectNoData() {}
+              private Object writeReplace() { return this; }
+              private Object readResolve() { return this; }
+              private void readObject(String name) {}
+              private Object writeReplace(int depth) { return this; }
+            }
+            """);
+
+    assertThat(hints)
+        .extracting(hint -> hint.getMessage().getLeft())
+        .containsExactlyInAnyOrder(
+            "Unused private method 'readObject'", "Unused private method 'writeReplace'");
+  }
+
   // --- Unused local variables ---
 
   @Test
