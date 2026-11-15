@@ -5,10 +5,10 @@ import java.util.List;
 
 /**
  * The pre-edit impact of a symbol: its rendered signature, its override/implementation family, how
- * many production vs test references it has, the reactor modules that use it, and the relevant test
- * classes. Answers "what will change if I touch this?" before an edit, javac-accurate and
- * cross-module. Reference counts reflect the (capped) reference set — {@code referencesTruncated}
- * is true when more references exist than were classified.
+ * many production vs test references it has, the reactor modules that use or implement it, and the
+ * relevant test classes. Answers "what will change if I touch this?" before an edit, javac-accurate
+ * and cross-module. Reference counts reflect the (capped) reference set — {@code
+ * referencesTruncated} is true when more references exist than were classified.
  */
 public record LatheChangeImpact(
     String signature,

@@ -12771,6 +12771,28 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-69 — `analyze_change` names too few affected modules — done
+
+**Status: done.**
+
+**Affects: MCP `analyze_change`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+On `Handler.handle` it named 5 affected modules, while the 225 implementations it found spanned 29; changing the method's signature would break all of them.
+It counted the modules of reference sites only: a lambda implements a method without declaring one of its name, so a module that implements `Handler` only with lambdas and never calls `handle` was not counted.
+
+### Resolution
+
+`analyze_change` adds the modules of every implementation it found, not capped like the listed override family (`LatheEngine.analyzeChange`), and a test that implements the symbol is a relevant test.
+The release battery's check "analyze_change modules cover the implementations" lost its known-failure mark.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.analyzeChange_methodImplementedInAModuleThatNeverCallsIt_countsThatModule`
+- `dev/mcp_battery.py`'s check "analyze_change modules cover the implementations" on Helidon's `Handler.handle`.
+
+---
+
 ## MC-83 — Kotlin callers are invisible, yet references and rename call themselves complete — done
 
 **Status: done.**

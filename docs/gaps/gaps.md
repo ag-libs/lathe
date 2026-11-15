@@ -2369,40 +2369,6 @@ None yet.
 
 ---
 
-## MC-69 — `analyze_change` names too few affected modules
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `analyze_change`.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-On `Handler.handle` it names 5 affected modules, while the 225 implementations it found span 29 (re-probed
-2026-11-15; openapi, webclient/http2 and security/providers/oidc among them); changing the method's signature would
-break all of them.
-
-### Fix direction
-
-Part of the implementation-search set described under
-[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done).
-
-Why: `LatheEngine.analyzeChange` counts the modules of reference sites only, never of the override family's members.
-
-The fix: classify the family's locations as the references are (`classifyPaths`) and add their modules, since a
-signature change breaks every implementation; EG-085's change brings in the anonymous and enum constant bodies.
-
-Test: a method implemented in a module that never calls it counts that module as affected.
-
-### Regression targets
-
-`dev/mcp_battery.py`'s check "analyze_change modules cover the implementations" on Helidon's `Handler.handle`, known until fixed (on 2026-11-07: 5 modules named, implementations in 14).
-
----
-
 ## MC-70 — Tool results come back unsorted, with modules mixed together
 
 **Status: documented**

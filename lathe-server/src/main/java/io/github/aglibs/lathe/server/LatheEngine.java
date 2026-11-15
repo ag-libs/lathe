@@ -271,8 +271,8 @@ public final class LatheEngine {
   private LatheImplementations capImplementations(
       final Either<List<? extends Location>, List<? extends LocationLink>> either,
       final int maxResults) {
-    final LatheReferences capped =
-        capReferences(either.isLeft() ? either.getLeft() : List.of(), maxResults);
+    // The implementation search answers in locations (FeatureAnswers.definitionResult).
+    final LatheReferences capped = capReferences(either.getLeft(), maxResults);
     return new LatheImplementations(capped.total(), capped.truncated(), capped.references());
   }
 
@@ -1065,8 +1065,9 @@ public final class LatheEngine {
 
   /**
    * Pre-edit impact of the symbol at {@code line}/{@code column} (0-based): its signature, override
-   * family, production vs test reference counts, the reactor modules that use it, and the relevant
-   * test classes. Read-only — composes definition/reference analysis, no compile of the change.
+   * family, production vs test reference counts, the reactor modules that use or implement it, and
+   * the relevant test classes. Read-only — composes definition/reference analysis, no compile of
+   * the change.
    */
   public Noted<LatheChangeImpact> analyzeChange(final Path file, final int line, final int column) {
     final Noted<ChangeFacts> read =
@@ -1103,8 +1104,20 @@ public final class LatheEngine {
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
+    // A signature change breaks every implementation, in a module that never calls it too.
+    final List<Path> implementationPaths =
+        facts.implementations().getLeft().stream()
+            .map(location -> LatheUri.toPath(location.getUri()))
+            .toList();
     final Map<Path, ModulePlacement> placements =
-        query(session -> session.verifier().classifyPaths(paths));
+        query(
+            session ->
+                session
+                    .verifier()
+                    .classifyPaths(
+                        Stream.concat(paths.stream(), implementationPaths.stream())
+                            .distinct()
+                            .toList()));
 
     int production = 0;
     int test = 0;
@@ -1122,6 +1135,19 @@ public final class LatheEngine {
         relevantTests.add(FileUtil.javaTypeName(LatheUri.toPath(ref.uri())));
       } else {
         production++;
+      }
+    }
+
+    // A test that implements the symbol (a stub, a fake) breaks too.
+    for (final Path implementation : implementationPaths) {
+      final ModulePlacement placement = placements.get(implementation);
+      if (placement == null) {
+        continue;
+      }
+
+      affectedModules.add(placement.moduleRel());
+      if (placement.test()) {
+        relevantTests.add(FileUtil.javaTypeName(implementation));
       }
     }
 
