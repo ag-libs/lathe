@@ -88,12 +88,14 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
     final int lineStart = Positions.toOffset(content, frameLine, 0);
     final int snippetLine = frameLine + 1;
     final int cursorColumn = Math.max(0, Math.min(column, snippet.length()));
+    // The declaration ends with its own semicolon, so the engine adds none to what it completes:
+    // the console takes an expression, not a statement.
     final String synthetic =
         content.substring(0, lineStart)
             + INIT_STATEMENT
             + "\n"
             + snippet
-            + "\n"
+            + ";\n"
             + content.substring(lineStart);
     final var position = new Position(snippetLine, cursorColumn);
     // The engine derives context (member vs. name) and every item's replacement range from the

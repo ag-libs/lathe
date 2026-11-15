@@ -14,8 +14,6 @@ import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.TestWorkers;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.AfterAll;
@@ -38,12 +36,7 @@ final class LatheEvaluationProviderDebuggeeTest {
   void start(@TempDir final Path dir) throws Exception {
     debuggee = Debuggee.start(dir);
     worker = TestWorkers.over(new SourceAnalysisSession(new TempSourceCompiler()));
-    provider =
-        new LatheEvaluationProvider(
-            new FrameSources(
-                task -> CompletableFuture.runAsync(task, Runnable::run),
-                file -> Optional.of(worker),
-                List.of(debuggee.sourceRoot())));
+    provider = new LatheEvaluationProvider(debuggee.frameSources(worker));
   }
 
   @AfterAll
