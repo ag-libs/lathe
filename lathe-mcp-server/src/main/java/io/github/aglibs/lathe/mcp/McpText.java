@@ -28,14 +28,16 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 // The text of every MCP answer: what an agent reads back from a tool, built from the engine's
@@ -301,14 +303,11 @@ final class McpText {
   private static List<Integer> memberIndexes(
       final List<LatheOutlineItem> items, final int typeIndex) {
     final int depth = items.get(typeIndex).depth();
-    final List<Integer> members = new ArrayList<>();
-    for (int i = typeIndex + 1; i < items.size() && items.get(i).depth() > depth; i++) {
-      if (items.get(i).depth() == depth + 1) {
-        members.add(i);
-      }
-    }
-
-    return List.copyOf(members);
+    return IntStream.range(typeIndex + 1, items.size())
+        .takeWhile(i -> items.get(i).depth() > depth)
+        .filter(i -> items.get(i).depth() == depth + 1)
+        .boxed()
+        .toList();
   }
 
   private static boolean isType(final LatheOutlineItem item) {
@@ -316,36 +315,56 @@ final class McpText {
   }
 
   // memberTypes: the indexes of the types every enclosing declaration of which is a type, a local
-  // class left out. memberCounts: each declaration's own members, by index. One pass over the
-  // outline, which lists a declaration right after the one it is in.
+  // class left out. memberCounts: each declaration's own members, by index. Both follow from which
+  // declaration each one is in, found in one pass.
   private record OutlineShape(List<Integer> memberTypes, List<Integer> memberCounts) {
+    // The parent of a top-level declaration.
+    private static final int NONE = -1;
+
     OutlineShape {
       memberTypes = List.copyOf(memberTypes);
       memberCounts = List.copyOf(memberCounts);
     }
 
     static OutlineShape of(final List<LatheOutlineItem> items) {
-      final int[] counts = new int[items.size()];
-      final List<Integer> memberTypes = new ArrayList<>();
-      final Deque<Integer> enclosing = new ArrayDeque<>();
+      final List<Integer> parents = parents(items);
+      final Map<Integer, Long> membersByParent =
+          parents.stream()
+              .filter(parent -> parent != NONE)
+              .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+      return new OutlineShape(
+          IntStream.range(0, items.size())
+              .filter(i -> isMemberType(items, parents, i))
+              .boxed()
+              .toList(),
+          IntStream.range(0, items.size())
+              .mapToObj(i -> membersByParent.getOrDefault(i, 0L).intValue())
+              .toList());
+    }
+
+    // A type whose enclosing declarations, up to the top, are all types.
+    private static boolean isMemberType(
+        final List<LatheOutlineItem> items, final List<Integer> parents, final int index) {
+      return isType(items.get(index))
+          && Stream.iterate(parents.get(index), parent -> parent != NONE, parents::get)
+              .allMatch(parent -> isType(items.get(parent)));
+    }
+
+    // Each declaration's parent index: the outline lists a declaration right after the one it is
+    // in, so the open declarations form a stack.
+    private static List<Integer> parents(final List<LatheOutlineItem> items) {
+      final List<Integer> parents = new ArrayList<>();
+      final Deque<Integer> open = new ArrayDeque<>();
       for (int i = 0; i < items.size(); i++) {
-        final LatheOutlineItem item = items.get(i);
-        while (!enclosing.isEmpty() && items.get(enclosing.peek()).depth() >= item.depth()) {
-          enclosing.pop();
+        while (!open.isEmpty() && items.get(open.peek()).depth() >= items.get(i).depth()) {
+          open.pop();
         }
 
-        if (!enclosing.isEmpty()) {
-          counts[enclosing.peek()]++;
-        }
-
-        if (isType(item) && enclosing.stream().allMatch(j -> isType(items.get(j)))) {
-          memberTypes.add(i);
-        }
-
-        enclosing.push(i);
+        parents.add(open.isEmpty() ? NONE : open.peek());
+        open.push(i);
       }
 
-      return new OutlineShape(memberTypes, Arrays.stream(counts).boxed().toList());
+      return List.copyOf(parents);
     }
   }
 
