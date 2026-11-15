@@ -229,4 +229,48 @@ class LatheEngineRunTest extends LatheEngineTestBase {
     assertThat(nothing.output()).hasSize(40).startsWith("line 5").endsWith("line 44");
     assertThat(nothing.notes()).containsExactly("JAVA_TOOL_OPTIONS not applied");
   }
+
+  // A JVM that failed before any test (classes too new for it) prints one long stack trace: its
+  // last
+  // lines are frames, so the exception and its cause, which say why, keep their first frame and
+  // the rest go. Output within the limit stays whole.
+  @Test
+  void latheTestRun_nothingRanWithALongStackTrace_keepsTheExceptionAndItsCause() {
+    final List<String> trace =
+        Stream.of(
+                Stream.of(
+                    "Exception in thread \"main\" org.junit.platform.commons.JUnitException: load failed",
+                    "\tat org.junit.Loader.load(Loader.java:10)"),
+                IntStream.range(0, 40)
+                    .mapToObj("\tat org.junit.Frame.call%d(Frame.java:1)"::formatted),
+                Stream.of(
+                    "Caused by: java.lang.UnsupportedClassVersionError: a/FooTest has been compiled by a more recent version",
+                    "\tat java.lang.ClassLoader.defineClass1(Native Method)",
+                    "\tat java.lang.ClassLoader.defineClass(ClassLoader.java:1)",
+                    "\t... 41 more"))
+            .flatMap(lines -> lines)
+            .toList();
+
+    final LatheTestRun run =
+        LatheTestRun.from(
+            LaunchOutcome.completed(1, stderr(trace), List.of()), List.of("a.FooTest"));
+    final LatheTestRun shortRun =
+        LatheTestRun.from(
+            LaunchOutcome.completed(1, stderr(trace.subList(0, 5)), List.of()),
+            List.of("a.FooTest"));
+
+    assertThat(run.output())
+        .containsExactly(
+            "Exception in thread \"main\" org.junit.platform.commons.JUnitException: load failed",
+            "\tat org.junit.Loader.load(Loader.java:10)",
+            "Caused by: java.lang.UnsupportedClassVersionError: a/FooTest has been compiled by a more recent version",
+            "\tat java.lang.ClassLoader.defineClass1(Native Method)");
+    assertThat(shortRun.output()).isEqualTo(trace.subList(0, 5));
+  }
+
+  private static List<TranscriptLine> stderr(final List<String> lines) {
+    return lines.stream()
+        .map(line -> new TranscriptLine(TranscriptLine.Stream.STDERR, line))
+        .toList();
+  }
 }
