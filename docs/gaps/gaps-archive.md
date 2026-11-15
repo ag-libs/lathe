@@ -12843,6 +12843,33 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-74 — `search_symbols` lists types the project cannot use, though its description says it excludes them — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP `search_symbols`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Follow-up to MC-38, which ranks JDK internals last by design.
+
+### Observed behaviour
+
+Results include `ThreadLocal.ThreadLocalMap.Entry`, `Hashtable.Entry` (package-private nested types)
+and `com.sun.tools.javac.util.StringUtils` (a JDK internal, ranked last per MC-38),
+while the tool's description says such types are excluded.
+
+### Resolution
+
+The description now says what the tool does: the reactor's types first, JDK internals that need `--add-exports` last (MC-38), and the JDK's and dependencies' non-public types listed too.
+They stay because the same symbol search serves the editor's workspace symbols and stack-frame navigation, which must find a dependency's package-private classes; dropping or ranking them for MCP alone would need each hit's visibility carried past the resolver, not worth it for a low-value gap.
+
+### Regression targets
+
+None: the description changed, not the behaviour.
+
+---
+
 ## MC-75 — `outline` mislabels records and enum constants, and omits methods in enum constant bodies — done
 
 **Status: done.**
