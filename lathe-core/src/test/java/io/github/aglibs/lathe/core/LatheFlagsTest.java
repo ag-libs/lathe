@@ -46,6 +46,17 @@ class LatheFlagsTest {
   }
 
   @Test
+  void disabledNotice_explicitSwitchOrCi_namesIt_noneWhenOn() {
+    assertThat(LatheFlags.disabledNotice("true", true, "-D"))
+        .contains("[lathe] Off: lathe.disabled=true; .lathe/ is not updated.");
+    assertThat(LatheFlags.disabledNotice(null, true, "-P"))
+        .contains(
+            "[lathe] Off: the CI environment variable is set; .lathe/ is not updated. Add -Plathe.disabled=false to keep Lathe on.");
+    assertThat(LatheFlags.disabledNotice("false", true, "-D")).isEmpty();
+    assertThat(LatheFlags.disabledNotice(null, false, "-D")).isEmpty();
+  }
+
+  @Test
   void unsupportedBuild_twoProblems_listsEachAndTheWayOut() {
     assertThat(LatheFlags.unsupportedBuild(List.of("first", "second"), "-P"))
         .isEqualTo(

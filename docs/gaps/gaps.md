@@ -321,7 +321,7 @@ None yet.
 
 ---
 
-## EG-067 — The first build floods the log with warnings, and a disabled Lathe says nothing
+## EG-067 — The first build floods the log with warnings
 
 **Status: documented**
 
@@ -348,21 +348,21 @@ EqualsVerifier, a small reactor (2026-11-15):
 A first-time user sees a wall of warnings from a command the README told them to run; a Helidon-size
 reactor prints thousands.
 
-The other way round, `CI=true` or `-Dlathe.disabled=true` switches Lathe off with no line at the default
-log level, so a developer whose environment sets `CI` gets no hint why `.lathe/` stops updating.
-
 ### Fix direction
 
 Find a capture-only filter that Surefire does not count as skipped, or say in the README and test-capture
 guide that the warnings are expected.
 Resolve the sync's dependencies without the reactor warnings, or bind the sync to a later project.
-Log one `INFO` line when Lathe is disabled, naming the switch:
-`SyncMojo` does (`[sync] disabled (CI or lathe.disabled) — skipping`), but `LatheLifecycleParticipant.afterProjectsRead`
-and the Gradle `LatheSettingsPlugin.apply` return silently first, so the extension path says nothing.
+
+### Delivered
+
+The other half of this entry, a disabled Lathe saying nothing: with `CI` set or `lathe.disabled=true`, the Maven extension
+and the Gradle settings plugin now say once that Lathe is off and which switch did it (`LatheFlags.disabledNotice`).
 
 ### Regression targets
 
-None yet.
+- `LatheFlagsTest.disabledNotice_explicitSwitchOrCi_namesIt_noneWhenOn`
+- `LatheSettingsPluginFunctionalTest.apply_switches_commandLineWinsThenDotLatheThenCiAndGradleProperties`
 
 ---
 

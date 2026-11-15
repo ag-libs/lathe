@@ -48,7 +48,8 @@ class LatheSettingsPluginFunctionalTest {
 
   // The switches, as the Gradle guide lists them: gradle.properties opts out until a .lathe/ opts
   // back in, which the configuration cache must notice; the command line wins over both; CI keeps
-  // Lathe out even beside a .lathe/, unless the command line turns it on.
+  // Lathe out even beside a .lathe/, unless the command line turns it on. The command line and CI
+  // say Lathe is off and why; the project's own opt-out stays quiet.
   @Test
   void apply_switches_commandLineWinsThenDotLatheThenCiAndGradleProperties() throws Exception {
     final var fixture =
@@ -67,11 +68,16 @@ class LatheSettingsPluginFunctionalTest {
     final var forcedOnCi =
         fixture.runner("help", "-Plathe.disabled=false").withEnvironment(ci()).build();
 
-    assertThat(optedOut.getOutput()).contains("LATHE app 0");
+    assertThat(optedOut.getOutput()).contains("LATHE app 0").doesNotContain("[lathe] Off");
     assertThat(optedIn.getOutput()).contains("LATHE app 1");
-    assertThat(killed.getOutput()).contains("LATHE app 0");
-    assertThat(onCi.getOutput()).contains("LATHE app 0");
-    assertThat(forcedOnCi.getOutput()).contains("LATHE app 1");
+    assertThat(killed.getOutput())
+        .contains("LATHE app 0", "[lathe] Off: lathe.disabled=true; .lathe/ is not updated.");
+    assertThat(onCi.getOutput())
+        .contains(
+            "LATHE app 0",
+            "[lathe] Off: the CI environment variable is set",
+            "Add -Plathe.disabled=false to keep Lathe on.");
+    assertThat(forcedOnCi.getOutput()).contains("LATHE app 1").doesNotContain("[lathe] Off");
   }
 
   @Test

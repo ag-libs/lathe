@@ -120,6 +120,8 @@ in `gradle.properties`.
 | `CI` environment variable set | off |
 | `.lathe/` exists | on, despite `lathe.disabled=true` in `gradle.properties` (not despite the two absolute switches) |
 
+The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build print a `[lathe] Off:` line that names the one in force.
+
 ## Known limits
 
 - **Every Java source set is a tree of its own.**

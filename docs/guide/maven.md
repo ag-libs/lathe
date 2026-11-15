@@ -297,6 +297,7 @@ To turn it off for everyone building a project, commit the property in the react
 When the POM opts out, a developer can opt back in by creating an empty `.lathe/` at the repo root.
 It overrides the POM opt-out, so the next build wires Lathe up and fills the directory.
 A `-Dlathe.disabled=true` or `CI` stays absolute; `.lathe/` does not override it.
+Either one makes the build print a `[lathe] Off:` line that names it.
 
 ## Verify
 
