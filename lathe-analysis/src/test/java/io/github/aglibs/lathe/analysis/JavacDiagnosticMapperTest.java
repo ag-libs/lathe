@@ -4,15 +4,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
+import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
+import org.junit.jupiter.api.io.TempDir;
 
 class JavacDiagnosticMapperTest {
+
+  @TempDir Path tmp;
 
   // --- toLsp: severity ---
 
@@ -87,6 +97,50 @@ class JavacDiagnosticMapperTest {
     assertThat(result.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
   }
 
+  // A warning of no file is about the compile and is dropped; an error of no file stays.
+  @Test
+  void filterAndMap_filelessWarningAndError_keepsOnlyTheError() {
+    final var warning = mockDiag(Diagnostic.Kind.WARNING, Diagnostic.NOPOS, Diagnostic.NOPOS);
+    final var error = mockDiag(Diagnostic.Kind.ERROR, Diagnostic.NOPOS, Diagnostic.NOPOS);
+    when(warning.getSource()).thenReturn(null);
+    when(error.getSource()).thenReturn(null);
+
+    assertThat(JavacDiagnosticMapper.filterAndMap(List.of(warning, error), "x"))
+        .singleElement()
+        .extracting(org.eclipse.lsp4j.Diagnostic::getSeverity)
+        .isEqualTo(DiagnosticSeverity.Error);
+  }
+
+  // A -source older than javac's own, as a build without --release records it: javac warns that the
+  // system modules path is not set, about no file; the file's own error is kept.
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_18)
+  void filterAndMap_sourceOlderThanJavac_dropsItsWarning_keepsTheFilesError() throws IOException {
+    final Path source = Files.writeString(tmp.resolve("A.java"), "class A { int x = \"s\"; }\n");
+    final var collector = new DiagnosticCollector<JavaFileObject>();
+    // Its own file manager: -d sets the output on it, which a shared one would keep.
+    try (final var fm = JavaSourceCompiler.createFileManager()) {
+      ToolProvider.getSystemJavaCompiler()
+          .getTask(
+              null,
+              fm,
+              collector,
+              List.of("-source", "17", "-target", "17", "-d", tmp.toString()),
+              null,
+              fm.getJavaFileObjects(source))
+          .call();
+    }
+
+    assertThat(collector.getDiagnostics())
+        .anyMatch(d -> d.getSource() == null && d.getKind() == Diagnostic.Kind.WARNING);
+    assertThat(
+            JavacDiagnosticMapper.filterAndMap(
+                collector.getDiagnostics(), Files.readString(source)))
+        .singleElement()
+        .extracting(org.eclipse.lsp4j.Diagnostic::getSeverity)
+        .isEqualTo(DiagnosticSeverity.Error);
+  }
+
   // --- helpers ---
 
   private static org.eclipse.lsp4j.Diagnostic diag(
@@ -103,6 +157,7 @@ class JavacDiagnosticMapperTest {
     when(d.getEndPosition()).thenReturn(end);
     when(d.getPosition()).thenReturn(start);
     when(d.getMessage(Locale.ENGLISH)).thenReturn("msg");
+    when(d.getSource()).thenReturn(mock(JavaFileObject.class));
     return d;
   }
 }
