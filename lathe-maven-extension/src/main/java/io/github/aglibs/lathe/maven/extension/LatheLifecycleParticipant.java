@@ -158,8 +158,8 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   // Team-wide opt-out committed in the reactor POM (<lathe.disabled>true</...>), read from the
   // resolved model since mvnd cannot be trusted with System.getenv. A developer opts back in by
-  // creating an empty .lathe/ at the reactor root; a -Dlathe.disabled / CI kill stays absolute via
-  // isDisabled().
+  // creating an empty .lathe/ at the reactor root; a -Dlathe.disabled / CI kill stays absolute,
+  // checked first in afterProjectsRead.
   static boolean isPomOptOut(final MavenProject topLevelProject, final Path latheDir) {
     return "true".equals(topLevelProject.getProperties().getProperty(LatheFlags.DISABLED))
         && !Files.isDirectory(latheDir);

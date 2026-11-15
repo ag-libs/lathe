@@ -175,8 +175,9 @@ final class LatheMcpTools {
                 """,
             RUNS_CODE,
             """
-                Replay a test against the compiled classpath — no full build. Runs a method (in \
-                every class of the file that declares it), the whole test class, or its package; \
+                Replay a test against the compiled classpath — no full build. Runs every test \
+                method of a name in the file (each class's, each overload), the whole test class, \
+                or its package; \
                 prefer it over the build's own test command \
                 for a single target after an edit. Returns pass/fail/skip counts and each failure's \
                 message, line and last printed lines (the run's last lines when no test ran). Needs a captured test-launch.json (run `%s` once); it reports \

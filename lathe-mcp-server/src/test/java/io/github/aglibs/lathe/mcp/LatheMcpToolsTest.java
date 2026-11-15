@@ -267,6 +267,10 @@ class LatheMcpToolsTest {
               assertThat(text(result)).isEqualTo(refusal);
             });
     assertThat(call("outline", Map.of("file", loose.toString())).isError()).isFalse();
+    assertThat(text(call("verify_change", Map.of("files", List.of(foreign.toString())))))
+        .contains(
+            "Not checked: %s is outside the workspace, so Lathe cannot check it"
+                .formatted(foreign));
   }
 
   // A link is judged by the file it points to: one in the workspace to a file outside it is

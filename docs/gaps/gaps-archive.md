@@ -12782,8 +12782,9 @@ The read tools accepted any existing `.java`-named file, including a symlink to 
 
 ### Resolution
 
-The file and position tools answer only for a file whose real path is in the workspace or among the dependency and JDK sources Lathe extracted (`LatheEngine.inWorkspaceOrSources`).
+The file and position tools answer only for a file whose real path is in the workspace, compiled by one of its modules, or among the dependency and JDK sources the build extracted (`LatheEngine.inWorkspaceOrSources`).
 Any other file is refused with "`<file>` is outside the workspace and its dependency and JDK sources", a link in the workspace to a file outside it included.
+`verify_change` names such a file as outside the workspace instead of blaming a profile.
 
 ### Regression targets
 

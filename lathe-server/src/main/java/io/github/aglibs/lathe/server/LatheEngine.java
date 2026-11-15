@@ -118,6 +118,8 @@ public final class LatheEngine {
   private final SessionHost host = new SessionHost();
   private final AtomicLong runToken = new AtomicLong();
   private final Path workspaceRoot;
+  // The workspace root with its links resolved, which a file's real path is compared against.
+  private final Path realWorkspaceRoot;
   private final Path latheDir;
   private final DiskEdits diskEdits;
 
@@ -166,6 +168,7 @@ public final class LatheEngine {
 
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
+    this.realWorkspaceRoot = IOUtil.unchecked(() -> workspaceRoot.toRealPath());
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     this.diskEdits =
         new DiskEdits(
@@ -1161,18 +1164,12 @@ public final class LatheEngine {
         snippet(targetPath, location.getRange()));
   }
 
-  // Whether the read tools answer for an existing file: one in the workspace, or among the
-  // dependency and JDK sources Lathe extracted. By real path, so a link in the workspace to a file
-  // outside it is outside too, and a workspace under a linked directory still counts.
+  // Whether the read tools answer for an existing file: one in the workspace, or one a module
+  // compiles or the build extracted as a dependency's or the JDK's sources. By real path, so a link
+  // in the workspace to a file outside it is outside too.
   public boolean inWorkspaceOrSources(final Path file) {
     final Path real = IOUtil.unchecked(() -> file.toRealPath());
-    return Stream.of(
-            workspaceRoot,
-            LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR),
-            LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_JDKS_DIR))
-        .filter(Files::isDirectory)
-        .map(root -> IOUtil.unchecked(() -> root.toRealPath()))
-        .anyMatch(real::startsWith);
+    return real.startsWith(realWorkspaceRoot) || query(session -> session.verifier().routed(real));
   }
 
   private LatheLocation.Origin origin(final Path target) {
