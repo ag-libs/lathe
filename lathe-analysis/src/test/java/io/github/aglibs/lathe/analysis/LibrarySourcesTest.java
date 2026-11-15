@@ -75,6 +75,31 @@ class LibrarySourcesTest extends SampleFixture {
     }
   }
 
+  // A reactor JPMS module read from the module path is named by its module in the build, as on the
+  // classpath, not by its module-info name.
+  @Test
+  void originLabel_reactorModuleOnTheModulePath_namesTheBuildModule() throws Exception {
+    final Path librarySources = tmp.resolve("library-src");
+    final Path moduleInfo = librarySources.resolve("module-info.java");
+    final Path widget = librarySources.resolve("lib/Widget.java");
+    Files.createDirectories(widget.getParent());
+    Files.writeString(moduleInfo, "module shop.lib { exports lib; }");
+    Files.writeString(widget, "package lib; public class Widget {}");
+    final Path classDir =
+        tmp.resolve("shop").resolve(LatheLayout.LATHE_DIR).resolve("library/classes");
+    TestJavac.compileToDir(classDir, moduleInfo, widget);
+    final Path app = tmp.resolve("App.java");
+    Files.writeString(app, "class App { lib.Widget widget; }");
+
+    try (final var parsed =
+        TestJavac.parse(
+            app, List.of("--module-path", classDir.toString(), "--add-modules", "shop.lib"))) {
+      final var widgetType = parsed.task().getElements().getTypeElement("lib.Widget");
+
+      assertThat(LibrarySources.none().originLabel(widgetType, parsed.fm())).hasValue("library");
+    }
+  }
+
   @Test
   void from_dependencySourceClasspath_returnsSelfJarAndTransitiveJars() throws Exception {
     final Path selfJar = tmp.resolve("repo/self.jar");

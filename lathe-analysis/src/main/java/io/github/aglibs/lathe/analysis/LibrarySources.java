@@ -273,17 +273,20 @@ public record LibrarySources(
   private static Optional<Path> jarForModulePath(
       final String moduleName, final String qualifiedName, final StandardJavaFileManager fm)
       throws IOException {
+    return modulePathClassFile(moduleName, qualifiedName, fm)
+        .flatMap(LibrarySources::extractJarPath);
+  }
+
+  private static Optional<URI> modulePathClassFile(
+      final String moduleName, final String qualifiedName, final StandardJavaFileManager fm)
+      throws IOException {
     final var moduleLoc = fm.getLocationForModule(StandardLocation.MODULE_PATH, moduleName);
     if (moduleLoc == null) {
       return Optional.empty();
     }
 
     final var jfo = fm.getJavaFileForInput(moduleLoc, qualifiedName, JavaFileObject.Kind.CLASS);
-    if (jfo == null) {
-      return Optional.empty();
-    }
-
-    return extractJarPath(jfo.toUri());
+    return Optional.ofNullable(jfo).map(JavaFileObject::toUri);
   }
 
   private Optional<String> originLabelForModule(
@@ -296,13 +299,18 @@ public record LibrarySources(
       return Optional.of(jdkLabel);
     }
 
-    final var jar = jarForModulePath(moduleName, qualifiedName, fm);
+    final Optional<URI> classFile = modulePathClassFile(moduleName, qualifiedName, fm);
+    final var jar = classFile.flatMap(LibrarySources::extractJarPath);
     final var gav = jar.map(jarToGav::get);
     LOG.fine(
         () ->
             "[origin] module %s → jar=%s gav=%s"
                 .formatted(moduleName, jar.orElse(null), gav.orElse(null)));
-    return gav.map(s -> "%s (%s)".formatted(moduleName, s)).or(() -> Optional.of(moduleName));
+    // A reactor module is named as on the classpath, by its module in the build, so every caller
+    // labels it alike.
+    return gav.map(s -> "%s (%s)".formatted(moduleName, s))
+        .or(() -> classFile.flatMap(LibrarySources::extractReactorModuleName))
+        .or(() -> Optional.of(moduleName));
   }
 
   private Optional<Path> externalSourceRootForModule(
