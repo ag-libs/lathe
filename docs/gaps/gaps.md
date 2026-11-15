@@ -2254,33 +2254,6 @@ None yet.
 
 ---
 
-## MC-74 — `search_symbols` lists types the project cannot use, though its description says it excludes them
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP `search_symbols`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Follow-up to MC-38, which ranks JDK internals last by design.
-
-### Observed behaviour
-
-Results include `ThreadLocal.ThreadLocalMap.Entry`, `Hashtable.Entry` (package-private nested types)
-and `com.sun.tools.javac.util.StringUtils` (a JDK internal, ranked last per MC-38),
-while the tool's description says such types are excluded.
-
-### Fix direction
-
-Drop nested types that are not public (or not accessible from any reactor package), and make the
-description match MC-38's behaviour (internals listed last, not excluded).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-77 — `workspace_summary` gives no test status for some modules
 
 **Status: documented**

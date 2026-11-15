@@ -243,8 +243,9 @@ final class LatheMcpTools {
             READ_ONLY,
             """
                 Find a type by name across the whole reactor, its dependencies, and the \
-                JDK (the reactor's first, never JDK internals no project code can use) — \
-                returning each with its kind, container, and `path:line:column`. Use to locate a type \
+                JDK (the reactor's first, JDK internals that need --add-exports last; the JDK's \
+                and dependencies' non-public types are listed too, as a stack trace can name \
+                them) — returning each with its kind, container, and `path:line:column`. Use to locate a type \
                 when you know its name but not its file.\
                 """,
             LatheMcpTools::handleSearchSymbols),
