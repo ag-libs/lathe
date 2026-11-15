@@ -117,6 +117,8 @@ public final class Launcher {
 
     final Path argfile =
         Files.createTempFile(LatheLayout.LAUNCH_ARGFILE_PREFIX, LatheLayout.ARGFILE_SUFFIX);
+    // Kept while the server runs, so the command the transcript shows can be run again by hand.
+    argfile.toFile().deleteOnExit();
     JavaArgfile.write(
         argfile.getParent(), argfile, argv.subList(1, argv.size()), JavaArgfile.NATIVE_CHARSET);
     return List.of(argv.get(0), "@" + argfile);
