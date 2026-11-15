@@ -10,7 +10,10 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -124,6 +127,25 @@ final class LatheTestRunnerTest {
         .isEqualTo(TestSelectionKind.CLASS_NAME_EXCLUDE.runnerFlag());
   }
 
+  // run_test on a method name declared in an outer class and its @Nested one selects both, by
+  // their binary class names: the nested one must run too.
+  @Test
+  void run_selectMethodOfANestedClass_runsIt() {
+    final String outer = "%s#run".formatted(NestedFixture.class.getName());
+    final String inner = "%s#run".formatted(NestedFixture.Inner.class.getName());
+
+    assertThat(runMethods(outer)).isEqualTo(LatheTestRunner.EXIT_OK);
+    assertThat(runMethods(inner)).isEqualTo(LatheTestRunner.EXIT_FAILURE);
+    assertThat(runMethods(outer, inner)).isEqualTo(LatheTestRunner.EXIT_FAILURE);
+  }
+
+  private static int runMethods(final String... methods) {
+    return LatheTestRunner.run(
+        Arrays.stream(methods)
+            .flatMap(method -> Stream.of(TestSelectorParser.SELECT_METHOD, method))
+            .toArray(String[]::new));
+  }
+
   private static int runClass(final Class<?> testClass) {
     return LatheTestRunner.run(new String[] {TestSelectorParser.SELECT_CLASS, testClass.getName()});
   }
@@ -140,5 +162,20 @@ final class FailingFixture {
   @Test
   void failing_test_returnsRed() {
     throw new AssertionError("expected");
+  }
+}
+
+final class NestedFixture {
+
+  @Test
+  void run() {}
+
+  @Nested
+  final class Inner {
+
+    @Test
+    void run() {
+      throw new AssertionError("expected");
+    }
   }
 }

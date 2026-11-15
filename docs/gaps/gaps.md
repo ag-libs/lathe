@@ -1278,37 +1278,6 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-With two top-level test classes in one file both declaring `method`, `run_test` with `scope=method` runs only the first class's; its `Ran:` line names that class, and the second goes unmentioned.
-Class scope runs every top-level class (archived [TE-9](gaps-archive.md#te-9--running-a-file-with-two-top-level-test-classes-runs-only-the-first--done)).
-
-The same happens with a `@Nested` class: a method name in both the outer class and a nested one runs only the outer one, and the ambiguity is not reported (agent review on Dropwizard, 2026-11-01).
-
-### Fix direction
-
-Run every match, as the class scope does, or ask which class is meant.
-
-Cause (seen on Dropwizard's `NestedResourceTest#app`, 2026-11-15): `LatheEngine.runTest` keeps the first matching class
-only for the method scope (`outer.subList(0, 1)`), and the runner's `--select-method` is one `DiscoverySelectors.selectMethod`;
-the nested-class expansion exists for `--select-class` only.
-
-### Regression targets
-
-None yet.
-
----
-
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
 **Status: deferred** (2026-11-04: the silent part fixed; replaying the copy from `.lathe/` deferred)

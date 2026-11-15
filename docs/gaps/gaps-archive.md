@@ -11584,6 +11584,27 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first — done
+
+**Status: done.**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+With two classes in one file declaring the same test method, top-level or `@Nested`, `run_test` with `scope=method` ran only the first and did not mention the other.
+
+### Resolution
+
+A method name runs in every class of the file that declares it, nested ones included (`LatheEngine.selectTargets`), and the `Ran:` line lists each.
+Each class needs its own method selector, which the runner already takes several of.
+
+### Regression targets
+
+- `LatheEngineRunTest.selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndEveryMethodOfTheName`
+- `LatheTestRunnerTest.run_selectMethodOfANestedClass_runsIt`
+
+---
+
 ## TE-17 — A test that locates its sources from its own class file fails when replayed — done (workaround documented)
 
 **Status: done (workaround documented).**

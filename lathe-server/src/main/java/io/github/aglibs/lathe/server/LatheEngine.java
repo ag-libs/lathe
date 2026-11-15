@@ -793,8 +793,8 @@ public final class LatheEngine {
   }
 
   // The outermost targets of the scope: a nested class runs with its enclosing one (the scan lists
-  // it first), and a file's every top-level test class runs, not only the first. A method is one,
-  // the outermost of its name.
+  // it first), and a file's every top-level test class runs, not only the first. A method runs in
+  // every class that declares it, nested ones too, as a method selector reaches only its own class.
   static List<RunTarget> selectTargets(
       final List<RunTarget> targets, final TestScope scope, final String method, final Path file) {
     final List<RunTarget> matching =
@@ -810,11 +810,13 @@ public final class LatheEngine {
                   .formatted(scope.name().toLowerCase(Locale.ROOT), file.getFileName()));
     }
 
+    if (scope == TestScope.METHOD) {
+      return matching;
+    }
+
     final long outermost =
         matching.stream().mapToLong(LatheEngine::nestingDepth).min().orElseThrow();
-    final List<RunTarget> outer =
-        matching.stream().filter(target -> nestingDepth(target) == outermost).toList();
-    return scope == TestScope.METHOD ? outer.subList(0, 1) : outer;
+    return matching.stream().filter(target -> nestingDepth(target) == outermost).toList();
   }
 
   private static long nestingDepth(final RunTarget target) {
