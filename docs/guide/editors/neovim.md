@@ -89,8 +89,12 @@ the server when the build ends:
   A kind given looks only for that kind's root.
 - A Maven or Gradle build that does not register Lathe gets it from outside, so **your project files
   are not changed**: Maven through `-Dmaven.ext.class.path` (the jars fetched once per Lathe version
-  into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. Code that does not compile
-  still sets up. A build that registers Lathe just builds.
+  into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. A build that registers
+  Lathe builds as it is.
+- The first build is a clean one that records your tests without running them (Maven
+  `clean test -Dlathe.capture.only=true`, Gradle `latheSync -Plathe.capture.only=true`), so the
+  server knows every module and tests run at once. Code that does not compile still sets up: compile
+  errors don't stop it, and the server shows them.
 - An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).
 - It runs the project's `mvnw`/`gradlew`, else `mvn`/`gradle` from `PATH`, and sets up this client's
   Lathe version; a development checkout of the client needs `LATHE_VERSION` set.

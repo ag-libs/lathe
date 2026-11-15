@@ -1,8 +1,9 @@
 -- :LatheInit [maven|gradle|openjdk]: sets Lathe up for the build around the current file, the root
--- it found confirmed in a prompt. A build that registers Lathe just builds; one that does not gets
--- Lathe from outside, so the project is not changed: Maven through -Dmaven.ext.class.path, Gradle
--- through an init script, both with compile errors kept from stopping the first build. An OpenJDK
--- checkout runs Lathe's OpenJDK goal. It never syncs: :LatheSync refreshes a workspace set up.
+-- it found confirmed in a prompt. A build that registers Lathe builds as it is; one that does not
+-- gets Lathe from outside, so the project is not changed: Maven through -Dmaven.ext.class.path,
+-- Gradle through an init script. Either way the first build is the documented first run, with
+-- compile errors kept from stopping it. An OpenJDK checkout runs Lathe's OpenJDK goal. It never
+-- syncs: :LatheSync refreshes a workspace set up.
 -- Design: docs/potential/lathe-init.md.
 local M = {}
 
@@ -15,9 +16,20 @@ local GRADLE_PLUGIN_ID = "io.github.ag-libs.lathe"
 local DEV_VERSION = "0.0.0-dev"
 local COPY_DEPENDENCIES = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies"
 local INIT_SCRIPT = "lathe.init.gradle.kts"
-local INIT_SCRIPT_TEMPLATE = "templates/" .. INIT_SCRIPT
+local FAIL_ON_ERROR_SCRIPT = "lathe.failonerror.gradle.kts"
 local OPENJDK_SYNC = "io.github.ag-libs:lathe-openjdk-maven-plugin:%s:sync"
 local KINDS = { maven = "Maven", gradle = "Gradle", openjdk = "OpenJDK" }
+-- The first build: clean, as Maven compiles nothing it finds up to date and Lathe captures a module
+-- only as it compiles it; the tests captured without running; compile errors kept from stopping
+-- it. Gradle reruns a compile whose inputs changed, so it needs no clean.
+local MAVEN_FIRST_BUILD = {
+  "clean",
+  "test",
+  "-Dlathe.capture.only=true",
+  "-DfailIfNoTests=false",
+  "-Dmaven.compiler.failOnError=false",
+}
+local GRADLE_FIRST_BUILD = { "latheSync", "-Plathe.capture.only=true", "--continue" }
 
 local function exists(path)
   return vim.uv.fs_stat(path) ~= nil
@@ -216,20 +228,24 @@ local function write_bootstrap_pom(dir, version)
   }, vim.fs.joinpath(dir, POM))
 end
 
-local function write_init_script(dir, version)
-  local template = vim.api.nvim_get_runtime_file(INIT_SCRIPT_TEMPLATE, false)[1]
+-- The template `name` written to dir, @VERSION@ replaced when a version is given. The sync script
+-- replays the init scripts the build ran with, so it is written where the plugin's install cannot
+-- move it.
+local function write_init_script(name, dir, version)
+  local path = "templates/" .. name
+  local template = vim.api.nvim_get_runtime_file(path, false)[1]
   if not template then
     notify(
-      ("this install of lathe.nvim has no `%s`: reinstall the plugin."):format(INIT_SCRIPT_TEMPLATE),
+      ("this install of lathe.nvim has no `%s`: reinstall the plugin."):format(path),
       vim.log.levels.ERROR
     )
     return nil
   end
 
-  local script = vim.fs.joinpath(dir, INIT_SCRIPT)
+  local script = vim.fs.joinpath(dir, name)
   vim.fn.mkdir(dir, "p")
   vim.fn.writefile(
-    vim.split(read(template):gsub("@VERSION@", version), "\n", { plain = true }),
+    vim.split(read(template):gsub("@VERSION@", version or ""), "\n", { plain = true }),
     script
   )
   return script
@@ -289,13 +305,14 @@ local function maven_personal(build_, tool, version)
   local run_build = function()
     local jars = vim.fn.glob(vim.fs.joinpath(lib, "*.jar"), false, true)
     table.sort(jars)
-    build(build_.root, {
-      tool,
-      "-B",
-      "-Dmaven.ext.class.path=" .. table.concat(jars, ":"),
-      "-Dmaven.compiler.failOnError=false",
-      "process-test-classes",
-    }, ("%s process-test-classes (Lathe %s)"):format(vim.fs.basename(tool), version))
+    build(
+      build_.root,
+      vim.list_extend(
+        { tool, "-B", "-Dmaven.ext.class.path=" .. table.concat(jars, ":") },
+        MAVEN_FIRST_BUILD
+      ),
+      ("%s clean test (Lathe %s)"):format(vim.fs.basename(tool), version)
+    )
   end
   -- lib/ appears only whole: the fetch fills a temporary folder renamed into place when it ends, so
   -- an interrupted one is fetched again. A snapshot is fetched every time, for its newest build.
@@ -380,8 +397,19 @@ local function set_up(found)
 
   if found.registered then
     notify(("building %s, which registers Lathe…"):format(found.root))
-    local cmd = found.kind == "maven" and { tool, "-B", "process-test-classes" }
-      or { tool, "latheSync" }
+    if found.kind == "maven" then
+      local cmd = vim.list_extend({ tool, "-B" }, MAVEN_FIRST_BUILD)
+      build(found.root, cmd, table.concat(cmd, " "))
+      return
+    end
+
+    local script =
+      write_init_script(FAIL_ON_ERROR_SCRIPT, vim.fs.joinpath(workspace.cache_root(), "bootstrap"))
+    if not script then
+      return
+    end
+
+    local cmd = vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD)
     build(found.root, cmd, table.concat(cmd, " "))
     return
   end
@@ -412,14 +440,14 @@ local function set_up(found)
     return
   end
 
-  local script = write_init_script(bootstrap_dir(version), version)
+  local script = write_init_script(INIT_SCRIPT, bootstrap_dir(version), version)
   if not script then
     return
   end
 
   build(
     found.root,
-    { tool, "--init-script", script, "latheSync" },
+    vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD),
     ("%s latheSync (Lathe %s)"):format(vim.fs.basename(tool), version)
   )
 end

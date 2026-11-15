@@ -106,10 +106,14 @@ Lathe: set up the Maven build in: ~/work/app█
 
 | The build at the root | `:LatheInit` runs |
 |---|---|
-| Maven, Lathe not registered (the client text-checks `.mvn/extensions.xml` and the POM for `lathe-maven-extension`) | the bootstrap fetch if needed, then the build with the activation and `failOnError` off |
-| Gradle, Lathe not registered (the client text-checks the settings script for `io.github.ag-libs.lathe`) | the build with the init script |
-| Maven or Gradle that registers Lathe | a plain build (`process-test-classes`, `latheSync`) |
+| Maven, Lathe not registered (the client text-checks `.mvn/extensions.xml` and the POM for `lathe-maven-extension`) | the bootstrap fetch if needed, then the first build with the activation |
+| Gradle, Lathe not registered (the client text-checks the settings script for `io.github.ag-libs.lathe`) | the first build with the init script |
+| Maven or Gradle that registers Lathe | the same first build, without the activation; on Gradle with an init script that only keeps compile errors |
 | OpenJDK | Lathe's OpenJDK goal at the client's version, once the JDK is configured and built in exactly one configuration |
+
+The first build is the documented first run, with compile errors kept from stopping it: Maven `clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false`, Gradle `latheSync -Plathe.capture.only=true --continue`.
+`clean`, as Maven compiles nothing it finds up to date, and Lathe captures a module only as it compiles it: a project built before would otherwise set up with no module. Gradle reruns a compile whose inputs changed, so it needs no clean.
+The tests are captured, not run, so the first test run needs no sync.
 
 When the build ends with a launcher, the client starts the server for the open Java buffers under the root; without one, it asks whether the root is the build's root.
 
@@ -164,6 +168,9 @@ Gradle resolves the plugin itself, from the Gradle Plugin Portal named in the sc
 - **With `failOnError` off** (Maven `-Dmaven.compiler.failOnError=false`; Gradle `options.isFailOnError = false` on every `JavaCompile`), both builds succeeded, every module was captured, and the server reported only the real error once it had compiled the broken module itself.
 
 So personal builds always run with `failOnError` off, and every later sync replays it: Maven through the sync script, Gradle because the line lives in the client's init script.
+A build that registers Lathe gets the same on its first build: Maven through the same flag; Gradle, which has no flag for it, through a second init script holding only the root-build `JavaCompile` block (`~/.cache/lathe/bootstrap/lathe.failonerror.gradle.kts`).
+Without it, a compile error stops the first build before the sync, and no launcher is written.
+The Gradle sync script replays every init script the build ran with, so the editor's later syncs of that project keep compile errors too, at the cost noted below; the user's terminal builds are unaffected.
 On Gradle the init script also turns incremental compilation off: after a compile with errors that Gradle counted as done, its incremental compiler recompiles only the changed sources, so the classes the failed compile left out are never written once the code is fixed (found by CI on PR #183, reproduced on a scratch build). A sync through the init script then recompiles a whole source set when its sources change.
 On Gradle `failOnError` is a task input, so a build run through the init script does not share compile cache entries with CI; the user's terminal builds without it are unaffected.
 The [Gradle guide](../guide/gradle.md)'s "Lathe never changes the inputs of your build's own tasks" holds for the plugin; the guide notes this exception for the personal init script.
@@ -293,7 +300,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 1. **Check:** a Maven root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else a plain build).
 2. **Pre-flight:** find Maven (project `mvnw`, else `mvn` on `PATH`, else the bundled wrapper); Maven 3.6.3+; Maven's JDK 17+ ([Detecting and explaining](#detecting-and-explaining)).
 3. **Fetch** the activation jars if missing.
-4. **Run** `<maven> -Dmaven.ext.class.path=… -Dmaven.compiler.failOnError=false process-test-classes` at the reactor root: editing first, no clean, no tests executed; tests are captured on demand.
+4. **Run** `<maven> -Dmaven.ext.class.path=… clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false` at the reactor root: the tests are captured, not run.
 5. **Attach** when the build ends with a launcher; `.lathe/.gitignore` keeps `.lathe/` out of git.
 
 ### Gradle personal mode
@@ -324,7 +331,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
    }
    ```
 
-4. **Run** `<gradle> --init-script <that file> latheSync` at the root build: no tests run; tests are captured on demand (`--tests`).
+4. **Run** `<gradle> --init-script <that file> latheSync -Plathe.capture.only=true --continue` at the root build: the tests are captured, not run.
 5. **Attach** as in Maven personal mode.
 
 Passed with `--init-script`, never written to `~/.gradle/init.d/`: one project gets Lathe, not every Gradle build on the machine.
@@ -426,7 +433,7 @@ New Java Project gains a **Plain Java (no build tool)** choice that writes `src/
 ### Other topics
 
 - **Red Hat Java coexistence:** beginners often also install the Extension Pack for Java (duplicate diagnostics, two indexers). A one-time notice with *"Show extension"*, where *Disable (Workspace)* is one click stored by VS Code, not in the project (as in New Java Project §8).
-- **First-build scope:** `process-test-classes` only; a test run without a capture reports a blocked reason with a *"Capture tests (runs the tests once)"* action.
+- **First-build scope:** a clean build that captures the tests without running them ([The `:LatheInit` command](#the-latheinit-command)).
 - **Update policy:** prompt rather than auto-sync, since a sync is a full Maven build.
 - **`~/.m2/extensions.xml`** (Maven 3.10+): an optional upgrade for personal mode so terminal builds refresh `.lathe/` too, offered after asking; not the default.
 

@@ -1,11 +1,13 @@
 -- Verifies lathe.latheinit: the build root it finds from a folder (an OpenJDK checkout's markers,
 -- Maven's markers, the topmost of a run of pom.xml folders, Gradle's settings script, the nearer of
 -- a Maven and a Gradle root, a forced kind), the root prompt (accepted, edited, cancelled), whether
--- the build registers Lathe, and the commands :LatheInit runs: the Maven fetch then the build with
--- the activation, the Gradle build with the init script written for the version, the OpenJDK goal
--- on a built JDK, a plain build for a build that registers Lathe, the attach after a build that
--- wrote a launcher, and the messages for an unbuilt JDK, a development version, no build, a
--- workspace set up already, and a build that wrote no .lathe/. Stubs vim.system, so no build runs.
+-- the build registers Lathe, and the commands :LatheInit runs: the Maven fetch then the first build
+-- (clean, tests captured, compile errors kept) with the activation, the Gradle build with the init
+-- script written for the version, the OpenJDK goal on a built JDK, the same first build for a build
+-- that registers Lathe (on Gradle with an init script that keeps compile errors), the attach after
+-- a build that wrote a launcher, and the messages for an unbuilt JDK, a development version, no
+-- build, a workspace set up already, and a build that wrote no .lathe/. Stubs vim.system, so no
+-- build runs.
 --
 -- Run via run-specs.sh, or headless:
 --   nvim --headless --clean -u NONE \
@@ -193,9 +195,9 @@ write(boot .. "/lib.fetching/lathe-core-9.9.9.jar")
 finish_build(0)
 spec.check("a finished fetch is renamed into place", vim.uv.fs_stat(boot .. "/lib.fetching"), nil)
 spec.check(
-  "then the build, Lathe on the ext class path and compile errors kept",
+  "then the first build, Lathe on the ext class path",
   table.concat(last_cmd(), " "),
-  ("/opt/bin/mvn -B -Dmaven.ext.class.path=%s/lib/lathe-core-9.9.9.jar:%s/lib/lathe-maven-extension-9.9.9.jar -Dmaven.compiler.failOnError=false process-test-classes"):format(
+  ("/opt/bin/mvn -B -Dmaven.ext.class.path=%s/lib/lathe-core-9.9.9.jar:%s/lib/lathe-maven-extension-9.9.9.jar clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false"):format(
     boot,
     boot
   )
@@ -240,7 +242,7 @@ vim.env.LATHE_VERSION = "9.9.9"
 local before = #calls
 run_from("/multi")
 spec.check("with the jars already fetched, it builds at once", #calls, before + 1)
-spec.check("that call is the build", last_cmd()[#last_cmd()], "process-test-classes")
+spec.check("that call is the build", last_cmd()[4], "clean")
 finish_build(0)
 
 -- The root prompt: an edited root is taken as typed; a cancel runs nothing.
@@ -279,7 +281,9 @@ run_from("/gradle/lib")
 spec.check(
   "Gradle builds with the init script",
   table.concat(last_cmd(), " "),
-  "/opt/bin/gradle --init-script " .. boot .. "/lathe.init.gradle.kts latheSync"
+  "/opt/bin/gradle --init-script "
+    .. boot
+    .. "/lathe.init.gradle.kts latheSync -Plathe.capture.only=true --continue"
 )
 local init_script = table.concat(vim.fn.readfile(boot .. "/lathe.init.gradle.kts"), "\n")
 spec.check(
@@ -305,18 +309,28 @@ vim.fn.bufload(team_java)
 vim.bo[team_java].filetype = "java"
 run_from("/team")
 spec.check(
-  "a registered Maven build is a plain build",
+  "a registered Maven build runs the same first build, without the activation",
   table.concat(last_cmd(), " "),
-  "/opt/bin/mvn -B process-test-classes"
+  "/opt/bin/mvn -B clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false"
 )
 executable(work .. "/team/.lathe/lathe-launcher.sh")
 finish_build(1)
 spec.check("a failed build that wrote a launcher attaches", started[#started], team_java)
 run_from("/team-gradle")
+local keep_errors = work .. "/cache/bootstrap/lathe.failonerror.gradle.kts"
 spec.check(
-  "a registered Gradle build is a plain build",
+  "a registered Gradle build keeps compile errors through an init script",
   table.concat(last_cmd(), " "),
-  "/opt/bin/gradle latheSync"
+  "/opt/bin/gradle --init-script "
+    .. keep_errors
+    .. " latheSync -Plathe.capture.only=true --continue"
+)
+local keep_errors_text = table.concat(vim.fn.readfile(keep_errors), "\n")
+spec.check(
+  "that script turns failOnError off and applies no plugin",
+  keep_errors_text:find("options.isFailOnError = false", 1, true) ~= nil
+    and keep_errors_text:find("classpath", 1, true) == nil,
+  true
 )
 finish_build(0)
 
@@ -391,6 +405,9 @@ vim.env.LATHE_VERSION = nil
 run_from("/gradle")
 spec.check("a development version runs nothing", #calls, before)
 spec.check("and says to set LATHE_VERSION", last_note_has("LATHE_VERSION"), true)
+run_from("/team-gradle")
+spec.check("but builds a build that registers Lathe", #calls, before + 1)
+finish_build(0)
 
 latheinit.setup()
 spec.check("registers :LatheInit", vim.fn.exists(":LatheInit"), 2)
