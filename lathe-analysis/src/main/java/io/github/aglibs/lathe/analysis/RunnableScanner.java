@@ -16,6 +16,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.Range;
@@ -37,6 +38,8 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
   // JUnit runs a @Nested class with its enclosing class, so a class whose nested ones hold tests is
   // a test class too, even with no test method of its own.
   private static final String NESTED_ANNOTATION = "org.junit.jupiter.api.Nested";
+  private static final String JUNIT3_TEST_CASE = "junit.framework.TestCase";
+  private static final String JUNIT3_TEST_PREFIX = "test";
 
   private final AttributedFileAnalysis analysis;
   private final String uri;
@@ -106,7 +109,8 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
       if (enclosing != null) {
         classesWithMain.add(binaryName(enclosing));
       }
-    } else if (isTestMethod(executable) && enclosing != null) {
+    } else if (enclosing != null
+        && (isTestMethod(executable) || isJUnit3TestMethod(executable, enclosing))) {
       targets.add(methodTarget(node, executable, enclosing));
       classesWithTests.add(binaryName(enclosing));
     }
@@ -153,6 +157,33 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
   private static boolean isTestMethod(final ExecutableElement element) {
     return element.getAnnotationMirrors().stream().anyMatch(RunnableScanner::isTestAnnotation);
+  }
+
+  // JUnit 3, which the vintage engine runs: a concrete TestCase's public, non-static void testXxx()
+  // with no parameters. A class that builds its tests in suite() has none to find.
+  private static boolean isJUnit3TestMethod(
+      final ExecutableElement element, final TypeElement enclosing) {
+    return element.getSimpleName().toString().startsWith(JUNIT3_TEST_PREFIX)
+        && element.getModifiers().contains(Modifier.PUBLIC)
+        && !element.getModifiers().contains(Modifier.STATIC)
+        && element.getReturnType().getKind() == TypeKind.VOID
+        && element.getParameters().isEmpty()
+        && !enclosing.getModifiers().contains(Modifier.ABSTRACT)
+        && extendsTestCase(enclosing);
+  }
+
+  private static boolean extendsTestCase(final TypeElement type) {
+    TypeMirror superclass = type.getSuperclass();
+    while (superclass instanceof final DeclaredType declared
+        && declared.asElement() instanceof final TypeElement element) {
+      if (element.getQualifiedName().contentEquals(JUNIT3_TEST_CASE)) {
+        return true;
+      }
+
+      superclass = element.getSuperclass();
+    }
+
+    return false;
   }
 
   private static boolean isTestAnnotation(final AnnotationMirror mirror) {

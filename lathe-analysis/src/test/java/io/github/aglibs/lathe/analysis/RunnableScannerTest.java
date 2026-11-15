@@ -5,10 +5,16 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class RunnableScannerTest {
+
+  @TempDir Path tmp;
 
   private static final String URI = TempSourceCompiler.TEST_URI;
   private static final String MODULE_REL = "app";
@@ -411,6 +417,53 @@ class RunnableScannerTest {
             tuple("demo.Other$Plain", "demo.Other"));
   }
 
+  // JUnit 3 has no annotations: a concrete TestCase's public, non-static void testXxx() methods
+  // with no parameters are its tests. The same method in an abstract TestCase or in a plain class
+  // is none.
+  @Test
+  void runnables_junit3TestCase_testMethodsOnly() throws Exception {
+    final Path junit = tmp.resolve("junit");
+    TestJavac.compileToDir(
+        junit,
+        Files.writeString(
+            Files.createDirectories(tmp.resolve("src/junit/framework")).resolve("TestCase.java"),
+            "package junit.framework; public abstract class TestCase {}"));
+    final String source =
+        """
+        package demo;
+
+        import junit.framework.TestCase;
+
+        class FooTest extends TestCase {
+          public void testAdds() {}
+          public void testWith(int value) {}
+          public static void testStatic() {}
+          void testPackagePrivate() {}
+          public void helper() {}
+        }
+
+        abstract class BaseTest extends TestCase {
+          public void testShared() {}
+        }
+
+        class SubTest extends BaseTest {
+          public void testOwn() {}
+        }
+
+        class Plain {
+          public void testNothing() {}
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source, MODULE_REL, List.of(junit));
+
+    assertThat(targets)
+        .filteredOn(target -> target.kind() != RunnableKind.TEST_PACKAGE)
+        .extracting(RunTarget::id)
+        .containsExactly(
+            "demo.FooTest#testAdds()", "demo.FooTest", "demo.SubTest#testOwn()", "demo.SubTest");
+  }
+
   @Test
   void runnables_classWithoutTestAnnotations_returnsNoTargets() {
     final String source =
@@ -452,8 +505,15 @@ class RunnableScannerTest {
   }
 
   private static List<RunTarget> scan(final String source, final String moduleRel) {
+    return scan(source, moduleRel, List.of());
+  }
+
+  private static List<RunTarget> scan(
+      final String source, final String moduleRel, final List<Path> classpath) {
     try (var session =
-        new SourceAnalysisSession(new TempSourceCompiler(TestJavac.JUNIT_CLASSPATH))) {
+        new SourceAnalysisSession(
+            new TempSourceCompiler(
+                Stream.concat(TestJavac.JUNIT_CLASSPATH.stream(), classpath.stream()).toList()))) {
       session.compile(URI, source, 1, CompileMode.OPEN);
       return session.files().runnables(URI, source, 1, moduleRel);
     }
