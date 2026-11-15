@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -42,6 +43,44 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
 
     Files.writeString(source, "package com.example; class Sample { int m; }");
     assertThat(engine.outline(source).notes().notCompiled()).isEmpty();
+  }
+
+  // The sync that adds a missing library also compiles the file that needed it, so the file is not
+  // stale and no later write clears its failure; a file the library does not fix keeps its note.
+  @Test
+  void notes_syncAddsTheMissingLibrary_notCompiledOnlyWhatStillFails() throws Exception {
+    final Path library =
+        TestCompiler.writeAt(
+            tmp.resolve("lib-src/com/lib/Lib.java"),
+            "package com.lib; public class Lib {}",
+            1_000L);
+    final Path libraryClasses = tmp.resolve("lib-classes");
+    TestJavac.compileToDir(libraryClasses, library);
+    final Path fixed =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Fixed.java", "package com.example; class Fixed {}");
+    final Path broken =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Broken.java", "package com.example; class Broken {}");
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fixed).value();
+
+    Files.writeString(fixed, "package com.example; class Fixed { com.lib.Lib lib; }");
+    Files.writeString(broken, "package com.example; class Broken { com.lib.Gone gone; }");
+    assertThat(engine.diagnostics(fixed).notes().notCompiled()).hasSize(2);
+
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), List.of(libraryClasses), fixed);
+    stampModule(fixed);
+    TestCompiler.writeModuleParams(
+        tmp, "module", tmp.resolve("module/src/main/java"), null, List.of(libraryClasses));
+    TestCompiler.recordBuildFiles(
+        tmp, List.of(Files.writeString(tmp.resolve("module/pom.xml"), "<project/>")));
+
+    assertThat(engine.diagnostics(fixed).value()).isEmpty();
+    assertThat(engine.notes(List.of()).notCompiled())
+        .singleElement()
+        .asString()
+        .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Broken.java")));
   }
 
   // A sync cannot add a file outside a synced module's source roots, nor one in a module the

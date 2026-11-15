@@ -154,11 +154,13 @@ final class WritePass {
   }
 
   // A reload replaces the configs and workers a running pass writes through: the pass started
-  // before it stops writing, and the lombok.config state is read afresh.
+  // before it stops writing, and the lombok.config state is read afresh. Failures came from the old
+  // build: the sync compiled the sources, and one still failing is stale and fails again.
   void onReload() {
     eventLoop.checkOnLoop();
     lombokChangedSources.clear();
     lombokConfigMtimes = null;
+    failedCompiles.clear();
     passGeneration++;
   }
 
