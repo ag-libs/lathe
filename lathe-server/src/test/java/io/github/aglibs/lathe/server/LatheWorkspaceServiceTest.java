@@ -139,6 +139,43 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
   }
 
+  // Replaying the last good classes would run code that is no longer on disk; once the source
+  // compiles again, the run gets past this check.
+  @Test
+  void executeCommand_runWhileModuleDoesNotCompile_blockedNamingTheFailure() throws Exception {
+    final ShopFixture fixture = openShop();
+    final String shop = Files.readString(fixture.shop());
+    Files.writeString(fixture.shop(), shop.replace("return count;", "return missing;"));
+    writeReported(Set.of(fixture.shop())).get(TIMEOUT_S, TimeUnit.SECONDS);
+    final var selection = new JsonObject();
+    selection.addProperty("selectorKind", "CLASS");
+    selection.addProperty("selectorValue", "com.example.Use");
+    final var selections = new JsonArray();
+    selections.add(selection);
+    final JsonObject tests = json("moduleRel", "module");
+    tests.add("selections", selections);
+    final JsonObject main = json("moduleRel", "module", "mainClass", "com.example.Use");
+
+    for (final var outcome :
+        List.of(
+            (LaunchOutcome) command(LatheCommands.RUN_TEST, tests),
+            (LaunchOutcome) command(LatheCommands.RUN_MAIN, main))) {
+      assertThat(outcome.launched()).isFalse();
+      assertThat(outcome.blockedReasons())
+          .singleElement(InstanceOfAssertFactories.STRING)
+          .startsWith("code it runs does not compile: ")
+          .contains("Shop.java");
+    }
+
+    assertThat(catchThrowable(() -> command(LatheCommands.DEBUG_MAIN, main)))
+        .hasStackTraceContaining("code it runs does not compile: ");
+
+    Files.writeString(fixture.shop(), shop);
+    writeReported(Set.of(fixture.shop())).get(TIMEOUT_S, TimeUnit.SECONDS);
+    final var fixed = (LaunchOutcome) command(LatheCommands.RUN_MAIN, main);
+    assertThat(fixed.blockedReasons()).containsExactly("no derived main-launch.json for module");
+  }
+
   @Test
   void executeCommand_listRunnables_returnsDiscoveredTargets() throws Exception {
     final Path source = prepareFooTestWorkspace();

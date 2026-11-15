@@ -108,7 +108,6 @@ final class WorkspaceSession {
     this.publisher = new DiagnosticPublisher(client, docs);
     this.state = new WorkspaceState(eventLoop);
     this.reactorIndex = new ReactorTypeIndex(eventLoop, state, this::openSourcePaths);
-    this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex);
     this.router = new FeatureRouter(eventLoop, state, docs);
     this.features = new DocumentFeatures(state, reactorIndex, router, docs, client, eventLoop);
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
@@ -133,6 +132,7 @@ final class WorkspaceSession {
             resourceMirror);
     this.queries = new WorkspaceQueries(state, writePass);
     this.verifier = new ChangeVerifier(state, router, writePass);
+    this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex, verifier);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
 
