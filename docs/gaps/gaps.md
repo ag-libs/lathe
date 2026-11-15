@@ -735,6 +735,84 @@ None yet.
 
 ---
 
+## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim's `:LatheFormat` and format-on-save on a Gradle build that applies Spotless without a `lathe-style.json`.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+On JUnit, `:LatheFormat` in any Java buffer shows only Neovim's own "[LSP] Format request failed, no matching language servers."
+The sync knew why and said so, but only in the Gradle output: Spotless formats this build, but Lathe cannot read its settings on Gradle, so the build should declare the formatter Spotless runs in `lathe-style.json`.
+That warning's example also suggests `{"engine": "google"}`, though JUnit's Spotless runs Eclipse.
+
+### Fix direction
+
+Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
+Let the sync's example name the engine Spotless runs when the build says which.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-108 — Semantic tokens mark deprecated methods but not deprecated types
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: the editor's semantic highlighting.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+In a JUnit test, a call to the deprecated `TestPlan.getTestIdentifier(String)` gets the `deprecated` modifier; a reference to the deprecated class `org.junit.jupiter.api.extension.MediaType` gets none, though javac warns about both and hover says the class is deprecated.
+A deprecated class is what a reader most wants struck through.
+
+### Fix direction
+
+Give a reference to a deprecated type the `deprecated` modifier, as for members.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-109 — `:LatheNew` cannot create a type in a Gradle source set beyond `main` and `test`
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: `:LatheNew` from a file in a source set such as `testFixtures`, `jmh` or `integrationTest`.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+From `junit-platform-engine/src/testFixtures/java/org/junit/platform/fakes/TestDescriptorStub.java`, `:LatheNew class` opens the global "Where:" picker (163 rows) instead of a name prompt in `org.junit.platform.fakes`, and none of its rows is a `testFixtures` or `jmh` destination.
+`lathe.workspace.context` answers `{}` for such a buffer.
+From a `main` file it prompts in the file's package and creates the type.
+
+### Fix direction
+
+Answer the workspace context, and list destinations, for every source-set tree, as for `main` and `test`.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1409,6 +1487,31 @@ A module run covering several source sets needs one launch per source set.
 ### Regression targets
 
 `LatheWorkspaceServiceTest.executeCommand_listRunnables_sourceSetFile_noPackageRun` (the package run is not offered).
+
+---
+
+## TE-18 — Tests a Gradle source set runs through another engine never show in the editor
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: editor test discovery and runs, and MCP `run_test`, for a source set like JUnit's `archUnit` suite.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+With the `archUnit` source set's launch captured (`test-launch-classes-archUnit.json`), `ArchUnitTests.java` shows no tests in neotest: the file's runnables know `@Test`-style methods only, not ArchUnit's `@ArchTest` fields, and module discovery (`lathe.tests.discover`) reads the `test` source set only, listing 53 tests and none of `archUnit`'s.
+These tests cannot be run from the editor at all.
+
+### Fix direction
+
+Discover each captured source set's launch, which finds the ArchUnit engine's tests, and place the file's runnables from that discovery.
+
+### Regression targets
+
+None yet.
 
 ---
 
