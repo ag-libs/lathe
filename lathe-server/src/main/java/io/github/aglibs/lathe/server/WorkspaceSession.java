@@ -100,6 +100,12 @@ final class WorkspaceSession {
   // change on disk replaces them.
   private boolean documentsFollowDisk;
   private final DiagnosticPublisher publisher;
+  // Per module dir, how many write passes changed what its sources compile against: its own
+  // classes, or a module's it depends on. A compile from an older generation may be out of date.
+  private final Map<Path, Long> moduleGenerations = new HashMap<>();
+  // Per file, the engine's last compile: an unchanged file asked again, or by calls running in
+  // parallel, shares it instead of compiling once per tool call.
+  private final Map<String, EngineCompile> engineCompiles = new HashMap<>();
 
   WorkspaceSession(
       final LatheLanguageClient client,
@@ -336,6 +342,12 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    final long generation = moduleGeneration(route);
+    final EngineCompile last = engineCompiles.get(uri);
+    if (last != null && last.stillAnswers(docs.get(uri), content, generation)) {
+      return last.diagnostics();
+    }
+
     // A dependency or JDK source is registered and compiled too, as the editor's open does, so the
     // engine's queries on it find an analysis; its diagnostics are not the agent's to fix.
     final boolean reactor = route instanceof CompilerRoute.Module;
@@ -358,7 +370,36 @@ final class WorkspaceSession {
               result.completeExceptionally(ex);
               return null;
             });
+    engineCompiles.put(uri, new EngineCompile(snapshot, generation, result));
     return result;
+  }
+
+  private long moduleGeneration(final CompilerRoute route) {
+    return route instanceof final CompilerRoute.Module module
+        ? moduleGenerations.getOrDefault(module.config().moduleDir(), 0L)
+        : 0L;
+  }
+
+  // A compile still answers while the file is that snapshot (a reload or a change on disk replaces
+  // it) with that content, nothing its module compiles against was written since, and it did not
+  // fail. One still running answers too.
+  private record EngineCompile(
+      OpenDocument snapshot, long generation, CompletableFuture<List<Diagnostic>> diagnostics) {
+
+    private EngineCompile {
+      ValidCheck.check()
+          .notNull(snapshot, "snapshot")
+          .notNull(diagnostics, "diagnostics")
+          .validate();
+    }
+
+    private boolean stillAnswers(
+        final OpenDocument current, final String content, final long currentGeneration) {
+      return snapshot.equals(current)
+          && snapshot.content().equals(content)
+          && generation == currentGeneration
+          && !diagnostics.isCompletedExceptionally();
+    }
   }
 
   void onChange(final String uri, final String content, final int version) {
@@ -892,6 +933,7 @@ final class WorkspaceSession {
   // Re-analyze the open files in the scope's modules, so what the passes wrote shows in their
   // diagnostics.
   private void refreshOpenFiles(final Set<Path> scope) {
+    scope.forEach(moduleDir -> moduleGenerations.merge(moduleDir, 1L, Long::sum));
     LOG.fine(
         () ->
             "[dependents] checking %d open file(s) across %d module(s)"
