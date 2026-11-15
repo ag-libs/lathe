@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -39,6 +40,15 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   private static final Logger LOG = Logger.getLogger(UnusedDeclarationScanner.class.getName());
 
   private static final Set<String> EXCLUDED_FIELD_NAMES = Set.of("serialVersionUID");
+
+  // Serialization calls these by reflection, matched by name and parameter types.
+  private static final Map<String, List<String>> SERIALIZATION_HOOKS =
+      Map.of(
+          "writeObject", List.of("java.io.ObjectOutputStream"),
+          "readObject", List.of("java.io.ObjectInputStream"),
+          "readObjectNoData", List.of(),
+          "writeReplace", List.of(),
+          "readResolve", List.of());
 
   private enum Kind {
     LOCAL_VARIABLE("local variable"),
@@ -118,14 +128,21 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   public Void visitMethod(final MethodTree node, final Void v) {
     if (declarationPhase) {
       final var element = trees.getElement(getCurrentPath());
-      if (element != null
-          && element.getKind() == ElementKind.METHOD
-          && element.getModifiers().contains(Modifier.PRIVATE)) {
+      if (element instanceof final ExecutableElement method
+          && method.getKind() == ElementKind.METHOD
+          && method.getModifiers().contains(Modifier.PRIVATE)
+          && !isSerializationHook(method)) {
         privateMethods.put(
-            element, candidateFor(node, node.getName().toString(), Kind.PRIVATE_METHOD));
+            method, candidateFor(node, node.getName().toString(), Kind.PRIVATE_METHOD));
       }
     }
     return super.visitMethod(node, v);
+  }
+
+  private static boolean isSerializationHook(final ExecutableElement method) {
+    final List<String> parameters =
+        method.getParameters().stream().map(parameter -> parameter.asType().toString()).toList();
+    return parameters.equals(SERIALIZATION_HOOKS.get(method.getSimpleName().toString()));
   }
 
   @Override
