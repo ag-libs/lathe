@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Turns a reactor module's build output (a directory or packaged jar the front-end listed in {@code
@@ -78,15 +79,21 @@ public final class ReactorRewrite {
         .orElse(path);
   }
 
-  // A class or module path: an output standing for several mirrors takes all of them, in its place.
+  // A module path: one mirror per entry, as a second directory there would hold no module.
   public List<String> toLathe(final List<String> paths) {
-    return paths.stream().flatMap(path -> expandString(path).stream()).toList();
+    return paths.stream().map(this::toLathe).toList();
   }
 
-  private List<String> expandString(final String path) {
-    return Optional.ofNullable(allMirrors.get(Path.of(path).normalize()))
-        .map(mirrors -> mirrors.stream().map(Path::toString).toList())
-        .orElse(List.of(path));
+  // A class path: an output standing for several mirrors takes all of them, in its place.
+  public List<String> toLatheClassPath(final List<String> paths) {
+    return paths.stream().flatMap(this::classPathEntries).toList();
+  }
+
+  private Stream<String> classPathEntries(final String path) {
+    final Path entry = Path.of(path);
+    return allMirrors.containsKey(entry.normalize())
+        ? expand(entry).stream().map(Path::toString)
+        : Stream.of(path);
   }
 
   public Map<String, String> toLathe(final Map<String, String> paths) {

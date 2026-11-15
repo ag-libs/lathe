@@ -157,7 +157,8 @@ class WorkspaceManifestTest {
   }
 
   // A Gradle jar that packs a second source set's classes (generated code) is listed under its own
-  // tree only: the jar's entries tell which other mirrors a classpath holding it needs.
+  // tree only: the jar's entries tell which other mirrors a classpath holding it needs. A jar built
+  // before one of its classes moved to the test tree still stands for its own tree alone.
   @Test
   void load_jarPackingAnotherTreesClasses_standsForBothMirrors_plainJarItsOwn() throws Exception {
     final Path lib = tmp.resolve(".lathe/lib");
@@ -179,10 +180,14 @@ class WorkspaceManifestTest {
     final Path appMain =
         TestCompiler.writeAt(
             tmp.resolve("src/app/App.java"), "package app; public class App {}", 1_000L);
+    final Path moved =
+        TestCompiler.writeAt(
+            tmp.resolve("src/app/Moved.java"), "package app; public class Moved {}", 1_000L);
     TestJavac.compileToDir(tmp.resolve(".lathe/app/classes"), appMain);
+    TestJavac.compileToDir(tmp.resolve(".lathe/app/test-classes"), moved);
     final Path appJar = tmp.resolve("app/build/libs/app.jar");
     Files.createDirectories(appJar.getParent());
-    TestJavac.compileToJar(appJar, tmp.resolve("jar-app"), List.of(), appMain);
+    TestJavac.compileToJar(appJar, tmp.resolve("jar-app"), List.of(), appMain, moved);
     writeWorkspaceManifest(
         LatheLayout.SCHEMA_VERSION,
         List.of(),
@@ -193,6 +198,7 @@ class WorkspaceManifestTest {
             new OutputData("lib/build/classes/java/gen", "lib", "classes-gen"),
             new OutputData("lib/build/classes/java/jmh", "lib", "classes-jmh"),
             new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR),
+            new OutputData("app/build/classes/java/test", "app", LatheLayout.TEST_CLASSES_DIR),
             new OutputData("app/build/classes/java/it", "app", "classes-it")));
 
     final ReactorRewrite rewrite = WorkspaceManifest.load(tmp).reactorRewrite();

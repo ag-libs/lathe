@@ -3,8 +3,10 @@ package io.github.aglibs.lathe.server.workspace;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -14,8 +16,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 // A Gradle jar can pack another source set's classes beside its own tree's, as Caffeine's packs its
 // generated codeGen classes, yet the build lists it under its own tree only: a classpath holding
@@ -29,8 +29,10 @@ final class PackedJars {
 
   private PackedJars() {}
 
-  // The outputs, with a jar listed once more under each other tree of its module whose mirror holds
-  // a class the jar packs and its own tree's mirror lacks. A jar no build has made yet adds none.
+  // The outputs, with a jar listed once more under each source-set tree of its module whose mirror
+  // holds a class the jar packs and its own tree's mirror lacks. Only source-set trees are asked:
+  // a class moved to the test tree since the jar was built must not put test code on the classpaths
+  // of the projects using the jar. A jar no build has made yet adds none.
   static List<OutputData> withPackedTrees(
       final Path workspaceRoot, final List<OutputData> outputs) {
     final Map<String, Set<String>> treesByModule =
@@ -51,36 +53,46 @@ final class PackedJars {
   private static Stream<OutputData> packedTrees(
       final Path workspaceRoot, final OutputData jar, final Set<String> moduleTrees) {
     final Path jarFile = workspaceRoot.resolve(jar.path());
-    final List<String> otherTrees =
-        moduleTrees.stream().filter(tree -> !tree.equals(jar.tree())).toList();
-    if (otherTrees.isEmpty() || !Files.isRegularFile(jarFile)) {
+    final List<String> sourceSetTrees =
+        moduleTrees.stream()
+            .filter(tree -> tree.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX))
+            .filter(tree -> !tree.equals(jar.tree()))
+            .toList();
+    if (sourceSetTrees.isEmpty() || !Files.isRegularFile(jarFile)) {
       return Stream.empty();
     }
 
     final Path moduleMirror = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(jar.module());
     final List<String> notInOwnTree =
         classEntries(jarFile).stream()
-            .filter(entry -> !Files.exists(moduleMirror.resolve(jar.tree()).resolve(entry)))
+            .filter(entry -> !mirrored(moduleMirror.resolve(jar.tree()), entry))
             .toList();
-    return otherTrees.stream()
+    return sourceSetTrees.stream()
         .filter(
             tree ->
                 notInOwnTree.stream()
-                    .anyMatch(entry -> Files.exists(moduleMirror.resolve(tree).resolve(entry))))
+                    .anyMatch(entry -> mirrored(moduleMirror.resolve(tree), entry)))
         .map(tree -> new OutputData(jar.path(), jar.module(), tree));
   }
 
   // A jar being rewritten by a build may not read: it then stands for its own tree, as before.
   private static List<String> classEntries(final Path jarFile) {
-    try (final var zip = new ZipFile(jarFile.toFile())) {
-      return zip.stream()
-          .map(ZipEntry::getName)
-          .filter(name -> name.endsWith(CLASS_SUFFIX) && !name.startsWith(META_INF))
-          .toList();
+    try {
+      return ServerFiles.listEntries(
+          jarFile, name -> name.endsWith(CLASS_SUFFIX) && !name.startsWith(META_INF));
     } catch (final IOException e) {
       LOG.log(
           Level.FINE, e, () -> "[manifest] %s unreadable, its own tree only".formatted(jarFile));
       return List.of();
+    }
+  }
+
+  // An entry name no path on this OS can hold (a ':' on Windows) is in no mirror either.
+  private static boolean mirrored(final Path mirror, final String entry) {
+    try {
+      return Files.exists(mirror.resolve(entry));
+    } catch (final InvalidPathException e) {
+      return false;
     }
   }
 }
