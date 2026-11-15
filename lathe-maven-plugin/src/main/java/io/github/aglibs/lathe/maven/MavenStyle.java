@@ -57,10 +57,10 @@ final class MavenStyle {
 
     final Plugin spotless = spotlessPlugin(styleSource.get());
     final WorkspaceStyleData detected = detect(spotless);
-    // Another declaration (none, a command) replaces the detected formatter in the server, section
-    // by section: keep the indent Spotless implies, but resolve and grant nothing it never runs.
+    // Another declaration (none, a command) replaces the detected formatter: keep the indent
+    // Spotless implies with the declared formatter, and resolve and grant nothing it never runs.
     if (declared.isPresent()) {
-      StyleWriter.write(workspaceRoot, detected);
+      StyleWriter.write(workspaceRoot, new WorkspaceStyleData(declared.get(), detected.indent()));
       return null;
     }
 
