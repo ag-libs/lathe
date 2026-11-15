@@ -165,6 +165,39 @@ public final class TestCompiler {
         ReactorRewrite.none());
   }
 
+  // Compiles, under root, a processor that warns "noted by processor" on every root element but one
+  // named Quiet*. Analysis runs without annotation processors, so only a write sees it.
+  public static Path noteProcessor(final Path root) throws IOException {
+    final Path processorSource =
+        TestCompiler.writeAt(
+            root.resolve("processor-src/proc/NoteProcessor.java"),
+            """
+            package proc;
+            import java.util.Set;
+            import javax.annotation.processing.*;
+            import javax.lang.model.SourceVersion;
+            import javax.lang.model.element.TypeElement;
+            import javax.tools.Diagnostic;
+            @SupportedAnnotationTypes("*")
+            public class NoteProcessor extends AbstractProcessor {
+              @Override public SourceVersion getSupportedSourceVersion() {
+                return SourceVersion.latestSupported();
+              }
+              @Override public boolean process(Set<? extends TypeElement> types, RoundEnvironment round) {
+                round.getRootElements().stream()
+                    .filter(element -> !element.getSimpleName().toString().startsWith("Quiet"))
+                    .forEach(element -> processingEnv.getMessager()
+                        .printMessage(Diagnostic.Kind.WARNING, "noted by processor", element));
+                return false;
+              }
+            }
+            """,
+            1_000L);
+    final Path processors = root.resolve("processors");
+    TestJavac.compileToDir(processors, processorSource);
+    return processors;
+  }
+
   public static Path writeAt(final Path path, final String content, final long mtimeMillis)
       throws IOException {
     Files.createDirectories(path.getParent());

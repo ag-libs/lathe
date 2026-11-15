@@ -151,7 +151,8 @@ class McpTextTest {
                         ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS,
                         List.of(),
                         List.of(),
-                        ".lathe/lathe-sync.sh"),
+                        ".lathe/lathe-sync.sh",
+                        List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
             "Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.");
@@ -162,7 +163,8 @@ class McpTextTest {
                         ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING,
                         List.of(),
                         List.of(),
-                        null),
+                        null,
+                        List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
             "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check in a moment.");
@@ -196,23 +198,42 @@ class McpTextTest {
     final List<String> twelve = IntStream.rangeClosed(1, 12).mapToObj("mod%d"::formatted).toList();
     final String sync = ".lathe/lathe-sync.sh core";
 
-    assertThat(McpText.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, sync), 0))
+    assertThat(
+            McpText.crossModuleNote(
+                new LatheVerifyChange(null, List.of(), twelve, sync, List.of()), 0))
         .contains("12 module(s) depend on your change (mod1, mod2,")
         .contains("mod10, and 2 more)")
         .doesNotContain("mod11")
         .endsWith(sync);
     assertThat(
             McpText.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync), 0))
+                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync, List.of()), 0))
         .contains(
             "2 module(s) depend on your change (a, b); their callers compile, so a full build is optional")
         .doesNotContain("more");
     assertThat(
             McpText.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync), 1))
+                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync, List.of()), 1))
         .contains("(a, b); fix the errors and re-check, or build them with")
         .endsWith(sync);
-    assertThat(McpText.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null), 0))
+    assertThat(
+            McpText.crossModuleNote(
+                new LatheVerifyChange(null, List.of(), twelve, null, List.of()), 0))
+        .isEmpty();
+  }
+
+  // Callers of a change the build's own compile fails saw its previous classes; the answer says so.
+  @Test
+  void failedWritesNote_changedFileTheBuildFails_namesIt_noneOtherwise() {
+    assertThat(
+            McpText.failedWritesNote(
+                new LatheVerifyChange(null, List.of(), List.of(), null, List.of("app/A.java"))))
+        .isEqualTo(
+            "%n%nThe build's compile fails app/A.java; callers were checked against the classes of the last good compile."
+                .formatted());
+    assertThat(
+            McpText.failedWritesNote(
+                new LatheVerifyChange(null, List.of(), List.of(), null, List.of())))
         .isEmpty();
   }
 

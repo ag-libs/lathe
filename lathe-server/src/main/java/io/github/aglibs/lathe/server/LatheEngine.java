@@ -50,6 +50,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -918,11 +919,11 @@ public final class LatheEngine {
           outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
               ? null
               : LatheLayout.SYNC_SCRIPT_COMMAND;
-      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync);
+      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync, List.of());
     }
 
     if (plan.changed().isEmpty()) {
-      return new LatheVerifyChange(null, List.of(), List.of(), null);
+      return new LatheVerifyChange(null, List.of(), List.of(), null, List.of());
     }
 
     final var checked = Stopwatch.start();
@@ -942,7 +943,10 @@ public final class LatheEngine {
     final Set<String> changedUris =
         changedSet.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
     final Map<String, List<Diagnostic>> analyses =
-        request((session, cancel, progress) -> checkAll(session, contents, changedUris, cancel));
+        withFailedWrites(
+            request(
+                (session, cancel, progress) -> checkAll(session, contents, changedUris, cancel)),
+            plan.failedWrites());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(
@@ -962,7 +966,24 @@ public final class LatheEngine {
                     checked.elapsedMs(),
                     perModule.stream().mapToInt(module -> module.diagnostics().size()).sum()));
     return new LatheVerifyChange(
-        null, perModule, plan.downstream(), syncFor(plan.downstream(), plan.moduleCount()));
+        null,
+        perModule,
+        plan.downstream(),
+        syncFor(plan.downstream(), plan.moduleCount()),
+        plan.failedWrites().keySet().stream()
+            .map(file -> displayPath(file, LatheUri.fromPath(file)))
+            .sorted()
+            .toList());
+  }
+
+  // A changed file the build's compile fails also reports why: the processors and plugins that
+  // compile runs, and the analysis compile does not, fail it where the check passes.
+  private static Map<String, List<Diagnostic>> withFailedWrites(
+      final Map<String, List<Diagnostic>> checked, final Map<Path, List<Diagnostic>> failedWrites) {
+    final var merged = new HashMap<>(checked);
+    failedWrites.forEach(
+        (file, causes) -> merged.merge(LatheUri.fromPath(file), causes, WritePass::withWriteOnly));
+    return Map.copyOf(merged);
   }
 
   // A changed file is checked alone, against the classes its write produced, as the build sees it:

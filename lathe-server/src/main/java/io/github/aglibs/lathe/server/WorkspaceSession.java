@@ -27,7 +27,6 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
@@ -583,24 +582,11 @@ final class WorkspaceSession {
       return result;
     }
 
-    final Set<String> analyzed =
-        result.diagnostics().stream()
-            .map(WorkspaceSession::diagnosticKey)
-            .collect(Collectors.toUnmodifiableSet());
-    final List<Diagnostic> writeOnly =
-        write.diagnostics().stream()
-            .filter(diagnostic -> !analyzed.contains(diagnosticKey(diagnostic)))
-            .toList();
-    return writeOnly.isEmpty()
+    final List<Diagnostic> merged =
+        WritePass.withWriteOnly(result.diagnostics(), write.diagnostics());
+    return merged.size() == result.diagnostics().size()
         ? result
-        : new CompileResponse(
-            result.uri(),
-            result.generation(),
-            Stream.concat(result.diagnostics().stream(), writeOnly.stream()).toList());
-  }
-
-  private static String diagnosticKey(final Diagnostic diagnostic) {
-    return "%s|%s".formatted(diagnostic.getRange(), diagnostic.getMessage());
+        : new CompileResponse(result.uri(), result.generation(), merged);
   }
 
   private Set<Path> openSourcePaths() {

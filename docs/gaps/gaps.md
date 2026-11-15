@@ -2579,47 +2579,6 @@ None yet.
 
 ---
 
-## MC-82 — `verify_change` says clean when the change fails only the build's Error Prone and `-Werror`
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: MCP `verify_change`, `run_test` and the notes.**
-
-Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
-
-### Observed behaviour
-
-Adding `private int unusedProbeField;` to `Formatter.java` is an Error Prone `UnusedVariable` warning that `-Werror`
-fails (re-probed 2026-11-15; the original case, a `{@link}` left dangling by renaming `Formatter.of`, is gone since rename
-rewrites Javadoc references).
-`verify_change` reports "No errors — the changed files and their callers compile": the log shows `[compile:batch] failed=1`
-then `[verify] 37 file(s) in 2 module(s) diags=0`, the callers checked against the old classes, with no "Not compiled" note.
-An unused new parameter gives the same; an unused local in a test does not trip Error Prone there.
-The other tools' note reads only `Formatter.java:1: warnings found and -Werror specified`: line 1, the warning itself
-hidden (the open compile shows a javac `Hint` on the field, never the `[UnusedVariable]` diagnostic); `run_test` refuses
-with the same text.
-Related to EG-084 (the open compile skips the build's plugins) and MC-73 (a file that does not compile answers from stale
-classes); this is their consequence for `verify_change`.
-
-### Fix direction
-
-When a changed file's write fails, report that failure in `verify_change` (its real diagnostics, not the `-Werror` summary)
-and say the callers were checked against the previous classes.
-
-Cause: `verify_change` compiles the changed file as a transient analysis compile, which drops `-Xplugin:` and
-`-Xep` arguments (`ModuleSourceCompiler.modeCompilerArgs`) and adds `-proc:none`, so the plugin warning never appears there;
-the write (a full compile) has it, but `WritePass.FailedWrite` keeps only the first error line of `BatchWrite.diagnosticsByUri`,
-and `verify_change` does not consult the failed writes at all.
-`LatheMcpTools.handleVerifyChange` passes only the not-checked notes, so the "Not compiled" line is left out on purpose there.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-83 — Kotlin callers are invisible, yet references and rename call themselves complete
 
 **Status: documented**

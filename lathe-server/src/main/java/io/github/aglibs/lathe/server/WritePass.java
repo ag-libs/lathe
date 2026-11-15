@@ -43,6 +43,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 
 // Keeps .lathe/ current with the sources on disk: each pass scans the source trees for files whose
@@ -56,6 +57,8 @@ final class WritePass {
 
   private static final long DEFAULT_SCAN_INTERVAL_MS = 2_000L;
   private static final String WRITE_LOCK_KEY = "write-lock";
+  // javac's code for the error -Werror adds when a compile has warnings.
+  private static final String WERROR_CODE = "compiler.err.warnings.and.werror";
   // Long enough for another server's pass after a save; a query waits no longer than this for it.
   static final long OTHER_SERVER_GRACE_MS = 2_000;
   // How often a pass that a query waits on tries the write lock again, as LatheLock's own wait.
@@ -559,24 +562,81 @@ final class WritePass {
     return failed != null && failed.mtime() == mtime;
   }
 
-  // "line: message" of the source's first error in the write, for the MCP "Not compiled" note.
-  private static String firstError(final BatchWrite written, final Path source) {
-    return written.diagnosticsByUri().getOrDefault(LatheUri.fromPath(source), List.of()).stream()
-        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
-        .findFirst()
-        .map(
-            diagnostic ->
-                "%d: %s"
-                    .formatted(
-                        diagnostic.getRange().getStart().getLine() + 1,
-                        diagnostic.getMessage().getLeft().lines().findFirst().orElse("")))
-        .orElse("no class was written");
+  private static FailedWrite failedWrite(
+      final long mtime, final BatchWrite written, final Path source) {
+    final List<Diagnostic> causes =
+        causes(written.diagnosticsByUri().getOrDefault(LatheUri.fromPath(source), List.of()));
+    return new FailedWrite(
+        mtime,
+        causes.stream().findFirst().map(WritePass::errorLine).orElse("no class was written"),
+        causes);
   }
 
-  record FailedWrite(long mtime, String error) {
-    FailedWrite {
-      ValidCheck.check().notNull(error, "error").validate();
+  // Why the build's compile failed the source: its own errors. -Werror's error says only that
+  // warnings were found, at line 1, and javac puts it on whichever file of the compile it reached
+  // last, so it is no cause: when it is all there is, the source's own warnings are, as errors.
+  private static List<Diagnostic> causes(final List<Diagnostic> diagnostics) {
+    final List<Diagnostic> errors =
+        diagnostics.stream()
+            .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+            .filter(diagnostic -> !isWerror(diagnostic))
+            .toList();
+    if (!errors.isEmpty() || diagnostics.stream().noneMatch(WritePass::isWerror)) {
+      return errors;
     }
+
+    return diagnostics.stream()
+        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Warning)
+        .map(WritePass::failedWithWerror)
+        .toList();
+  }
+
+  private static Diagnostic failedWithWerror(final Diagnostic warning) {
+    final var error =
+        new Diagnostic(
+            warning.getRange(),
+            "%s (-Werror)".formatted(warning.getMessage().getLeft()),
+            DiagnosticSeverity.Error,
+            warning.getSource());
+    error.setCode(warning.getCode());
+    return error;
+  }
+
+  private static boolean isWerror(final Diagnostic diagnostic) {
+    return diagnostic.getCode() != null && WERROR_CODE.equals(diagnostic.getCode().getLeft());
+  }
+
+  private static String errorLine(final Diagnostic diagnostic) {
+    return "%d: %s"
+        .formatted(
+            diagnostic.getRange().getStart().getLine() + 1,
+            diagnostic.getMessage().getLeft().lines().findFirst().orElse(""));
+  }
+
+  // error: the first cause, as the MCP "Not compiled" note shows it. causes: what failed the
+  // build's own compile, with its processors and plugins, which verify_change adds to what the
+  // analysis compile finds; empty when the compile failed for no reason of the source's own.
+  record FailedWrite(long mtime, String error, List<Diagnostic> causes) {
+    FailedWrite {
+      ValidCheck.check().notNull(error, "error").notNull(causes, "causes").validate();
+      causes = List.copyOf(causes);
+    }
+  }
+
+  // The analysis compile's diagnostics plus those only the build's compile found: the processors
+  // and plugins it runs report what the analysis cannot.
+  static List<Diagnostic> withWriteOnly(
+      final List<Diagnostic> analyzed, final List<Diagnostic> written) {
+    final Set<String> seen =
+        analyzed.stream().map(WritePass::diagnosticKey).collect(Collectors.toUnmodifiableSet());
+    return Stream.concat(
+            analyzed.stream(),
+            written.stream().filter(diagnostic -> !seen.contains(diagnosticKey(diagnostic))))
+        .toList();
+  }
+
+  private static String diagnosticKey(final Diagnostic diagnostic) {
+    return "%s|%s".formatted(diagnostic.getRange(), diagnostic.getMessage());
   }
 
   static Map<Path, Long> withoutFailedCompiles(
@@ -720,7 +780,8 @@ final class WritePass {
           () -> "[react] batch compile failed in %s".formatted(state.layout().moduleRel(config)));
       stamps.forEach(
           (source, stamp) ->
-              failedCompiles.put(source, new FailedWrite(stamp.mtime(), "the compiler failed")));
+              failedCompiles.put(
+                  source, new FailedWrite(stamp.mtime(), "the compiler failed", List.of())));
       return CompletableFuture.completedFuture(null);
     }
 
@@ -735,8 +796,7 @@ final class WritePass {
           .forEach(
               source ->
                   failedCompiles.put(
-                      source,
-                      new FailedWrite(stamps.get(source).mtime(), firstError(written, source))));
+                      source, failedWrite(stamps.get(source).mtime(), written, source)));
       LOG.fine(
           () ->
               "[react] %d of %d file(s) failed in %s, writing the rest"
@@ -762,7 +822,8 @@ final class WritePass {
             // Left unstamped, the file would be rewritten by every next pass.
             LOG.log(Level.SEVERE, e, () -> "[react] freshening %s failed".formatted(source));
             failedCompiles.put(
-                source, new FailedWrite(stamp.mtime(), "internal error, see the server log"));
+                source,
+                new FailedWrite(stamp.mtime(), "internal error, see the server log", List.of()));
           }
         });
     writtenSinceVerify.addAll(stamps.keySet());
@@ -818,7 +879,7 @@ final class WritePass {
       final SourceStamp stamp) {
     final Set<String> writtenBinaryNames = written.writtenBinaryNames();
     if (!ClassOutputs.wroteClassOf(config, source, writtenBinaryNames)) {
-      failedCompiles.put(source, new FailedWrite(stamp.mtime(), firstError(written, source)));
+      failedCompiles.put(source, failedWrite(stamp.mtime(), written, source));
       return;
     }
 
