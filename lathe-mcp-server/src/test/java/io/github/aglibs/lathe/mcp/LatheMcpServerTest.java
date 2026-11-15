@@ -2,8 +2,10 @@ package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -63,20 +65,7 @@ class LatheMcpServerTest {
   @Test
   @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
   void main_garbageLineThenStdinClosed_serverKeepsAnsweringThenExits() throws Exception {
-    final var process =
-        new ProcessBuilder(
-                Path.of(
-                        System.getProperty(LatheLayout.JAVA_HOME_PROPERTY),
-                        LatheLayout.BIN_DIR,
-                        "java")
-                    .toString(),
-                "-D%s=%s".formatted(LatheFlags.CACHE_ROOT, logs),
-                "-cp",
-                System.getProperty("java.class.path"),
-                LatheMcpServer.class.getName())
-            .directory(logs.toFile())
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start();
+    final Process process = startServer(logs, logs);
     try {
       final var stdin = process.getOutputStream();
       stdin.write(INITIALIZE.getBytes(StandardCharsets.UTF_8));
@@ -98,6 +87,93 @@ class LatheMcpServerTest {
       process.destroyForcibly().waitFor();
     }
   }
+
+  // A session on a workspace compiles in a temp dir per module, which closing the engine deletes:
+  // a client closing stdin ends the session with none left behind.
+  @Test
+  @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void main_workspaceSessionStdinClosed_leavesNoCompileTempDir() throws Exception {
+    final Path workspace = Files.createDirectories(logs.resolve("workspace"));
+    final Path source =
+        Files.writeString(
+            Files.createDirectories(workspace.resolve("src/com/example")).resolve("A.java"),
+            "package com.example; class A {}");
+    final Path module = Files.createDirectories(workspace.resolve(".lathe/app"));
+    Json.write(
+        new ModuleConfigData(
+            LatheLayout.CLASSES_DIR,
+            module.resolve(LatheLayout.CLASSES_DIR).toString(),
+            null,
+            List.of(workspace.resolve("src").toString()),
+            List.of(),
+            List.of(),
+            List.of(),
+            Integer.toString(Runtime.version().feature()),
+            "UTF-8",
+            false,
+            false,
+            null,
+            List.of(),
+            null,
+            false,
+            false),
+        module.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)));
+    final Path temp = Files.createDirectories(logs.resolve("tmp"));
+    final Process process = startServer(workspace, temp);
+    try {
+      final var stdin = process.getOutputStream();
+      final var stdout =
+          new BufferedReader(
+              new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+      stdin.write(INITIALIZE.getBytes(StandardCharsets.UTF_8));
+      stdin.flush();
+      assertThat(stdout.readLine()).contains("\"result\"");
+      stdin.write(
+          DIAGNOSTICS
+              .formatted(source.toString().replace("\\", "\\\\"))
+              .getBytes(StandardCharsets.UTF_8));
+      stdin.flush();
+      assertThat(stdout.readLine()).as("the diagnostics answer").contains("\"result\"");
+      assertThat(compileTempDirs(temp))
+          .as("the compile's temp dir, while the session runs")
+          .isNotEmpty();
+
+      stdin.close();
+
+      assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("exited after stdin closed").isTrue();
+      assertThat(compileTempDirs(temp)).isEmpty();
+    } finally {
+      process.destroyForcibly().waitFor();
+    }
+  }
+
+  // The server as a client starts it, in dir, with its temp files in temp and its logs in logs.
+  private Process startServer(final Path dir, final Path temp) throws IOException {
+    return new ProcessBuilder(
+            Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), LatheLayout.BIN_DIR, "java")
+                .toString(),
+            "-D%s=%s".formatted(LatheFlags.CACHE_ROOT, logs),
+            "-Djava.io.tmpdir=%s".formatted(temp),
+            "-cp",
+            System.getProperty("java.class.path"),
+            LatheMcpServer.class.getName())
+        .directory(dir.toFile())
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start();
+  }
+
+  private static List<Path> compileTempDirs(final Path temp) throws IOException {
+    try (final var entries = Files.list(temp)) {
+      return entries.filter(entry -> entry.getFileName().toString().startsWith("lathe-")).toList();
+    }
+  }
+
+  private static final String DIAGNOSTICS =
+      """
+      {"jsonrpc":"2.0","method":"notifications/initialized"}
+      {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_diagnostics",\
+      "arguments":{"file":"%s"}}}
+      """;
 
   private static final String INITIALIZE =
       """

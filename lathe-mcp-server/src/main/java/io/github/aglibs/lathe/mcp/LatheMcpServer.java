@@ -122,6 +122,7 @@ public final class LatheMcpServer {
     final var protocolOut = System.out;
     System.setOut(System.err);
     final var clientGone = new CountDownLatch(1);
+    final Runnable closeEngine;
     try {
       // With no .lathe/ the server still answers, so the agent learns why from the instructions and
       // from any tool, instead of a server that failed to connect.
@@ -131,11 +132,14 @@ public final class LatheMcpServer {
         LOG.info(() -> "[startup] workspace=%s".formatted(workspaceRoot.get()));
         final var workspaceEngine = new LatheEngine(workspaceRoot.get());
         engine = () -> workspaceEngine;
+        closeEngine = workspaceEngine::close;
         instructions = INSTRUCTIONS;
       } else {
         instructions = noWorkspace(cwd);
         LOG.warning(() -> "[startup] %s".formatted(instructions));
-        engine = new AwaitedEngine(cwd);
+        final var awaited = new AwaitedEngine(cwd);
+        engine = awaited;
+        closeEngine = awaited::close;
       }
 
       final McpJsonMapper mapper = McpJsonDefaults.getMapper();
@@ -157,6 +161,8 @@ public final class LatheMcpServer {
     LOG.info(() -> "[startup] ready");
     clientGone.await();
     LOG.info(() -> "[shutdown] stdin closed by the client exiting");
+    // As the editor's server on shutdown: closing the engine deletes its compile temp dirs.
+    closeEngine.run();
     System.exit(0);
   }
 
@@ -336,6 +342,12 @@ public final class LatheMcpServer {
       }
 
       return engine;
+    }
+
+    synchronized void close() {
+      if (engine != null) {
+        engine.close();
+      }
     }
   }
 
