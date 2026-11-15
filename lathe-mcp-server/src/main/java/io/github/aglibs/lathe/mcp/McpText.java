@@ -186,7 +186,7 @@ final class McpText {
   static CallToolResult modulesResult(
       final List<LatheModuleSummary> modules, final LatheNotes notes) {
     final String text =
-        "%d module(s); build them with `%s`, one with `%s`.%n%s%n%nCapture a module's tests for run_test with `%s`."
+        "%d module(s); build them with `%s`, one with `%s`.%n%s%s%n%nCapture a module's tests for run_test with `%s`."
             .formatted(
                 modules.size(),
                 LatheLayout.SYNC_SCRIPT_COMMAND,
@@ -194,8 +194,17 @@ final class McpText {
                 modules.stream()
                     .map(McpText::moduleLine)
                     .collect(Collectors.joining(System.lineSeparator())),
+                kotlinSourcesLine(notes),
                 LatheLayout.captureTestsCommand("<module>"));
     return result(text, notes);
+  }
+
+  // A module of only Kotlin sources is none Lathe compiles, so the list above leaves it out.
+  static String kotlinSourcesLine(final LatheNotes notes) {
+    return notes.kotlinModules().isEmpty()
+        ? ""
+        : "%n%nKotlin sources, which Lathe does not analyze, in: %s"
+            .formatted(listed(notes.kotlinModules()));
   }
 
   static String moduleLine(final LatheModuleSummary module) {
