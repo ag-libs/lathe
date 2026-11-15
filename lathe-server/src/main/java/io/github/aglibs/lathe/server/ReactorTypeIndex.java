@@ -2,16 +2,19 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -63,28 +67,164 @@ final class ReactorTypeIndex {
   // Done once the last rebuild is applied (or superseded): MCP answers wait for it, so a type the
   // pass just wrote is already searchable.
   private CompletableFuture<Void> reactorIndexRebuilt = CompletableFuture.completedFuture(null);
+  // The full scan of a refresh runs here, off the loop.
+  private final Executor scans;
+  // Bumped by every full scan: a refresh applies its result only if no newer one started.
+  private long fullScans;
+  // The refresh in flight, and whether another was asked for meanwhile: one runs at a time.
+  private CompletableFuture<Void> refreshing;
+  private boolean refreshAgain;
+  // Trees a write rescanned while a refresh was in flight: their newer shard stands.
+  private final Set<ModuleSourceConfig> rescannedDuringRefresh = new HashSet<>();
 
   ReactorTypeIndex(
       final ServerEventLoop eventLoop,
       final WorkspaceState state,
-      final Supplier<Set<Path>> openSourcePaths) {
+      final Supplier<Set<Path>> openSourcePaths,
+      final Executor scans) {
     this.eventLoop = eventLoop;
     this.state = state;
     this.openSourcePaths = openSourcePaths;
+    this.scans = scans;
   }
 
-  // Scans every tree of the current workspace and builds the index from scratch.
+  // Scans every tree of the current workspace and builds the index from scratch, on the loop: at
+  // startup and on a reload, which bring new trees.
   void load() {
     eventLoop.checkOnLoop();
+    fullScans++;
+    refreshAgain = false;
+    rescannedDuringRefresh.clear();
     reactorShards.clear();
     declarations.clear();
     directSubtypeDeclarations.clear();
     reactorBaseShards.clear();
     reactorLambdaShards.clear();
-    scanReactorShards();
-    typeIndex =
-        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), shardsByTree())
-            .withUsageCounts(reactorUsageCounts);
+    apply(
+        scan(
+            List.copyOf(state.registry().allConfigs()),
+            openSourcePaths.get(),
+            state.manifest().typeIndexShardPaths()));
+  }
+
+  // After a build, the same trees rescanned off the loop and applied back on it: requests meanwhile
+  // answer from the index a build behind, where a scan of a large workspace held them for seconds.
+  void refresh() {
+    eventLoop.checkOnLoop();
+    if (refreshing != null) {
+      refreshAgain = true;
+      return;
+    }
+
+    final long scan = ++fullScans;
+    rescannedDuringRefresh.clear();
+    final var t = Stopwatch.start();
+    final List<ModuleSourceConfig> configs = List.copyOf(state.registry().allConfigs());
+    final Set<Path> openSources = Set.copyOf(openSourcePaths.get());
+    final List<Path> dependencyShards = state.manifest().typeIndexShardPaths();
+    final var refreshed = new CompletableFuture<Void>();
+    refreshing = refreshed;
+    eventLoop
+        .rejoin(
+            CompletableFuture.supplyAsync(
+                () -> scan(configs, openSources, dependencyShards), scans))
+        .whenComplete(
+            (result, error) -> {
+              refreshing = null;
+              if (error != null) {
+                LOG.log(Level.SEVERE, error, () -> "[refresh] reactor type index failed");
+              } else if (scan == fullScans) {
+                apply(result);
+                LOG.info(() -> "[refresh] reactor type index %dms".formatted(t.elapsedMs()));
+                // A document opened or closed meanwhile changes its tree's unbuilt types.
+                refreshAgain |= !openSources.equals(Set.copyOf(openSourcePaths.get()));
+              }
+
+              // An answer waiting on this refresh waits on the one asked for meanwhile too.
+              if (refreshAgain) {
+                refreshAgain = false;
+                refresh();
+                refreshing.thenRun(() -> refreshed.complete(null));
+              } else {
+                reactorIndexRebuilt.thenRun(() -> refreshed.complete(null));
+              }
+            });
+  }
+
+  // What a full scan finds: each tree's bytecode scan, its shard (with the types of its sources not
+  // built yet), the trees whose scan failed, the reactor's usage counts, and the index built from
+  // them.
+  private record FullScan(
+      Map<ModuleSourceConfig, ClassFileTypeScanner.ReactorScan> trees,
+      Map<ModuleSourceConfig, List<TypeIndexEntry>> shards,
+      Set<ModuleSourceConfig> failed,
+      Map<String, Integer> usageCounts,
+      WorkspaceTypeIndex index) {
+    FullScan {
+      ValidCheck.check()
+          .notNull(trees, "trees")
+          .notNull(shards, "shards")
+          .notNull(failed, "failed")
+          .notNull(usageCounts, "usageCounts")
+          .notNull(index, "index")
+          .validate();
+      trees = Collections.unmodifiableMap(new LinkedHashMap<>(trees));
+      shards = Collections.unmodifiableMap(new LinkedHashMap<>(shards));
+      failed = Set.copyOf(failed);
+      usageCounts = Map.copyOf(usageCounts);
+    }
+  }
+
+  // Reads the disk only, so it runs on or off the loop alike.
+  private static FullScan scan(
+      final List<ModuleSourceConfig> configs,
+      final Set<Path> openSources,
+      final List<Path> dependencyShards) {
+    final var trees = new LinkedHashMap<ModuleSourceConfig, ClassFileTypeScanner.ReactorScan>();
+    final var shards = new LinkedHashMap<ModuleSourceConfig, List<TypeIndexEntry>>();
+    final var failed = new HashSet<ModuleSourceConfig>();
+    final var counts = new HashMap<String, Integer>();
+    for (final var config : configs) {
+      final Optional<ClassFileTypeScanner.ReactorScan> scanned = scanReactorDir(config);
+      if (scanned.isEmpty()) {
+        failed.add(config);
+        continue;
+      }
+
+      final ClassFileTypeScanner.ReactorScan tree = scanned.get();
+      trees.put(config, tree);
+      shards.put(config, withSourceDelta(config, tree.entries(), openSources));
+      tree.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
+    }
+
+    final Map<String, Integer> usageCounts = Map.copyOf(counts);
+    return new FullScan(
+        trees,
+        shards,
+        failed,
+        usageCounts,
+        WorkspaceTypeIndex.build(dependencyShards, shardsByTree(shards))
+            .withUsageCounts(usageCounts));
+  }
+
+  // A tree a write rescanned meanwhile keeps its newer shard, and one whose scan failed its last
+  // one; the index is then rebuilt with them, over the scan's own (its usage counts).
+  private void apply(final FullScan scan) {
+    scan.shards()
+        .forEach(
+            (config, shard) -> {
+              if (!rescannedDuringRefresh.contains(config)) {
+                reactorBaseShards.put(config, scan.trees().get(config).entries());
+                reactorLambdaShards.put(config, scan.trees().get(config).lambdaImplementors());
+                replaceShard(config, shard);
+              }
+            });
+    reactorUsageCounts = scan.usageCounts();
+    reactorLambdaImplementors = mergeLambdaShards();
+    typeIndex = scan.index();
+    if (!rescannedDuringRefresh.isEmpty() || !scan.failed().isEmpty()) {
+      rebuild();
+    }
   }
 
   WorkspaceTypeIndex current() {
@@ -107,16 +247,17 @@ final class ReactorTypeIndex {
       return CompletableFuture.completedFuture(typeIndex);
     }
 
-    final var shards = new LinkedHashMap<>(shardsByTree());
+    final var shards = new LinkedHashMap<>(shardsByTree(reactorShards));
     shards.merge(tree, openEntries, ReactorTypeIndex::concat);
     return buildOffLoop(typeIndex, Collections.unmodifiableMap(shards));
   }
 
   // The shards keyed by their tree's classes dir, as WorkspaceTypeIndex takes them; two configs on
   // one classes dir share a shard.
-  private Map<Path, List<TypeIndexEntry>> shardsByTree() {
+  private static Map<Path, List<TypeIndexEntry>> shardsByTree(
+      final Map<ModuleSourceConfig, List<TypeIndexEntry>> shards) {
     final var byTree = new LinkedHashMap<Path, List<TypeIndexEntry>>();
-    reactorShards.forEach(
+    shards.forEach(
         (config, entries) ->
             byTree.merge(config.latheClassesDir(), entries, ReactorTypeIndex::concat));
     return Collections.unmodifiableMap(byTree);
@@ -320,24 +461,12 @@ final class ReactorTypeIndex {
     }
   }
 
-  // Done once the last rebuild is applied (or superseded).
+  // Done once the last rebuild, and a refresh in flight, are applied (or superseded).
   CompletableFuture<Void> rebuilt() {
     eventLoop.checkOnLoop();
-    return reactorIndexRebuilt;
-  }
-
-  private void scanReactorShards() {
-    final var counts = new HashMap<String, Integer>();
-    for (final var config : state.registry().allConfigs()) {
-      final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
-      reactorBaseShards.put(config, scan.entries());
-      replaceShard(config, withSourceDelta(config, scan.entries()));
-      reactorLambdaShards.put(config, scan.lambdaImplementors());
-      scan.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
-    }
-
-    reactorUsageCounts = Map.copyOf(counts);
-    reactorLambdaImplementors = mergeLambdaShards();
+    return refreshing == null
+        ? reactorIndexRebuilt
+        : CompletableFuture.allOf(refreshing, reactorIndexRebuilt);
   }
 
   private Map<String, List<String>> mergeLambdaShards() {
@@ -359,14 +488,20 @@ final class ReactorTypeIndex {
     if (config.externalOutput()) {
       base = reactorBaseShards.getOrDefault(config, List.of());
     } else {
-      final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
-      base = scan.entries();
-      reactorLambdaShards.put(config, scan.lambdaImplementors());
+      final Optional<ClassFileTypeScanner.ReactorScan> scan = scanReactorDir(config);
+      base =
+          scan.map(ClassFileTypeScanner.ReactorScan::entries)
+              .orElseGet(() -> reactorBaseShards.getOrDefault(config, List.of()));
+      scan.ifPresent(found -> reactorLambdaShards.put(config, found.lambdaImplementors()));
     }
 
     reactorBaseShards.put(config, base);
-    replaceShard(config, withSourceDelta(config, base));
+    replaceShard(config, withSourceDelta(config, base, openSourcePaths.get()));
     reactorIndexStale = true;
+    // An external-output tree's write reuses the cached base: the scan in flight is newer.
+    if (refreshing != null && !config.externalOutput()) {
+      rescannedDuringRefresh.add(config);
+    }
   }
 
   // Built off the event loop, as a rebuild takes 100-200ms on a large reactor and would hold
@@ -376,7 +511,7 @@ final class ReactorTypeIndex {
     reactorIndexStale = false;
     reactorLambdaImplementors = mergeLambdaShards();
     final WorkspaceTypeIndex base = typeIndex;
-    final Map<Path, List<TypeIndexEntry>> shards = shardsByTree();
+    final Map<Path, List<TypeIndexEntry>> shards = shardsByTree(reactorShards);
     final long build = ++reactorIndexBuilds;
     final var rebuilt = new CompletableFuture<Void>();
     reactorIndexRebuilt = rebuilt;
@@ -405,12 +540,14 @@ final class ReactorTypeIndex {
   // compile has not caught up (a write still pending, or a file that does not compile). Keyed on
   // disk staleness, not open buffers (so they survive closing); the bytecode
   // entry, with its real kind, wins once the class is built.
-  private List<TypeIndexEntry> withSourceDelta(
-      final ModuleSourceConfig config, final List<TypeIndexEntry> base) {
+  private static List<TypeIndexEntry> withSourceDelta(
+      final ModuleSourceConfig config,
+      final List<TypeIndexEntry> base,
+      final Set<Path> openSources) {
     final Set<String> known =
         base.stream().map(TypeIndexEntry::binaryName).collect(Collectors.toUnmodifiableSet());
     final List<TypeIndexEntry> delta =
-        deltaSourceFiles(config).stream()
+        deltaSourceFiles(config, openSources).stream()
             .flatMap(
                 file ->
                     config
@@ -424,20 +561,28 @@ final class ReactorTypeIndex {
 
   // Files the bytecode base may not cover: on-disk sources stale vs their compile stamp, plus open
   // buffers, restricted to this module's source roots.
-  private List<Path> deltaSourceFiles(final ModuleSourceConfig config) {
-    return Stream.concat(TreeState.read(config).stale().stream(), openSourcePaths.get().stream())
+  private static List<Path> deltaSourceFiles(
+      final ModuleSourceConfig config, final Set<Path> openSources) {
+    return Stream.concat(TreeState.read(config).stale().stream(), openSources.stream())
         .filter(path -> config.sourceRootOf(path).isPresent())
         .distinct()
         .toList();
   }
 
-  private static ClassFileTypeScanner.ReactorScan scanReactorDir(final ModuleSourceConfig config) {
+  // A walk that fails (a directory removed or unreadable midway: the server's own writes run beside
+  // a
+  // refresh's scan) leaves the tree's last scan in place.
+  private static Optional<ClassFileTypeScanner.ReactorScan> scanReactorDir(
+      final ModuleSourceConfig config) {
     final Path scanRoot = reactorScanRoot(config);
     try {
-      return ClassFileTypeScanner.scanReactorDirectory(scanRoot);
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[type-index] reactor scan failed: %s".formatted(scanRoot));
-      return new ClassFileTypeScanner.ReactorScan(List.of(), Map.of(), Map.of());
+      return Optional.of(ClassFileTypeScanner.scanReactorDirectory(scanRoot));
+    } catch (final IOException | UncheckedIOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[type-index] reactor scan failed, last scan kept: %s".formatted(scanRoot));
+      return Optional.empty();
     }
   }
 

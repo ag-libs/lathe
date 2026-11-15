@@ -411,6 +411,8 @@ public final class TestCompiler {
         classpath,
         processorPath,
         compilerArgs,
+        false,
+        null,
         false);
   }
 
@@ -432,7 +434,30 @@ public final class TestCompiler {
         classpath,
         List.of(),
         List.of(),
-        testCode);
+        testCode,
+        null,
+        false);
+  }
+
+  // A main tree whose classes the server reads in the build's own output, as OpenJDK's modules.
+  public static void writeExternalOutputParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Path sourceRoot,
+      final Path outputDir)
+      throws IOException {
+    writeTreeParams(
+        workspaceRoot,
+        moduleName,
+        LatheLayout.CLASSES_DIR,
+        List.of(sourceRoot),
+        null,
+        List.of(),
+        List.of(),
+        List.of(),
+        false,
+        outputDir,
+        true);
   }
 
   private static void writeTreeParams(
@@ -444,14 +469,16 @@ public final class TestCompiler {
       final List<Path> classpath,
       final List<Path> processorPath,
       final List<String> compilerArgs,
-      final boolean testCode)
+      final boolean testCode,
+      final Path outputDir,
+      final boolean externalOutput)
       throws IOException {
     final var latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
     Files.createDirectories(latheModuleDir);
     final var config =
         new ModuleConfigData(
             sourceTree,
-            latheModuleDir.resolve(sourceTree).toString(),
+            (outputDir != null ? outputDir : latheModuleDir.resolve(sourceTree)).toString(),
             generatedSourcesDir != null ? generatedSourcesDir.toString() : null,
             sourceRoots.stream().map(Path::toString).toList(),
             classpath.stream().map(Path::toString).toList(),
@@ -464,7 +491,7 @@ public final class TestCompiler {
             null,
             compilerArgs,
             null,
-            false,
+            externalOutput,
             testCode);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree));
     Json.write(config, paramsFile);
