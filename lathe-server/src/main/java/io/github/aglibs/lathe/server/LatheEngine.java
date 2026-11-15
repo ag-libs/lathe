@@ -1396,11 +1396,16 @@ public final class LatheEngine {
     return LatheLocation.Origin.EXTERNAL;
   }
 
-  // A dependency or JDK source has no workspace path, so it keeps its URI.
+  // A dependency's or the JDK's source has no workspace path: its absolute path, which the agent
+  // can
+  // open and hand back as it is, and whose cache directories name the artifact and its version. A
+  // location in no file (a class in a jar or the JDK image) keeps its URI.
   private String displayPath(final Path target, final String uri) {
-    return target.startsWith(workspaceRoot)
-        ? FileUtil.slashed(workspaceRoot.relativize(target))
-        : uri;
+    if (target.startsWith(workspaceRoot)) {
+      return FileUtil.slashed(workspaceRoot.relativize(target));
+    }
+
+    return uri.startsWith("file:") ? target.toString() : uri;
   }
 
   // The target line alone: an agent reads the file when it needs more, and every extra line of a

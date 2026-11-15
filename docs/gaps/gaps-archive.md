@@ -12843,6 +12843,69 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-52 — External locations still repeat full URIs, with no dependency/JDK path shorthand — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP tools that return locations.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Delivered — workspace-relative result paths
+
+MC-18 already changed reactor and generated locations to workspace-relative paths.
+`LatheEngine.displayPath` and the shared `McpText.position` renderer apply this to symbols, references, definitions and call hierarchies.
+The original blanket claim that every result repeats a URI is obsolete.
+
+### Remaining — external paths and round-trip shorthand
+
+The original report was:
+
+Each line of `search_symbols` and `call_hierarchy` carries `file:///home/<user>/<workspace>/…`,
+the same long prefix repeated, about 30–40% of the tokens of those answers by the agent's estimate.
+
+### Resolution
+
+External locations are given by their absolute path instead of a `file://` URI: the agent can open it and hand it back to any tool as it is, as every `file` argument is an absolute path.
+The gap's `~deps/` and `~jdk/` shorthands were not taken: they are no paths an agent's own file reader or shell knows, and every tool would have to expand them.
+A location in no file (a class in a jar or the JDK image) keeps its URI.
+
+### Regression targets
+
+`LatheEngineNavigationTest.definition_jdkTypeWithSources_answersItsAbsolutePath`
+
+---
+
+## MC-54 — A dependency result does not say which version it came from — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP tools that return dependency locations.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+The source cache held three versions of one internal library, and the agent had to work out which one
+Lathe had resolved for the module it asked about.
+The version is only implied by the cache path a result shows
+(`…/deps/com.fasterxml.jackson.core/jackson-annotations/2.22/com/fasterxml/jackson/annotation/JsonCreator.java:46:19`),
+never named.
+
+### Resolution
+
+A dependency's source lies under `deps/<group>/<artifact>/<version>/` in Lathe's cache, so its absolute path (MC-52) names the version resolved; `get_definition`'s description and the agent guide say so.
+
+### Regression targets
+
+`LatheEngineNavigationTest.definition_jdkTypeWithSources_answersItsAbsolutePath` (the path rendering)
+
+---
+
 ## MC-71 — `outline` gives nothing for a file outside the reactor — done
 
 **Status: done.**

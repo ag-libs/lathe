@@ -32,6 +32,7 @@ import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -732,6 +733,38 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .extracting(LatheOutlineItem::kind, LatheOutlineItem::name, LatheOutlineItem::depth)
         .containsExactly(tuple("class", "Book", 0), tuple("method", "title", 1));
     assertThat(outline.notes().notChecked()).isNotEmpty();
+  }
+
+  // A source outside the workspace is named by its absolute path, which the agent can open and
+  // hand back to the tools as it is, not by a file URI.
+  @Test
+  void definition_jdkTypeWithSources_answersItsAbsolutePath(@TempDir final Path jdkSources)
+      throws Exception {
+    final String source = "package com.example; class Caller { String text = \"x\"; }";
+    final Path caller = TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", source);
+    compileIntoMirror(caller);
+    final Path string =
+        TestCompiler.writeAt(
+            jdkSources.resolve("java.base/java/lang/String.java"),
+            "package java.lang;\npublic final class String {}\n",
+            1_000L);
+    TestCompiler.recordJdk(
+        tmp,
+        new JdkSourceData(
+            "Vendor", "21.0.1", SourceStatus.PRESENT, tmp.resolve("jdk"), null, jdkSources, null));
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(source, "String text");
+
+    final LatheDefinition answer =
+        engine.definition(caller, pos.getLine(), pos.getCharacter()).value();
+
+    assertThat(answer.targets())
+        .singleElement()
+        .satisfies(
+            target -> {
+              assertThat(target.path()).isEqualTo(string.toString());
+              assertThat(target.origin()).isEqualTo(LatheLocation.Origin.EXTERNAL);
+            });
   }
 
   @Test
