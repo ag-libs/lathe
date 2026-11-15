@@ -50,15 +50,35 @@ local function resolve(bufnr)
     local pinned = project.profile == "google"
       or (project.block or 0) > 0
       or (project.continuation or 0) > 0
-    return block, continuation, pinned
+    return block, continuation, pinned, project.profile
   end
 
   local fallback_block, fallback_continuation = widths(M.config)
-  return fallback_block, fallback_continuation, false
+  return fallback_block, fallback_continuation, false, M.config.profile
 end
 
-local function set_widths(bufnr, block, continuation)
-  vim.bo[bufnr].expandtab = true
+-- Lines read to tell a file's indent character: enough for a file's first members.
+local DETECT_LINES = 200
+
+-- Whether the file already indents with tabs: more of its first lines start with a tab than with
+-- two spaces or more. A single space is left out: in a tab-indented file a top-level Javadoc's
+-- " *" lines start with one.
+local function indents_with_tabs(bufnr)
+  local tabs, spaces = 0, 0
+  for _, text in ipairs(vim.api.nvim_buf_get_lines(bufnr, 0, DETECT_LINES, false)) do
+    if text:find("^\t") then
+      tabs = tabs + 1
+    elseif text:find("^  ") then
+      spaces = spaces + 1
+    end
+  end
+  return tabs > spaces
+end
+
+-- The google profile is spaces by definition; otherwise the file keeps the character it indents
+-- with, as IntelliJ does, until .editorconfig's indent_style (applied after this) says otherwise.
+local function set_widths(bufnr, block, continuation, profile)
+  vim.bo[bufnr].expandtab = profile == "google" or not indents_with_tabs(bufnr)
   vim.bo[bufnr].shiftwidth = block
   vim.bo[bufnr].softtabstop = block
   vim.bo[bufnr].tabstop = block
@@ -69,17 +89,17 @@ end
 -- FileType time; native EditorConfig applies afterward and takes precedence, until
 -- apply_project_indent restores what the project owns.
 function M.apply_buffer_options(bufnr)
-  local block, continuation = resolve(bufnr)
-  set_widths(bufnr, block, continuation)
+  local block, continuation, _, profile = resolve(bufnr)
+  set_widths(bufnr, block, continuation, profile)
 end
 
 -- Restore the project's own widths once native EditorConfig has run, so its formatter's indent
 -- wins over .editorconfig for Java, as format-on-save would rewrite anything else. EditorConfig
 -- keeps every other property, and the indent wherever the project leaves it open.
 function M.apply_project_indent(bufnr)
-  local block, continuation, project = resolve(bufnr)
+  local block, continuation, project, profile = resolve(bufnr)
   if project then
-    set_widths(bufnr, block, continuation)
+    set_widths(bufnr, block, continuation, profile)
   end
 end
 

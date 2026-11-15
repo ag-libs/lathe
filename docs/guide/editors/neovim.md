@@ -299,10 +299,14 @@ Both follow a per-workspace **style** — a project's committed `lathe-style.jso
 **Indentation** — `style.indent.profile`:
 
 - `editorconfig` (default) — follows the project's `.editorconfig` via Neovim's native EditorConfig
-  support (Lathe never parses `.editorconfig` itself). With no matching `.editorconfig`, a 4-space Java
+  support (Lathe never parses `.editorconfig` itself). With no matching `.editorconfig`, a 4-wide Java
   baseline applies. The wrapped-line (continuation) indent defaults to 2× the block width; pin it with
   `style.indent.continuation` (or override the block with `style.indent.block`).
 - `google` — 2-space block, 4-space continuation.
+
+A Java buffer indents with tabs when its file already does (most of its indented lines start with a
+tab), and with spaces otherwise, unless `.editorconfig`'s `indent_style` says which, or the profile is
+`google`, which is always spaces.
 
 Which indent a Java buffer gets, when they disagree:
 
