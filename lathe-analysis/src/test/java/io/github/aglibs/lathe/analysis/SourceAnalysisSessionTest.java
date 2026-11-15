@@ -65,7 +65,7 @@ class SourceAnalysisSessionTest {
           session.diagnosticsTransient(TempSourceCompiler.TEST_URI, source);
       final Map<String, List<Diagnostic>> batched =
           session.diagnosticsTransientBatch(
-              List.of(new TransientSource(TempSourceCompiler.TEST_URI, source)));
+              List.of(new TransientSource(TempSourceCompiler.TEST_URI, source)), () -> {});
       assertThat(session.cachedTypeEntries(Set.of("Test"))).as("nothing kept").isEmpty();
 
       final List<Diagnostic> opened =

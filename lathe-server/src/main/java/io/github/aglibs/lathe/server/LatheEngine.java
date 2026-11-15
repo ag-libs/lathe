@@ -937,7 +937,7 @@ public final class LatheEngine {
     final Set<String> changedUris =
         changedSet.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
     final Map<String, List<Diagnostic>> analyses =
-        request((session, cancel, progress) -> checkAll(session, contents, changedUris));
+        request((session, cancel, progress) -> checkAll(session, contents, changedUris, cancel));
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(
@@ -966,7 +966,8 @@ public final class LatheEngine {
   private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
       final WorkspaceSession session,
       final Map<String, String> contents,
-      final Set<String> changed) {
+      final Set<String> changed,
+      final CancelChecker cancel) {
     final Map<Boolean, Map<String, String>> byChanged =
         contents.entrySet().stream()
             .collect(
@@ -976,7 +977,7 @@ public final class LatheEngine {
     return FeatureAnswers.concatAll(
             byChanged.get(true).entrySet().stream().map(file -> checkedAlone(session, file)))
         .thenCombine(
-            session.features().diagnosticsTransientFuture(byChanged.get(false)),
+            session.features().diagnosticsTransientFuture(byChanged.get(false), cancel),
             (alone, batched) ->
                 Stream.concat(alone.stream(), batched.entrySet().stream())
                     .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));

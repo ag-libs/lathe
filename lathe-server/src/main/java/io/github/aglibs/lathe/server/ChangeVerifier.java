@@ -178,7 +178,7 @@ final class ChangeVerifier {
     final Optional<Path> moduleDir = moduleDirOf(descriptor);
     return state.registry().allConfigs().stream()
         .filter(config -> moduleDir.filter(config.moduleDir()::equals).isPresent())
-        .flatMap(config -> config.sourceRoots().stream())
+        .flatMap(config -> config.searchRoots().stream())
         .flatMap(
             root -> IOUtil.unchecked(() -> FileUtil.walkFiles(root, FileUtil::isJavaFile)).stream())
         .toList();

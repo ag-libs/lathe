@@ -2719,6 +2719,8 @@ Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier an
   `JdbiHealthCheck` with every import removed), and offers `java.awt.List` for `List<String>` (not generic).
 - `verify_change` lists at most javac's 100 errors per compile without saying so: `seconds(long)` to `seconds(long, int)`
   reports "156 error(s)" of about 221.
+  Callers are checked 50 to a javac task, and javac skips flow analysis once a task has an error, as a Maven build does:
+  while one caller fails, another in its batch that only lacks a `return` or an exception declaration is not listed.
 - `analyze_change` counts declarations and overriding declarations as references (`toSeconds`: "5 production" for 4 calls;
   an unused constructor: "1 production").
 - `describe_symbol`'s `source:` label is the JPMS module name from one caller and the Maven module from another, and the

@@ -48,6 +48,7 @@ import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TypeHierarchyItem;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // What an editor or agent asks about the code: the open document's features (hover, navigation,
@@ -134,7 +135,7 @@ final class DocumentFeatures {
   // tree's files share a task, up to the batch cap, and the trees run side by side on their own
   // workers. A file no module compiles is left out.
   CompletableFuture<Map<String, List<Diagnostic>>> diagnosticsTransientFuture(
-      final Map<String, String> contents) {
+      final Map<String, String> contents, final CancelChecker cancelChecker) {
     eventLoop.checkOnLoop();
     final Map<CompilationWorker, List<TransientSource>> byTree =
         contents.entrySet().stream()
@@ -145,7 +146,7 @@ final class DocumentFeatures {
                     Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
     return FeatureAnswers.concatAll(
             byTree.entrySet().stream()
-                .flatMap(tree -> checkedInChunks(tree.getKey(), tree.getValue())))
+                .flatMap(tree -> checkedInChunks(tree.getKey(), tree.getValue(), cancelChecker)))
         .thenApply(
             checked ->
                 checked.stream()
@@ -162,7 +163,10 @@ final class DocumentFeatures {
   }
 
   private static Stream<CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>>>
-      checkedInChunks(final CompilationWorker worker, final List<TransientSource> sources) {
+      checkedInChunks(
+          final CompilationWorker worker,
+          final List<TransientSource> sources,
+          final CancelChecker cancelChecker) {
     return IntStream.iterate(
             0, from -> from < sources.size(), from -> from + CompilationWorker.ANALYSIS_BATCH_MAX)
         .mapToObj(
@@ -174,7 +178,9 @@ final class DocumentFeatures {
         .map(
             chunk ->
                 worker.submit(
-                    session -> List.copyOf(session.diagnosticsTransientBatch(chunk).entrySet())));
+                    session ->
+                        List.copyOf(
+                            session.diagnosticsTransientBatch(chunk, cancelChecker).entrySet())));
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {

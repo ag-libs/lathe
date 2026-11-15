@@ -112,15 +112,15 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   // diagnosticsTransient for several files of this tree, analyzed in one task; by URI.
   public Map<String, List<Diagnostic>> diagnosticsTransientBatch(
-      final List<TransientSource> sources) {
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
-    final List<CompilerResult> runs = compiler.analyzeOpenBatchDetached(sources, () -> {});
+    final List<CompilerResult> runs = compiler.analyzeOpenBatchDetached(sources, cancelChecker);
     final var diagnostics = new HashMap<String, List<Diagnostic>>();
     for (int i = 0; i < sources.size(); i++) {
       diagnostics.put(sources.get(i).uri(), mapDiagnostics(runs.get(i), sources.get(i).content()));
     }
 
-    LOG.info(
+    LOG.fine(
         () ->
             "[compile:check-batch] %d files from %s %dms diags=%d"
                 .formatted(
