@@ -408,7 +408,8 @@ final class ChangeVerifier {
   }
 
   // The changed files the build's compile fails for a cause of their own, unchanged since, with
-  // those causes: their callers were checked against the classes of their last good compile.
+  // those causes: their classes are those of their last good compile, so their callers are checked
+  // against their edited source.
   private Map<Path, List<Diagnostic>> failedWrites(final List<Path> changed) {
     final Set<Path> changedFiles = Set.copyOf(changed);
     return stillFailing()

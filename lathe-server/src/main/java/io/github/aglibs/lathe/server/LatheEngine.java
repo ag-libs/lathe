@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.TextMentions;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -942,10 +943,17 @@ public final class LatheEngine {
     final Set<Path> changedSet = Set.copyOf(plan.changed());
     final Set<String> changedUris =
         changedSet.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
+    // The classes of a changed file the build's compile fails are those of its last good compile:
+    // its callers are analyzed with its edited source instead, so they see what it declares now.
+    final List<TransientSource> failedSources =
+        plan.failedWrites().keySet().stream()
+            .map(file -> new TransientSource(LatheUri.fromPath(file), read(file)))
+            .toList();
     final Map<String, List<Diagnostic>> analyses =
         withFailedWrites(
             request(
-                (session, cancel, progress) -> checkAll(session, contents, changedUris, cancel)),
+                (session, cancel, progress) ->
+                    checkAll(session, contents, changedUris, failedSources, cancel)),
             plan.failedWrites());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
@@ -993,6 +1001,7 @@ public final class LatheEngine {
       final WorkspaceSession session,
       final Map<String, String> contents,
       final Set<String> changed,
+      final List<TransientSource> context,
       final CancelChecker cancel) {
     final Map<Boolean, Map<String, String>> byChanged =
         contents.entrySet().stream()
@@ -1003,7 +1012,7 @@ public final class LatheEngine {
     return FeatureAnswers.concatAll(
             byChanged.get(true).entrySet().stream().map(file -> checkedAlone(session, file)))
         .thenCombine(
-            session.features().diagnosticsTransientFuture(byChanged.get(false), cancel),
+            session.features().diagnosticsTransientFuture(byChanged.get(false), context, cancel),
             (alone, batched) ->
                 Stream.concat(alone.stream(), batched.entrySet().stream())
                     .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));

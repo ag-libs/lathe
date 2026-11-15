@@ -492,6 +492,33 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         .contains("%s:2: noted by processor (-Werror)".formatted(tmp.relativize(callee)));
   }
 
+  // The classes of a change the build's compile fails stay those of its last good compile: its
+  // callers are checked against its edited source, so one the change breaks is reported now, not
+  // only once the warning is fixed.
+  @Test
+  void verifyChange_changeFailsTheBuildsCompileAndBreaksACaller_reportsTheCaller()
+      throws Exception {
+    final Path callee = moduleBuiltWithTheNoteProcessor(List.of("-Werror"));
+    final Path caller = callee.resolveSibling("Caller.java");
+    engine = new LatheEngine(tmp);
+
+    writeNewer(callee, "package com.example;\nclass Callee {\n  void wave() {}\n}\n");
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    final String callerPath = FileUtil.slashed(tmp.relativize(caller));
+    assertThat(verify.failedWrites()).containsExactly(FileUtil.slashed(tmp.relativize(callee)));
+    assertThat(verify.perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .anyMatch(
+                        d ->
+                            d.path().equals(callerPath)
+                                && d.severity() == LatheDiagnostic.Severity.ERROR
+                                && d.message().contains("greet")));
+  }
+
   @Test
   void verifyChange_buildOnlyWarningWithoutWerror_reportsNoFailedWrite() throws Exception {
     final Path callee = moduleBuiltWithTheNoteProcessor(List.of());

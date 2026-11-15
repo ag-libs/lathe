@@ -12771,6 +12771,28 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-89 — `verify_change` checks the callers of a change the build's compile fails against its old classes — done
+
+**Status: done.**
+
+**Affects: MCP `verify_change`.**
+
+Found by the review of the MC-82 fix (2026-11-15).
+When a changed file's write failed, its classes in `.lathe/` stayed those of its last good compile and its callers were checked against them:
+a change that both removed a method its callers used and added a warning `-Werror` fails reported the warning but no caller.
+
+### Resolution
+
+The callers of a changed file whose write failed are analyzed with its edited source, which declares what they see, and the answer says so.
+The source is placed as rename's meaning check places another module's files; its own diagnostics stay those of its check alone.
+Errors in it make javac skip flow analysis for the callers analyzed with it, as an error in any file of a batch does.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.verifyChange_changeFailsTheBuildsCompileAndBreaksACaller_reportsTheCaller`
+
+---
+
 ## MC-59 — `outline` overflows on a large file — done
 
 **Status: done.**

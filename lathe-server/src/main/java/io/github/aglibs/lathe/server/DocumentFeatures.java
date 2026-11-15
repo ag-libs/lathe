@@ -143,9 +143,12 @@ final class DocumentFeatures {
 
   // Many reactor files checked that way, by URI, as verify_change checks a change's callers: a
   // tree's files share a task, up to the batch cap, and the trees run side by side on their own
-  // workers. A file no module compiles is left out.
+  // workers. A file no module compiles is left out. context: sources each task analyzes with its
+  // files for what they declare, without diagnosing them.
   CompletableFuture<Map<String, List<Diagnostic>>> diagnosticsTransientFuture(
-      final Map<String, String> contents, final CancelChecker cancelChecker) {
+      final Map<String, String> contents,
+      final List<TransientSource> context,
+      final CancelChecker cancelChecker) {
     eventLoop.checkOnLoop();
     final Map<CompilationWorker, List<TransientSource>> byTree =
         contents.entrySet().stream()
@@ -156,7 +159,9 @@ final class DocumentFeatures {
                     Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
     return FeatureAnswers.concatAll(
             byTree.entrySet().stream()
-                .flatMap(tree -> checkedInChunks(tree.getKey(), tree.getValue(), cancelChecker)))
+                .flatMap(
+                    tree ->
+                        checkedInChunks(tree.getKey(), tree.getValue(), context, cancelChecker)))
         .thenApply(
             checked ->
                 checked.stream()
@@ -176,6 +181,7 @@ final class DocumentFeatures {
       checkedInChunks(
           final CompilationWorker worker,
           final List<TransientSource> sources,
+          final List<TransientSource> context,
           final CancelChecker cancelChecker) {
     return IntStream.iterate(
             0, from -> from < sources.size(), from -> from + CompilationWorker.ANALYSIS_BATCH_MAX)
@@ -190,7 +196,9 @@ final class DocumentFeatures {
                 worker.submit(
                     session ->
                         List.copyOf(
-                            session.diagnosticsTransientBatch(chunk, cancelChecker).entrySet())));
+                            session
+                                .diagnosticsTransientBatch(chunk, context, cancelChecker)
+                                .entrySet())));
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {

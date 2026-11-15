@@ -209,19 +209,35 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   @Override
   public List<CompilerResult> analyzeOpenBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    return openBatch(sources, List.of(), cancelChecker, this::tempFileOf);
+  }
+
+  // Context sources are analyzed with the others for what they declare, and answer nothing; one of
+  // another module is placed as analyzeDetached places it.
+  @Override
+  public List<CompilerResult> analyzeOpenBatchDetached(
+      final List<TransientSource> sources,
+      final List<TransientSource> context,
+      final CancelChecker cancelChecker) {
+    return keepingTempText(
+        Stream.concat(sources.stream(), context.stream())
+            .map(source -> detachedTempFileOf(source.uri()))
+            .toList(),
+        () -> openBatch(sources, context, cancelChecker, this::detachedTempFileOf));
+  }
+
+  private List<CompilerResult> openBatch(
+      final List<TransientSource> sources,
+      final List<TransientSource> context,
+      final CancelChecker cancelChecker,
+      final Function<String, Path> location) {
     final var options = buildOptions(CompileMode.OPEN);
-    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
+    final Map<Path, String> uriByTempFile =
+        writeTempSources(
+            Stream.concat(sources.stream(), context.stream()).toList(), cancelChecker, location);
     final JavacRunner.BatchAnalysis batch =
         runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, true, cancelChecker);
     return sources.stream().map(source -> resultFor(batch, uriByTempFile, source.uri())).toList();
-  }
-
-  @Override
-  public List<CompilerResult> analyzeOpenBatchDetached(
-      final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    return keepingTempText(
-        sources.stream().map(source -> tempFileOf(source.uri())).toList(),
-        () -> analyzeOpenBatch(sources, cancelChecker));
   }
 
   private static CompilerResult resultFor(

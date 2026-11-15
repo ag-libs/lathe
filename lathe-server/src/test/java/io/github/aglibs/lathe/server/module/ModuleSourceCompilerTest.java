@@ -162,7 +162,9 @@ class ModuleSourceCompilerTest {
       final var check = compiler.compileDetached(fooUri, "class Foo { int renamed; }");
       final List<CompilerResult> batchCheck =
           compiler.analyzeOpenBatchDetached(
-              List.of(new TransientSource(fooUri, "class Foo { int batched; }")), () -> {});
+              List.of(new TransientSource(fooUri, "class Foo { int batched; }")),
+              List.of(),
+              () -> {});
       final String analyzed =
           compiler.analyzeDetached(
               List.of(new TransientSource(fooUri, "class Foo { int other; }")),
