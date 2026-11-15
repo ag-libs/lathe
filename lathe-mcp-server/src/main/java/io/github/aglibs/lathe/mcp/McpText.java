@@ -571,14 +571,20 @@ final class McpText {
     return output.stream().map(line -> "%n    | %s".formatted(line)).collect(Collectors.joining());
   }
 
-  // The override family both ways: what the method overrides, by name, as a JDK or dependency
-  // method
-  // has no location here, and what overrides or, abstract, redeclares it, by location.
+  // A method's family both ways: what it overrides, by name, as a JDK or dependency method has no
+  // location in the answer, then what overrides it, and apart what redeclares it abstract. Any
+  // other symbol keeps one neutral line: a type's subtypes override nothing.
   static CallToolResult analyzeResult(final LatheChangeImpact impact, final LatheNotes notes) {
-    final String redeclared =
-        impact.redeclaredBy().isEmpty()
-            ? ""
-            : "%nredeclared by: %s".formatted(familyLines(impact.redeclaredBy()));
+    final String family =
+        impact.method()
+            ? "overrides: %s%noverridden by: %s%s"
+                .formatted(
+                    joinOrNone(impact.overrides()),
+                    familyLines(impact.overriddenBy()),
+                    impact.redeclaredBy().isEmpty()
+                        ? ""
+                        : "%nredeclared by: %s".formatted(familyLines(impact.redeclaredBy())))
+            : "override family: %s".formatted(familyLines(impact.overriddenBy()));
     final String text =
         String.join(
             System.lineSeparator(),
@@ -590,8 +596,7 @@ final class McpText {
                     impact.referencesTruncated() ? " (truncated)" : ""),
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
-            "overrides: %s".formatted(joinOrNone(impact.overrides())),
-            "overridden by: %s%s".formatted(familyLines(impact.overrideFamily()), redeclared));
+            family);
     return usesResult(text, notes);
   }
 

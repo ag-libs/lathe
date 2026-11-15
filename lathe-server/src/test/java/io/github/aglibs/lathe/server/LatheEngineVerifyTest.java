@@ -24,10 +24,10 @@ import org.junit.jupiter.api.condition.EnabledForJreRange;
 
 // verify_change and analyze_change: what a change breaks, and the sync it suggests.
 class LatheEngineVerifyTest extends LatheEngineTestBase {
-  @Test
   // The family both ways: an interface method lists what overrides it and, apart, the subinterface
   // that redeclares it, which find_implementations leaves out; the implementation lists the method
   // it overrides.
+  @Test
   void analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences() throws Exception {
     final GreeterFixture greeter = greeterFixture();
     final String ifaceSource = greeter.ifaceSource();
@@ -54,8 +54,9 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         engine.analyzeChange(greeter.impl(), implPos.getLine(), implPos.getCharacter()).value();
 
     assertThat(impact.signature()).contains("greet");
+    assertThat(impact.method()).isTrue();
     assertThat(impact.overrides()).isEmpty();
-    assertThat(impact.overrideFamily())
+    assertThat(impact.overriddenBy())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"))
         .noneSatisfy(loc -> assertThat(loc.uri()).endsWith("LoudGreeter.java"));
     assertThat(impact.redeclaredBy())
@@ -116,7 +117,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     final LatheChangeImpact impact =
         engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
 
-    assertThat(impact.overrideFamily())
+    assertThat(impact.overriddenBy())
         .anySatisfy(location -> assertThat(location.uri()).endsWith("Wiring.java"));
     assertThat(impact.affectedModules()).containsExactly("api", "impl");
     assertThat(impact.relevantTests())

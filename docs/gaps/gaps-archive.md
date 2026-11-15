@@ -12854,8 +12854,9 @@ For `HttpRouteImpl.beforeStart`, which overrides `ServerLifecycle.beforeStart`, 
 
 ### Resolution
 
-`analyze_change` lists the methods the target overrides under "overrides", nearest first, by `Type#name(parameters)` (`ReferenceFeatures.overriddenMethods`): a JDK or dependency method has no location in the answer, and `describe_symbol` or `get_definition` follow a name.
+`analyze_change` lists the methods the target overrides under "overrides", nearest first, by binary type name, method name and descriptor (`ReferenceFeatures.overriddenMethods`): a JDK or dependency method has no location in the answer, and `describe_symbol` or `get_definition` follow a name.
 The family below it is "overridden by", and its abstract redeclarations "redeclared by" (MC-78).
+These three lines appear only for a method; any other symbol keeps one "override family" line.
 
 ### Regression targets
 

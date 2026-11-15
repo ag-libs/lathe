@@ -195,14 +195,15 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
         .filter(method -> method.getKind() == ElementKind.METHOD)
         .filter(method -> method.getSimpleName().contentEquals(target.simpleName()))
         .filter(method -> analysis.elements().overrides(method, targetMethod, candidateType))
-        .forEach(
+        .flatMap(
             method ->
                 location(method, classTree, classPath)
-                    .ifPresent(
+                    .map(
                         location ->
-                            results.add(
-                                new ImplementationHit(
-                                    location, method.getModifiers().contains(Modifier.ABSTRACT)))));
+                            new ImplementationHit(
+                                location, method.getModifiers().contains(Modifier.ABSTRACT)))
+                    .stream())
+        .forEach(results::add);
   }
 
   private void addFound(final Location location) {

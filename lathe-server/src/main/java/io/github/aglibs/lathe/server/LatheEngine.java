@@ -1113,27 +1113,25 @@ public final class LatheEngine {
                                 session
                                     .search()
                                     .familyFuture(uri, pos)
+                                    .thenCombine(
+                                        session.search().overriddenFuture(uri, pos),
+                                        (family, overrides) -> Map.entry(overrides, family))
                                     .thenCompose(
-                                        family ->
+                                        found ->
                                             session
                                                 .search()
-                                                .overriddenFuture(uri, pos)
-                                                .thenCompose(
-                                                    overrides ->
-                                                        session
-                                                            .search()
-                                                            .referencesFuture(
-                                                                uri, pos, true, cancel, progress)
-                                                            .thenApply(
-                                                                references ->
-                                                                    new ChangeFacts(
-                                                                        hover,
-                                                                        overrides,
-                                                                        family,
-                                                                        references)))))));
+                                                .referencesFuture(uri, pos, true, cancel, progress)
+                                                .thenApply(
+                                                    references ->
+                                                        new ChangeFacts(
+                                                            hover,
+                                                            found.getKey().isPresent(),
+                                                            found.getKey().orElse(List.of()),
+                                                            found.getValue(),
+                                                            references))))));
     final ChangeFacts facts = read.value();
     final String signature = hoverText(facts.hover());
-    final List<LatheLocation> overrideFamily = familyMembers(facts.family(), false);
+    final List<LatheLocation> overriddenBy = familyMembers(facts.family(), false);
     final List<LatheLocation> redeclaredBy = familyMembers(facts.family(), true);
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
@@ -1187,8 +1185,9 @@ public final class LatheEngine {
     return new Noted<>(
         new LatheChangeImpact(
             signature,
+            facts.method(),
             facts.overrides(),
-            overrideFamily,
+            overriddenBy,
             redeclaredBy,
             production,
             test,
@@ -1198,11 +1197,11 @@ public final class LatheEngine {
         read.notes());
   }
 
-  // What analyze_change reads about the symbol, in one request: its hover, the methods it
-  // overrides,
-  // the family below it and its references. The hover may be absent.
+  // What analyze_change reads about the symbol, in one request: its hover, whether it is a method,
+  // the methods it overrides, the family below it, and its references. The hover may be absent.
   private record ChangeFacts(
       Hover hover,
+      boolean method,
       List<String> overrides,
       List<ImplementationHit> family,
       List<? extends Location> references) {

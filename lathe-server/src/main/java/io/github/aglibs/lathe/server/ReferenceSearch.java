@@ -856,11 +856,12 @@ final class ReferenceSearch {
                     target, request, cursorWorker, indexSnapshot, lambdaSnapshot));
   }
 
-  // The methods the one at the position overrides, as Type#name(parameters), nearest first.
-  CompletableFuture<List<String>> overriddenFuture(final String uri, final Position pos) {
+  // The methods the one at the position overrides, as Type#name(parameters), nearest first; empty
+  // when the position is on no method.
+  CompletableFuture<Optional<List<String>>> overriddenFuture(final String uri, final Position pos) {
     final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
     if (route.isEmpty()) {
-      return CompletableFuture.completedFuture(List.of());
+      return CompletableFuture.completedFuture(Optional.empty());
     }
 
     final var request = router.featureRequest(route.get().doc(), pos);

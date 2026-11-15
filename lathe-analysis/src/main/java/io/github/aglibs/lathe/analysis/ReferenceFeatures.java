@@ -10,13 +10,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
-import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -60,36 +58,35 @@ public final class ReferenceFeatures {
         .toList();
   }
 
-  // The methods the one at the cursor overrides, nearest first, as Type#name(parameters): the
+  // The methods the one at the cursor overrides, nearest first, as Type#name(descriptor): the
   // supertypes' declarations a change to its signature breaks, the JDK's and dependencies' too.
-  public List<String> overriddenMethods(final SourceFeatureRequest request) {
+  // Empty when the cursor is on no method.
+  public Optional<List<String>> overriddenMethods(final SourceFeatureRequest request) {
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()
         || !(at.get().elementOrJavadocReference() instanceof final ExecutableElement method)
         || method.getKind() != ElementKind.METHOD) {
-      return List.of();
+      return Optional.empty();
     }
 
     final var analysis = at.get().analysis();
-    return ReferenceTarget.overriddenMethods(
-            method,
-            (TypeElement) method.getEnclosingElement(),
-            analysis.types(),
-            analysis.elements())
-        .stream()
-        .map(overridden -> signature(overridden, analysis.types()))
-        .toList();
-  }
-
-  // Type#name(parameters), the parameters' erased types spelled out: an overload is told apart.
-  private static String signature(final ExecutableElement method, final Types types) {
-    return "%s#%s(%s)"
-        .formatted(
-            ((TypeElement) method.getEnclosingElement()).getQualifiedName(),
-            method.getSimpleName(),
-            method.getParameters().stream()
-                .map(parameter -> types.erasure(parameter.asType()).toString())
-                .collect(Collectors.joining(", ")));
+    return Optional.of(
+        ReferenceTarget.overriddenMethods(
+                method,
+                (TypeElement) method.getEnclosingElement(),
+                analysis.types(),
+                analysis.elements())
+            .stream()
+            .map(
+                overridden ->
+                    "%s#%s%s"
+                        .formatted(
+                            analysis
+                                .elements()
+                                .getBinaryName((TypeElement) overridden.getEnclosingElement()),
+                            overridden.getSimpleName(),
+                            ReferenceTarget.buildDescriptor(overridden, analysis.types())))
+            .toList());
   }
 
   public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {
