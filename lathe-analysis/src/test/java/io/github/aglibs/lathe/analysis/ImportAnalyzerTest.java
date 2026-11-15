@@ -77,6 +77,59 @@ class ImportAnalyzerTest {
             tuple(new Position(5, 22), "\nimport java.util.Set;"));
   }
 
+  // A file grouping its imports by package with blank lines, as Eclipse's import order does: a new
+  // import joins its package's group, sorting after its last line too; one whose top-level package
+  // has no group gets a group of its own, between the groups it sorts between.
+  @Test
+  void layout_groupsByPackage_placesEachImportInItsGroupOrANewOne() throws IOException {
+    final var layout =
+        layoutOf(
+            """
+            package com.example;
+
+            import java.util.List;
+            import java.util.concurrent.atomic.AtomicBoolean;
+
+            import org.apiguardian.api.API;
+            import org.jspecify.annotations.Nullable;
+
+            class Foo {}
+            """);
+
+    assertThat(
+            layout.edits(
+                List.of(
+                    "java.util.stream.Stream",
+                    "javax.annotation.Nonnull",
+                    "org.junit.Assert",
+                    "zz.Last")))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(
+            tuple(new Position(3, 49), "\nimport java.util.stream.Stream;"),
+            tuple(new Position(5, 0), "import javax.annotation.Nonnull;\n\n"),
+            tuple(new Position(6, 41), "\nimport org.junit.Assert;\n\nimport zz.Last;"));
+  }
+
+  // A single block may be a formatter's that never groups (google-java-format): a new top-level
+  // package joins it, without a blank line.
+  @Test
+  void layout_singleBlock_sortsANewTopLevelPackageIntoIt() throws IOException {
+    final var layout =
+        layoutOf(
+            """
+            package com.example;
+
+            import org.apiguardian.api.API;
+            import org.jspecify.annotations.Nullable;
+
+            class Foo {}
+            """);
+
+    assertThat(layout.edit("java.util.List"))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(new Position(2, 0), "import java.util.List;\n");
+  }
+
   // The first imports go a blank line below the package clause, as the build's formatter keeps
   // them; a file without one gets them at the very start.
   @Test
