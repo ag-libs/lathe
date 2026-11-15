@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -107,7 +108,8 @@ final class WorkspaceSession {
     this.docs = new DocumentRegistry(eventLoop);
     this.publisher = new DiagnosticPublisher(client, docs);
     this.state = new WorkspaceState(eventLoop);
-    this.reactorIndex = new ReactorTypeIndex(eventLoop, state, this::openSourcePaths);
+    this.reactorIndex =
+        new ReactorTypeIndex(eventLoop, state, this::openSourcePaths, ForkJoinPool.commonPool());
     this.router = new FeatureRouter(eventLoop, state, docs);
     this.features = new DocumentFeatures(state, reactorIndex, router, docs, client, eventLoop);
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
@@ -671,7 +673,7 @@ final class WorkspaceSession {
         LOG.fine(() -> "[reload] pending-stale reset");
       }
       case REACTOR_REFRESH -> {
-        refreshReactorTypeIndex();
+        reactorIndex.refresh();
         writePass.forgetPendingStale();
       }
       case BUILD_FILES_CHANGED -> {
