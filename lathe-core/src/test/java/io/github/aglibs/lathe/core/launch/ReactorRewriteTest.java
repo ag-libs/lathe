@@ -118,6 +118,31 @@ final class ReactorRewriteTest {
         .containsExactly(Path.of(os("/workspace/.lathe/app/classes")));
   }
 
+  // A jar that also holds classes another compiler wrote (Kotlin, Groovy): the mirror holds javac's
+  // only, so a class path, at analysis and at launch alike, takes the mirror and then the jar, and a
+  // module path, which cannot hold both, the mirror alone.
+  @Test
+  void of_jarWithExtraClasses_classPathTakesTheMirrorThenTheJar() {
+    final ReactorRewrite rewrite =
+        ReactorRewrite.of(
+            WORKSPACE,
+            List.of(new OutputData("lib/build/libs/lib.jar", "lib", "classes", false, true)));
+    final List<String> path = List.of(os("/workspace/lib/build/libs/lib.jar"), os("/repo/a.jar"));
+
+    assertThat(rewrite.toLatheClassPath(path))
+        .containsExactly(
+            os("/workspace/.lathe/lib/classes"),
+            os("/workspace/lib/build/libs/lib.jar"),
+            os("/repo/a.jar"));
+    assertThat(rewrite.toLathe(path))
+        .containsExactly(os("/workspace/.lathe/lib/classes"), os("/repo/a.jar"));
+    assertThat(rewrite.expand(Path.of(os("/workspace/lib/build/libs/lib.jar"))))
+        .containsExactly(
+            Path.of(os("/workspace/.lathe/lib/classes")),
+            Path.of(os("/workspace/lib/build/libs/lib.jar")));
+    assertThat(rewrite.kept(Path.of(os("/workspace/lib/build/libs/lib.jar")))).isFalse();
+  }
+
   @Test
   void toLathe_unlistedPaths_passThroughUnchanged() {
     assertThat(REWRITE.toLathe(os("/home/user/.m2/repo/lib.jar")))

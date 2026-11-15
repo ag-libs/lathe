@@ -606,6 +606,9 @@ public class LatheProjectPlugin implements Plugin<Project> {
     // A disabled jar task leaves its path to another task: a shaded jar, as JUnit's shadow
     // convention writes there, which holds relocated classes the mirror lacks.
     final boolean shaded = !jar.getEnabled();
+    // Another JVM language's plugin (Kotlin, Groovy) adds its classes dir to main's: the jar holds
+    // that compiler's classes too, which the mirror of javac's output lacks.
+    final boolean extraClasses = main.getOutput().getClassesDirs().getFiles().size() > 1;
     final String module = module(project);
     final Path root = project.getRootDir().toPath();
     final List<OutputData> outputs =
@@ -627,7 +630,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
                         relative(root, output.getKey()),
                         module,
                         output.getValue(),
-                        shaded && output.getKey().equals(mainJar)))
+                        shaded && output.getKey().equals(mainJar),
+                        extraClasses && output.getKey().equals(mainJar)))
             .toList();
     final List<ResourceRootData> resourceRoots =
         Stream.concat(Stream.of(main, test), others.stream())
