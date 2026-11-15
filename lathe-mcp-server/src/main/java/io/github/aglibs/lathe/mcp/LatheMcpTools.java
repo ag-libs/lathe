@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.Noted;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -21,9 +22,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -117,7 +120,9 @@ final class LatheMcpTools {
             positionSchema(
                 """
                     ,"maxResults":{"type":"integer","minimum":1,
-                     "description":"Max references to return (default 50)."}\
+                     "description":"Max references to return (default 50)."},
+                    "access":{"type":"string","enum":["read","write"],
+                     "description":"Only the uses that read, or only those that write, a field or variable (omit for all)."}\
                     """),
             READ_ONLY,
             """
@@ -130,7 +135,10 @@ final class LatheMcpTools {
                 answer names the modules with Kotlin sources). Use before changing or removing a symbol, \
                 especially a method \
                 with overrides/implementations or a common/overloaded name; for a rare, distinctive \
-                name a plain grep is fine.\
+                name a plain grep is fine. A field's or variable's uses are tagged [read] or \
+                [write] (assignments, increments, a generated setter's calls); `access` keeps one \
+                kind, e.g. write for where a field changes. To see which methods call a method, \
+                use call_hierarchy (incoming): one line per calling method.\
                 """,
             LatheMcpTools::handleReferences),
         tool(
@@ -475,13 +483,22 @@ final class LatheMcpTools {
 
   private static CallToolResult handleReferences(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
+    final String accessArg = stringArg(request, "access");
+    final Set<LatheReference.Access> kept =
+        accessArg == null
+            ? EnumSet.allOf(LatheReference.Access.class)
+            : enumArg(LatheReference.Access.class, accessArg).map(Set::of).orElse(null);
+    if (kept == null) {
+      return McpText.error("find_references 'access' must be one of read, write");
+    }
+
     return atPosition(
         engine,
         tool,
         request,
         (file, line, column) ->
             render(
-                engine.references(file, line, column, maxResults(request)),
+                engine.references(file, line, column, maxResults(request), kept),
                 McpText::referencesResult));
   }
 

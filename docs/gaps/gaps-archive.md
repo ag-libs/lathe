@@ -12843,6 +12843,64 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-63 — `find_references` cannot group its answer by the calling method — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+A method with forty call sites in ten methods answers forty lines; the agent's question is usually
+"which methods call it", and it reads the list to work that out.
+NetBeans' Dukehoff MCP takes `group_by: "caller"` and names each containing method by signature.
+
+### Resolution
+
+`call_hierarchy` (incoming) already answers "which methods call it": one line per calling method, named, following overrides and other modules.
+`find_references`' description now points there; a `groupBy` would repeat it.
+For a field, the `[write]` tag and the `access` filter (MC-53) name each place it changes.
+
+### Regression targets
+
+None: the answer exists; only the description changed.
+
+---
+
+## MC-53 — `find_references` does not tell reads from writes — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Where does the order's status change" needs the writes of a field or enum constant
+(assignments, setter and builder calls) apart from its reads (comparisons, getters).
+`find_references` lists them all alike, so the agent reads every site.
+
+### Resolution
+
+Each use of a field or variable is tagged `[read]` or `[write]` after its position, from the role the reference search already gives it: an assignment, a compound assignment or an increment writes.
+A call of a Lombok-generated setter writes the field, and a call of its getter reads it.
+Hand-written setters and builder methods are not references of the field, and naming a method a setter would be convention, so they stay out.
+An optional `access` (`read`, `write`) keeps one kind, and the total counts what it keeps.
+
+### Regression targets
+
+- `FieldAndEnumConstantSearchTest.references_fieldUses_taggedReadOrWrite_filteredByAccess`
+- `McpTextTest.referencesAndImplementationsResult_cappedListAndEmpty_headerLinesThenAuthority_orNone`
+
+---
+
 ## MC-72 — MCP recompiles an unchanged file on every tool call; parallel calls compile it N times — done
 
 **Status: done.**

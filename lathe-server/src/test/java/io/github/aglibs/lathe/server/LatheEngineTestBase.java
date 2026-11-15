@@ -5,12 +5,14 @@ import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +29,9 @@ abstract class LatheEngineTestBase {
       engine.close();
     }
   }
+
+  protected static final Set<LatheReference.Access> ANY_ACCESS =
+      Set.of(LatheReference.Access.values());
 
   protected static final String API_SOURCE =
       "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";

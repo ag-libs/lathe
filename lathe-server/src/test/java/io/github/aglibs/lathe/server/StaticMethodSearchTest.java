@@ -63,7 +63,7 @@ class StaticMethodSearchTest extends LatheEngineTestBase {
       final LatheCallHierarchy callers = callersOfIsEmpty(files);
 
       assertThat(references.references())
-          .extracting(LatheLocation::uri)
+          .extracting(ref -> ref.location().uri())
           .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"))
           .anySatisfy(uri -> assertThat(uri).endsWith("SubUtil.java"))
           .noneSatisfy(uri -> assertThat(uri).endsWith("Unrelated.java"));
@@ -98,7 +98,7 @@ class StaticMethodSearchTest extends LatheEngineTestBase {
     final LatheCallHierarchy callers = callersOfIsEmpty(files);
 
     assertThat(references.references())
-        .extracting(LatheLocation::uri)
+        .extracting(ref -> ref.location().uri())
         .anySatisfy(uri -> assertThat(uri).endsWith("Hidden.java"));
     assertThat(callers.calls())
         .extracting(LatheCall::location)
@@ -144,10 +144,12 @@ class StaticMethodSearchTest extends LatheEngineTestBase {
 
     final var pos = offsetToPosition(check, check.indexOf("blank"));
     final LatheReferences references =
-        engine.references(files.get("Check"), pos.getLine(), pos.getCharacter(), 50).value();
+        engine
+            .references(files.get("Check"), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+            .value();
 
     assertThat(references.references())
-        .extracting(LatheLocation::uri)
+        .extracting(ref -> ref.location().uri())
         .anySatisfy(uri -> assertThat(uri).endsWith("a/Caller.java"));
   }
 
@@ -164,7 +166,9 @@ class StaticMethodSearchTest extends LatheEngineTestBase {
 
   private LatheReferences referencesToIsEmpty(final Map<String, Path> files) {
     final var pos = offsetToPosition(UTIL, UTIL.indexOf("isEmpty"));
-    return engine.references(files.get("Util"), pos.getLine(), pos.getCharacter(), 50).value();
+    return engine
+        .references(files.get("Util"), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+        .value();
   }
 
   private LatheCallHierarchy callersOfIsEmpty(final Map<String, Path> files) {

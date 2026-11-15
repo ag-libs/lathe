@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceRole;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
@@ -88,7 +89,7 @@ final class ReferenceSearch {
     this.docs = docs;
   }
 
-  CompletableFuture<List<Location>> referencesFuture(
+  CompletableFuture<List<ReferenceMatch>> referencesFuture(
       final String uri,
       final Position pos,
       final boolean includeDeclaration,
@@ -151,7 +152,7 @@ final class ReferenceSearch {
                         "[references] %s %dms target=%s hits=%d"
                             .formatted(uri, t.elapsedMs(), name, matches.size()));
               }
-              return toLocations(matches);
+              return matches;
             })
         .exceptionally(
             ex -> {
@@ -271,7 +272,10 @@ final class ReferenceSearch {
                                     accessor.simpleName())
                                 .thenApply(
                                     more ->
-                                        Stream.concat(matches.stream(), more.stream())
+                                        Stream.concat(
+                                                matches.stream(),
+                                                more.stream()
+                                                    .map(call -> asFieldAccess(call, accessor)))
                                             .distinct()
                                             .toList()));
               }
@@ -632,6 +636,23 @@ final class ReferenceSearch {
     return joinCandidateResults(
             futures.stream().map(future -> future.thenApply(List::of)).toList(), cancelChecker)
         .thenApply(SearchHits::merge);
+  }
+
+  // A generated getter's call reads the field, a setter's writes it; a wither's returns a copy and
+  // does neither.
+  private static ReferenceMatch asFieldAccess(
+      final ReferenceMatch call, final ReferenceTarget accessor) {
+    if (isWither(accessor.simpleName())) {
+      return call;
+    }
+
+    final ReferenceRole role =
+        accessor.erasedDescriptor().startsWith("()") ? ReferenceRole.READ : ReferenceRole.WRITE;
+    return new ReferenceMatch(call.uri(), call.range(), role, call.alsoOverrides());
+  }
+
+  private static boolean isWither(final String name) {
+    return name.length() > 4 && name.startsWith("with") && Character.isUpperCase(name.charAt(4));
   }
 
   static List<Location> toLocations(final List<ReferenceMatch> matches) {

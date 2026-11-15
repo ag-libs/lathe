@@ -209,7 +209,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return host.onLoopCompose(
         params.getWorkDoneToken(),
         (session, cancelChecker, progress) ->
-            session.search().referencesFuture(uri, pos, incl, cancelChecker, progress));
+            session
+                .search()
+                .referencesFuture(uri, pos, incl, cancelChecker, progress)
+                .thenApply(ReferenceSearch::toLocations));
   }
 
   @Override
