@@ -77,7 +77,7 @@ class McpTextTest {
   }
 
   @Test
-  void modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut() {
+  void modulesResult_modules_oneLineEachWithUpstreamAndTestStatus_longListsCut() {
     final List<String> upstream =
         IntStream.rangeClosed(1, 12).mapToObj("lib%02d"::formatted).toList();
 
@@ -94,7 +94,7 @@ class McpTextTest {
         .contains(
             "app  depends on: lib01, lib02, lib03, lib04, lib05, lib06, lib07, lib08, lib09, lib10, and 2 more  tests: captured",
             "lib01  tests: not captured",
-            "docs")
+            "docs  tests: none")
         .first()
         .asString()
         .startsWith("3 module(s); build them with `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
@@ -115,7 +115,7 @@ class McpTextTest {
 
     assertThat(text.lines())
         .contains(
-            "app",
+            "app  tests: none",
             "Kotlin sources, which Lathe does not analyze, in: %s"
                 .formatted(String.join(", ", kotlin)));
   }

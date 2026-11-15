@@ -12843,6 +12843,33 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-77 — `workspace_summary` gives no test status for some modules — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP `workspace_summary`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Some modules show no test status at all, while others say `tests: not captured`.
+
+Also (exploratory round, 2026-11-04): no test status for Dropwizard's docs/source/examples `conscrypt`, `getting-started` and `views`.
+
+### Resolution
+
+The modules without a status were those with no test sources, such as those three examples.
+Every module line now ends with `tests: captured`, `tests: not captured` or `tests: none`; the summary's last line already gives the capture command.
+
+### Regression targets
+
+`McpTextTest.modulesResult_modules_oneLineEachWithUpstreamAndTestStatus_longListsCut`.
+
+---
+
 ## MC-70 — Tool results come back unsorted, with modules mixed together — done
 
 **Status: done.**
