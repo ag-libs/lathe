@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
+import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
@@ -75,9 +76,21 @@ final class McpText {
         "reference",
         refs.total(),
         refs.truncated(),
-        refs.references(),
+        refs.references().stream().map(McpText::referenceLine).toList(),
         notes,
         vouched(REFERENCES_AUTHORITY, notes));
+  }
+
+  // The access goes after the position, which the agent copies into the next call as it is.
+  static String referenceLine(final LatheReference reference) {
+    final String tag =
+        switch (reference.access()) {
+          case READ -> " [read]";
+          case WRITE -> " [write]";
+          case OTHER -> "";
+        };
+    return "%s%s: %s"
+        .formatted(position(reference.location()), tag, reference.location().snippet());
   }
 
   static CallToolResult implementationsResult(
@@ -86,7 +99,7 @@ final class McpText {
         "implementation",
         impls.total(),
         impls.truncated(),
-        impls.implementations(),
+        impls.implementations().stream().map(McpText::locationLine).toList(),
         notes,
         vouched(IMPLEMENTATIONS_AUTHORITY, notes));
   }
@@ -112,17 +125,18 @@ final class McpText {
       final String noun,
       final int total,
       final boolean truncated,
-      final List<LatheLocation> locations,
+      final List<String> lines,
       final LatheNotes notes,
       final String authority) {
     final String header =
         truncated
-            ? "%d %ss (showing first %d):".formatted(total, noun, locations.size())
+            ? "%d %ss (showing first %d):".formatted(total, noun, lines.size())
             : "%d %s(s):".formatted(total, noun);
     final String text =
-        locations.isEmpty()
+        lines.isEmpty()
             ? "No %ss found.".formatted(noun)
-            : "%s%n%s%n%n%s".formatted(header, locationLines(locations), authority);
+            : "%s%n%s%n%n%s"
+                .formatted(header, String.join(System.lineSeparator(), lines), authority);
     return usesResult(text, notes);
   }
 

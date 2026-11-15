@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
@@ -34,6 +35,7 @@ import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
+import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
@@ -230,11 +232,16 @@ public final class LatheEngine {
   }
 
   /**
-   * References to the symbol at {@code line}/{@code column} (0-based) across the reactor, each
-   * enriched with a snippet, capped to {@code maxResults} with the true total for pagination.
+   * References to the symbol at {@code line}/{@code column} (0-based) across the reactor that have
+   * one of the {@code kept} accesses, each enriched with a snippet, capped to {@code maxResults}
+   * with the true total for pagination.
    */
   public Noted<LatheReferences> references(
-      final Path file, final int line, final int column, final int maxResults) {
+      final Path file,
+      final int line,
+      final int column,
+      final int maxResults,
+      final Set<LatheReference.Access> kept) {
     return noted(
             List.of(file),
             positionWork(
@@ -243,14 +250,45 @@ public final class LatheEngine {
                 column,
                 (session, uri, pos, cancel, progress) ->
                     session.search().referencesFuture(uri, pos, true, cancel, progress)))
-        .map(locations -> capReferences(locations, maxResults));
+        .map(matches -> keptReferences(matches, kept, maxResults));
   }
 
-  private LatheReferences capReferences(
+  private LatheReferences keptReferences(
+      final List<ReferenceMatch> matches,
+      final Set<LatheReference.Access> kept,
+      final int maxResults) {
+    final List<ReferenceMatch> uses =
+        matches.stream().filter(match -> kept.contains(access(match))).toList();
+    return new LatheReferences(
+        uses.size(),
+        uses.size() > maxResults,
+        uses.stream().limit(maxResults).map(this::toLatheReference).toList());
+  }
+
+  private LatheReference toLatheReference(final ReferenceMatch match) {
+    return new LatheReference(toLatheLocation(match.toLocation()), access(match));
+  }
+
+  private static LatheReference.Access access(final ReferenceMatch match) {
+    return switch (match.role()) {
+      case READ -> LatheReference.Access.READ;
+      case WRITE -> LatheReference.Access.WRITE;
+      default -> LatheReference.Access.OTHER;
+    };
+  }
+
+  private CappedLocations capLocations(
       final List<? extends Location> locations, final int maxResults) {
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
-    return new LatheReferences(locations.size(), locations.size() > maxResults, capped);
+    return new CappedLocations(locations.size(), locations.size() > maxResults, capped);
+  }
+
+  private record CappedLocations(int total, boolean truncated, List<LatheLocation> locations) {
+    private CappedLocations {
+      ValidCheck.check().notNull(locations, "locations").validate();
+      locations = List.copyOf(locations);
+    }
   }
 
   /**
@@ -274,8 +312,8 @@ public final class LatheEngine {
       final Either<List<? extends Location>, List<? extends LocationLink>> either,
       final int maxResults) {
     // The implementation search answers in locations (FeatureAnswers.definitionResult).
-    final LatheReferences capped = capReferences(either.getLeft(), maxResults);
-    return new LatheImplementations(capped.total(), capped.truncated(), capped.references());
+    final CappedLocations capped = capLocations(either.getLeft(), maxResults);
+    return new LatheImplementations(capped.total(), capped.truncated(), capped.locations());
   }
 
   // A position tool's own work, run once the name check passed, on the analysis it compiled.
@@ -1128,6 +1166,7 @@ public final class LatheEngine {
                                             session
                                                 .search()
                                                 .referencesFuture(uri, pos, true, cancel, progress)
+                                                .thenApply(ReferenceSearch::toLocations)
                                                 .thenApply(
                                                     references ->
                                                         new ChangeFacts(
@@ -1140,9 +1179,9 @@ public final class LatheEngine {
     final String signature = hoverText(facts.hover());
     final List<LatheLocation> overriddenBy = familyMembers(facts.family(), false);
     final List<LatheLocation> redeclaredBy = familyMembers(facts.family(), true);
-    final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
+    final CappedLocations refs = capLocations(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
-        refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
+        refs.locations().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
     // A signature change breaks every implementation and redeclaration, in a module that never
     // calls it too.
     final List<Path> implementationPaths =
@@ -1161,7 +1200,7 @@ public final class LatheEngine {
     int test = 0;
     final var affectedModules = new TreeSet<String>();
     final var relevantTests = new TreeSet<String>();
-    for (final LatheLocation ref : refs.references()) {
+    for (final LatheLocation ref : refs.locations()) {
       final ModulePlacement placement = placements.get(LatheUri.toPath(ref.uri()));
       if (placement == null) {
         continue; // a reference outside the reactor (dependency/JDK) — not in the impact set
@@ -1228,13 +1267,13 @@ public final class LatheEngine {
   // the references are.
   private List<LatheLocation> familyMembers(
       final List<ImplementationHit> family, final boolean redeclarations) {
-    return capReferences(
+    return capLocations(
             family.stream()
                 .filter(hit -> hit.redeclaration() == redeclarations)
                 .map(ImplementationHit::location)
                 .toList(),
             IMPACT_MAX_RESULTS)
-        .references();
+        .locations();
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,

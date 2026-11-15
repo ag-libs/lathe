@@ -12843,6 +12843,36 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-53 — `find_references` does not tell reads from writes — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Where does the order's status change" needs the writes of a field or enum constant
+(assignments, setter and builder calls) apart from its reads (comparisons, getters).
+`find_references` lists them all alike, so the agent reads every site.
+
+### Resolution
+
+Each use of a field or variable is tagged `[read]` or `[write]` after its position, from the role the reference search already gives it: an assignment, a compound assignment or an increment writes.
+A call of a Lombok-generated setter writes the field, and a call of its getter reads it.
+Hand-written setters and builder methods are not references of the field, and naming a method a setter would be convention, so they stay out.
+An optional `access` (`read`, `write`) keeps one kind, and the total counts what it keeps.
+
+### Regression targets
+
+- `FieldAndEnumConstantSearchTest.references_fieldUses_taggedReadOrWrite_filteredByAccess`
+- `McpTextTest.referencesAndImplementationsResult_cappedListAndEmpty_headerLinesThenAuthority_orNone`
+
+---
+
 ## MC-72 — MCP recompiles an unchanged file on every tool call; parallel calls compile it N times — done
 
 **Status: done.**

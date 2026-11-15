@@ -95,11 +95,11 @@ class DuplicateTypeTest extends LatheEngineTestBase {
     final var pos = positionOf(Files.readString(declaration), token);
     final List<Path> paths =
         engine
-            .references(declaration, pos.getLine(), pos.getCharacter(), 50)
+            .references(declaration, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
             .value()
             .references()
             .stream()
-            .map(location -> LatheUri.toPath(location.uri()))
+            .map(reference -> LatheUri.toPath(reference.location().uri()))
             .distinct()
             .toList();
     assertThat(paths).contains(declaration, files.get(owner + "Use"));
@@ -280,8 +280,11 @@ class DuplicateTypeTest extends LatheEngineTestBase {
     final Path other = testTree ? mainFiles.get(0) : testCopy;
     final var pos = positionOf(shared, "Shared");
     assertThat(
-            engine.references(selected, pos.getLine(), pos.getCharacter(), 50).value().references())
-        .extracting(location -> LatheUri.toPath(location.uri()))
+            engine
+                .references(selected, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .references())
+        .extracting(reference -> LatheUri.toPath(reference.location().uri()))
         .containsExactlyInAnyOrder(selected, selectedUse);
     renameAt(selected, shared, "Shared", "Renamed");
     assertThat(Files.readString(selected.resolveSibling("Renamed.java"))).contains("class Renamed");

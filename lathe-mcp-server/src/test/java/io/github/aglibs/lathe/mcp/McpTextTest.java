@@ -21,6 +21,7 @@ import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
+import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
@@ -29,6 +30,7 @@ import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -423,11 +425,10 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(1, false, List.of(use)), McpText.NO_NOTES)))
+                    new LatheReferences(1, false, uses(use)), McpText.NO_NOTES)))
         .endsWith("no need to re-verify with grep.")
         .doesNotContain("Kotlin");
-    assertThat(
-            text(McpText.referencesResult(new LatheReferences(1, false, List.of(use)), withKotlin)))
+    assertThat(text(McpText.referencesResult(new LatheReferences(1, false, uses(use)), withKotlin)))
         .endsWith(kotlinLine)
         .doesNotContain("no need to re-verify");
     assertThat(text(McpText.referencesResult(new LatheReferences(0, false, List.of()), withKotlin)))
@@ -491,7 +492,7 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(2, false, List.of(first, second)), McpText.NO_NOTES)))
+                    new LatheReferences(2, false, uses(first, second)), McpText.NO_NOTES)))
         .startsWith(
             lines(
                 "2 reference(s):",
@@ -499,22 +500,35 @@ class McpTextTest {
                 "app/App.java:12:10: sell(sell(1));"));
   }
 
-  // A capped list says how many there are in all; an empty one says none, without the authority.
+  // A capped list says how many there are in all; an empty one says none, without the authority. A
+  // field's use says after its position whether it reads or writes the field.
   @Test
   void referencesAndImplementationsResult_cappedListAndEmpty_headerLinesThenAuthority_orNone() {
     final var call = location("app/App.java", 12, "shop.sell(1);");
     final var dependency =
         location("lib/Lib.java", 3, LatheLocation.Origin.EXTERNAL, "void sell(int n) {");
+    final var written = location("app/App.java", 14, "shop.sold = 1;");
+    final var read = location("app/App.java", 15, "return shop.sold;");
 
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(5, true, List.of(call, dependency)), McpText.NO_NOTES)))
+                    new LatheReferences(
+                        5,
+                        true,
+                        List.of(
+                            new LatheReference(call, LatheReference.Access.OTHER),
+                            new LatheReference(dependency, LatheReference.Access.OTHER),
+                            new LatheReference(written, LatheReference.Access.WRITE),
+                            new LatheReference(read, LatheReference.Access.READ))),
+                    McpText.NO_NOTES)))
         .startsWith(
             lines(
-                "5 references (showing first 2):",
+                "5 references (showing first 4):",
                 "app/App.java:12:1: shop.sell(1);",
                 "lib/Lib.java:3:1 [EXTERNAL]: void sell(int n) {",
+                "app/App.java:14:1 [write]: shop.sold = 1;",
+                "app/App.java:15:1 [read]: return shop.sold;",
                 "",
                 "All javac-resolved references"));
     assertThat(
@@ -805,6 +819,12 @@ class McpTextTest {
   private static LatheOutlineItem outlineItem(
       final String kind, final String name, final int depth, final int line, final String code) {
     return new LatheOutlineItem(kind, name, depth, location("app/Shop.java", line, code));
+  }
+
+  private static List<LatheReference> uses(final LatheLocation... locations) {
+    return Arrays.stream(locations)
+        .map(location -> new LatheReference(location, LatheReference.Access.OTHER))
+        .toList();
   }
 
   private static String lines(final String... lines) {

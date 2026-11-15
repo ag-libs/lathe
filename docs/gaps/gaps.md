@@ -1939,34 +1939,6 @@ External shorthand: no regression test yet.
 
 ---
 
-## MC-53 — `find_references` does not tell reads from writes
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `find_references`.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-"Where does the order's status change" needs the writes of a field or enum constant
-(assignments, setter and builder calls) apart from its reads (comparisons, getters).
-`find_references` lists them all alike, so the agent reads every site.
-
-### Fix direction
-
-The editor's `documentHighlight` already maps each reference's role to read or write.
-Label each `find_references` line with it, and add an `access` filter (`read`, `write`).
-Builder and setter calls count as writes only by convention; decide whether to include them.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-54 — A dependency result does not say which version it came from
 
 **Status: documented**

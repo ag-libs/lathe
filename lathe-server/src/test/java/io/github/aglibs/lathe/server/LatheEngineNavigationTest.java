@@ -151,10 +151,13 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.calleeSource(), "greet");
     final LatheReferences references =
-        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).value();
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS).value();
 
     assertThat(references.references())
-        .anyMatch(r -> r.uri().endsWith("Caller.java") && r.snippet().contains("greet"));
+        .anyMatch(
+            r ->
+                r.location().uri().endsWith("Caller.java")
+                    && r.location().snippet().contains("greet"));
   }
 
   // An override's callers include calls through the method it overrides from upstream, where its
@@ -528,13 +531,19 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final var pos = positionOf(fx.calleeSource(), "greet");
     engine.diagnostics(fx.caller()).value();
     final int before =
-        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).value().total();
+        engine
+            .references(fx.callee(), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+            .value()
+            .total();
 
     Files.writeString(
         fx.caller(), fx.callerSource().replace("c.greet();", "c.greet(); c.greet();"));
 
     assertThat(
-            engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).value().total())
+            engine
+                .references(fx.callee(), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .total())
         .isEqualTo(before + 1);
   }
 
@@ -558,10 +567,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     final var pos = positionOf(fx.outerSource(), "Inner");
     final LatheReferences references =
-        engine.references(fx.outer(), pos.getLine(), pos.getCharacter(), 50).value();
+        engine.references(fx.outer(), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS).value();
 
     assertThat(references.references())
-        .extracting(LatheLocation::uri)
+        .extracting(ref -> ref.location().uri())
         .anySatisfy(uri -> assertThat(uri).endsWith("User.java"))
         .anySatisfy(uri -> assertThat(uri).endsWith("Other.java"));
   }

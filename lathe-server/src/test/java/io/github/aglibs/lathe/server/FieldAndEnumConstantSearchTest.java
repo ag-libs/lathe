@@ -4,12 +4,14 @@ import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
-import io.github.aglibs.lathe.server.engine.LatheLocation;
+import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
+import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 
 // A field read through an expression whose type the reading file never names, and an enum constant
@@ -51,10 +53,10 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
     final var pos = offsetToPosition(OWNER, OWNER.indexOf("name"));
     final LatheReferences references =
-        engine.references(owner, pos.getLine(), pos.getCharacter(), 50).value();
+        engine.references(owner, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS).value();
 
     assertThat(references.references())
-        .extracting(LatheLocation::uri)
+        .extracting(ref -> ref.location().uri())
         .anySatisfy(uri -> assertThat(uri).endsWith("Reader.java"))
         .noneSatisfy(uri -> assertThat(uri).endsWith("Other.java"));
     assertThat(renameAt(owner, OWNER, "name", "label").files())
@@ -84,10 +86,10 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
     final var pos = offsetToPosition(KIND, KIND.indexOf("ALPHA"));
     final LatheReferences references =
-        engine.references(kind, pos.getLine(), pos.getCharacter(), 50).value();
+        engine.references(kind, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS).value();
 
     assertThat(references.references())
-        .extracting(LatheLocation::uri)
+        .extracting(ref -> ref.location().uri())
         .anySatisfy(uri -> assertThat(uri).endsWith("Switcher.java"))
         .noneSatisfy(uri -> assertThat(uri).endsWith("Other.java"));
     renameAt(kind, KIND, "ALPHA", "FIRST");
@@ -97,6 +99,57 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
   // Each name and source in com.example, in the order given, compiled into the mirror; then the
   // engine started. Returns the files in that order.
+  // Each use of a field says whether it writes it (assigned, compound-assigned, incremented) or
+  // reads it, and the access filter keeps one kind; a method's calls are neither.
+  @Test
+  void references_fieldUses_taggedReadOrWrite_filteredByAccess() throws Exception {
+    final List<Path> files =
+        writeModule(
+            "Counter.java",
+            """
+            class Counter {
+              int count;
+              void use() {
+                count = 1;
+                count += 2;
+                count++;
+                System.out.println(count);
+                if (count > 3) { reset(); }
+              }
+              void reset() {}
+            }
+            """);
+    final Path counter = files.get(0);
+    final String source = Files.readString(counter);
+    final var field = offsetToPosition(source, source.indexOf("count;"));
+
+    assertThat(accesses(counter, field, ANY_ACCESS))
+        .containsExactlyInAnyOrder(
+            LatheReference.Access.OTHER,
+            LatheReference.Access.WRITE,
+            LatheReference.Access.WRITE,
+            LatheReference.Access.WRITE,
+            LatheReference.Access.READ,
+            LatheReference.Access.READ);
+    assertThat(accesses(counter, field, Set.of(LatheReference.Access.WRITE)))
+        .hasSize(3)
+        .containsOnly(LatheReference.Access.WRITE);
+    assertThat(accesses(counter, field, Set.of(LatheReference.Access.READ)))
+        .hasSize(2)
+        .containsOnly(LatheReference.Access.READ);
+    final var method = offsetToPosition(source, source.indexOf("reset() {}"));
+    assertThat(accesses(counter, method, ANY_ACCESS)).containsOnly(LatheReference.Access.OTHER);
+    assertThat(accesses(counter, method, Set.of(LatheReference.Access.WRITE))).isEmpty();
+  }
+
+  private List<LatheReference.Access> accesses(
+      final Path file, final Position pos, final Set<LatheReference.Access> kept) {
+    final LatheReferences references =
+        engine.references(file, pos.getLine(), pos.getCharacter(), 50, kept).value();
+    assertThat(references.total()).isEqualTo(references.references().size());
+    return references.references().stream().map(LatheReference::access).toList();
+  }
+
   private List<Path> writeModule(final String... namesAndSources) throws Exception {
     final var sources = new LinkedHashMap<String, String>();
     for (int i = 0; i < namesAndSources.length; i += 2) {
