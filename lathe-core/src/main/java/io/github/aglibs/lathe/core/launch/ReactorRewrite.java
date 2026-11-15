@@ -20,7 +20,7 @@ import java.util.stream.Stream;
  */
 public final class ReactorRewrite {
 
-  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of(), Set.of());
+  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of(), Set.of(), Set.of());
 
   // An output with every mirror it stands for, in the order listed: a Gradle jar that packs a
   // second source set's classes stands for both trees.
@@ -31,10 +31,18 @@ public final class ReactorRewrite {
   // and then the jar on a class path (expand), and the mirror alone where one entry stands for it
   // (toLathe(Path): a module path, which cannot hold both).
   private final Set<Path> keptJars;
+  // Jars that also hold classes another compiler (Kotlin, Groovy) wrote, which the mirror of
+  // javac's output lacks: a class path, at analysis and at launch alike, takes the mirror and then
+  // the jar, so fresh Java classes win and the others still resolve; a module path, the mirror.
+  private final Set<Path> extraClassJars;
 
-  private ReactorRewrite(final Map<Path, List<Path>> allMirrors, final Set<Path> keptJars) {
+  private ReactorRewrite(
+      final Map<Path, List<Path>> allMirrors,
+      final Set<Path> keptJars,
+      final Set<Path> extraClassJars) {
     this.allMirrors = allMirrors;
     this.keptJars = keptJars;
+    this.extraClassJars = extraClassJars;
     this.firstMirrors =
         allMirrors.entrySet().stream()
             .collect(
@@ -47,10 +55,15 @@ public final class ReactorRewrite {
     final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
     final var mirrors = new LinkedHashMap<Path, List<Path>>();
     final var shaded = new HashSet<Path>();
+    final var extraClasses = new HashSet<Path>();
     for (final OutputData output : outputs) {
       final Path path = root.resolve(output.path()).normalize();
       if (Boolean.TRUE.equals(output.shaded())) {
         shaded.add(path);
+      }
+
+      if (Boolean.TRUE.equals(output.extraClasses())) {
+        extraClasses.add(path);
       }
 
       final Path mirror = latheDir.resolve(output.module()).resolve(output.tree()).normalize();
@@ -65,7 +78,8 @@ public final class ReactorRewrite {
             .collect(
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, listed -> List.copyOf(listed.getValue()))),
-        Set.copyOf(shaded));
+        Set.copyOf(shaded),
+        Set.copyOf(extraClasses));
   }
 
   public static ReactorRewrite none() {
@@ -82,12 +96,18 @@ public final class ReactorRewrite {
     return keptJars.contains(path.normalize());
   }
 
-  // Analysis: every mirror the path stands for (a kept jar itself after them), or the path itself
-  // when it is not a listed output.
+  // Whether a class path holding this output reads the jar itself, alone or after its mirror: a
+  // kept jar, or one with extra classes.
+  public boolean readsJar(final Path path) {
+    return kept(path) || extraClassJars.contains(path.normalize());
+  }
+
+  // Analysis: every mirror the path stands for (a jar it reads itself after them), or the path
+  // itself when it is not a listed output.
   public List<Path> expand(final Path path) {
     final Path normal = path.normalize();
     final List<Path> mirrors = allMirrors.getOrDefault(normal, List.of(path));
-    return kept(normal) ? Stream.concat(mirrors.stream(), Stream.of(normal)).toList() : mirrors;
+    return readsJar(normal) ? Stream.concat(mirrors.stream(), Stream.of(normal)).toList() : mirrors;
   }
 
   public Path toLathe(final Path path) {
@@ -116,10 +136,14 @@ public final class ReactorRewrite {
   }
 
   private Stream<String> classPathEntries(final String path) {
-    final List<Path> mirrors = allMirrors.get(Path.of(path).normalize());
-    return mirrors == null || kept(Path.of(path))
-        ? Stream.of(path)
-        : mirrors.stream().map(Path::toString);
+    final Path normal = Path.of(path).normalize();
+    final List<Path> mirrors = allMirrors.get(normal);
+    if (mirrors == null || kept(normal)) {
+      return Stream.of(path);
+    }
+
+    final Stream<String> mirrored = mirrors.stream().map(Path::toString);
+    return extraClassJars.contains(normal) ? Stream.concat(mirrored, Stream.of(path)) : mirrored;
   }
 
   public Map<String, String> toLathe(final Map<String, String> paths) {

@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
@@ -606,6 +607,13 @@ public class LatheProjectPlugin implements Plugin<Project> {
     // A disabled jar task leaves its path to another task: a shaded jar, as JUnit's shadow
     // convention writes there, which holds relocated classes the mirror lacks.
     final boolean shaded = !jar.getEnabled();
+    // Another JVM language's plugin (Kotlin, Groovy) adds its classes dir to a source set's: that
+    // set's jar holds that compiler's classes too, which the mirror of javac's output lacks.
+    final Set<File> extraClassJars =
+        Stream.concat(Stream.of(main), others.stream())
+            .filter(sourceSet -> sourceSet.getOutput().getClassesDirs().getFiles().size() > 1)
+            .flatMap(sourceSet -> sourceSetJar(tasks, sourceSet).stream())
+            .collect(Collectors.toUnmodifiableSet());
     final String module = module(project);
     final Path root = project.getRootDir().toPath();
     final List<OutputData> outputs =
@@ -627,7 +635,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
                         relative(root, output.getKey()),
                         module,
                         output.getValue(),
-                        shaded && output.getKey().equals(mainJar)))
+                        shaded && output.getKey().equals(mainJar),
+                        extraClassJars.contains(output.getKey())))
             .toList();
     final List<ResourceRootData> resourceRoots =
         Stream.concat(Stream.of(main, test), others.stream())
@@ -665,17 +674,19 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final String tree = LatheLayout.sourceSetTree(sourceSet.getName());
     final JavaCompile compile =
         tasks.named(sourceSet.getCompileJavaTaskName(), JavaCompile.class).get();
-    final Stream<File> jar =
-        tasks.getNames().contains(sourceSet.getJarTaskName())
-                && tasks.named(sourceSet.getJarTaskName()).get() instanceof Jar sourceSetJar
-            ? Stream.of(sourceSetJar.getArchiveFile().get().getAsFile())
-            : Stream.empty();
     return Stream.concat(
             Stream.of(
                 compile.getDestinationDirectory().get().getAsFile(),
                 sourceSet.getOutput().getResourcesDir()),
-            jar)
+            sourceSetJar(tasks, sourceSet).stream())
         .map(file -> Map.entry(file, tree));
+  }
+
+  private static Optional<File> sourceSetJar(final TaskContainer tasks, final SourceSet sourceSet) {
+    return tasks.getNames().contains(sourceSet.getJarTaskName())
+            && tasks.named(sourceSet.getJarTaskName()).get() instanceof Jar jar
+        ? Optional.of(jar.getArchiveFile().get().getAsFile())
+        : Optional.empty();
   }
 
   private static Stream<ResourceRootData> resourceRoots(

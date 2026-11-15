@@ -212,6 +212,40 @@ final class CompletenessGateTest {
         .startsWith("%s no longer exists".formatted(shaded));
   }
 
+  // A jar with another compiler's classes runs after its mirror: it needs no note, as the mirror
+  // carries the latest Java classes, but once the jar is gone the run is blocked, naming it.
+  @Test
+  void verify_jarWithExtraClasses_openWithoutNote_blockedOnceDeleted() throws IOException {
+    seedModule("dep", LatheLayout.CLASSES_DIR);
+    seedModule("app", LatheLayout.TEST_CLASSES_DIR);
+    final Path extra = Path.of(jar("dep/build/libs/dep.jar"));
+    final ReactorRewrite rewrite =
+        ReactorRewrite.of(
+            workspaceRoot,
+            Stream.concat(
+                    TestCompiler.targetOutputs("dep", "app").stream(),
+                    Stream.of(
+                        new OutputData(
+                            "dep/build/libs/dep.jar", "dep", LatheLayout.CLASSES_DIR, false, true)))
+                .toList());
+    final var data =
+        testLaunch(
+            List.of(),
+            List.of(workspaceRoot.resolve("app/target/test-classes").toString(), extra.toString()));
+
+    final CompletenessResult built = CompletenessGate.verify(data, workspaceRoot, rewrite);
+    Files.delete(extra);
+    final CompletenessResult deleted = CompletenessGate.verify(data, workspaceRoot, rewrite);
+
+    assertThat(built.complete()).isTrue();
+    assertThat(built.notes()).isEmpty();
+    assertThat(deleted.complete()).isFalse();
+    assertThat(deleted.reasons())
+        .singleElement()
+        .asString()
+        .startsWith("%s no longer exists".formatted(extra));
+  }
+
   private void mavenBuilt(final String outputDir) throws IOException {
     Files.createDirectories(workspaceRoot.resolve(outputDir));
   }

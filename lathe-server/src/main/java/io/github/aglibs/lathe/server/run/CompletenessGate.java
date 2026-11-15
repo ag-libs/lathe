@@ -63,17 +63,20 @@ public final class CompletenessGate {
         : CompletenessResult.blocked(reasons);
   }
 
-  // A jar the launch names that no mirror stands for, or a shaded one, and that is gone: the test
-  // JVM would fail to load its classes midway. Develocity's test acceleration starts the tests
-  // through a launcher it copies to a temporary directory and deletes after the run; a cache
-  // cleanup removes a dependency jar. A missing directory is left alone: builds list output
-  // directories never created.
+  // A jar the launch names that no mirror stands for, or one it reads besides (shaded, or holding
+  // another compiler's classes), and that is gone: the test JVM would fail to load its classes
+  // midway. Develocity's test acceleration starts the tests through a launcher it copies to a
+  // temporary directory and deletes after the run; a cache cleanup removes a dependency jar; a
+  // clean
+  // removes a reactor jar. A missing directory is left alone: builds list output directories never
+  // created.
   private static List<String> missingJars(
       final List<String> paths, final ReactorRewrite reactorRewrite) {
     return paths.stream()
         .map(path -> Path.of(path).normalize())
         .filter(FileUtil::isJarFile)
-        .filter(path -> !reactorRewrite.mirrors().containsKey(path) || reactorRewrite.kept(path))
+        .filter(
+            path -> !reactorRewrite.mirrors().containsKey(path) || reactorRewrite.readsJar(path))
         .filter(path -> !Files.exists(path))
         .distinct()
         .map(

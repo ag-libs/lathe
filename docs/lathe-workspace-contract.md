@@ -146,10 +146,12 @@ Workspace-wide data: `WorkspaceManifestData`.
 | `outputs` | every build output that can appear on another module's classpath, and the mirror it stands for (`OutputData`) |
 | `buildTool` | absolute path of the tool that ran the last build (the one `lathe-sync.sh` runs); the formatter's `%MVN%` |
 
-Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`, plus `shaded: true` on a jar the build shaded (written only when true).
+Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`, plus `shaded: true` on a jar the build shaded and `extraClasses: true` on a jar that also holds classes another compiler wrote (each written only when true).
 The server and launch planner rewrite a listed path to `.lathe/<module>/<tree>`; an unlisted path, such as a jar committed in the repo, is used as written.
 A shaded jar holds the classes it relocated, which the mirror lacks:
 the server's analysis takes the mirror and then the jar, and a launch the jar as written, since its own classes call the relocated ones.
+A jar with extra classes holds a Kotlin or Groovy compiler's classes beside javac's, which the mirror lacks:
+a class path, at analysis and at launch alike, takes the mirror and then the jar, so the latest Java classes win and the others still resolve.
 A front-end lists what its build actually produces, so custom output locations need nothing special;
 a front-end whose outputs are read in place (`externalOutput`) lists none.
 
@@ -161,6 +163,7 @@ Without it the server still compiles and navigates the workspace's own code, but
   Its `outputs` are each non-`pom` module's output directories plus `<finalName>.jar` and `<finalName>-tests.jar`;
   a custom test-jar classifier or another classified jar is not listed.
   A `<finalName>.jar` that `maven-shade-plugin` replaces with a shaded one is marked `shaded`.
+- **Gradle** marks a project's main jar `extraClasses` when another JVM language's plugin adds a classes directory to `main`'s.
 - **OpenJDK** writes it with no `jdk` and empty dependency lists; its `buildFiles` are each synced module's and build tool's `_the.<batch>_batch` marker, which `make` touches after compiling that batch, so they carry no fingerprint: the touch is the signal.
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`

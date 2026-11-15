@@ -327,6 +327,37 @@ class LatheSyncTaskFunctionalTest {
             new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR));
   }
 
+  // A library whose classes another compiler also writes (Groovy here, Kotlin alike): its jars, the
+  // main one and the test fixtures', are listed as holding extra classes, which the mirror of
+  // javac's output lacks. The app, Java only, is not.
+  @Test
+  void sync_groovySources_marksTheJarsAsHoldingExtraClasses() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "lib/build.gradle",
+                """
+                plugins { id 'java-library'; id 'groovy'; id 'java-test-fixtures' }
+                dependencies { implementation localGroovy() }
+                """)
+            .file(
+                "lib/src/main/groovy/com/example/lib/Greeting.groovy",
+                "package com.example.lib\nclass Greeting { String text = 'hi' }\n")
+            .file(
+                "lib/src/testFixtures/java/com/example/lib/LibFixture.java",
+                "package com.example.lib; public class LibFixture {}\n");
+
+    fixture.runner("latheSync").build();
+
+    assertThat(workspace().outputs())
+        .contains(
+            new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR, false, true),
+            new OutputData(
+                "lib/build/libs/lib-test-fixtures.jar", "lib", "classes-testFixtures", false, true),
+            new OutputData("lib/build/classes/java/main", "lib", LatheLayout.CLASSES_DIR),
+            new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR));
+  }
+
   // Module-access flags a forked compile and the daemon run with reach the server's jvm.args. The
   // daemon's come as the org.gradle.jvmargs property the plugin reads, from the command line here:
   // set in gradle.properties it would start a daemon of its own, slow to start.
