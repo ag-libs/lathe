@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -108,6 +109,17 @@ public final class ServerFiles {
     }
 
     return List.copyOf(found);
+  }
+
+  // The directories directly in dir, sorted; empty when dir is not a directory.
+  public static List<Path> childDirectories(final Path dir) throws IOException {
+    if (!Files.isDirectory(dir)) {
+      return List.of();
+    }
+
+    try (final Stream<Path> entries = Files.list(dir)) {
+      return entries.filter(Files::isDirectory).sorted().toList();
+    }
   }
 
   // Entry names of a zip whose name passes `keep`, read from the central directory only (no

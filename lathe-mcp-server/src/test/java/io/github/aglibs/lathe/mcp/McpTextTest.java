@@ -170,6 +170,7 @@ class McpTextTest {
             "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check in a moment.");
   }
 
+  // The Kotlin modules are no note of their own: only an answer about uses names them.
   @Test
   void noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay() {
     assertThat(McpText.noteLines(McpText.NO_NOTES)).isEmpty();
@@ -179,7 +180,8 @@ class McpTextTest {
                     List.of("a/A.java:3: cannot find symbol", "b/B.java:1: ';' expected"),
                     List.of("build files changed — run `.lathe/lathe-sync.sh`"),
                     List.of("x/X.java is outside the modules the last build compiled"),
-                    true)))
+                    true,
+                    List.of("app-kotlin"))))
         .containsExactly(
             "Not compiled: a/A.java:3: cannot find symbol; b/B.java:1: ';' expected — fix the code; cross-module answers use their last good classes.",
             "Sync required: build files changed — run `.lathe/lathe-sync.sh`",
@@ -282,6 +284,67 @@ class McpTextTest {
                     LatheLocation.Origin.EXTERNAL,
                     "void connect() {")))
         .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412:9 [EXTERNAL]: void connect() {");
+  }
+
+  // Lathe reads no Kotlin: where there is some, an answer about uses no longer says grep is
+  // needless and names the modules to check: an empty one, verify_change's, deferred too, and the
+  // callers in a call hierarchy, though not its callees.
+  @Test
+  void referencesResult_workspaceWithKotlin_namesItsModulesInsteadOfTheGrepAdvice() {
+    final var use =
+        new LatheLocation(
+            "file:///w/app/App.java", "app/App.java", 3, 4, LatheLocation.Origin.REACTOR, "run();");
+    final var withKotlin =
+        new LatheNotes(List.of(), List.of(), List.of(), false, List.of("app-kotlin"));
+    final String kotlinLine =
+        "Kotlin sources in app-kotlin are not searched; check them with grep.";
+
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(1, false, List.of(use)), McpText.NO_NOTES)))
+        .endsWith("no need to re-verify with grep.")
+        .doesNotContain("Kotlin");
+    assertThat(
+            text(McpText.referencesResult(new LatheReferences(1, false, List.of(use)), withKotlin)))
+        .endsWith(kotlinLine)
+        .doesNotContain("no need to re-verify");
+    assertThat(text(McpText.referencesResult(new LatheReferences(0, false, List.of()), withKotlin)))
+        .isEqualTo("No references found.%n%n%s".formatted(kotlinLine));
+    assertThat(
+            text(
+                McpText.verifyChangeResult(
+                    new LatheVerifyChange(null, List.of(), List.of(), null, List.of()),
+                    withKotlin)))
+        .endsWith(kotlinLine);
+    assertThat(
+            text(
+                McpText.verifyChangeResult(
+                    new LatheVerifyChange(
+                        ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING,
+                        List.of(),
+                        List.of(),
+                        null,
+                        List.of()),
+                    withKotlin)))
+        .endsWith(kotlinLine);
+    final var caller = new LatheCall("run", location("app/App.java", 12, "shop.sell(1);"));
+    assertThat(
+            text(
+                McpText.callHierarchyResult(
+                    new LatheCallHierarchy(true, 1, false, List.of(caller)),
+                    SymbolScope.REACTOR,
+                    withKotlin)))
+        .as("its callers may be in Kotlin")
+        .endsWith(kotlinLine);
+    assertThat(
+            text(
+                McpText.callHierarchyResult(
+                    new LatheCallHierarchy(false, 1, false, List.of(caller)),
+                    SymbolScope.REACTOR,
+                    withKotlin)))
+        .as("its callees are on the classpath")
+        .doesNotContain("Kotlin");
   }
 
   // Two uses on one line are two rows the column tells apart, not one row printed twice.

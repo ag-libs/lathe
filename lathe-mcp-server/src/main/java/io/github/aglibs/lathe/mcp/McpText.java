@@ -41,14 +41,15 @@ final class McpText {
   private McpText() {}
 
   // Authority lines appended to semantic-result text so the agent trusts the result instead of
-  // re-verifying with grep (the "distrust tax"). True by construction: the search is
-  // javac-resolved.
+  // re-verifying with grep (the "distrust tax"). True by construction for Java: the search is
+  // javac-resolved; Lathe reads no Kotlin, so where there is some the grep advice is left out.
   private static final String REFERENCES_AUTHORITY =
       "All javac-resolved references to this exact declaration; same-named but unrelated symbols are"
-          + " already excluded — no need to re-verify with grep.";
+          + " already excluded";
   private static final String IMPLEMENTATIONS_AUTHORITY =
       "All javac-resolved implementers/overriders across modules; unrelated same-named types are"
-          + " excluded — no need to re-verify with grep.";
+          + " excluded";
+  private static final String NO_GREP_NEEDED = " — no need to re-verify with grep.";
   private static final String RENAME_AUTHORITY =
       "Only javac-resolved uses of this declaration were renamed (overload- and scope-correct);"
           + " same-named unrelated symbols were left untouched.";
@@ -60,7 +61,7 @@ final class McpText {
         refs.truncated(),
         refs.references(),
         notes,
-        REFERENCES_AUTHORITY);
+        vouched(REFERENCES_AUTHORITY, notes));
   }
 
   static CallToolResult implementationsResult(
@@ -71,7 +72,22 @@ final class McpText {
         impls.truncated(),
         impls.implementations(),
         notes,
-        IMPLEMENTATIONS_AUTHORITY);
+        vouched(IMPLEMENTATIONS_AUTHORITY, notes));
+  }
+
+  static String vouched(final String authority, final LatheNotes notes) {
+    return notes.kotlinModules().isEmpty() ? authority + NO_GREP_NEEDED : authority + ".";
+  }
+
+  // An answer about a symbol's uses: in a workspace with Kotlin sources, which Lathe does not read,
+  // it names the modules to check with grep.
+  static CallToolResult usesResult(final String text, final LatheNotes notes) {
+    return result(
+        notes.kotlinModules().isEmpty()
+            ? text
+            : "%s%n%nKotlin sources in %s are not searched; check them with grep."
+                .formatted(text, listed(notes.kotlinModules())),
+        notes);
   }
 
   // Shared rendering for a capped, ranked location list ("N noun(s)"); authority is appended when
@@ -91,12 +107,12 @@ final class McpText {
         locations.isEmpty()
             ? "No %ss found.".formatted(noun)
             : "%s%n%s%n%n%s".formatted(header, locationLines(locations), authority);
-    return result(text, notes);
+    return usesResult(text, notes);
   }
 
   static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
     if (rename.totalEdits() == 0) {
-      return result("No references to rename.", notes);
+      return usesResult("No references to rename.", notes);
     }
 
     final String text =
@@ -110,7 +126,7 @@ final class McpText {
                     .collect(Collectors.joining(System.lineSeparator())),
                 RENAME_AUTHORITY,
                 mentionLines(rename));
-    return result(text, notes);
+    return usesResult(text, notes);
   }
 
   // The rename edits no text; the agent decides about each place the old name still stands.
@@ -270,7 +286,8 @@ final class McpText {
                     ch.calls().stream()
                         .map(call -> callLine(arrow, call))
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(text, notes);
+    // Its callees are on the classpath, Kotlin ones too; its callers may be in unread Kotlin.
+    return ch.incoming() ? usesResult(text, notes) : result(text, notes);
   }
 
   static CallToolResult describeResult(final String markup, final LatheNotes notes) {
@@ -358,7 +375,7 @@ final class McpText {
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
             "override family: %s".formatted(overrides));
-    return result(text, notes);
+    return usesResult(text, notes);
   }
 
   static String joinOrNone(final List<String> items) {
@@ -374,17 +391,19 @@ final class McpText {
           verify.suggestedSync() == null
               ? "Re-check in a moment."
               : "Run `%s`, then re-check.".formatted(verify.suggestedSync());
-      return result(
+      return usesResult(
           "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next), notes);
     }
 
     final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
     final long errors = errorCount(verify);
-    return result(
-        verifyHeadline(errors, total - errors, notes.notChecked().size())
-            + verifyDiagnosticLines(verify.perModule())
-            + failedWritesNote(verify)
-            + crossModuleNote(verify, errors),
+    return usesResult(
+        "%s%s%s%s"
+            .formatted(
+                verifyHeadline(errors, total - errors, notes.notChecked().size()),
+                verifyDiagnosticLines(verify.perModule()),
+                failedWritesNote(verify),
+                crossModuleNote(verify, errors)),
         notes);
   }
 

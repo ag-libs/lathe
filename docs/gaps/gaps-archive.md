@@ -12771,6 +12771,30 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-83 — Kotlin callers are invisible, yet references and rename call themselves complete — done
+
+**Status: done.**
+
+**Affects: MCP `find_references`, `rename_symbol`, `analyze_change`, `verify_change`, `workspace_summary`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+`find_references` missed the uses in `KotlinWithoutReflectTest.kt` and said "no need to re-verify with grep"; a rename left the Kotlin uses broken.
+
+### Resolution
+
+Lathe does not read Kotlin: its references, rename and checks stay Java-only.
+In a workspace whose built modules hold Kotlin sources where the Kotlin plugins look by default (`src/<source set>/kotlin`), the answers of `find_references`, `find_implementations`, `rename_symbol`, `analyze_change`, `verify_change` and an incoming `call_hierarchy` no longer say grep is needless, and name those modules: "Kotlin sources in … are not searched; check them with grep."
+Kotlin sources elsewhere (a custom source directory, or `.kt` files beside the Java ones) go unnoticed.
+
+### Regression targets
+
+- `WorkspaceManifestTest.kotlinModuleDirs_moduleWithKotlinSources_listed_javaModuleNot`
+- `McpTextTest.referencesResult_workspaceWithKotlin_namesItsModulesInsteadOfTheGrepAdvice`
+- `McpTextTest.noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay`
+- `LatheEngineNotesTest.notes_moduleWithKotlinSources_namesIt`
+
+---
+
 ## MC-82 — `verify_change` says clean when the change fails only the build's Error Prone and `-Werror` — done
 
 **Status: done.**
