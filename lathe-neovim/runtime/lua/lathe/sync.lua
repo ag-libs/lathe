@@ -3,7 +3,8 @@
 -- launch templates refresh. Neither the server nor this client knows the build tool: the script does.
 -- `captureTests` passes `--tests` (re-capture test-launch.json for neotest).
 --
--- Presentation: while the build runs, a transient "syncing… Ns" toast (carrying the command) is
+-- Presentation: while the build runs, a transient "syncing… Ns" toast (carrying the command;
+-- "downloading…" or "setting up…" for :LatheInit's runs) is
 -- refreshed every couple of seconds; on completion it becomes a one-line success summary. Both
 -- auto-dismiss. Only a *failed* build surfaces its full output, in a persistent bottom split that
 -- stays visible until the next sync, so the user can see what went wrong.
@@ -15,12 +16,23 @@ local M = {}
 -- own first command).
 M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project); "
   .. "for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`."
+-- A first build that stopped before its sync left `.lathe/` with no launcher and no script.
+M.UNFINISHED_HINT = "the first Lathe build of this project stopped before it set Lathe up: "
+  .. "fix what stopped it and run `:LatheInit` again."
 
--- Guard against overlapping syncs for the same root (a second prompt/command while one is running).
+-- Guard against overlapping syncs for the same root (a second prompt/command while one is running):
+-- each running root with its run's action.
 local running = {}
 
 -- The last sync's parameters, so the output buffer's `r` keymap can replay it after a failure.
 local last_sync
+
+-- What a run is, for its toasts and console: a sync, or :LatheInit's download and first build.
+local ACTIONS = {
+  sync = { running = "syncing", noun = "sync" },
+  download = { running = "downloading", noun = "download" },
+  setup = { running = "setting up", noun = "setup" },
+}
 
 -- How often to refresh the "still syncing" toast, and how long each notification lingers.
 local PROGRESS_INTERVAL_MS = 3000
@@ -47,7 +59,11 @@ local function notify_progress(state)
 
   notify(
     state,
-    ("Lathe: syncing… %.0fs — `%s`"):format(elapsed_s(state.started), state.cmd_str),
+    ("Lathe: %s… %.0fs — `%s`"):format(
+      state.action.running,
+      elapsed_s(state.started),
+      state.cmd_str
+    ),
     vim.log.levels.INFO,
     PROGRESS_TIMEOUT_MS
   )
@@ -86,8 +102,22 @@ local function set_output(lines)
   vim.bo[out_buf].modifiable = false
 end
 
---- Opens (or focuses) the sync-console buffer in a bottom split and scrolls it to the end, so Maven's
---- [ERROR]/BUILD FAILURE summary is what fills the view. Returns false when no sync has run yet.
+-- The build's verdict, else the last line: mvnd ends a failed build's output with terminal
+-- warnings, below Maven's [ERROR] summary.
+local function verdict_line()
+  local lines = vim.api.nvim_buf_get_lines(out_buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    if lines[i]:find("^%[ERROR%]") or lines[i]:find("BUILD FAIL", 1, true) then
+      return i
+    end
+  end
+
+  return #lines
+end
+
+--- Opens (or focuses) the sync-console buffer in a bottom split and scrolls it to the build's
+--- verdict, so Maven's [ERROR] summary or Gradle's BUILD FAILED is what fills the view. Returns false
+--- when no sync has run yet.
 local function open_output_window()
   if not (out_buf and vim.api.nvim_buf_is_valid(out_buf)) then
     return false
@@ -100,33 +130,38 @@ local function open_output_window()
 
   local win = vim.fn.bufwinid(out_buf)
   if win ~= -1 then
-    vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(out_buf), 0 })
+    vim.api.nvim_win_set_cursor(win, { verdict_line(), 0 })
   end
   return true
 end
 
--- The reproducible command line, so the console shows exactly how to rerun the sync by hand.
-local function command_header(root, cmd_str)
-  return ("$ cd %s && %s"):format(root, cmd_str)
+local function shell_word(word)
+  return word:find("[^%w%-_./:=@,+]") and vim.fn.shellescape(word) or word
 end
 
---- Resets the console to a syncing… header, so any open split immediately drops the previous run's
+-- The reproducible command line, so the console shows exactly how to rerun the build by hand: the
+-- command itself, which a label shortens in the toasts.
+local function command_header(root, cmd)
+  return ("$ cd %s && %s"):format(shell_word(root), table.concat(vim.tbl_map(shell_word, cmd), " "))
+end
+
+--- Resets the console to a running header, so any open split immediately drops the previous run's
 --- output. Does not open a split — a healthy sync stays quiet.
-local function show_running(cmd_str, root)
-  set_output({ "Lathe: syncing…", command_header(root, cmd_str) })
+local function show_running(action, root, cmd)
+  set_output({ ("Lathe: %s…"):format(action.running), command_header(root, cmd) })
 end
 
 --- Replaces the console with a one-line success summary, updating an open split in place.
-local function show_success(cmd_str, secs)
-  set_output({ ("Lathe: sync succeeded (%s, %.1fs)"):format(cmd_str, secs) })
+local function show_success(action, cmd_str, secs)
+  set_output({ ("Lathe: %s succeeded (%s, %.1fs)"):format(action.noun, cmd_str, secs) })
 end
 
---- Fills the console with the full captured Maven output and opens the split. The header prints the
---- exact command and working directory so the run is reproducible by hand.
-local function show_failure(cmd_str, root, code, output)
+--- Fills the console with the full captured build output and opens the split. The header prints
+--- the exact command and working directory so the run is reproducible by hand.
+local function show_failure(action, root, cmd, code, output)
   local lines = {
-    ("Lathe: sync FAILED (exit %d) — press r to retry, q to close"):format(code),
-    command_header(root, cmd_str),
+    ("Lathe: %s FAILED (exit %d) — press r to retry, q to close"):format(action.noun, code),
+    command_header(root, cmd),
     "",
   }
   vim.list_extend(lines, vim.split(output, "\n", { plain = true }))
@@ -162,7 +197,8 @@ local SCRIPT = ".lathe/lathe-sync.sh"
 --- Runs `.lathe/lathe-sync.sh [--tests] [module ...]` at `root` as a background job, notifying on
 --- start and completion. `modules` (reactor-relative paths) scope it; empty/nil syncs everything.
 --- `opts.cmd` runs that command instead (`:LatheInit`'s first build, before there is a script), shown
---- as `opts.label`; `opts.on_done(result)` runs after the build ends, on the main loop.
+--- as `opts.label` and named by `opts.action` ("download" or "setup"; "sync" by default);
+--- `opts.on_done(result)` runs after the build ends, on the main loop.
 function M.run(root, capture_tests, modules, opts)
   opts = opts or {}
   if not root or root == "" then
@@ -180,9 +216,10 @@ function M.run(root, capture_tests, modules, opts)
     local script = vim.fs.joinpath(root, SCRIPT)
     if vim.fn.executable(script) ~= 1 then
       vim.notify(
-        "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the "
-          .. "Lathe build plugin and sync once: "
-          .. M.SETUP_HINT,
+        require("lathe.workspace").first_build_unfinished(root) and "Lathe: " .. M.UNFINISHED_HINT
+          or "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. "
+            .. "Update the Lathe build plugin and sync once: "
+            .. M.SETUP_HINT,
         vim.log.levels.WARN
       )
       return
@@ -193,11 +230,12 @@ function M.run(root, capture_tests, modules, opts)
     cmd_str = table.concat(vim.list_extend({ SCRIPT }, args), " ")
   end
 
-  running[root] = true
+  running[root] = opts.action or "sync"
   last_sync = { root = root, capture_tests = capture_tests, modules = modules, opts = opts }
 
-  show_running(cmd_str, root) -- clear the console so an open split never shows the previous run
-  local state = { started = vim.loop.hrtime(), cmd_str = cmd_str }
+  local action = ACTIONS[opts.action or "sync"]
+  show_running(action, root, cmd) -- clear the console so an open split never shows the previous run
+  local state = { started = vim.loop.hrtime(), cmd_str = cmd_str, action = action }
   notify_progress(state) -- show the command immediately, then keep the toast alive every 3s
   local timer = vim.loop.new_timer()
   timer:start(PROGRESS_INTERVAL_MS, PROGRESS_INTERVAL_MS, function()
@@ -216,23 +254,24 @@ function M.run(root, capture_tests, modules, opts)
     local secs = elapsed_s(state.started)
     vim.schedule(function()
       if res.code == 0 then
-        show_success(cmd_str, secs)
+        show_success(action, cmd_str, secs)
         notify(
           state,
-          ("Lathe: sync succeeded (`%s`, %.1fs)"):format(cmd_str, secs),
+          ("Lathe: %s succeeded (`%s`, %.1fs)"):format(action.noun, cmd_str, secs),
           vim.log.levels.INFO,
           SUCCESS_TIMEOUT_MS
         )
       else
         notify(
           state,
-          ("Lathe: sync failed (`%s`, exit %d) — see the Lathe Sync Output split"):format(
+          ("Lathe: %s failed (`%s`, exit %d) — see the Lathe Sync Output split"):format(
+            action.noun,
             cmd_str,
             res.code
           ),
           vim.log.levels.ERROR
         )
-        show_failure(cmd_str, root, res.code, (res.stdout or "") .. (res.stderr or ""))
+        show_failure(action, root, cmd, res.code, (res.stdout or "") .. (res.stderr or ""))
       end
 
       if opts.on_done then
@@ -240,6 +279,32 @@ function M.run(root, capture_tests, modules, opts)
       end
     end)
   end)
+end
+
+-- The same path whatever symlinks lead to it (macOS's /var is /private/var), resolved through the
+-- nearest folder that exists, as a new buffer's file does not yet.
+local function real(path)
+  local resolved = vim.uv.fs_realpath(path)
+  if resolved then
+    return resolved
+  end
+
+  local dir = vim.fs.dirname(path)
+  return dir ~= path and vim.fs.joinpath(real(dir), vim.fs.basename(path)) or path
+end
+
+--- Whether :LatheInit is setting up the build that holds path (its download or first build): its
+--- `.lathe/` is incomplete until the run ends and starts the server.
+function M.setting_up(path)
+  local wanted = real(path)
+  for root, action in pairs(running) do
+    local at = real(root)
+    if action ~= "sync" and (wanted == at or vim.startswith(wanted, at .. "/")) then
+      return true
+    end
+  end
+
+  return false
 end
 
 local function sync_current(capture_tests)

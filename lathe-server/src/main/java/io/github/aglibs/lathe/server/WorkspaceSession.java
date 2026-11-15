@@ -42,6 +42,9 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
+  private static final String NO_MODULE =
+      "the workspace has no module yet, so no file can be analyzed: the build that wrote %s/ compiled none through Lathe (Maven skips a module it finds up to date). Delete the build's output (`mvn clean` on Maven) and sync again: `%s`."
+          .formatted(LatheLayout.LATHE_DIR, LatheLayout.SYNC_SCRIPT_COMMAND);
 
   // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter
   // matches on it to gate discovery on readiness, so it is a cross-process contract: keep it in
@@ -760,11 +763,20 @@ final class WorkspaceSession {
 
   // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
   // instead of "ready". The problem text is shared with the agent's notes, which carry no prefix.
+  // A workspace without a module most often comes from a build that found every module up to date
+  // and so compiled none through Lathe; each file would only say it is outside every module.
   private void showWorkspaceStatus(final String okText) {
-    client.showMessage(
+    final Optional<String> problem =
         state
             .manifest()
             .loadProblem()
+            .or(
+                () ->
+                    state.registry().allConfigs().isEmpty()
+                        ? Optional.of(NO_MODULE)
+                        : Optional.empty());
+    client.showMessage(
+        problem
             .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))
             .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
   }

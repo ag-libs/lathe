@@ -1,6 +1,6 @@
 -- Verifies lathe.sync: run executes the workspace's .lathe/lathe-sync.sh with --tests and module
--- arguments, at the workspace root; a missing script (a workspace synced by an older Lathe) is
--- reported instead of run; the toast names the script invocation the client ran; a
+-- arguments, at the workspace root; a missing script (a first build that stopped before its sync,
+-- or a workspace synced by an older Lathe) is reported instead of run; the toast names the script invocation the client ran; a
 -- concurrent sync for the same root is a no-op; an empty root does nothing; and the lathe/sync
 -- handler dispatches to run. Stubs vim.system so no build is spawned.
 --
@@ -87,19 +87,96 @@ spec.check(
   true
 )
 
--- A workspace synced by an older Lathe has no script: say so and run nothing.
+-- A first build that stopped before its sync left no workspace.json and no script: run
+-- :LatheInit again.
 missing["/ws/old/.lathe/lathe-sync.sh"] = true
 local before_old = #calls
 sync.run("/ws/old", false)
 spec.check("missing script runs nothing", #calls, before_old)
 spec.check(
+  "missing script after an unfinished first build names :LatheInit",
+  notes[#notes]:find("stopped before it set Lathe up", 1, true) ~= nil,
+  true
+)
+
+-- A workspace synced by an older Lathe has workspace.json but no script: say so.
+local legacy = vim.fn.tempname()
+vim.fn.mkdir(legacy .. "/.lathe", "p")
+local manifest = assert(io.open(legacy .. "/.lathe/workspace.json", "w"))
+manifest:write("{}")
+manifest:close()
+missing[legacy .. "/.lathe/lathe-sync.sh"] = true
+sync.run(legacy, false)
+spec.check("missing script runs nothing for an older sync", #calls, before_old)
+spec.check(
   "missing script names the older Lathe",
   notes[#notes]:find("older Lathe", 1, true) ~= nil,
   true
 )
+vim.fn.delete(legacy, "rf")
+
+-- :LatheInit's runs: the toasts name the action and the label; the console shows the command
+-- itself, quoted, and the failure split opens at the build's verdict, not the warnings below it.
+sync.run("/ws/f", false, nil, {
+  cmd = { "/opt/bin/mvn", "-B", "-Dx=a b" },
+  label = "mvn clean test",
+  action = "setup",
+})
+spec.check(
+  "a setup run sets up the files under its root",
+  sync.setting_up("/ws/f/src/A.java"),
+  true
+)
+spec.check("and no others", sync.setting_up("/ws/fx/src/A.java"), false)
+spec.check(
+  "a setup run's toast says it is setting up",
+  notes[#notes]:find("Lathe: setting up… 0s — `mvn clean test`", 1, true) ~= nil,
+  true
+)
+pending_cb({
+  code = 1,
+  stdout = "[INFO] BUILD FAILURE\n[ERROR] boom\nWARNING: dumb terminal\n",
+  stderr = "",
+})
+spec.check(
+  "a failed setup run's toast names the action",
+  notes[#notes]:find("Lathe: setup failed (`mvn clean test`, exit 1)", 1, true) ~= nil,
+  true
+)
+local console = vim.fn.bufnr("Lathe Sync Output")
+local console_lines = vim.api.nvim_buf_get_lines(console, 0, -1, false)
+spec.check(
+  "the console shows the command itself, quoted",
+  console_lines[2],
+  "$ cd /ws/f && /opt/bin/mvn -B '-Dx=a b'"
+)
+spec.check(
+  "the failure split opens at the build's verdict",
+  console_lines[vim.api.nvim_win_get_cursor(vim.fn.bufwinid(console))[1]],
+  "[ERROR] boom"
+)
+
+spec.check("a finished setup run sets up nothing", sync.setting_up("/ws/f/src/A.java"), false)
+
+-- A root reached through a symlink (macOS's /var is /private/var) holds the files under its real
+-- path, a new file's too.
+local real_dir = vim.fn.tempname()
+local link = real_dir .. "-link"
+vim.fn.mkdir(real_dir .. "/src", "p")
+vim.uv.fs_symlink(real_dir, link)
+sync.run(link, false, nil, { cmd = { "/opt/bin/mvn" }, label = "mvn", action = "setup" })
+spec.check(
+  "a setup run through a symlink sets up the real path's files",
+  sync.setting_up(real_dir .. "/src/New.java"),
+  true
+)
+pending_cb({ code = 0 })
+vim.fn.delete(link)
+vim.fn.delete(real_dir, "rf")
 
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run("/ws/b", false)
+spec.check("a plain sync is not a setup", sync.setting_up("/ws/b/src/A.java"), false)
 local before = #calls
 sync.run("/ws/b", false)
 spec.check("concurrent sync for the same root is a no-op", #calls, before)

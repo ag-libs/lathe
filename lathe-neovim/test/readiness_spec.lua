@@ -1,9 +1,10 @@
 -- Verifies the first-run readiness nudge (lathe.warn_if_not_ready): before setup()
 -- it reports "not configured"; once configured it stays silent in a `.lathe`
--- workspace with a launcher, reports the missing-workspace cause (Maven not
--- configured / not synced) elsewhere, and names an older-Lathe sync when `.lathe/`
--- has no launcher; and it fires at most once per session. Self-contained: builds
--- its own workspace tree and stubs vim.notify.
+-- workspace with a launcher, names :LatheInit for a build not set up yet, says a
+-- folder without a build cannot be set up, names :LatheInit again after a first
+-- build that stopped before its sync, and names an older-Lathe sync when a synced
+-- `.lathe/` has no launcher; and it fires at most once per session. Self-contained:
+-- builds its own workspace tree and stubs vim.notify.
 --
 -- Run via run-specs.sh, or headless:
 --   nvim --headless --clean -u NONE \
@@ -18,6 +19,8 @@ local cache = work .. "/cache"
 local synced = work .. "/synced"
 local bare = work .. "/bare"
 local legacy = work .. "/legacy"
+local unfinished = work .. "/unfinished"
+local plain = work .. "/plain"
 vim.fn.mkdir(cache, "p")
 vim.fn.mkdir(synced .. "/.lathe", "p") -- a resolvable Lathe workspace; `bare` has none
 vim.fn.mkdir(synced .. "/src/main/java", "p")
@@ -25,6 +28,10 @@ vim.fn.mkdir(bare .. "/src/main/java", "p")
 -- Synced by a Lathe older than the per-workspace launcher link: `.lathe/` but no launcher.
 vim.fn.mkdir(legacy .. "/.lathe", "p")
 vim.fn.mkdir(legacy .. "/src/main/java", "p")
+-- A first build that stopped before its sync: `.lathe/` without workspace.json.
+vim.fn.mkdir(unfinished .. "/.lathe", "p")
+vim.fn.mkdir(unfinished .. "/src/main/java", "p")
+vim.fn.mkdir(plain, "p")
 
 local function write_file(path, contents)
   local f = assert(io.open(path, "w"))
@@ -34,6 +41,10 @@ end
 
 write_file(synced .. "/.lathe/lathe-launcher.sh", "#!/bin/sh\n")
 vim.fn.setfperm(synced .. "/.lathe/lathe-launcher.sh", "rwxr-xr-x")
+write_file(legacy .. "/.lathe/workspace.json", "{}")
+for _, dir in ipairs({ bare, legacy, unfinished }) do
+  write_file(dir .. "/pom.xml", "<project/>")
+end
 
 vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")
@@ -93,6 +104,39 @@ spec.check(
   notes[3]
     and notes[3]:find("older Lathe", 1, true) ~= nil
     and notes[3]:find("0.1.16", 1, true) ~= nil,
+  true
+)
+
+-- 5) Configured, a first build still running: it attaches when it ends, so nothing to say yet.
+lathe.setup({})
+local sync = require("lathe.sync")
+local setting_up = sync.setting_up
+sync.setting_up = function(path)
+  return vim.startswith(vim.uv.fs_realpath(path) or path, vim.uv.fs_realpath(unfinished) .. "/")
+end
+lathe.warn_if_not_ready(vim.fn.bufadd(unfinished .. "/src/main/java/Running.java"))
+sync.setting_up = setting_up
+spec.check("first build running: silent", #notes, 3)
+
+-- 6) Configured, a first build that stopped before its sync: run :LatheInit again, not "older".
+lathe.warn_if_not_ready(vim.fn.bufadd(unfinished .. "/src/main/java/F.java"))
+spec.check("unfinished first build: notify", #notes, 4)
+spec.check(
+  "unfinished first build: message says it stopped and names :LatheInit",
+  notes[4]:find("stopped before it set Lathe up", 1, true) ~= nil
+    and notes[4]:find(":LatheInit", 1, true) ~= nil
+    and notes[4]:find("older Lathe", 1, true) == nil,
+  true
+)
+
+-- 7) Configured, a file in no build: nothing to set up, so no :LatheInit.
+lathe.setup({})
+lathe.warn_if_not_ready(vim.fn.bufadd(plain .. "/G.java"))
+spec.check("no build: notify", #notes, 5)
+spec.check(
+  "no build: message says so and does not name :LatheInit",
+  notes[5]:find("no Maven, Gradle or OpenJDK build", 1, true) ~= nil
+    and notes[5]:find(":LatheInit", 1, true) == nil,
   true
 )
 

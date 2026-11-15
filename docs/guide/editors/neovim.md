@@ -38,7 +38,7 @@ require("lathe").setup()
 {
   "ag-libs/lathe.nvim",
   ft = "java",
-  cmd = "LatheStart",
+  cmd = { "LatheStart", "LatheInit" },
   event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
   config = function()
     require("lathe").setup()
@@ -49,10 +49,11 @@ require("lathe").setup()
 > **The `config` function (`require("lathe").setup()`) is required, on every path.** Without it, only
 > the `ftplugin` (indentation) loads; the LSP server is never registered.
 
-> **`cmd = "LatheStart"` loads the plugin on the command too**, not only on a `.java` file — so
-> `:LatheStart` is available to bring the server up for workspace navigation before you open any Java
-> file (from a dashboard or an empty buffer). Without it, the command exists only after a Java buffer
-> has loaded the plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
+> **`cmd = { "LatheStart", "LatheInit" }` loads the plugin on those commands too**, not only on a
+> `.java` file — so `:LatheStart` brings the server up for workspace navigation before you open any
+> Java file, and `:LatheInit` sets a project up from a `build.gradle.kts`, a dashboard or an empty
+> buffer. Without it, both commands exist only after a Java buffer or a `pom.xml` has loaded the
+> plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
 
 > **`event = { "BufReadPre pom.xml", … }` loads the plugin for `pom.xml` too.** A `pom.xml` is
 > `filetype=xml`, so `ft = "java"` alone never loads Lathe for it — and the client-side pom
@@ -85,12 +86,17 @@ the server when the build ends:
 
 - It walks up from the current file (or `:pwd`) to the build's root, an OpenJDK checkout, the nearest
   `settings.gradle(.kts)`, or a Maven root (a `pom.xml` with `.mvn/` or `mvnw` beside it, else the
-  topmost of the folders holding one), and asks you to confirm it: Enter accepts, or edit the path.
+  topmost of the folders holding one), and asks you to confirm it: Enter accepts, or edit the path
+  (a relative one is taken from the root shown). The prompt names the Lathe version it sets up.
   A kind given looks only for that kind's root.
 - A Maven or Gradle build that does not register Lathe gets it from outside, so **your project files
   are not changed**: Maven through `-Dmaven.ext.class.path` (the jars fetched once per Lathe version
-  into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. Code that does not compile
-  still sets up. A build that registers Lathe just builds.
+  into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. A build that registers
+  Lathe builds as it is.
+- The first build is a clean one that records your tests without running them (Maven
+  `clean test -Dlathe.capture.only=true`, Gradle `latheSync -Plathe.capture.only=true`), so the
+  server knows every module and tests run at once. Code that does not compile still sets up: compile
+  errors don't stop it, and the server shows them.
 - An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).
 - It runs the project's `mvnw`/`gradlew`, else `mvn`/`gradle` from `PATH`, and sets up this client's
   Lathe version; a development checkout of the client needs `LATHE_VERSION` set.

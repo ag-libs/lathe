@@ -111,7 +111,7 @@ require("lazy").setup({
   -- Lathe: the Java language server (code intelligence, formatting, AST-aware indentation).
   vim.tbl_extend("force", lathe_source, {
     ft = "java",
-    cmd = "LatheStart",
+    cmd = { "LatheStart", "LatheInit" },
     -- A pom.xml is filetype xml: load Lathe for it too, so its pom validation runs on first open.
     event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
     config = function()

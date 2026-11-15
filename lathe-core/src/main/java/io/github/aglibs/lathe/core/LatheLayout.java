@@ -4,6 +4,9 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class LatheLayout {
 
@@ -116,14 +119,23 @@ public final class LatheLayout {
         .formatted(LATHE_DIR, windows ? "\\" : "/", scriptName(SYNC_SCRIPT_BASE, windows));
   }
 
-  // Scoped form: refresh the given modules and their upstream.
+  // Scoped form: refresh the given modules and their upstream. The module at the reactor root ("")
+  // is the whole build, so with it the command names no module.
   public static String scopedSyncCommand(final Collection<String> modules) {
-    return "%s %s".formatted(SYNC_SCRIPT_COMMAND, String.join(" ", modules));
+    if (modules.contains("")) {
+      return SYNC_SCRIPT_COMMAND;
+    }
+
+    return command(Stream.concat(Stream.of(SYNC_SCRIPT_COMMAND), modules.stream()));
   }
 
   // Re-captures the module's test launch without running its tests.
   public static String captureTestsCommand(final String module) {
-    return "%s %s %s".formatted(SYNC_SCRIPT_COMMAND, SYNC_TESTS_FLAG, module);
+    return command(Stream.of(SYNC_SCRIPT_COMMAND, SYNC_TESTS_FLAG, module));
+  }
+
+  private static String command(final Stream<String> words) {
+    return words.filter(Predicate.not(String::isEmpty)).collect(Collectors.joining(" "));
   }
 
   // A missing .lathe/ can mean the project is not set up for Lathe at all, or set up but not yet

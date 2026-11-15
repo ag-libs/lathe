@@ -1,8 +1,9 @@
 -- :LatheInit [maven|gradle|openjdk]: sets Lathe up for the build around the current file, the root
--- it found confirmed in a prompt. A build that registers Lathe just builds; one that does not gets
--- Lathe from outside, so the project is not changed: Maven through -Dmaven.ext.class.path, Gradle
--- through an init script, both with compile errors kept from stopping the first build. An OpenJDK
--- checkout runs Lathe's OpenJDK goal. It never syncs: :LatheSync refreshes a workspace set up.
+-- it found confirmed in a prompt. A build that registers Lathe builds as it is; one that does not
+-- gets Lathe from outside, so the project is not changed: Maven through -Dmaven.ext.class.path,
+-- Gradle through an init script. Either way the first build is the documented first run, with
+-- compile errors kept from stopping it. An OpenJDK checkout runs Lathe's OpenJDK goal. It never
+-- syncs: :LatheSync refreshes a workspace set up.
 -- Design: docs/potential/lathe-init.md.
 local M = {}
 
@@ -11,13 +12,30 @@ local workspace = require("lathe.workspace")
 local POM = "pom.xml"
 local GRADLE_SETTINGS = { "settings.gradle", "settings.gradle.kts" }
 local MAVEN_EXTENSION = "lathe-maven-extension"
+-- The extension, or the plugin a build wires by hand with the compiler shim (the Maven guide's
+-- manual configuration).
+local MAVEN_REGISTRATIONS = {
+  "<artifactId>%s*lathe%-maven%-extension%s*</artifactId>",
+  "<artifactId>%s*lathe%-maven%-plugin%s*</artifactId>",
+}
 local GRADLE_PLUGIN_ID = "io.github.ag-libs.lathe"
 local DEV_VERSION = "0.0.0-dev"
 local COPY_DEPENDENCIES = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies"
 local INIT_SCRIPT = "lathe.init.gradle.kts"
-local INIT_SCRIPT_TEMPLATE = "templates/" .. INIT_SCRIPT
+local FAIL_ON_ERROR_SCRIPT = "lathe.failonerror.gradle.kts"
 local OPENJDK_SYNC = "io.github.ag-libs:lathe-openjdk-maven-plugin:%s:sync"
 local KINDS = { maven = "Maven", gradle = "Gradle", openjdk = "OpenJDK" }
+-- The first build: clean, as Maven compiles nothing it finds up to date and Lathe captures a module
+-- only as it compiles it; the tests captured without running; compile errors kept from stopping
+-- it. Gradle reruns a compile whose inputs changed, so it needs no clean.
+local MAVEN_FIRST_BUILD = {
+  "clean",
+  "test",
+  "-Dlathe.capture.only=true",
+  "-DfailIfNoTests=false",
+  "-Dmaven.compiler.failOnError=false",
+}
+local GRADLE_FIRST_BUILD = { "latheSync", "-Plathe.capture.only=true", "--continue" }
 
 local function exists(path)
   return vim.uv.fs_stat(path) ~= nil
@@ -116,15 +134,25 @@ local AT = {
   maven = has_pom,
 }
 
+-- Lathe named in the build's own files, comments left out: a registration commented out loads
+-- nothing. A text check: a parent POM that registers Lathe is not seen, and the build's own Lathe
+-- then wins over the one :LatheInit brings in.
 local function registers_lathe(root, kind)
   if kind == "gradle" then
-    return read(gradle_settings(root)):find(GRADLE_PLUGIN_ID, 1, true) ~= nil
+    local script = ("\n" .. read(gradle_settings(root)))
+      :gsub("/%*.-%*/", "")
+      :gsub("\n%s*//[^\n]*", "")
+    return script:find(('"%s"'):format(GRADLE_PLUGIN_ID), 1, true) ~= nil
+      or script:find(("'%s'"):format(GRADLE_PLUGIN_ID), 1, true) ~= nil
   end
 
   if kind == "maven" then
     local files = read(vim.fs.joinpath(root, POM))
       .. read(vim.fs.joinpath(root, ".mvn", "extensions.xml"))
-    return files:find(MAVEN_EXTENSION, 1, true) ~= nil
+    local uncommented = files:gsub("<!%-%-.-%-%->", "")
+    return vim.iter(MAVEN_REGISTRATIONS):any(function(registration)
+      return uncommented:find(registration) ~= nil
+    end)
   end
 
   return false
@@ -216,20 +244,24 @@ local function write_bootstrap_pom(dir, version)
   }, vim.fs.joinpath(dir, POM))
 end
 
-local function write_init_script(dir, version)
-  local template = vim.api.nvim_get_runtime_file(INIT_SCRIPT_TEMPLATE, false)[1]
+-- The template `name` written to dir, @VERSION@ replaced when a version is given. The sync script
+-- replays the init scripts the build ran with, so it is written where the plugin's install cannot
+-- move it.
+local function write_init_script(name, dir, version)
+  local path = "templates/" .. name
+  local template = vim.api.nvim_get_runtime_file(path, false)[1]
   if not template then
     notify(
-      ("this install of lathe.nvim has no `%s`: reinstall the plugin."):format(INIT_SCRIPT_TEMPLATE),
+      ("this install of lathe.nvim has no `%s`: reinstall the plugin."):format(path),
       vim.log.levels.ERROR
     )
     return nil
   end
 
-  local script = vim.fs.joinpath(dir, INIT_SCRIPT)
+  local script = vim.fs.joinpath(dir, name)
   vim.fn.mkdir(dir, "p")
   vim.fn.writefile(
-    vim.split(read(template):gsub("@VERSION@", version), "\n", { plain = true }),
+    vim.split(read(template):gsub("@VERSION@", version or ""), "\n", { plain = true }),
     script
   )
   return script
@@ -249,15 +281,90 @@ local function java_buffers_under(root)
   end, vim.api.nvim_list_bufs())
 end
 
--- A build that failed may still have written the launcher (a compile error in a build that
--- registers Lathe): attach, and the server reports the errors. One that succeeded without a
+-- The Lathe version the build set up, which the workspace records.
+local function server_version(root)
+  local manifest = workspace.manifest_path(root)
+  return exists(manifest) and vim.json.decode(read(manifest)).serverVersion or nil
+end
+
+-- Names the version set up, and says when the build pinned another than the one asked for.
+local function report_version(root, running, wanted)
+  if not running then
+    return
+  end
+
+  if wanted and running ~= wanted then
+    notify(
+      ("server %s set up at %s: the project's build pins it, so it runs instead of %s."):format(
+        running,
+        root,
+        wanted
+      )
+    )
+    return
+  end
+
+  notify(("server %s set up at %s."):format(running, root))
+end
+
+-- A buffer opened before the setup took the fallback indent; the project's style is there now.
+local function start_servers(root)
+  for _, buf in ipairs(java_buffers_under(root)) do
+    require("lathe.indent").apply_project_indent(buf)
+    require("lathe").start(buf)
+  end
+end
+
+local function servers_at(root)
+  local wanted = real(root)
+  return vim.tbl_filter(function(client)
+    return real(client.root_dir) == wanted
+  end, vim.lsp.get_clients({ name = "lathe" }))
+end
+
+local STOP_POLL_MS = 100
+local STOP_GIVE_UP_AFTER = 100
+
+-- Starts the new servers once the old ones have exited. One that is still running after ten
+-- seconds is left alone rather than killed, which would read as a crash.
+local function restart_when_stopped(root, clients, polls)
+  local running = vim.tbl_filter(function(client)
+    return not client:is_stopped()
+  end, clients)
+  if #running == 0 then
+    start_servers(root)
+    return
+  end
+
+  if polls == STOP_GIVE_UP_AFTER then
+    notify(
+      ("the server running at %s did not stop: `:lsp restart` starts the one set up."):format(root),
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  vim.defer_fn(function()
+    restart_when_stopped(root, running, polls + 1)
+  end, STOP_POLL_MS)
+end
+
+-- A build that failed may still have written the launcher (a module failed after Lathe set up the
+-- rest): attach, and the server serves what was set up. One that succeeded without a
 -- launcher ran where Lathe set nothing up: most often a module, as Lathe sets up a build only from
--- its root, or a build tool too old to load Lathe.
-local function attach(root, result)
+-- its root, or a build tool too old to load Lathe. When the build changed the version the
+-- workspace records, a server already running there serves the old one: it is restarted. The
+-- workspace, not the server, says what changed, as a development server reports no version.
+local function attach(root, result, version, before)
   if vim.fn.executable(workspace.launcher_path(root)) == 1 then
-    for _, buf in ipairs(java_buffers_under(root)) do
-      require("lathe").start(buf)
+    local installed = server_version(root)
+    report_version(root, installed, version)
+    local stale = before and installed ~= before and servers_at(root) or {}
+    for _, client in ipairs(stale) do
+      client:stop()
     end
+
+    restart_when_stopped(root, stale, 0)
     return
   end
 
@@ -273,12 +380,15 @@ local function attach(root, result)
 end
 
 -- `label` names the build in the toast and the output split: the ext class path is too long for either.
-local function build(root, cmd, label)
+-- `version` is the Lathe brought in from outside, nil for a build that registers its own.
+local function build(root, cmd, label, version)
+  local before = server_version(root)
   require("lathe.sync").run(root, false, nil, {
     cmd = cmd,
     label = label,
+    action = "setup",
     on_done = function(result)
-      attach(root, result)
+      attach(root, result, version, before)
     end,
   })
 end
@@ -289,13 +399,15 @@ local function maven_personal(build_, tool, version)
   local run_build = function()
     local jars = vim.fn.glob(vim.fs.joinpath(lib, "*.jar"), false, true)
     table.sort(jars)
-    build(build_.root, {
-      tool,
-      "-B",
-      "-Dmaven.ext.class.path=" .. table.concat(jars, ":"),
-      "-Dmaven.compiler.failOnError=false",
-      "process-test-classes",
-    }, ("%s process-test-classes (Lathe %s)"):format(vim.fs.basename(tool), version))
+    build(
+      build_.root,
+      vim.list_extend(
+        { tool, "-B", "-Dmaven.ext.class.path=" .. table.concat(jars, ":") },
+        MAVEN_FIRST_BUILD
+      ),
+      ("%s clean test (Lathe %s)"):format(vim.fs.basename(tool), version),
+      version
+    )
   end
   -- lib/ appears only whole: the fetch fills a temporary folder renamed into place when it ends, so
   -- an interrupted one is fetched again. A snapshot is fetched every time, for its newest build.
@@ -318,9 +430,13 @@ local function maven_personal(build_, tool, version)
       "-DincludeScope=runtime",
       "-DoutputDirectory=" .. fetching,
     },
-    label = "fetch Lathe " .. version,
+    label = ("%s copy-dependencies (Lathe %s)"):format(vim.fs.basename(tool), version),
+    action = "download",
     on_done = function(result)
+      -- A failed fetch leaves no partial download; the bootstrap POM stays for the output
+      -- split's retry, which runs the same command.
       if result.code ~= 0 then
+        vim.fn.delete(fetching, "rf")
         return
       end
 
@@ -366,6 +482,18 @@ local function openjdk(found, tool, version)
   build(found.root, { tool, "-B", goal }, ("mvn %s"):format(goal))
 end
 
+-- The version to set up, else nil once it said how a development client names one.
+local function version_to_set_up()
+  local version = M.version()
+  if not version then
+    notify(
+      "this is a development client: set LATHE_VERSION to the Lathe version to set up.",
+      vim.log.levels.ERROR
+    )
+  end
+  return version
+end
+
 local function set_up(found)
   local tool = build_tool(found)
   if not tool then
@@ -380,18 +508,25 @@ local function set_up(found)
 
   if found.registered then
     notify(("building %s, which registers Lathe…"):format(found.root))
-    local cmd = found.kind == "maven" and { tool, "-B", "process-test-classes" }
-      or { tool, "latheSync" }
-    build(found.root, cmd, table.concat(cmd, " "))
+    if found.kind == "maven" then
+      local cmd = vim.list_extend({ tool, "-B" }, MAVEN_FIRST_BUILD)
+      build(found.root, cmd, ("%s clean test"):format(vim.fs.basename(tool)))
+      return
+    end
+
+    local script =
+      write_init_script(FAIL_ON_ERROR_SCRIPT, vim.fs.joinpath(workspace.cache_root(), "bootstrap"))
+    if not script then
+      return
+    end
+
+    local cmd = vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD)
+    build(found.root, cmd, ("%s latheSync"):format(vim.fs.basename(tool)))
     return
   end
 
-  local version = M.version()
+  local version = version_to_set_up()
   if not version then
-    notify(
-      "this is a development client: set LATHE_VERSION to the Lathe version to set up.",
-      vim.log.levels.ERROR
-    )
     return
   end
 
@@ -412,15 +547,16 @@ local function set_up(found)
     return
   end
 
-  local script = write_init_script(bootstrap_dir(version), version)
+  local script = write_init_script(INIT_SCRIPT, bootstrap_dir(version), version)
   if not script then
     return
   end
 
   build(
     found.root,
-    { tool, "--init-script", script, "latheSync" },
-    ("%s latheSync (Lathe %s)"):format(vim.fs.basename(tool), version)
+    vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD),
+    ("%s latheSync (Lathe %s)"):format(vim.fs.basename(tool), version),
+    version
   )
 end
 
@@ -432,6 +568,34 @@ local function start_dir()
   end
 
   return vim.fs.dirname(vim.fs.normalize(name))
+end
+
+-- What :LatheInit is about to do at the root it found, and the version it moves from.
+local function prompt_for(found)
+  if found.registered then
+    return ("Lathe: build the %s project, which registers Lathe, in: "):format(KINDS[found.kind])
+  end
+
+  local version = M.version()
+  local installed = server_version(found.root)
+  local from = installed and installed ~= version and (" (now %s)"):format(installed) or ""
+  return ("Lathe: set up Lathe %s%s for the %s build in: "):format(version, from, KINDS[found.kind])
+end
+
+-- A root typed below the one found is most often a module, which Lathe does not set up alone.
+local function warn_if_module(chosen, found)
+  local inner, outer = real(chosen.root), real(found.root)
+  if chosen.kind ~= found.kind or not vim.startswith(inner, outer .. "/") then
+    return
+  end
+
+  notify(
+    (
+      "%s is inside the %s build at %s: if it is one of its modules, set up %s instead, as Lathe "
+      .. "sets a build up from its root."
+    ):format(chosen.root, KINDS[found.kind], found.root, found.root),
+    vim.log.levels.WARN
+  )
 end
 
 local function not_found(start, kind)
@@ -447,7 +611,8 @@ local function not_found(start, kind)
 end
 
 --- Sets Lathe up for the build around the current file (else `:pwd`), of `kind` if given, after
---- the user confirms or edits its root; an edited root is taken as typed.
+--- the user confirms or edits its root; an edited root is taken as typed, a relative one from the
+--- root offered.
 function M.run(kind)
   if kind and not KINDS[kind] then
     notify(
@@ -464,8 +629,12 @@ function M.run(kind)
     return
   end
 
+  if not found.registered and not version_to_set_up() then
+    return
+  end
+
   vim.ui.input({
-    prompt = ("Lathe: set up the %s build in: "):format(KINDS[found.kind]),
+    prompt = prompt_for(found),
     default = found.root,
     completion = "dir",
   }, function(answer)
@@ -473,7 +642,12 @@ function M.run(kind)
       return
     end
 
-    local typed = vim.fn.fnamemodify(vim.fn.expand(vim.trim(answer)), ":p")
+    -- A relative path is taken from the root offered, which the prompt shows.
+    local typed = vim.fn.expand(vim.trim(answer))
+    if vim.fn.isabsolutepath(typed) == 0 then
+      typed = vim.fs.joinpath(found.root, typed)
+    end
+
     local root = real(typed)
     local chosen = root and (root == real(found.root) and found or M.build_at(root, kind))
     if not chosen then
@@ -484,6 +658,7 @@ function M.run(kind)
       return
     end
 
+    warn_if_module(chosen, found)
     set_up(chosen)
   end)
 end

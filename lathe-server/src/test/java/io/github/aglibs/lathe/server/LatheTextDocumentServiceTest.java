@@ -648,6 +648,31 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 .formatted(LatheLayout.captureTestsCommand("app")));
   }
 
+  // The module at the reactor root reads as "." and adds no module to the command.
+  @Test
+  void runTestFuture_rootModuleWithoutACapturedLaunch_namesItAsDot() throws Exception {
+    writeManifest();
+    host.initialize(tmp);
+
+    final var outcome =
+        host.onLoopFuture(
+                session ->
+                    session
+                        .runs()
+                        .runFuture(
+                            new LaunchTarget.Tests(
+                                "",
+                                List.of(
+                                    new TestSelection(TestSelectionKind.CLASS, "com.example.Foo"))),
+                            ""))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(outcome.blockedReasons())
+        .containsExactly(
+            "no captured test launch for .; run `%s` to capture it"
+                .formatted(LatheLayout.captureTestsCommand("")));
+  }
+
   // A class the build's test filter leaves out (an integration test) is never captured, so no sync
   // is named for it; a class the filter includes still gets the command that captures it.
   @Test
@@ -782,6 +807,37 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                     m.getType() == MessageType.Warning
                         && m.getMessage()
                             .startsWith("Lathe: .lathe/ was written by another Lathe version")));
+  }
+
+  // A build that found every module up to date compiled none through Lathe: each file would only
+  // say it is outside every module, so the load says why instead of "ready".
+  @Test
+  void initialize_workspaceWithoutAModule_warnsThatTheBuildCompiledNothing() throws Exception {
+    writeManifest();
+
+    host.initialize(tmp);
+
+    verify(client, timeout(5_000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage().startsWith("Lathe: the workspace has no module yet")
+                        && m.getMessage().contains("`mvn clean`")
+                        && m.getMessage()
+                            .endsWith("`%s`.".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))));
+  }
+
+  @Test
+  void initialize_workspaceWithAModule_saysReady() throws Exception {
+    openShop();
+
+    verify(client, timeout(5_000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Info
+                        && m.getMessage().equals("Lathe: workspace ready.")));
   }
 
   private void writeManifest() throws Exception {

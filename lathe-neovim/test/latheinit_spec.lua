@@ -1,11 +1,13 @@
 -- Verifies lathe.latheinit: the build root it finds from a folder (an OpenJDK checkout's markers,
 -- Maven's markers, the topmost of a run of pom.xml folders, Gradle's settings script, the nearer of
 -- a Maven and a Gradle root, a forced kind), the root prompt (accepted, edited, cancelled), whether
--- the build registers Lathe, and the commands :LatheInit runs: the Maven fetch then the build with
--- the activation, the Gradle build with the init script written for the version, the OpenJDK goal
--- on a built JDK, a plain build for a build that registers Lathe, the attach after a build that
--- wrote a launcher, and the messages for an unbuilt JDK, a development version, no build, a
--- workspace set up already, and a build that wrote no .lathe/. Stubs vim.system, so no build runs.
+-- the build registers Lathe, and the commands :LatheInit runs: the Maven fetch then the first build
+-- (clean, tests captured, compile errors kept) with the activation, the Gradle build with the init
+-- script written for the version, the OpenJDK goal on a built JDK, the same first build for a build
+-- that registers Lathe (on Gradle with an init script that keeps compile errors), the attach after
+-- a build that wrote a launcher, and the messages for an unbuilt JDK, a development version, no
+-- build, a workspace set up already, and a build that wrote no .lathe/. Stubs vim.system, so no
+-- build runs.
 --
 -- Run via run-specs.sh, or headless:
 --   nvim --headless --clean -u NONE \
@@ -40,6 +42,23 @@ package.loaded["lathe"] = {
   end,
   warn_if_not_ready = function() end,
 }
+-- The running Lathe servers :LatheInit sees; none unless a check sets them.
+local clients = {}
+vim.lsp.get_clients = function()
+  return clients
+end
+local function server(root, version)
+  return {
+    root_dir = root,
+    server_info = { version = version },
+    stop = function(self)
+      self.stopped = true
+    end,
+    is_stopped = function(self)
+      return self.stopped == true
+    end,
+  }
+end
 -- The root prompt: accepts the default unless the next answer is set (false cancels).
 local prompts = {}
 local next_answer
@@ -100,8 +119,17 @@ write(work .. "/mixed/settings.gradle")
 write(work .. "/mixed/tools/pom.xml")
 write(work .. "/team/pom.xml", "<extension><artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/core-ext/pom.xml")
+write(work .. "/manual/pom.xml", "<plugin><artifactId>lathe-maven-plugin</artifactId></plugin>")
 write(work .. "/core-ext/.mvn/extensions.xml", "<artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/team-gradle/settings.gradle", 'plugins { id("io.github.ag-libs.lathe") }')
+write(
+  work .. "/commented/pom.xml",
+  "<project>\n<!-- later: <artifactId>lathe-maven-extension</artifactId> -->\n</project>"
+)
+write(
+  work .. "/commented-gradle/settings.gradle.kts",
+  '// id("io.github.ag-libs.lathe")\n/* id("io.github.ag-libs.lathe") */\nrootProject.name = "x"'
+)
 vim.fn.mkdir(work .. "/nothing/src", "p")
 for _, jdk in ipairs({ "/jdk", "/jdk-unbuilt", "/jdk-unconfigured", "/jdk-two" }) do
   write(work .. jdk .. "/configure")
@@ -154,14 +182,29 @@ spec.check(
   latheinit.find_build(work .. "/team-gradle").registered,
   true
 )
+spec.check(
+  "the plugin wired by hand registers Lathe",
+  latheinit.find_build(work .. "/manual").registered,
+  true
+)
+spec.check(
+  "a registration in an XML comment does not count",
+  latheinit.find_build(work .. "/commented").registered,
+  false
+)
+spec.check(
+  "a registration in a Gradle comment does not count",
+  latheinit.find_build(work .. "/commented-gradle").registered,
+  false
+)
 
 -- Maven personal: fetch, then build with the activation, then attach.
 local boot = work .. "/cache/bootstrap/9.9.9"
 run_from("/multi/core")
 spec.check(
-  "the prompt names the kind",
+  "the prompt names the version and the kind",
   prompts[#prompts].prompt,
-  "Lathe: set up the Maven build in: "
+  "Lathe: set up Lathe 9.9.9 for the Maven build in: "
 )
 spec.check("the prompt offers the root it found", prompts[#prompts].default, work .. "/multi")
 spec.check("Maven fetches first, with the Maven on PATH", last_cmd()[1], "/opt/bin/mvn")
@@ -193,9 +236,9 @@ write(boot .. "/lib.fetching/lathe-core-9.9.9.jar")
 finish_build(0)
 spec.check("a finished fetch is renamed into place", vim.uv.fs_stat(boot .. "/lib.fetching"), nil)
 spec.check(
-  "then the build, Lathe on the ext class path and compile errors kept",
+  "then the first build, Lathe on the ext class path",
   table.concat(last_cmd(), " "),
-  ("/opt/bin/mvn -B -Dmaven.ext.class.path=%s/lib/lathe-core-9.9.9.jar:%s/lib/lathe-maven-extension-9.9.9.jar -Dmaven.compiler.failOnError=false process-test-classes"):format(
+  ("/opt/bin/mvn -B -Dmaven.ext.class.path=%s/lib/lathe-core-9.9.9.jar:%s/lib/lathe-maven-extension-9.9.9.jar clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false"):format(
     boot,
     boot
   )
@@ -206,8 +249,13 @@ local java = vim.fn.bufadd(work .. "/multi/core/src/Foo.java")
 vim.fn.bufload(java)
 vim.bo[java].filetype = "java"
 executable(work .. "/multi/.lathe/lathe-launcher.sh")
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "9.9.9"}')
+write(work .. "/multi/.lathe/style.json", '{"indent": {"profile": "google", "block": 2}}')
+vim.bo[java].shiftwidth = 4
 finish_build(0)
 spec.check("a build that wrote a launcher attaches the root's Java buffers", started[1], java)
+spec.check("and gives them the project's indent", vim.bo[java].shiftwidth, 2)
+spec.check("and names the version set up", last_note_has("Lathe: server 9.9.9 set up at"), true)
 
 -- A fetch interrupted before it ended left no lib/: the next run fetches again.
 vim.fn.mkdir(work .. "/cache/bootstrap/8.8.8/lib.fetching", "p")
@@ -224,6 +272,16 @@ spec.check(
   last_cmd()[#last_cmd()]:find("lib.fetching", 1, true) ~= nil,
   true
 )
+spec.check(
+  "a failed fetch leaves no partial download",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/8.8.8/lib.fetching"),
+  nil
+)
+spec.check(
+  "but keeps the bootstrap POM for the retry",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/8.8.8/pom.xml") ~= nil,
+  true
+)
 
 -- A snapshot is fetched every time, for its newest build.
 vim.fn.mkdir(work .. "/cache/bootstrap/1.0-SNAPSHOT/lib", "p")
@@ -235,18 +293,46 @@ spec.check(
   "-DoutputDirectory=" .. work .. "/cache/bootstrap/1.0-SNAPSHOT/lib.fetching"
 )
 finish_build(1)
+spec.check(
+  "a failed fetch keeps the jars fetched before",
+  vim.uv.fs_stat(work .. "/cache/bootstrap/1.0-SNAPSHOT/lib") ~= nil,
+  true
+)
 vim.env.LATHE_VERSION = "9.9.9"
 
 local before = #calls
 run_from("/multi")
 spec.check("with the jars already fetched, it builds at once", #calls, before + 1)
-spec.check("that call is the build", last_cmd()[#last_cmd()], "process-test-classes")
+spec.check("that call is the build", last_cmd()[4], "clean")
 finish_build(0)
 
 -- The root prompt: an edited root is taken as typed; a cancel runs nothing.
 next_answer = work .. "/multi/core/"
+local notes_before = #notes
 run_from("/multi/core")
 spec.check("an edited root builds there", calls[#calls].opts.cwd, work .. "/multi/core")
+spec.check(
+  "a root inside the one found may be a module: say so",
+  vim.iter(vim.list_slice(notes, notes_before + 1)):any(function(note)
+    return note:find(
+      work .. "/multi/core is inside the Maven build at " .. work .. "/multi",
+      1,
+      true
+    ) ~= nil
+  end),
+  true
+)
+finish_build(0)
+
+next_answer = "core"
+vim.cmd.cd(work .. "/gradle")
+vim.cmd.edit(work .. "/multi/core/pom.xml")
+latheinit.run()
+spec.check(
+  "a relative root is taken from the root offered, not :pwd",
+  calls[#calls].opts.cwd,
+  work .. "/multi/core"
+)
 finish_build(0)
 
 before = #calls
@@ -262,6 +348,45 @@ spec.check(
   last_note_has("no Maven, Gradle or OpenJDK build at " .. work .. "/nothing"),
   true
 )
+
+-- A build that pins another Lathe (a parent POM, say) runs its own: say which.
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.2.3"}')
+run_from("/multi")
+spec.check(
+  "the prompt names the version set up now",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 (now 1.2.3) for the Maven build in: "
+)
+finish_build(0)
+spec.check(
+  "a version the build pins is named instead of the one asked for",
+  last_note_has("Lathe: server 1.2.3 set up at " .. work .. "/multi: the project's build pins it"),
+  true
+)
+
+-- A build that changes the version the workspace records restarts the root's running servers, which
+-- serve the old one, once they exited; a server of another root is left alone. A build that keeps
+-- the version restarts nothing.
+local here = server(work .. "/multi", "1.0.0")
+local elsewhere = server(work .. "/gradle", "1.0.0")
+clients = { here, elsewhere }
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.0.0"}')
+local starts = #started
+run_from("/multi")
+write(work .. "/multi/.lathe/workspace.json", '{"serverVersion": "1.2.3"}')
+finish_build(0)
+vim.wait(1000, function()
+  return #started > starts
+end)
+spec.check("a server of the root is stopped", here.stopped, true)
+spec.check("one of another root is left running", elsewhere.stopped, nil)
+spec.check("the buffers start again once it exited", started[#started], java)
+local same = server(work .. "/multi", nil)
+clients = { same }
+run_from("/multi")
+finish_build(0)
+spec.check("a build that keeps the version restarts nothing", same.stopped, nil)
+clients = {}
 
 -- A wrapper wins over the tool on PATH.
 executable(work .. "/marked/app/mvnw")
@@ -279,7 +404,9 @@ run_from("/gradle/lib")
 spec.check(
   "Gradle builds with the init script",
   table.concat(last_cmd(), " "),
-  "/opt/bin/gradle --init-script " .. boot .. "/lathe.init.gradle.kts latheSync"
+  "/opt/bin/gradle --init-script "
+    .. boot
+    .. "/lathe.init.gradle.kts latheSync -Plathe.capture.only=true --continue"
 )
 local init_script = table.concat(vim.fn.readfile(boot .. "/lathe.init.gradle.kts"), "\n")
 spec.check(
@@ -305,18 +432,33 @@ vim.fn.bufload(team_java)
 vim.bo[team_java].filetype = "java"
 run_from("/team")
 spec.check(
-  "a registered Maven build is a plain build",
+  "the prompt says the build registers Lathe",
+  prompts[#prompts].prompt,
+  "Lathe: build the Maven project, which registers Lathe, in: "
+)
+spec.check(
+  "a registered Maven build runs the same first build, without the activation",
   table.concat(last_cmd(), " "),
-  "/opt/bin/mvn -B process-test-classes"
+  "/opt/bin/mvn -B clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false"
 )
 executable(work .. "/team/.lathe/lathe-launcher.sh")
 finish_build(1)
 spec.check("a failed build that wrote a launcher attaches", started[#started], team_java)
 run_from("/team-gradle")
+local keep_errors = work .. "/cache/bootstrap/lathe.failonerror.gradle.kts"
 spec.check(
-  "a registered Gradle build is a plain build",
+  "a registered Gradle build keeps compile errors through an init script",
   table.concat(last_cmd(), " "),
-  "/opt/bin/gradle latheSync"
+  "/opt/bin/gradle --init-script "
+    .. keep_errors
+    .. " latheSync -Plathe.capture.only=true --continue"
+)
+local keep_errors_text = table.concat(vim.fn.readfile(keep_errors), "\n")
+spec.check(
+  "that script turns failOnError off and applies no plugin",
+  keep_errors_text:find("options.isFailOnError = false", 1, true) ~= nil
+    and keep_errors_text:find("classpath", 1, true) == nil,
+  true
 )
 finish_build(0)
 
@@ -386,11 +528,16 @@ vim.api.nvim_get_runtime_file = get_runtime_file
 spec.check("a missing template runs nothing", #calls, before)
 spec.check("and says to reinstall", last_note_has("reinstall the plugin"), true)
 
--- A development client sets up nothing without LATHE_VERSION.
+-- A development client sets up nothing without LATHE_VERSION, and says so before the prompt.
 vim.env.LATHE_VERSION = nil
+local prompts_before = #prompts
 run_from("/gradle")
+spec.check("a development version asks nothing", #prompts, prompts_before)
 spec.check("a development version runs nothing", #calls, before)
 spec.check("and says to set LATHE_VERSION", last_note_has("LATHE_VERSION"), true)
+run_from("/team-gradle")
+spec.check("but builds a build that registers Lathe", #calls, before + 1)
+finish_build(0)
 
 latheinit.setup()
 spec.check("registers :LatheInit", vim.fn.exists(":LatheInit"), 2)

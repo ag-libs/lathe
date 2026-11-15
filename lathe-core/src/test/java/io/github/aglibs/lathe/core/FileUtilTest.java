@@ -385,6 +385,41 @@ final class FileUtilTest {
   }
 
   @Test
+  void moveReplacing_missingSource_throwsAtOnce() {
+    assertThatThrownBy(
+            () -> FileUtil.moveReplacing(tempDir.resolve("missing"), tempDir.resolve("dest")))
+        .isInstanceOf(NoSuchFileException.class);
+  }
+
+  // Two builds writing one cache entry at once: on Windows a replace fails while another is under
+  // way, so each caller retries, and the file is one caller's whole copy.
+  @Test
+  void moveReplacing_concurrentCallers_leaveOneCompleteFile() throws Exception {
+    final Path dest = tempDir.resolve("index.json");
+    final List<Callable<Void>> replacements =
+        IntStream.range(0, 8)
+            .mapToObj(
+                i -> IOUtil.unchecked(() -> Files.writeString(tempDir.resolve("v" + i), "v" + i)))
+            .<Callable<Void>>map(
+                src ->
+                    () -> {
+                      FileUtil.moveReplacing(src, dest);
+                      return null;
+                    })
+            .toList();
+    final var pool = Executors.newFixedThreadPool(replacements.size());
+    try {
+      for (final Future<Void> replaced : pool.invokeAll(replacements)) {
+        replaced.get();
+      }
+    } finally {
+      pool.shutdown();
+    }
+
+    assertThat(Files.readString(dest)).matches("v[0-7]");
+  }
+
+  @Test
   void writeIfChanged_newSameAndChangedContent_writesOnlyWhenDifferent() throws IOException {
     final Path dir = tempDir.resolve("nested");
     final Path file = dir.resolve("args");
