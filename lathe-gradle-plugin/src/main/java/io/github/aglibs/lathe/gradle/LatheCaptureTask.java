@@ -17,6 +17,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.Directory;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFile;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
@@ -137,11 +138,18 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Internal
   public abstract Property<LatheBuildLockService> getBuildLock();
 
+  // Where the snapshot task recorded the sources' mtimes before the compile (SourceMtimes).
+  @Internal
+  public abstract RegularFileProperty getSourceMtimesFile();
+
   @TaskAction
   public void capture() throws IOException {
     getBuildLock().get();
     final Path moduleDir = getModuleDir().get().getAsFile().toPath();
     final ModuleConfigData config = moduleConfig();
+    // Read, and the file gone, before anything can end the capture early.
+    final Map<Path, Long> mtimesBeforeCompile =
+        SourceMtimes.take(getSourceMtimesFile().get().getAsFile().toPath());
     final Path lock = LatheLayout.moduleLockFile(moduleDir);
     // Best-effort, as Maven's compile shim: the build goes on and keeps the last capture.
     try {
@@ -158,7 +166,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
       }
 
       CompileCapture.mirror(
-          moduleDir, config, List.of(getResourcesDir().get().getAsFile().toPath()));
+          moduleDir,
+          config,
+          List.of(getResourcesDir().get().getAsFile().toPath()),
+          mtimesBeforeCompile);
     } finally {
       LatheLock.release(lock);
     }

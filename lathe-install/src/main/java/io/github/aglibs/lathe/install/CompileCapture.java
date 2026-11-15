@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.SourceStamp;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -26,11 +27,23 @@ public final class CompileCapture {
     Json.write(config, moduleDir.resolve(LatheLayout.paramsFileName(config.sourceTree())));
   }
 
+  // Each source's mtime, taken just before javac runs: compared after it, they tell which sources
+  // were written while it compiled.
+  public static Map<Path, Long> sourceMtimes(final Collection<Path> sources) {
+    return sources.stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                CompileCapture::normalized, CompileCapture::mtime, (first, ignored) -> first));
+  }
+
   // resourceDirs join the classes in the bytecode mirror: Gradle processes resources into their
   // own directory, where Maven puts them beside the classes, and a replay that stands the mirror
-  // in for a project's jar needs both.
+  // in for a project's jar needs both. mtimesBeforeCompile: from sourceMtimes, just before javac.
   public static void mirror(
-      final Path moduleDir, final ModuleConfigData config, final List<Path> resourceDirs)
+      final Path moduleDir,
+      final ModuleConfigData config,
+      final List<Path> resourceDirs,
+      final Map<Path, Long> mtimesBeforeCompile)
       throws IOException {
     final Path classesMirror = moduleDir.resolve(config.sourceTree());
     FileUtil.replaceDir(Path.of(config.outputDir()), classesMirror);
@@ -41,7 +54,7 @@ public final class CompileCapture {
     }
 
     mirrorGeneratedSources(moduleDir, config);
-    writeStamps(moduleDir, config);
+    writeStamps(moduleDir, config, mtimesBeforeCompile);
   }
 
   // To a scope-specific target, so the test compile does not overwrite the main compile's sources.
@@ -60,18 +73,41 @@ public final class CompileCapture {
   }
 
   // Each source's stamp (its mtime and the content compiled) and, from the same hashes, what the
-  // build compiled.
-  private static void writeStamps(final Path moduleDir, final ModuleConfigData config)
+  // build compiled. A source written while javac compiled, or new since it started, may hold other
+  // content than javac read: it gets neither, so the server compiles it as never built.
+  private static void writeStamps(
+      final Path moduleDir,
+      final ModuleConfigData config,
+      final Map<Path, Long> mtimesBeforeCompile)
       throws IOException {
     final Map<Path, Path> sources = CompiledStamps.sourcesByKey(config);
-    final Map<Path, ContentFingerprint> built = CompiledStamps.builtOf(sources);
-    final Map<Path, SourceStamp> stamps =
+    // Hashed first, then kept only if the mtime is still the one before javac ran: a write while
+    // hashing moves it too, so the content hashed is what javac read.
+    final Map<Path, ContentFingerprint> hashed = CompiledStamps.builtOf(sources);
+    final Map<Path, Long> unchanged =
         sources.entrySet().stream()
+            .filter(source -> unchangedSince(mtimesBeforeCompile, source.getValue()))
             .collect(
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey,
-                    entry -> new SourceStamp(mtime(entry.getValue()), built.get(entry.getKey()))));
+                    source -> mtimesBeforeCompile.get(normalized(source.getValue()))));
+    final Map<Path, ContentFingerprint> built =
+        unchanged.keySet().stream().collect(Collectors.toUnmodifiableMap(key -> key, hashed::get));
+    final Map<Path, SourceStamp> stamps =
+        unchanged.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey,
+                    entry -> new SourceStamp(entry.getValue(), built.get(entry.getKey()))));
     CompiledStamps.writeAll(moduleDir, config.sourceTree(), stamps, built);
+  }
+
+  private static boolean unchangedSince(final Map<Path, Long> mtimesBefore, final Path source) {
+    return Long.valueOf(mtime(source)).equals(mtimesBefore.get(normalized(source)));
+  }
+
+  private static Path normalized(final Path source) {
+    return source.toAbsolutePath().normalize();
   }
 
   private static long mtime(final Path path) {

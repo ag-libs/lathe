@@ -37,11 +37,13 @@ class CompileCaptureTest {
     CompileCapture.mirror(
         moduleDir,
         config("classes", mainGen, List.of()),
-        List.of(tmp.resolve("build/resources/main")));
+        List.of(tmp.resolve("build/resources/main")),
+        Map.of());
     CompileCapture.mirror(
         moduleDir,
         config("test-classes", testGen, List.of()),
-        List.of(tmp.resolve("build/resources/test")));
+        List.of(tmp.resolve("build/resources/test")),
+        Map.of());
 
     assertThat(moduleDir.resolve("classes/com/example/Main.class")).exists();
     assertThat(moduleDir.resolve("classes/META-INF/services/com.example.Api")).exists();
@@ -69,8 +71,9 @@ class CompileCaptureTest {
     write("target/generated-sources/annotations/com/example/Gen.java", 300L);
     Files.createDirectories(tmp.resolve("target/classes"));
 
-    CompileCapture.mirror(
-        moduleDir, config("classes", gen, List.of(src.toString(), gen.toString())), List.of());
+    final ModuleConfigData config = config("classes", gen, List.of(src.toString(), gen.toString()));
+
+    CompileCapture.mirror(moduleDir, config, List.of(), snapshot(config));
 
     // Each stamp carries the content compiled, which is also what the build compiled.
     final var foo =
@@ -85,6 +88,28 @@ class CompileCaptureTest {
         .containsOnly(
             Map.entry(Path.of("com/example/Foo.java"), foo.content()),
             Map.entry(Path.of("com/example/Bar.java"), bar.content()));
+  }
+
+  // A source written while javac compiled, or added since it started, may hold other content than
+  // javac read: it gets no stamp and no built record, so the server compiles it as never built.
+  @Test
+  void mirror_sourceWrittenOrAddedDuringTheCompile_leftUnstamped() throws Exception {
+    final Path moduleDir = latheModuleDir();
+    final Path src = tmp.resolve("src/main/java");
+    write("src/main/java/com/example/Foo.java", 100L);
+    write("src/main/java/com/example/Bar.java", 200L);
+    Files.createDirectories(tmp.resolve("target/classes"));
+    final ModuleConfigData config = config("classes", null, List.of(src.toString()));
+    final Map<Path, Long> beforeCompile = snapshot(config);
+
+    write("src/main/java/com/example/Bar.java", 250L);
+    write("src/main/java/com/example/New.java", 300L);
+    CompileCapture.mirror(moduleDir, config, List.of(), beforeCompile);
+
+    assertThat(CompiledStamps.load(moduleDir, "classes"))
+        .containsOnlyKeys(Path.of("com/example/Foo.java"));
+    assertThat(CompiledStamps.loadBuilt(moduleDir, "classes"))
+        .containsOnlyKeys(Path.of("com/example/Foo.java"));
   }
 
   @Test
@@ -108,14 +133,18 @@ class CompileCaptureTest {
     final Path gen = tmp.resolve("target/generated-sources/annotations");
     write("target/generated-sources/annotations/com/example/Gen.java", 1L);
     Files.createDirectories(tmp.resolve("target/classes"));
-    CompileCapture.mirror(moduleDir, config("classes", gen, List.of()), List.of());
+    CompileCapture.mirror(moduleDir, config("classes", gen, List.of()), List.of(), Map.of());
     final Path mirrored =
         moduleDir.resolve(LatheLayout.GENERATED_SOURCES).resolve("com/example/Gen.java");
     assertThat(mirrored).exists();
 
-    CompileCapture.mirror(moduleDir, config("classes", null, List.of()), List.of());
+    CompileCapture.mirror(moduleDir, config("classes", null, List.of()), List.of(), Map.of());
 
     assertThat(moduleDir.resolve(LatheLayout.GENERATED_SOURCES)).doesNotExist();
+  }
+
+  private static Map<Path, Long> snapshot(final ModuleConfigData config) {
+    return CompileCapture.sourceMtimes(CompiledStamps.sourcesByKey(config).values());
   }
 
   private Path latheModuleDir() throws Exception {

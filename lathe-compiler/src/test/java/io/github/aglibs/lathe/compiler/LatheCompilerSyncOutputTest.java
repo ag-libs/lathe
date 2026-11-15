@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
+import io.github.aglibs.lathe.install.CompileCapture;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -36,7 +37,8 @@ final class LatheCompilerSyncOutputTest {
         new CompilerResult(
             false, List.of(new CompilerMessage("broken", CompilerMessage.Kind.ERROR)));
 
-    LatheCompiler.syncOutput(module.config(), module.latheDir(), Path.of("module-a"), failed);
+    LatheCompiler.syncOutput(
+        module.config(), module.latheDir(), Path.of("module-a"), failed, Map.of());
 
     assertThat(module.latheDir().resolve(LatheLayout.paramsFileName(TREE))).exists();
     assertThat(module.latheDir().resolve(TREE).resolve("com/example/Old.class")).exists();
@@ -55,7 +57,9 @@ final class LatheCompilerSyncOutputTest {
         module.config(),
         module.latheDir(),
         Path.of("module-a"),
-        new CompilerResult(true, List.of()));
+        new CompilerResult(true, List.of()),
+        CompileCapture.sourceMtimes(
+            CompiledStamps.sourcesByKey(MavenModuleConfig.of(module.config())).values()));
 
     assertThat(module.latheDir().resolve(TREE).resolve("com/example/Foo.class")).exists();
     assertThat(module.latheDir().resolve(TREE).resolve("com/example/Old.class")).doesNotExist();

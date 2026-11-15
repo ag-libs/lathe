@@ -1104,36 +1104,6 @@ None yet.
 
 ---
 
-## WS-21 — A rename racing a build can leave the tree broken
-
-**Status: documented**
-
-**Value: medium — Size: M–L**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
-
-### Observed behaviour
-
-With a Maven sync running, an agent's `rename_symbol` succeeded on disk (31 edits in 16 files), but the next `verify_change` reported 27 "cannot find symbol" errors for the new name: the server's compiled class was the pre-rename one.
-Renaming back then changed only the declaration, leaving 30 uses of the dropped name and 29 errors.
-2 of 16 rounds with a sync running, none without.
-Likely cause: the sync stamps a source from the file on disk when it mirrors, after javac compiled an older content, so a stale class looks current.
-The stamping code is unchanged since 0.1.24: `CompileCapture.writeStamps` records the disk file's mtime and fingerprint
-at mirror time (`CompiledStamps.builtOf`), never what javac read.
-
-### Fix direction
-
-Stamp what javac compiled (its read content or fingerprint), not the disk at mirror time.
-`rename_symbol` could also defer, or warn, while a build is running, as `verify_change` does.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)

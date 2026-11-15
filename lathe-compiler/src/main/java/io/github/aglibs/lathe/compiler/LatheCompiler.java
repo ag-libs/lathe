@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.compiler;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -9,8 +10,10 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.codehaus.plexus.compiler.Compiler;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
@@ -73,9 +76,11 @@ public final class LatheCompiler implements Compiler {
     final boolean locked = tryAcquireLock(moduleDir, moduleRel);
 
     try {
+      final Map<Path, Long> mtimesBeforeCompile =
+          locked ? mtimesBeforeCompile(config, moduleRel) : Map.of();
       final var result = javacCompiler.performCompile(config);
       if (locked) {
-        syncOutput(config, moduleDir, moduleRel, result);
+        syncOutput(config, moduleDir, moduleRel, result, mtimesBeforeCompile);
       } else {
         LOG.warn("[lathe] {} skipping .lathe/ sync — lock unavailable", moduleRel);
       }
@@ -89,6 +94,20 @@ public final class LatheCompiler implements Compiler {
           LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
         }
       }
+    }
+  }
+
+  // Before javac runs: a source written while it compiles is then left unstamped. Sources that
+  // cannot be listed get no stamp at all, which only has the server compile them itself, and the
+  // build goes on, as with the capture's other steps.
+  private static Map<Path, Long> mtimesBeforeCompile(
+      final CompilerConfiguration config, final Path moduleRel) {
+    try {
+      return CompileCapture.sourceMtimes(
+          CompiledStamps.sourcesByKey(MavenModuleConfig.of(config)).values());
+    } catch (final UncheckedIOException e) {
+      LOG.warn("[lathe] {} sources not listed before the compile; none stamped", moduleRel, e);
+      return Map.of();
     }
   }
 
@@ -106,7 +125,8 @@ public final class LatheCompiler implements Compiler {
       final CompilerConfiguration config,
       final Path moduleDir,
       final Path moduleRel,
-      final CompilerResult result) {
+      final CompilerResult result,
+      final Map<Path, Long> mtimesBeforeCompile) {
     final var sw = Stopwatch.start();
     try {
       final ModuleConfigData moduleConfig = MavenModuleConfig.of(config);
@@ -124,7 +144,7 @@ public final class LatheCompiler implements Compiler {
         return;
       }
 
-      CompileCapture.mirror(moduleDir, moduleConfig, List.of());
+      CompileCapture.mirror(moduleDir, moduleConfig, List.of(), mtimesBeforeCompile);
       LOG.info(
           "[lathe] {} {} capture complete {}ms",
           moduleRel,
