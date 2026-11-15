@@ -38,7 +38,7 @@ require("lathe").setup()
 {
   "ag-libs/lathe.nvim",
   ft = "java",
-  cmd = "LatheStart",
+  cmd = { "LatheStart", "LatheInit" },
   event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
   config = function()
     require("lathe").setup()
@@ -49,10 +49,11 @@ require("lathe").setup()
 > **The `config` function (`require("lathe").setup()`) is required, on every path.** Without it, only
 > the `ftplugin` (indentation) loads; the LSP server is never registered.
 
-> **`cmd = "LatheStart"` loads the plugin on the command too**, not only on a `.java` file — so
-> `:LatheStart` is available to bring the server up for workspace navigation before you open any Java
-> file (from a dashboard or an empty buffer). Without it, the command exists only after a Java buffer
-> has loaded the plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
+> **`cmd = { "LatheStart", "LatheInit" }` loads the plugin on those commands too**, not only on a
+> `.java` file — so `:LatheStart` brings the server up for workspace navigation before you open any
+> Java file, and `:LatheInit` sets a project up from a `build.gradle.kts`, a dashboard or an empty
+> buffer. Without it, both commands exist only after a Java buffer or a `pom.xml` has loaded the
+> plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
 
 > **`event = { "BufReadPre pom.xml", … }` loads the plugin for `pom.xml` too.** A `pom.xml` is
 > `filetype=xml`, so `ft = "java"` alone never loads Lathe for it — and the client-side pom

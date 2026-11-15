@@ -43,7 +43,7 @@ require('lathe').setup()
 {
   'ag-libs/lathe.nvim',
   ft = 'java',
-  cmd = 'LatheStart',                                   -- start the server before opening a Java file
+  cmd = { 'LatheStart', 'LatheInit' },                  -- usable before a Java file is open
   event = { 'BufReadPre pom.xml', 'BufNewFile pom.xml' }, -- load for pom.xml validation too
   config = function()
     require('lathe').setup()
