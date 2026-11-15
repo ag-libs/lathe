@@ -70,6 +70,8 @@ mvn clean test -Dlathe.capture.only=true               # Maven
 ./gradlew latheSync -Plathe.capture.only=true          # Gradle
 ```
 
+On Maven this prints `[WARNING]` lines about skipped tests and unresolved reactor modules; they are expected ([why](docs/guide/test-capture.md)).
+
 `.lathe/` keeps itself out of git (Lathe writes a `.gitignore` inside it); exclude it from any check that scans the whole project directory, such as nohttp ([how](docs/guide/troubleshooting.md)).
 After this, every normal build keeps Lathe up to date.
 

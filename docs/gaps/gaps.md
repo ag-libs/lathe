@@ -323,7 +323,7 @@ None yet.
 
 ## EG-067 — The first build floods the log with warnings
 
-**Status: documented**
+**Status: deferred** (both warnings are documented as expected in the [test-capture guide](../guide/test-capture.md) and the README)
 
 **Value: medium — Size: S**
 
@@ -350,9 +350,12 @@ reactor prints thousands.
 
 ### Fix direction
 
-Find a capture-only filter that Surefire does not count as skipped, or say in the README and test-capture
-guide that the warnings are expected.
-Resolve the sync's dependencies without the reactor warnings, or bind the sync to a later project.
+Surefire's warnings: set `surefire.printSummary=false` in capture-only runs, which should drop the per-class lines
+but likely not the final results line (unverified), or exclude every test instead of JUnit's dry run, which reports
+`Tests run: 0` but gives up what the dry run keeps (a `@Suite` and Develocity see the tests).
+The reactor warnings: bind the sync to the reactor's last project, so everything is built when it resolves, or
+resolve its dependencies through Lathe's own resolver instead of Maven's aggregator resolution.
+Either needs a probe on a real reactor (EqualsVerifier) with this build's extension.
 
 ### Delivered
 
