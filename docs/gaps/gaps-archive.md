@@ -12467,6 +12467,27 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-12 — A refused clone of the neotest end-to-end check's plugins failed the CI build — done
+
+**Status: done.**
+
+**Affects: CI's Linux and macOS build rows (lathe-neovim's `neotest-e2e` step).**
+
+Found when a macOS row failed on #176 (2026-11-11) with every Neovim spec passing.
+`test/e2e/run-e2e.sh` clones neotest, nvim-nio and plenary from GitHub into `target/e2e-plugins` on every run, at the commits `plugins.txt` pins.
+One clone was refused (`fatal: could not read Username for 'https://github.com'`), and under GitHub Actions a failed clone fails the build.
+
+### Resolution
+
+`run-e2e.sh` retries a refused clone twice, after a pause.
+Caching the plugins across runs was left out on purpose: a refused clone is rare, and the retry is what keeps it from failing the build.
+
+### Regression targets
+
+None automated: CI's `neotest-e2e` step, which clones the plugins on every run.
+
+---
+
 ## NV-8 — A neotest run started before a file's discovery finishes reports "no tests found" — done
 
 **Status: done — Target: next.**
