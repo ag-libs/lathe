@@ -30,6 +30,38 @@ class UnusedDeclarationScannerTest {
 
   // --- Unused private methods ---
 
+  // @SuppressWarnings("unused") covers the declaration it is on and all it encloses, as IntelliJ
+  // and Eclipse read it; a private method it covers still uses what it calls. Other warnings
+  // suppressed say
+  // nothing about use.
+  @Test
+  void compile_suppressWarningsUnused_noHintWhereItApplies_otherKeysStillReported() {
+    final var source =
+        """
+        class Test {
+          @SuppressWarnings("unused") private int framework;
+          @SuppressWarnings({"rawtypes", "unused"}) private int both;
+          @SuppressWarnings("rawtypes") private int other;
+
+          @SuppressWarnings("unused")
+          private void hook() { helper(); int local = 1; }
+
+          private void helper() {}
+
+          private void plain() {}
+
+          @SuppressWarnings("unused")
+          private static class Fixture {
+            private int value;
+          }
+        }
+        """;
+
+    assertThat(unusedHintsFor(source))
+        .extracting(hint -> hint.getMessage().getLeft())
+        .containsExactlyInAnyOrder("Unused private field 'other'", "Unused private method 'plain'");
+  }
+
   @Test
   void compile_unusedPrivateMethod_reportsHintOnName() {
     final var source =

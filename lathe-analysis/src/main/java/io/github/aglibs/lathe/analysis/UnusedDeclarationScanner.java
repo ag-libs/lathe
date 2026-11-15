@@ -134,6 +134,10 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
           && !isSerializationHook(method)) {
         privateMethods.put(
             method, candidateFor(node, node.getName().toString(), Kind.PRIVATE_METHOD));
+        // Kept, not reported: what it calls is used.
+        if (suppressesUnused(method)) {
+          directlyReached.add(method);
+        }
       }
     }
     return super.visitMethod(node, v);
@@ -149,7 +153,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   public Void visitVariable(final VariableTree node, final Void v) {
     if (declarationPhase && !isUnnamedVariable(node) && !isConventionallyIgnored(node)) {
       final var element = trees.getElement(getCurrentPath());
-      if (element != null) {
+      if (element != null && !suppressesUnused(element)) {
         final var parent = getCurrentPath().getParentPath().getLeaf();
         if (parent instanceof ClassTree classTree) {
           final boolean isRecordComponent =
@@ -187,6 +191,20 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     }
 
     return Kind.LOCAL_VARIABLE;
+  }
+
+  // @SuppressWarnings("unused") covers the declaration it is on and all it encloses, as IntelliJ
+  // and
+  // Eclipse read it: a framework reads the field, or the code is kept on purpose.
+  private static boolean suppressesUnused(final Element element) {
+    for (Element scope = element; scope != null; scope = scope.getEnclosingElement()) {
+      final SuppressWarnings suppressed = scope.getAnnotation(SuppressWarnings.class);
+      if (suppressed != null && List.of(suppressed.value()).contains("unused")) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   // An unnamed variable `_` (JEP 456) is intentionally unused and cannot be referenced, so it must
