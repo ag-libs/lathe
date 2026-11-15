@@ -104,7 +104,7 @@ final class HoverFormatter {
     final List<String> interfaces =
         te.getKind() == ElementKind.ANNOTATION_TYPE
             ? List.of()
-            : te.getInterfaces().stream().map(type -> display(type, fmt)).toList();
+            : te.getInterfaces().stream().map(type -> supertype(te, type, fmt)).toList();
     // An enum whose constants have bodies is sealed, permitting their nameless classes.
     final List<String> permitted =
         te.getKind() == ElementKind.ENUM
@@ -112,11 +112,22 @@ final class HoverFormatter {
             : te.getPermittedSubclasses().stream().map(HoverFormatter::rawName).toList();
     return Stream.of(
             Optional.of("%s%s".formatted(modifiers(te), typeLine(te))),
-            clause("extends", superclass(te).map(type -> display(type, fmt)).stream().toList()),
+            clause(
+                "extends", superclass(te).map(type -> supertype(te, type, fmt)).stream().toList()),
             clause(te.getKind().isInterface() ? "extends" : "implements", interfaces),
             clause("permits", permitted))
         .flatMap(Optional::stream)
         .collect(Collectors.joining(" "));
+  }
+
+  // A supertype named like the type itself (a MediaType extending another package's MediaType) is
+  // written qualified: by its simple name the type would read as extending itself.
+  private static String supertype(
+      final TypeElement te, final TypeMirror type, final TypeDisplayFormatter fmt) {
+    return type instanceof final DeclaredType declared
+            && declared.asElement().getSimpleName().contentEquals(te.getSimpleName())
+        ? declared.toString()
+        : display(type, fmt);
   }
 
   // A class's superclass when it names one: never Object, nor an enum's or record's implied one.

@@ -598,6 +598,36 @@ class HoverTest extends SampleFixture {
         .contains("sealed interface Many permits A, B, C, D, E, … (+2)");
   }
 
+  // A supertype named like the type itself is written qualified: by its simple name the type would
+  // read as extending itself.
+  @Test
+  void hover_types_qualifyASupertypeNamedLikeTheType() {
+    final var src =
+        """
+        class Outer {
+          static class Media {}
+
+          interface Listener {}
+        }
+
+        class Media extends Outer.Media implements Runnable {
+          public void run() {}
+        }
+
+        interface Listener extends Outer.Listener {}
+
+        class Use {
+          Media media;
+          Listener listener;
+        }
+        """;
+
+    assertThat(hoverText(src, "Media media", "Media"))
+        .contains("class Media extends Outer.Media implements Runnable");
+    assertThat(hoverText(src, "Listener listener", "Listener"))
+        .contains("interface Listener extends Outer.Listener");
+  }
+
   @Test
   void hover_types_omitSupertypesTheirKindImplies() {
     assertThat(hoverText(DECLARATIONS_SOURCE, "Circle circle", "Circle"))
