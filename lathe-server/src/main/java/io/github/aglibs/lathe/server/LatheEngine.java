@@ -1176,7 +1176,8 @@ public final class LatheEngine {
                                         found ->
                                             session
                                                 .search()
-                                                .referencesFuture(uri, pos, true, cancel, progress)
+                                                // Uses only: the declarations are the family.
+                                                .referencesFuture(uri, pos, false, cancel, progress)
                                                 .thenApply(ReferenceSearch::toLocations)
                                                 .thenApply(
                                                     references ->

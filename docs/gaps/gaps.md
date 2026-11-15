@@ -2327,8 +2327,6 @@ Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier an
   reports "156 error(s)" of about 221.
   Callers are checked 50 to a javac task, and javac skips flow analysis once a task has an error, as a Maven build does:
   while one caller fails, another in its batch that only lacks a `return` or an exception declaration is not listed.
-- `analyze_change` counts declarations and overriding declarations as references (`toSeconds`: "5 production" for 4 calls;
-  a private constructor: "9 production" for 8 `new Duration(`).
 - `describe_symbol`'s `source:` label is the JPMS module name from one caller (`nl.jqno.equalsverifier`) and the Maven
   module from another (`equalsverifier-core`).
   The signature keeps `final`, `<T>` and `default` since the hover modifiers shipped (re-probed 2026-11-15).
@@ -2343,7 +2341,7 @@ Each is small; take them one by one when touching the tool.
 
 ### Regression targets
 
-None yet.
+- `LatheEngineVerifyTest.analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences` (`analyze_change` counts uses, not declarations; fixed 2026-11-15)
 
 ---
 
