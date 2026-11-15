@@ -850,6 +850,10 @@ Remaining: following exposures transitively, so a common name compiles only the 
 Rejected: reusing `ct.sym` (above), and replacing temp files (no measurable cost; module-system and patch-module compiles need a source's file to place it in its module).
 Body stripping is a last resort: it saved about 15% in the prototype, and implicit uses (`super()`, an enhanced `for`'s `iterator()`) need their bodies.
 
+Also (pre-release Hibernate ORM round, 2026-11-15): instantiation sites (`lathe.types.instantiations`) pay the same cost.
+On `HibernateException`, which 617 files name, they took 13.8 s, then 13.6 s warm, for 576 sites; a cache of each
+module's answer would serve them as it does references.
+
 ### Regression targets
 
 None yet.

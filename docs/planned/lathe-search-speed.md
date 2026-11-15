@@ -157,7 +157,8 @@ A module's part of an answer depends only on its own files and its classpath, so
 found for a query and reuses them while nothing it depends on has changed; a repeated query compiles only the
 modules that changed.
 
-- **What:** per module worker, the module's `SearchHits` (references, implementations, incoming calls), keyed by
+- **What:** per module worker, the module's `SearchHits` (references, implementations, incoming calls,
+  instantiation sites), keyed by
   the query kind and the target (owner's binary name, method name, erased descriptor; for incoming calls also the
   overridden methods and receiver types the item carries). Never the attributed analyses: those are megabytes
   each, and keeping them is what the memory-pressure work removed.
