@@ -350,9 +350,7 @@ local function restart_when_stopped(root, clients, polls)
 end
 
 -- A build that failed may still have written the launcher (a module failed after Lathe set up the
--- rest): attach, and the server serves what was set up. One that succeeded without a
--- launcher ran where Lathe set nothing up: most often a module, as Lathe sets up a build only from
--- its root, or a build tool too old to load Lathe. When the build changed the version the
+-- rest): attach, and the server serves what was set up. When the build changed the version the
 -- workspace records, a server already running there serves the old one: it is restarted. The
 -- workspace, not the server, says what changed, as a development server reports no version.
 local function attach(root, result, version, before)
@@ -368,18 +366,29 @@ local function attach(root, result, version, before)
     end
 
     restart_when_stopped(root, stale, 0)
-    return
+  end
+end
+
+-- A build that succeeded but installed no server: one that set up the workspace could not fetch the
+-- server (the project's repositories lack it), one that did not ran where Lathe set nothing up.
+-- Either way the build's output says why, shown with the warning.
+local function no_server(root, started)
+  if vim.fn.executable(workspace.launcher_path(root)) == 1 then
+    return nil
   end
 
-  if result.code == 0 then
-    notify(
-      (
-        "no `.lathe/` was written at %s. Is it the build's root (`:LatheInit` asks for it)? Lathe "
-        .. "also needs Maven 3.6.3+ or Gradle 8.8+; the build log says why."
-      ):format(root),
-      vim.log.levels.WARN
-    )
+  local manifest = vim.uv.fs_stat(workspace.manifest_path(root))
+  if manifest and manifest.mtime.sec >= started then
+    return (
+      "Lathe: the build set up `.lathe/` at %s but installed no Lathe server: its `[lathe]` lines "
+      .. "in the Lathe Sync Output split say why."
+    ):format(root)
   end
+
+  return (
+    "Lathe: no `.lathe/` was written at %s. Is it the build's root (`:LatheInit` asks for it)? "
+    .. "Lathe also needs Maven 3.6.3+ or Gradle 8.8+; the Lathe Sync Output split shows the build."
+  ):format(root)
 end
 
 -- `label` names the build in the toast and the output split: the ext class path is too long for either.
@@ -410,6 +419,9 @@ local function build(root, cmd, label, version)
     action = "setup",
     failure_toast = function(result)
       return set_up_but_failed(root, result, started)
+    end,
+    success_warning = function()
+      return no_server(root, started)
     end,
     on_done = function(result)
       attach(root, result, version, before)
