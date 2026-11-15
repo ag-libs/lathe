@@ -22,8 +22,10 @@ vim.system = function(cmd, opts, on_exit)
   return { pid = 1 }
 end
 local notes = {}
-vim.notify = function(msg)
+local levels = {}
+vim.notify = function(msg, level)
   table.insert(notes, msg)
+  table.insert(levels, level)
 end
 vim.schedule = function(fn)
   fn()
@@ -174,6 +176,21 @@ sync.run("/ws/g", false, nil, {
 })
 pending_cb({ code = 1, stdout = "", stderr = "" })
 spec.check("a run's failure toast replaces the default", notes[#notes], "set up anyway (exit 1)")
+spec.check("as a warning", levels[#levels], vim.log.levels.WARN)
+sync.run("/ws/g", false, nil, {
+  cmd = { "/opt/bin/mvn" },
+  label = "mvn",
+  action = "setup",
+  failure_toast = function()
+    return nil
+  end,
+})
+pending_cb({ code = 1, stdout = "", stderr = "" })
+spec.check(
+  "a run whose failure toast has nothing to say keeps the default error",
+  notes[#notes]:find("setup failed", 1, true) ~= nil and levels[#levels] == vim.log.levels.ERROR,
+  true
+)
 
 -- A root reached through a symlink (macOS's /var is /private/var) holds the files under its real
 -- path, a new file's too.

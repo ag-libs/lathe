@@ -131,8 +131,11 @@ local function open_output_window(focus)
   end
 
   local win = vim.fn.bufwinid(out_buf)
-  vim.api.nvim_win_set_cursor(win, { verdict_line(), 0 })
-  vim.api.nvim_set_current_win(focus and win or from)
+  if win ~= -1 then
+    vim.api.nvim_win_set_cursor(win, { verdict_line(), 0 })
+  end
+
+  vim.api.nvim_set_current_win(focus and win ~= -1 and win or from)
   return true
 end
 

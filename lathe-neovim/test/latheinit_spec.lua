@@ -417,6 +417,16 @@ spec.check(
 )
 finish_build(0)
 
+-- A workspace an earlier setup wrote says nothing about a build that failed before Lathe ran.
+vim.uv.fs_utime(work .. "/team/.lathe/workspace.json", 1000, 1000)
+run_from("/team")
+finish_build(1)
+spec.check(
+  "a failed build with only an earlier setup's workspace keeps the setup error",
+  last_note_has("setup failed") and not last_note_has("but the build failed"),
+  true
+)
+
 -- A build that failed before Lathe set it up keeps the failed setup's error.
 run_from("/gradle/lib")
 finish_build(1)
