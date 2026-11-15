@@ -571,12 +571,20 @@ final class McpText {
     return output.stream().map(line -> "%n    | %s".formatted(line)).collect(Collectors.joining());
   }
 
+  // A method's family both ways: what it overrides, by name, as a JDK or dependency method has no
+  // location in the answer, then what overrides it, and apart what redeclares it abstract. Any
+  // other symbol keeps one neutral line: a type's subtypes override nothing.
   static CallToolResult analyzeResult(final LatheChangeImpact impact, final LatheNotes notes) {
-    final String overrides =
-        impact.overrideFamily().isEmpty()
-            ? "none"
-            : "%d%n%s"
-                .formatted(impact.overrideFamily().size(), locationLines(impact.overrideFamily()));
+    final String family =
+        impact.method()
+            ? "overrides: %s%noverridden by: %s%s"
+                .formatted(
+                    joinOrNone(impact.overrides()),
+                    familyLines(impact.overriddenBy()),
+                    impact.redeclaredBy().isEmpty()
+                        ? ""
+                        : "%nredeclared by: %s".formatted(familyLines(impact.redeclaredBy())))
+            : "override family: %s".formatted(familyLines(impact.overriddenBy()));
     final String text =
         String.join(
             System.lineSeparator(),
@@ -588,8 +596,12 @@ final class McpText {
                     impact.referencesTruncated() ? " (truncated)" : ""),
             "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
             "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
-            "override family: %s".formatted(overrides));
+            family);
     return usesResult(text, notes);
+  }
+
+  private static String familyLines(final List<LatheLocation> members) {
+    return members.isEmpty() ? "none" : "%d%n%s".formatted(members.size(), locationLines(members));
   }
 
   static String joinOrNone(final List<String> items) {

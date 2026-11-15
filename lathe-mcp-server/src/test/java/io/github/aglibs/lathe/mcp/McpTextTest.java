@@ -694,17 +694,23 @@ class McpTextTest {
         .startsWith(lines("PASS — 2 passed, 0 failed, 0 skipped", "Ran: com.example.ShopTest"));
   }
 
+  // A method's family both ways: what it overrides by name, what overrides it, and apart what
+  // redeclares it abstract. Anything else, and no symbol, keeps the one neutral family line.
   @Test
   void analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty() {
     final var base = location("app/Base.java", 4, "abstract int sell(int count);");
     final var override = location("app/Shop.java", 8, "int sell(int count) {");
+    final var redeclaration = location("app/Store.java", 3, "int sell(int count);");
 
     assertThat(
             text(
                 McpText.analyzeResult(
                     new LatheChangeImpact(
                         "int sell(int count)",
+                        true,
+                        List.of("app.Seller#sell(int)"),
                         List.of(base, override),
+                        List.of(redeclaration),
                         4,
                         2,
                         true,
@@ -717,13 +723,26 @@ class McpTextTest {
                 "references: 4 production, 2 test (truncated)",
                 "affected modules: app, core",
                 "relevant tests: ShopTest",
-                "override family: 2",
+                "overrides: app.Seller#sell(int)",
+                "overridden by: 2",
                 "app/Base.java:4:1: abstract int sell(int count);",
-                "app/Shop.java:8:1: int sell(int count) {"));
+                "app/Shop.java:8:1: int sell(int count) {",
+                "redeclared by: 1",
+                "app/Store.java:3:1: int sell(int count);"));
     assertThat(
             text(
                 McpText.analyzeResult(
-                    new LatheChangeImpact("", List.of(), 0, 0, false, List.of(), List.of()),
+                    new LatheChangeImpact(
+                        "",
+                        false,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        0,
+                        0,
+                        false,
+                        List.of(),
+                        List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
             lines(

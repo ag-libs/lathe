@@ -12,6 +12,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
@@ -55,6 +56,37 @@ public final class ReferenceFeatures {
                 ReferenceTarget.from(
                     accessor, analysis.trees(), analysis.types(), analysis.elements()))
         .toList();
+  }
+
+  // The methods the one at the cursor overrides, nearest first, as Type#name(descriptor): the
+  // supertypes' declarations a change to its signature breaks, the JDK's and dependencies' too.
+  // Empty when the cursor is on no method.
+  public Optional<List<String>> overriddenMethods(final SourceFeatureRequest request) {
+    final Optional<Cursor> at = session.cursor(request);
+    if (at.isEmpty()
+        || !(at.get().elementOrJavadocReference() instanceof final ExecutableElement method)
+        || method.getKind() != ElementKind.METHOD) {
+      return Optional.empty();
+    }
+
+    final var analysis = at.get().analysis();
+    return Optional.of(
+        ReferenceTarget.overriddenMethods(
+                method,
+                (TypeElement) method.getEnclosingElement(),
+                analysis.types(),
+                analysis.elements())
+            .stream()
+            .map(
+                overridden ->
+                    "%s#%s%s"
+                        .formatted(
+                            analysis
+                                .elements()
+                                .getBinaryName((TypeElement) overridden.getEnclosingElement()),
+                            overridden.getSimpleName(),
+                            ReferenceTarget.buildDescriptor(overridden, analysis.types())))
+            .toList());
   }
 
   public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {

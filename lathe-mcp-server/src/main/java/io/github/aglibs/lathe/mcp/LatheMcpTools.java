@@ -264,7 +264,8 @@ final class LatheMcpTools {
             READ_ONLY,
             """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
-                its override/implementation family, how many production vs test references it has, \
+                the methods it overrides and those that override or redeclare it, how many \
+                production vs test references it has, \
                 which reactor modules use or implement it, and the relevant test classes. Use it to scope a rename \
                 or signature change before making it.""",
             LatheMcpTools::handleAnalyzeChange),
