@@ -12862,6 +12862,7 @@ Records show as `struct`, enum constants as `field`, and an enum constant body's
 An enum constant is an enum member in the document symbols (the editor shows it so too), and a constant's body lists its members under it.
 The MCP answers name a record `record` and an enum constant `enum constant`; LSP has no record kind, so the editor keeps `Struct`.
 The type index tells a record by its superclass, `java.lang.Record`, so `search_symbols` labels it `Record` instead of `Class`.
+The JDK's and dependencies' type indexes already in the cache keep `Class` for their records until the cache schema next changes: rebuilding every cached index for this label alone was not worth it.
 
 ### Regression targets
 
