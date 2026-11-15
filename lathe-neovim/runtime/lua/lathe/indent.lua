@@ -418,6 +418,20 @@ local function balancing_line(lnum, last_col)
   return (opener_above(lnum, need))
 end
 
+-- The line the text block `lnum` closes opened on, or `lnum` when it closes none: the closing `"""`
+-- sits wherever the content left it, deeper than the statement it ends.
+local function text_block_start(lnum)
+  local state = { text_block = false, comment = false }
+  code_walking_up(line(lnum), state)
+  local l = lnum
+  local limit = math.max(lnum - MAX_BALANCE_LINES, 1)
+  while state.text_block and l > limit do
+    l = l - 1
+    code_walking_up(line(l), state)
+  end
+  return l
+end
+
 -- The first line of the bracket groups `lnum` closes: a closer's opener line can itself close a
 -- group opened higher up (`}` matching `    int b) {` of a wrapped declaration).
 local function bracket_group_start(lnum)
@@ -542,7 +556,7 @@ end
 -- an operator or a `throws`-like clause continues whatever precedes it even when that earlier line
 -- does not itself end with a continuation character, so the walk follows it too.
 local function statement_start_indent(lnum)
-  local l = bracket_group_start(lnum)
+  local l = bracket_group_start(text_block_start(lnum))
   while l > 1 do
     local p = vim.fn.prevnonblank(l - 1)
     if p <= 0 then
@@ -561,7 +575,7 @@ local function statement_start_indent(lnum)
     then
       break
     end
-    l = bracket_group_start(p)
+    l = bracket_group_start(text_block_start(p))
   end
   return vim.fn.indent(l)
 end
