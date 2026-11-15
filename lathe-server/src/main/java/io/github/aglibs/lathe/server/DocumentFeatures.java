@@ -12,12 +12,14 @@ import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TokenScanner;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.run.TestCounterparts;
 import java.nio.file.Path;
@@ -27,6 +29,7 @@ import java.util.function.BiFunction;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
@@ -119,13 +122,59 @@ final class DocumentFeatures {
     return CompletableFuture.completedFuture(List.of());
   }
 
-  // A reactor file checked without opening it: no open document, no analysis kept. verify_change
-  // checks a change's files and their callers this way, many at once.
+  // A reactor file checked without opening it: no open document, no analysis kept.
   CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
       final String uri, final String content) {
     return router.routeCompiler(uri) instanceof final CompilerRoute.Module module
         ? module.worker().submit(session -> session.diagnosticsTransient(uri, content))
         : CompletableFuture.completedFuture(List.of());
+  }
+
+  // Many reactor files checked that way, by URI, as verify_change checks a change's callers: a
+  // tree's files share a task, up to the batch cap, and the trees run side by side on their own
+  // workers. A file no module compiles is left out.
+  CompletableFuture<Map<String, List<Diagnostic>>> diagnosticsTransientFuture(
+      final Map<String, String> contents) {
+    eventLoop.checkOnLoop();
+    final Map<CompilationWorker, List<TransientSource>> byTree =
+        contents.entrySet().stream()
+            .flatMap(this::withTreeWorker)
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+    return FeatureAnswers.concatAll(
+            byTree.entrySet().stream()
+                .flatMap(tree -> checkedInChunks(tree.getKey(), tree.getValue())))
+        .thenApply(
+            checked ->
+                checked.stream()
+                    .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
+  }
+
+  private Stream<Map.Entry<CompilationWorker, TransientSource>> withTreeWorker(
+      final Map.Entry<String, String> file) {
+    return state
+        .registry()
+        .moduleWorkerFor(LatheUri.toPath(file.getKey()))
+        .map(worker -> Map.entry(worker, new TransientSource(file.getKey(), file.getValue())))
+        .stream();
+  }
+
+  private static Stream<CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>>>
+      checkedInChunks(final CompilationWorker worker, final List<TransientSource> sources) {
+    return IntStream.iterate(
+            0, from -> from < sources.size(), from -> from + CompilationWorker.ANALYSIS_BATCH_MAX)
+        .mapToObj(
+            from ->
+                List.copyOf(
+                    sources.subList(
+                        from,
+                        Math.min(from + CompilationWorker.ANALYSIS_BATCH_MAX, sources.size()))))
+        .map(
+            chunk ->
+                worker.submit(
+                    session -> List.copyOf(session.diagnosticsTransientBatch(chunk).entrySet())));
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {

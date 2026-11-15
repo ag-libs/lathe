@@ -216,6 +216,14 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return sources.stream().map(source -> resultFor(batch, uriByTempFile, source.uri())).toList();
   }
 
+  @Override
+  public List<CompilerResult> analyzeOpenBatchDetached(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    return keepingTempText(
+        sources.stream().map(source -> tempFileOf(source.uri())).toList(),
+        () -> analyzeOpenBatch(sources, cancelChecker));
+  }
+
   private static CompilerResult resultFor(
       final JavacRunner.BatchAnalysis batch,
       final Map<Path, String> uriByTempFile,

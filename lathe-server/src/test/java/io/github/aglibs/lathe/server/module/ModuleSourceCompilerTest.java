@@ -160,6 +160,9 @@ class ModuleSourceCompilerTest {
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final var document = compiler.compile(fooUri, "class Foo { int a; }", CompileMode.OPEN);
       final var check = compiler.compileDetached(fooUri, "class Foo { int renamed; }");
+      final List<CompilerResult> batchCheck =
+          compiler.analyzeOpenBatchDetached(
+              List.of(new TransientSource(fooUri, "class Foo { int batched; }")), () -> {});
       final String analyzed =
           compiler.analyzeDetached(
               List.of(new TransientSource(fooUri, "class Foo { int other; }")),
@@ -176,6 +179,9 @@ class ModuleSourceCompilerTest {
                               .toString()));
 
       assertThat(check.diagnostics()).isEmpty();
+      assertThat(batchCheck)
+          .singleElement()
+          .satisfies(run -> assertThat(run.diagnostics()).isEmpty());
       assertThat(analyzed).isEqualTo("class Foo { int other; }");
       assertThat(document.fileAnalysis().tree().getSourceFile().getCharContent(false).toString())
           .isEqualTo("class Foo { int a; }");

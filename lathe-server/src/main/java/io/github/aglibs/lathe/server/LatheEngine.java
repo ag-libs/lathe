@@ -933,9 +933,11 @@ public final class LatheEngine {
     // own worker; one at a time, a change with callers across a large reactor took seconds. A check
     // keeps no analysis: opened, each file would hold one until the cache evicted it, and on a
     // large reactor they outgrew the heap.
-    final Map<String, List<Diagnostic>> analyses =
-        request((session, cancel, progress) -> checkAll(session, contents));
     final Set<Path> changedSet = Set.copyOf(plan.changed());
+    final Set<String> changedUris =
+        changedSet.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
+    final Map<String, List<Diagnostic>> analyses =
+        request((session, cancel, progress) -> checkAll(session, contents, changedUris));
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(
@@ -958,23 +960,34 @@ public final class LatheEngine {
         null, perModule, plan.downstream(), syncFor(plan.downstream(), plan.moduleCount()));
   }
 
-  // Compiles every file as a transient check, side by side on their modules' workers, and answers
-  // once all are done.
+  // A changed file is checked alone, against the classes its write produced, as the build sees it:
+  // in a batch its source would be analyzed again instead, and Lombok there reads a lombok.config
+  // that may be up to 2 s old. Its callers, unchanged, share a batch per source tree.
   private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
-      final WorkspaceSession session, final Map<String, String> contents) {
+      final WorkspaceSession session,
+      final Map<String, String> contents,
+      final Set<String> changed) {
+    final Map<Boolean, Map<String, String>> byChanged =
+        contents.entrySet().stream()
+            .collect(
+                Collectors.partitioningBy(
+                    file -> changed.contains(file.getKey()),
+                    Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
     return FeatureAnswers.concatAll(
-            contents.entrySet().stream()
-                .map(
-                    entry ->
-                        session
-                            .features()
-                            .diagnosticsTransientFuture(entry.getKey(), entry.getValue())
-                            .thenApply(
-                                diagnostics -> List.of(Map.entry(entry.getKey(), diagnostics)))))
-        .thenApply(
-            entries ->
-                entries.stream()
+            byChanged.get(true).entrySet().stream().map(file -> checkedAlone(session, file)))
+        .thenCombine(
+            session.features().diagnosticsTransientFuture(byChanged.get(false)),
+            (alone, batched) ->
+                Stream.concat(alone.stream(), batched.entrySet().stream())
                     .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
+  }
+
+  private static CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>> checkedAlone(
+      final WorkspaceSession session, final Map.Entry<String, String> file) {
+    return session
+        .features()
+        .diagnosticsTransientFuture(file.getKey(), file.getValue())
+        .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
@@ -1000,7 +1013,11 @@ public final class LatheEngine {
       final Map<String, List<Diagnostic>> analyses) {
     return files.stream()
         .flatMap(
-            file -> reportedIn(file, changed.contains(file), analyses.get(LatheUri.fromPath(file))))
+            file ->
+                reportedIn(
+                    file,
+                    changed.contains(file),
+                    analyses.getOrDefault(LatheUri.fromPath(file), List.of())))
         .sorted(Comparator.comparing(LatheDiagnostic::severity))
         .toList();
   }

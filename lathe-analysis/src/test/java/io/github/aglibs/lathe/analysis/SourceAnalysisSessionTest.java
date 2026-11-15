@@ -18,6 +18,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,6 +63,9 @@ class SourceAnalysisSessionTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<Diagnostic> checked =
           session.diagnosticsTransient(TempSourceCompiler.TEST_URI, source);
+      final Map<String, List<Diagnostic>> batched =
+          session.diagnosticsTransientBatch(
+              List.of(new TransientSource(TempSourceCompiler.TEST_URI, source)));
       assertThat(session.cachedTypeEntries(Set.of("Test"))).as("nothing kept").isEmpty();
 
       final List<Diagnostic> opened =
@@ -71,6 +75,8 @@ class SourceAnalysisSessionTest {
           .as("an OPEN compile keeps it")
           .isNotEmpty();
       assertThat(checked).isNotEmpty().isEqualTo(opened);
+      assertThat(batched).containsOnlyKeys(TempSourceCompiler.TEST_URI);
+      assertThat(batched.get(TempSourceCompiler.TEST_URI)).isEqualTo(opened);
     }
   }
 
