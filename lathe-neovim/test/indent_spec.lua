@@ -46,6 +46,36 @@ local FIXTURES = {
     4,
   },
   {
+    "wrapped argument: an arg after one on the call's line indents one continuation",
+    { "foo(a,", "b);" },
+    2,
+    4,
+  },
+  {
+    "wrapped parameter: a parameter after one on the declaration's line indents one continuation",
+    { "void m(String a,", "String b) {" },
+    2,
+    4,
+  },
+  {
+    "wrapped argument: a later arg keeps the column of the first wrapped one",
+    { "foo(a,", "    b,", "c);" },
+    3,
+    4,
+  },
+  {
+    "wrapped argument: a list opened on a wrapped line indents from that line",
+    { "foo(a,", "    bar(x,", "y));" },
+    3,
+    8,
+  },
+  {
+    "wrapped argument: a comma after a closed inner call opens no list",
+    { "foo(", "    bar(x, y),", "z);" },
+    3,
+    4,
+  },
+  {
     "assignment RHS wraps one continuation level",
     { "var x =", "y;" },
     2,
