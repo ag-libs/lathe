@@ -230,6 +230,7 @@ final class LatheTestCapture {
       final String tree) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
     task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
+    task.onlyIf("its Java is one Lathe captures on", LatheTestCapture::onCapturedJava);
     final var marker = new File(moduleDir, captureMarker(task.getName()));
     final var launch = new File(moduleDir, LatheLayout.testLaunchFile(tree));
     task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
@@ -356,6 +357,17 @@ final class LatheTestCapture {
     return !Files.exists(jar)
         || (jar.startsWith(tmpDir.normalize())
             && keptDirs.stream().noneMatch(dir -> jar.startsWith(dir.normalize())));
+  }
+
+  // A test JVM older than Lathe's code captures nothing: the sync warns, and a capture-only build
+  // skips the task, whose tests it would only report skipped (failing a build that rejects that).
+  static boolean capturesOn(final int javaVersion) {
+    return javaVersion >= LatheLayout.MIN_JAVA_VERSION;
+  }
+
+  private static boolean onCapturedJava(final Task test) {
+    return capturesOn(
+        ((Test) test).getJavaLauncher().get().getMetadata().getLanguageVersion().asInt());
   }
 
   // Without lathe-junit the filter that skips the tests is missing too, and a capture-only run

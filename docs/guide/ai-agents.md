@@ -21,7 +21,7 @@ project's setup without running the tests:
 mvn clean test -Dlathe.capture.only=true
 ```
 
-For Gradle, apply the Lathe settings plugin and build once (`./gradlew latheSync -Plathe.capture.only=true`); see the
+For Gradle, apply the Lathe settings plugin and build once (`./gradlew latheSync -Plathe.capture.only=true --continue`); see the
 [Gradle guide](gradle.md).
 That build does two things at once: it writes `.lathe/`, and its sync step installs the MCP
 launcher (below). If the server reports a missing `.lathe/`, this is the fix.
