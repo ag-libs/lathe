@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
@@ -71,7 +72,7 @@ final class RenameService {
         uri,
         pos,
         Optional.empty(),
-        FeatureRouter.NOT_CANCELLED,
+        CompilationWorker.NOT_CANCELLED,
         (session, request) -> session.references().localRenameTextMentions(request));
   }
 

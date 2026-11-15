@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -148,7 +149,8 @@ class LspRoutesTest extends ServiceTestBase {
   }
 
   // The editor cancels these as it types: a request cancelled while it waits for its module's
-  // worker is skipped there, so the worker reaches the request's cancel check before any work.
+  // worker is skipped there, so the worker reaches the request's cancel check before any work. One
+  // not cancelled answers.
   @Test
   void typingRequests_cancelled_reachTheWorkerAsCancelled() throws Exception {
     final ShopFixture shop = openShop();
@@ -172,6 +174,11 @@ class LspRoutesTest extends ServiceTestBase {
     assertThat(answer(session -> session.search().documentHighlightFuture(uri, pos, cancelled)))
         .isEqualTo(List.of());
     assertThat(checks).hasValue(5);
+    assertThat(
+            answer(
+                session ->
+                    session.features().hoverFuture(uri, pos, CompilationWorker.NOT_CANCELLED)))
+        .isNotNull();
   }
 
   private Object answer(final Function<WorkspaceSession, CompletableFuture<?>> feature)

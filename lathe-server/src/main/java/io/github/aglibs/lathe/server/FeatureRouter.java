@@ -23,9 +23,6 @@ final class FeatureRouter {
 
   private static final Logger LOG = Logger.getLogger(FeatureRouter.class.getName());
 
-  // For a feature no request can cancel: the editor's navigation, and features other features use.
-  static final CancelChecker NOT_CANCELLED = () -> {};
-
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
   private final DocumentRegistry docs;

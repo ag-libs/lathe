@@ -243,7 +243,7 @@ final class DocumentFeatures {
         uri,
         pos,
         true,
-        FeatureRouter.NOT_CANCELLED,
+        CompilationWorker.NOT_CANCELLED,
         (session, request) -> session.navigation().onName(request));
   }
 
@@ -277,7 +277,7 @@ final class DocumentFeatures {
             uri,
             pos,
             new DefinitionResult(List.of(), false),
-            FeatureRouter.NOT_CANCELLED,
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> session.navigation().definitionResult(request))
         .thenApply(this::explain);
   }
@@ -335,7 +335,7 @@ final class DocumentFeatures {
             uri,
             pos,
             List.<Location>of(),
-            FeatureRouter.NOT_CANCELLED,
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> find.apply(session.navigation(), request))
         .thenApply(FeatureAnswers::definitionResult);
   }
@@ -350,7 +350,7 @@ final class DocumentFeatures {
             uri,
             pos,
             List.<TypeHierarchyItem>of(),
-            FeatureRouter.NOT_CANCELLED,
+            CompilationWorker.NOT_CANCELLED,
             (session, request) -> session.hierarchy().prepareTypeHierarchy(request, indexSnapshot))
         .thenApply(FeatureAnswers.logged(LOG, "typeHierarchy:prepare", uri, t, "items"));
   }
