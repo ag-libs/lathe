@@ -369,12 +369,55 @@ public final class TestCompiler {
       final List<Path> processorPath,
       final List<String> compilerArgs)
       throws IOException {
+    writeTreeParams(
+        workspaceRoot,
+        moduleName,
+        LatheLayout.CLASSES_DIR,
+        sourceRoots,
+        generatedSourcesDir,
+        classpath,
+        processorPath,
+        compilerArgs,
+        false);
+  }
+
+  // A Gradle source set's tree beyond main and test, as a sync writes its params: test code.
+  public static void writeSourceSetParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final String sourceSet,
+      final Path sourceRoot,
+      final List<Path> classpath)
+      throws IOException {
+    writeTreeParams(
+        workspaceRoot,
+        moduleName,
+        LatheLayout.sourceSetTree(sourceSet),
+        List.of(sourceRoot),
+        null,
+        classpath,
+        List.of(),
+        List.of(),
+        true);
+  }
+
+  private static void writeTreeParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final String sourceTree,
+      final List<Path> sourceRoots,
+      final Path generatedSourcesDir,
+      final List<Path> classpath,
+      final List<Path> processorPath,
+      final List<String> compilerArgs,
+      final boolean testCode)
+      throws IOException {
     final var latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
     Files.createDirectories(latheModuleDir);
     final var config =
         new ModuleConfigData(
-            "classes",
-            latheModuleDir.resolve("classes").toString(),
+            sourceTree,
+            latheModuleDir.resolve(sourceTree).toString(),
             generatedSourcesDir != null ? generatedSourcesDir.toString() : null,
             sourceRoots.stream().map(Path::toString).toList(),
             classpath.stream().map(Path::toString).toList(),
@@ -388,8 +431,8 @@ public final class TestCompiler {
             compilerArgs,
             null,
             false,
-            false);
-    final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));
+            testCode);
+    final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree));
     Json.write(config, paramsFile);
   }
 

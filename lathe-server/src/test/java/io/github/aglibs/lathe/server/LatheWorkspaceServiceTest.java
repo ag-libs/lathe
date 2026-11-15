@@ -159,6 +159,44 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         .containsExactly("module");
   }
 
+  // A package run replays the test tree's launch, so a test file of another source set offers its
+  // classes and methods only: its package run would run the test tree's package instead.
+  @Test
+  void executeCommand_listRunnables_sourceSetFile_noPackageRun() throws Exception {
+    final Path sourceSetRoot = tmp.resolve("module/src/integrationTest/java");
+    final Path sourceSetFile = sourceSetRoot.resolve("com/example/FooIT.java");
+    Files.createDirectories(sourceSetFile.getParent());
+    Files.writeString(
+        sourceSetFile,
+        """
+        package com.example;
+
+        import org.junit.jupiter.api.Test;
+
+        class FooIT {
+          @Test
+          void finds_condition_result() {
+          }
+        }
+        """);
+    TestCompiler.writeSourceSetParams(
+        tmp, "module", "integrationTest", sourceSetRoot, TestJavac.JUNIT_CLASSPATH);
+    final Path testFile = prepareFooTestWorkspace();
+    openDoc(sourceSetFile, Files.readString(sourceSetFile));
+    openDoc(testFile, Files.readString(testFile));
+
+    assertThat(runnableKinds(sourceSetFile))
+        .containsExactlyInAnyOrder(RunnableKind.TEST_CLASS, RunnableKind.TEST_METHOD);
+    assertThat(runnableKinds(testFile)).contains(RunnableKind.TEST_PACKAGE);
+  }
+
+  @SuppressWarnings("unchecked")
+  private List<RunnableKind> runnableKinds(final Path file) throws Exception {
+    return ((List<RunTarget>)
+            listRunnables(file.toUri().toString()).get(TIMEOUT_S, TimeUnit.SECONDS))
+        .stream().map(RunTarget::kind).toList();
+  }
+
   @Test
   void executeCommand_listRunnables_documentNotOpen_returnsEmpty() throws Exception {
     final Path source = prepareFooTestWorkspace();

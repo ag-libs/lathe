@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.NavigationFeatures;
 import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TokenScanner;
@@ -113,14 +114,23 @@ final class DocumentFeatures {
     if (router.routeCompiler(uri) instanceof final CompilerRoute.Module module) {
       router.touchAnalysisCache(uri);
       final String moduleRel = state.layout().moduleRel(module.config());
+      // A package run replays the test tree's launch: from another source set's file it would run
+      // the test tree's package, not this one.
+      final boolean sourceSetTree =
+          module.config().sourceTree().startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX);
       return module
           .worker()
           .submit(
               session -> session.files().runnables(uri, doc.content(), doc.version(), moduleRel))
+          .thenApply(targets -> sourceSetTree ? withoutPackageRuns(targets) : targets)
           .thenApply(FeatureAnswers.logged(LOG, "runnables", uri, t, "targets"));
     }
 
     return CompletableFuture.completedFuture(List.of());
+  }
+
+  private static List<RunTarget> withoutPackageRuns(final List<RunTarget> targets) {
+    return targets.stream().filter(target -> target.kind() != RunnableKind.TEST_PACKAGE).toList();
   }
 
   // A reactor file checked without opening it: no open document, no analysis kept.
