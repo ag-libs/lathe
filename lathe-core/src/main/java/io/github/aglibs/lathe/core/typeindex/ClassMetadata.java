@@ -25,4 +25,15 @@ record ClassMetadata(
     referencedTypes = Set.copyOf(referencedTypes);
     lambdaTargets = Set.copyOf(lambdaTargets);
   }
+
+  // A record has no access flag of its own: javac makes it extend java.lang.Record, which nothing
+  // else may.
+  TypeKind kind() {
+    final TypeKind flagged = access.kind();
+    return flagged == TypeKind.CLASS
+            && !directSupertypes.isEmpty()
+            && "java.lang.Record".equals(directSupertypes.get(0))
+        ? TypeKind.RECORD
+        : flagged;
+  }
 }

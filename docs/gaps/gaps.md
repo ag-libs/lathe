@@ -2281,33 +2281,6 @@ None yet.
 
 ---
 
-## MC-75 — `outline` mislabels records and enum constants, and omits methods in enum constant bodies
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP `outline` (and the editor's document symbols, which share it).**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-Records show as `struct`, enum constants as `field`, and an enum constant body's methods are missing.
-
-### Fix direction
-
-Label records `record` and enum constants `enum constant` in the MCP text (LSP has no record kind, so its
-mapping can stay), and list a constant body's members under the constant.
-
-Also (exploratory round, 2026-11-04): `outline` shows a record as "struct" while `search_symbols` calls it "Class" (Dropwizard).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-77 — `workspace_summary` gives no test status for some modules
 
 **Status: documented**

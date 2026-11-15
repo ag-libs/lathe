@@ -151,13 +151,13 @@ class McpTextTest {
             lines(
                 "app/Shop.java is too large for one outline: 205 declarations. Its types, with their own members; call outline with type=<Name> for one:",
                 "class Big  1:1  202 member(s)",
-                "  struct Inner  203:1  2 member(s)"));
+                "  record Inner  203:1  2 member(s)"));
     assertThat(
             text(McpText.outlineResult(tmp.resolve("Shop.java"), items, "Inner", McpText.NO_NOTES)))
         .isEqualTo(
             lines(
-                "struct Inner in app/Shop.java, 2 member(s):",
-                "  struct Inner  203:1: record Inner(int a, int b) {",
+                "record Inner in app/Shop.java, 2 member(s):",
+                "  record Inner  203:1: record Inner(int a, int b) {",
                 "    field a  204:1: int a",
                 "    field b  205:1: int b"));
   }
@@ -175,7 +175,7 @@ class McpTextTest {
             "class Big in app/Shop.java, 202 member(s) (their code left out: over 200):",
             "class Big  1:1: public class Big {",
             "  method m1  2:1")
-        .contains("  struct Inner  203:1  2 member(s)")
+        .contains("  record Inner  203:1  2 member(s)")
         .hasSize(204);
     final CallToolResult unknown =
         McpText.outlineResult(tmp.resolve("Shop.java"), items, "Missing", McpText.NO_NOTES);
@@ -185,7 +185,7 @@ class McpTextTest {
             lines(
                 "No type Missing in Shop.java; its types:",
                 "class Big  1:1  202 member(s)",
-                "  struct Inner  203:1  2 member(s)"));
+                "  record Inner  203:1  2 member(s)"));
   }
 
   // No answer lists more than the line cap: past it, how many more and the line they start at, from
@@ -230,7 +230,7 @@ class McpTextTest {
                         outlineItem(
                             "method", "m%d".formatted(i), 1, i + 1, "void m%d() {".formatted(i))),
             Stream.of(
-                outlineItem("struct", "Inner", 1, methods + 2, "record Inner(int a, int b) {"),
+                outlineItem("record", "Inner", 1, methods + 2, "record Inner(int a, int b) {"),
                 outlineItem("field", "a", 2, methods + 3, "int a"),
                 outlineItem("field", "b", 2, methods + 4, "int b")))
         .flatMap(stream -> stream)

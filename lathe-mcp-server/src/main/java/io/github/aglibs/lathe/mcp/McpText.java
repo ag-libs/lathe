@@ -53,7 +53,7 @@ final class McpText {
   // The most lines any outline answer lists, about 21k characters even with their code left out.
   static final int OUTLINE_MAX_LINES = 600;
   // The document symbol kinds of a class, an interface or annotation, an enum and a record.
-  private static final Set<String> TYPE_KINDS = Set.of("class", "interface", "enum", "struct");
+  private static final Set<String> TYPE_KINDS = Set.of("class", "interface", "enum", "record");
 
   private McpText() {}
 

@@ -12843,6 +12843,35 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-75 — `outline` mislabels records and enum constants, and omits methods in enum constant bodies — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP `outline` (and the editor's document symbols, which share it).**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Records show as `struct`, enum constants as `field`, and an enum constant body's methods are missing.
+
+### Resolution
+
+An enum constant is an enum member in the document symbols (the editor shows it so too), and a constant's body lists its members under it.
+The MCP answers name a record `record` and an enum constant `enum constant`; LSP has no record kind, so the editor keeps `Struct`.
+The type index tells a record by its superclass, `java.lang.Record`, so `search_symbols` labels it `Record` instead of `Class`.
+The JDK's and dependencies' type indexes already in the cache keep `Class` for their records until the cache schema next changes: rebuilding every cached index for this label alone was not worth it.
+
+### Regression targets
+
+- `DocumentSymbolScannerTest.scan_enumConstants_enumMembersWithTheirBodies_otherFieldsStayFields`
+- `LatheEngineNavigationTest.outline_typeWithNestedTypes_listsEveryDeclarationAtItsDepthWithItsJavaKind`
+- `ClassMetadataReaderTest.kind_recordAndPlainClass_recordOnlyForTheRecord`
+
+---
+
 ## MC-63 — `find_references` cannot group its answer by the calling method — done
 
 **Status: done.**

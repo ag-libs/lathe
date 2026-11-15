@@ -4,8 +4,10 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModuleTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -63,8 +65,9 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
     final var name = node.getSimpleName().toString();
     if (name.isEmpty()) {
       // Anonymous class: javac gives it an empty simple name, which is not a valid LSP symbol name
-      // (VS Code rejects a blank DocumentSymbol name). Skip it and its members from the outline.
-      return null;
+      // (VS Code rejects a blank DocumentSymbol name). An enum constant's body lists its members
+      // under the constant; any other is left out with its members.
+      return isConstantBody() ? super.visitClass(node, unused) : null;
     }
 
     final var symbol = symbol(node, name, kind(node));
@@ -91,11 +94,42 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
   @Override
   public Void visitVariable(final VariableTree node, final Void unused) {
     final var parent = getCurrentPath().getParentPath();
-    if (parent != null && parent.getLeaf() instanceof ClassTree && !stack.isEmpty()) {
-      add(symbol(node, node.getName().toString(), SymbolKind.Field));
+    if (parent == null || !(parent.getLeaf() instanceof final ClassTree owner) || stack.isEmpty()) {
+      return super.visitVariable(node, unused);
     }
 
-    return super.visitVariable(node, unused);
+    if (!isEnumConstant(node, owner)) {
+      add(symbol(node, node.getName().toString(), SymbolKind.Field));
+      return super.visitVariable(node, unused);
+    }
+
+    final var constant = symbol(node, node.getName().toString(), SymbolKind.EnumMember);
+    add(constant);
+    stack.push(constant);
+    super.visitVariable(node, unused);
+    stack.pop();
+    return null;
+  }
+
+  // javac gives every enum constant the initializer new E(...), with E the enum itself; no other
+  // field of an enum can create one.
+  private static boolean isEnumConstant(final VariableTree node, final ClassTree owner) {
+    return owner.getKind() == Tree.Kind.ENUM
+        && node.getInitializer() instanceof final NewClassTree creation
+        && creation.getIdentifier().toString().contentEquals(owner.getSimpleName());
+  }
+
+  // The anonymous class being visited is an enum constant's body: new E(...) { ... } initializing
+  // a constant.
+  private boolean isConstantBody() {
+    final TreePath creation = getCurrentPath().getParentPath();
+    final TreePath variable = creation == null ? null : creation.getParentPath();
+    final TreePath owner = variable == null ? null : variable.getParentPath();
+    return owner != null
+        && variable.getLeaf() instanceof final VariableTree constant
+        && owner.getLeaf() instanceof final ClassTree enumTree
+        && isEnumConstant(constant, enumTree)
+        && constant.getInitializer() == creation.getLeaf();
   }
 
   private void add(final DocumentSymbol symbol) {

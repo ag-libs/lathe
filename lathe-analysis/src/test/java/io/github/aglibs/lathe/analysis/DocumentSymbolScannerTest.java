@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.util.List;
 import java.util.stream.Stream;
@@ -101,6 +102,44 @@ class DocumentSymbolScannerTest {
         .extracting(DocumentSymbol::getKind)
         .containsExactly(
             SymbolKind.Interface, SymbolKind.Interface, SymbolKind.Enum, SymbolKind.Struct);
+  }
+
+  // An enum's constants are enum members, a body's methods listed under its constant; its other
+  // fields are fields, and an anonymous class inside a constant's arguments stays out.
+  @Test
+  void scan_enumConstants_enumMembersWithTheirBodies_otherFieldsStayFields() {
+    final String source =
+        """
+        enum Op {
+          PLUS {
+            int apply(int a, int b) { return a + b; }
+          },
+          MINUS(new Runnable() { public void run() {} }),
+          TIMES;
+
+          static final Op DEFAULT = PLUS;
+
+          Op() {}
+          Op(Runnable hook) {}
+
+          int apply(int a, int b) { return 0; }
+        }
+        """;
+
+    final var op = scan(source).get(0);
+
+    assertThat(op.getChildren())
+        .extracting(DocumentSymbol::getName, DocumentSymbol::getKind)
+        .startsWith(
+            tuple("PLUS", SymbolKind.EnumMember),
+            tuple("MINUS", SymbolKind.EnumMember),
+            tuple("TIMES", SymbolKind.EnumMember),
+            tuple("DEFAULT", SymbolKind.Field));
+    assertThat(named(op.getChildren(), "PLUS").getChildren())
+        .extracting(DocumentSymbol::getName, DocumentSymbol::getKind)
+        .containsExactly(tuple("apply", SymbolKind.Method));
+    assertThat(children(named(op.getChildren(), "MINUS"))).isEmpty();
+    assertThat(allNames(List.of(op))).doesNotContain("", "run");
   }
 
   @Test
