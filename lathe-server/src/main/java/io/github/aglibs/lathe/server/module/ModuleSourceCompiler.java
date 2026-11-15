@@ -65,7 +65,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
     this.config = config;
     try {
-      this.tempDir = Files.createTempDirectory("lathe-");
+      this.tempDir = CompileTempDirs.create();
       this.fm = JavaSourceCompiler.createFileManager();
       final List<Path> classpath = initLocations();
       this.processorPath =
