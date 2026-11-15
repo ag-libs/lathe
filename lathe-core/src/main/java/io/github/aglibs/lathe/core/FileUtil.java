@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -35,8 +36,9 @@ import java.util.zip.ZipFile;
 public final class FileUtil {
 
   // Windows briefly denies a rename or delete while another process holds the file (a virus
-  // scanner reading one just written), so those are retried, a little longer each time.
-  private static final int RETRY_ATTEMPTS = 5;
+  // scanner reading one just written), so those are retried, a little longer each time: under a
+  // second in all.
+  private static final int RETRY_ATTEMPTS = 10;
   private static final long RETRY_PAUSE_MS = 10;
 
   private FileUtil() {}
@@ -349,13 +351,16 @@ public final class FileUtil {
   }
 
   // Rethrows the last attempt's failure; before any other, waits a little longer than last time.
+  // The wait is partly random: callers that collided would otherwise all retry at the same moment
+  // and collide again.
   static void pauseBeforeRetry(final int attempt, final FileSystemException failure)
       throws IOException {
     if (attempt == RETRY_ATTEMPTS) {
       throw failure;
     }
 
-    IOUtil.sleep(RETRY_PAUSE_MS * attempt);
+    final long pause = RETRY_PAUSE_MS * attempt;
+    IOUtil.sleep(pause + ThreadLocalRandom.current().nextLong(pause + 1));
   }
 
   // Returns the number of entries skipped because they would escape destDir (see extractZipEntry).
