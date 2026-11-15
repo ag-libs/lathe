@@ -42,8 +42,6 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -245,17 +243,19 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   // A formatter release built for a newer Java than the server's fails to load: the failure names
-  // the formatter and the way out, not the JVM's class file versions. The jar holds the first class
-  // the engine loads, stamped with a class file version no JDK reads yet.
+  // the formatter and the way out, not the JVM's class file versions. The class directory holds the
+  // first class the engine loads, stamped with a class file version no JDK reads yet; a directory,
+  // as the loader keeps a jar open, which Windows then cannot delete.
   @Test
   void formatting_formatterNeedsNewerJava_namesTheFormatterAndTheWayOut() throws Exception {
-    final Path jar = tmp.resolve("too-new.jar");
-    try (final var out = new JarOutputStream(Files.newOutputStream(jar))) {
-      out.putNextEntry(new JarEntry("com/google/googlejavaformat/java/JavaFormatterOptions.class"));
-      out.write(new byte[] {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 99});
-    }
+    final Path classes = tmp.resolve("too-new");
+    final Path options =
+        classes.resolve("com/google/googlejavaformat/java/JavaFormatterOptions.class");
+    Files.createDirectories(options.getParent());
+    Files.write(
+        options, new byte[] {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 99});
     final var spec =
-        new FormatterSpec("google", List.of(), "9.9.9", Map.of(), List.of(jar.toString()));
+        new FormatterSpec("google", List.of(), "9.9.9", Map.of(), List.of(classes.toString()));
     host.initialize(tmp);
     host.execute(session -> session.formats().use(FormatEngines.forSpec(spec, tmp), spec));
     service.didOpen(
