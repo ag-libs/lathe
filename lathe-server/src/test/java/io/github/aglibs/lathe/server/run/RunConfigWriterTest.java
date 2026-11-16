@@ -39,6 +39,18 @@ final class RunConfigWriterTest {
     assertThat(config.mainClass()).isEqualTo("com.example.app.AppServer");
   }
 
+  // A run.json the user created but left empty holds no configs, not a damaged file.
+  @Test
+  void save_emptyLocalFile_writesTheConfig() throws IOException {
+    final Path latheDir = Files.createDirectories(workspaceRoot.resolve(LatheLayout.LATHE_DIR));
+    Files.writeString(latheDir.resolve(LatheLayout.RUN_CONFIG_LOCAL_FILE), "");
+
+    new RunConfigWriter(workspaceRoot)
+        .save("dev", "app", RunKind.MAIN, "com.example.app.AppServer", List.of(), false);
+
+    assertThat(new RunConfigReader(workspaceRoot).read().byName("dev")).isPresent();
+  }
+
   @Test
   void save_testMethodSelector_derivesClassDotMethodName() throws IOException {
     final var selectors =

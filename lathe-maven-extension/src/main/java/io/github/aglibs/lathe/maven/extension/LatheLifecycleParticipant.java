@@ -105,8 +105,8 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
           .mirrors()
           .forEach(LatheLifecycleParticipant::addLateFiles);
     } catch (final IOException | RuntimeException e) {
-      // RuntimeException too: a manifest another Lathe version wrote fails to parse, and this
-      // best-effort step must never fail the build.
+      // RuntimeException too: a manifest another Lathe version wrote may fail its records'
+      // validation, and this best-effort step must never fail the build.
       LOG.debug("[mirror] late build output not copied under {}", workspaceRoot, e);
     }
   }

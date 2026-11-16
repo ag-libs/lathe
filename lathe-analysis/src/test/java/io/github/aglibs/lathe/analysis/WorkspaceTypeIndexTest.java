@@ -197,7 +197,7 @@ class WorkspaceTypeIndexTest {
   // A crash can leave a shard truncated to nothing: it is skipped, and the other shards still load.
   @Test
   void build_emptyShard_skippedAndOtherShardsLoaded() throws IOException {
-    final var empty = Files.createFile(tmp.resolve("empty.json"));
+    final Path empty = Files.createFile(tmp.resolve("empty.json"));
     final var shardB = writeShard(tmp, "b.json", shard(entry("Beta", "com.b")));
 
     final var index = WorkspaceTypeIndex.build(List.of(empty, shardB));

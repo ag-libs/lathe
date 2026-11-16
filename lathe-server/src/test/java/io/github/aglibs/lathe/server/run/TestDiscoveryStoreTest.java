@@ -35,6 +35,15 @@ class TestDiscoveryStoreTest {
     assertThat(tmp.resolve("other/test-discovery.json")).doesNotExist();
   }
 
+  // A stored discovery a crash left damaged is not reused: the module is discovered again.
+  @Test
+  void read_damagedFile_empty() throws Exception {
+    final Path file = Files.createDirectories(tmp.resolve("module")).resolve("test-discovery.json");
+    Files.writeString(file, "{\"stampMillis\": 10");
+
+    assertThat(TestDiscoveryStore.read(file, FileTime.fromMillis(1_000))).isEmpty();
+  }
+
   // A module's discovery is found once for its test classes, then kept, also across stores (a new
   // session); new test classes find it again.
   @Test

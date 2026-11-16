@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParseException;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
@@ -51,9 +52,18 @@ public final class Json {
     }
   }
 
+  // Never null: a file a crash left empty or cut off fails as an IOException, which every caller
+  // already handles, not as null (Gson's answer for an empty file) or an unchecked Gson exception.
   public static <T> T read(final Path path, final Class<T> type) throws IOException {
     try (final Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-      return GSON.fromJson(reader, type);
+      final T value = GSON.fromJson(reader, type);
+      if (value == null) {
+        throw new IOException("empty JSON file %s".formatted(path));
+      }
+
+      return value;
+    } catch (final JsonParseException e) {
+      throw new IOException("malformed JSON file %s".formatted(path), e);
     }
   }
 

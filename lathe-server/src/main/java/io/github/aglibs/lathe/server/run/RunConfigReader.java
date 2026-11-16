@@ -1,9 +1,7 @@
 package io.github.aglibs.lathe.server.run;
 
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,13 +43,8 @@ public final class RunConfigReader {
   }
 
   private static RunConfigFile readLayer(final Path file, final String label) {
-    if (!Files.exists(file)) {
-      return RunConfigFile.empty();
-    }
-
     try {
-      final RunConfigFile parsed = Json.read(file, RunConfigFile.class);
-      return parsed != null ? parsed : RunConfigFile.empty();
+      return RunConfigFile.readOrEmpty(file);
     } catch (final IOException | RuntimeException e) {
       LOG.log(
           Level.WARNING, e, () -> "[run-config] %s layer unreadable, ignoring".formatted(label));

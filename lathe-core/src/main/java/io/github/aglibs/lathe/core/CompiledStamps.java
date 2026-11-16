@@ -111,8 +111,7 @@ public final class CompiledStamps {
     }
 
     try {
-      final CompiledStampsData data = Json.read(path, CompiledStampsData.class);
-      return data != null ? data : new CompiledStampsData(Map.of(), Map.of());
+      return Json.read(path, CompiledStampsData.class);
     } catch (final IOException | RuntimeException e) {
       return new CompiledStampsData(Map.of(), Map.of());
     }

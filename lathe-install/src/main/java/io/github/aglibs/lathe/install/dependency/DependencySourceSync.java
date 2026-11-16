@@ -90,10 +90,8 @@ public final class DependencySourceSync {
     }
 
     try {
-      final SourceMarker m = Json.read(marker, SourceMarker.class);
-      // Gson reads an empty file, such as one a crash truncated, as null: extract again.
-      return m != null
-          && LatheLayout.CACHE_SCHEMA_VERSION.equals(m.schema())
+      final var m = Json.read(marker, SourceMarker.class);
+      return LatheLayout.CACHE_SCHEMA_VERSION.equals(m.schema())
           && artifact.gav().equals(m.gav())
           && sourceJar.toString().equals(m.sourceJar())
           && Files.size(sourceJar) == m.sourceJarSize()

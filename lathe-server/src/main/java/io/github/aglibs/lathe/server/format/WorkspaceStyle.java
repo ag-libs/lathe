@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server.format;
 
-import com.google.gson.JsonParseException;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -86,14 +85,6 @@ public final class WorkspaceStyle {
   }
 
   private static WorkspaceStyleData parseIfExists(final Path file) throws IOException {
-    return Files.exists(file) ? parse(file) : null;
-  }
-
-  private static WorkspaceStyleData parse(final Path file) throws IOException {
-    try {
-      return Json.read(file, WorkspaceStyleData.class);
-    } catch (final JsonParseException e) {
-      throw new IOException("malformed style file %s".formatted(file), e);
-    }
+    return Files.exists(file) ? Json.read(file, WorkspaceStyleData.class) : null;
   }
 }
