@@ -1774,7 +1774,7 @@ the debug provider context now receives `workspace.allSourceRoots()` plus the ma
 
 ### Root cause
 
-`LatheSourceLookUpProvider.breakpointLocation` → `SourceAnalysisSession.enclosingBinaryName` takes the class name only from the module session's cache of attributed open documents.
+`LatheSourceLookUpProvider.breakpointLocation` → `FileFeatures.enclosingBinaryName` (through the module worker's `session.files()`) takes the class name only from the module session's cache of attributed open documents.
 That cache holds a file only between its open-time compile and its `didClose`, and loses everything when the module's session is released
 (a second memory-pressure round releases sessions of modules with open files too; read from the code, not probed).
 With no class name, java-debug installs nothing for the breakpoint (`SetBreakpointsRequestHandler` skips a location whose `className()` is `null`).

@@ -13321,6 +13321,7 @@ Lathe does not read Kotlin: its references, rename and checks stay Java-only.
 In a workspace whose built modules hold Kotlin sources where the Kotlin plugins look by default (`src/<source set>/kotlin`), the answers of `find_references`, `find_implementations`, `rename_symbol`, `analyze_change`, `verify_change` and an incoming `call_hierarchy` no longer say grep is needless, and name those modules: "Kotlin sources in … are not searched; check them with grep."
 `workspace_summary`, which lists the modules Lathe compiles, names the modules with Kotlin sources on a line of their own.
 Kotlin sources elsewhere (a custom source directory, or `.kt` files beside the Java ones) go unnoticed.
+Groovy sources (`src/<source set>/groovy`) are named the same way since 2026-11-16, each language with its own modules; the Java that Groovy compiles jointly there is [WS-37](gaps.md#ws-37--java-that-groovy-compiles-jointly-under-srcsource-setgroovy-is-in-no-module).
 
 ### Regression targets
 
