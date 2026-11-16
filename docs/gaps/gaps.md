@@ -584,36 +584,6 @@ None yet.
 
 ---
 
-## EG-084 — Diagnostics skip the build's javac plugins, and contradict the notes that run them
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: M**
-
-**Affects: MCP `get_diagnostics` (and the editor's diagnostics, which compile the same way).**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Related: CA-18.
-
-### Observed behaviour
-
-`get_diagnostics` answers "No errors or warnings in LatheProbe.java" and, in the same reply,
-"Not compiled: … [NullAway] …" (also seen with `[ReturnValueIgnored]`). Plain javac errors are reported,
-and `--release 17` is honoured: the open compile runs without the build's `-Xplugin` (Error Prone,
-NullAway), while the check behind the notes runs with them.
-
-### Fix direction
-
-Run the build's javac plugins in the open compile when the module's compile args have them,
-or at least report the notes' plugin errors as diagnostics instead of contradicting them.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-091 — No inlay hints
 
 **Status: deferred** (2026-11-15: feature freeze)
@@ -759,33 +729,6 @@ That warning's example also suggests `{"engine": "google"}`, though JUnit's Spot
 
 Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
 Let the sync's example name the engine Spotless runs when the build says which.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-108 — Semantic tokens mark deprecated methods but not deprecated types
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: the editor's semantic highlighting.**
-
-Found by the pre-release JUnit editor round (2026-11-15).
-
-### Observed behaviour
-
-In a JUnit test, a call to the deprecated `TestPlan.getTestIdentifier(String)` gets the `deprecated` modifier; a reference to the deprecated class `org.junit.jupiter.api.extension.MediaType` gets none, though javac warns about both and hover says the class is deprecated.
-A deprecated class is what a reader most wants struck through.
-
-### Fix direction
-
-Give a reference to a deprecated type the `deprecated` modifier, as for members.
 
 ### Regression targets
 

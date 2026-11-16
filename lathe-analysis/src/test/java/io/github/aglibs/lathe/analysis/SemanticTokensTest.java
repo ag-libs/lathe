@@ -134,6 +134,33 @@ class SemanticTokensTest extends SampleFixture {
     assertThat(TokenScannerTestHelper.tokenAt(scanned, 3, 15).modifiers()).contains("deprecated");
   }
 
+  // A deprecated class's or enum constant's use is struck through like a deprecated method's; a
+  // current one's is not.
+  @Test
+  void deprecatedTypeAndEnumConstant_usages_haveDeprecatedModifier(@TempDir final Path tmp)
+      throws IOException {
+    final List<SemanticToken> scanned =
+        TokenScannerTestHelper.scanFile(
+            tmp,
+            "Use.java",
+            """
+            class Use {
+              @Deprecated static class Old {}
+              static class Current {}
+              enum Mode { @Deprecated LEGACY, MODERN }
+              Old old; Current current;
+              Mode a = Mode.LEGACY, b = Mode.MODERN;
+            }
+            """);
+
+    assertThat(TokenScannerTestHelper.tokenAt(scanned, 4, 2).modifiers()).contains("deprecated");
+    assertThat(TokenScannerTestHelper.tokenAt(scanned, 4, 11).modifiers())
+        .doesNotContain("deprecated");
+    assertThat(TokenScannerTestHelper.tokenAt(scanned, 5, 16).modifiers()).contains("deprecated");
+    assertThat(TokenScannerTestHelper.tokenAt(scanned, 5, 34).modifiers())
+        .doesNotContain("deprecated");
+  }
+
   @Test
   void regular_method_decl_is_method_with_declaration() {
     // "getName" — instance method declaration (no interesting modifiers)

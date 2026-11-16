@@ -33,6 +33,7 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
@@ -361,7 +362,9 @@ final class WorkspaceSession {
             route,
             snapshot,
             CompileMode.OPEN,
-            (ignored, response) -> result.complete(reactor ? response.diagnostics() : List.of()))
+            (ignored, response) ->
+                result.complete(
+                    reactor ? withBuildFindings(snapshot, response.diagnostics()) : List.of()))
         .exceptionally(
             ex -> {
               result.completeExceptionally(ex);
@@ -618,32 +621,61 @@ final class WorkspaceSession {
     return outcome;
   }
 
+  // Every written file's findings, not only an open one's: the engine opens a file after the write
+  // it asks about. A file with none keeps no entry.
   private void keepWriteDiagnostics(final List<TransientSource> sources, final BatchWrite written) {
-    sources.stream()
-        .filter(source -> docs.get(source.uri()) != null)
-        .forEach(
-            source ->
-                writeDiagnostics.put(
-                    source.uri(),
-                    new WriteDiagnostics(
-                        source.content(),
-                        written.diagnosticsByUri().getOrDefault(source.uri(), List.of()))));
+    for (final TransientSource source : sources) {
+      final List<Diagnostic> found =
+          WritePass.ownDiagnostics(
+              written.diagnosticsByUri().getOrDefault(source.uri(), List.of()));
+      if (found.isEmpty()) {
+        writeDiagnostics.remove(source.uri());
+      } else {
+        writeDiagnostics.put(source.uri(), new WriteDiagnostics(source.content(), found));
+      }
+    }
+  }
+
+  // The analysis runs no annotation processor or javac plugin (Error Prone, NullAway); what the
+  // build's compile of the file found with them is the answer too. Under -Werror a failed write's
+  // errors are the warnings the write also kept, renamed: a kept finding where an error stands is
+  // that error, so it is left out.
+  private List<Diagnostic> withBuildFindings(
+      final OpenDocument snapshot, final List<Diagnostic> analyzed) {
+    final Path file = LatheUri.toPath(snapshot.uri());
+    final WritePass.FailedWrite failed = writePass.failedCompiles().get(file);
+    final List<Diagnostic> causes =
+        WritePass.failedUnchanged(failed, WritePass.mtimeMillis(file))
+            ? failed.causes()
+            : List.of();
+    final Set<Range> failing =
+        causes.stream().map(Diagnostic::getRange).collect(Collectors.toUnmodifiableSet());
+    final List<Diagnostic> kept =
+        writeOnly(snapshot).stream()
+            .filter(finding -> !failing.contains(finding.getRange()))
+            .toList();
+    return WritePass.withWriteOnly(WritePass.withWriteOnly(analyzed, causes), kept);
   }
 
   // Adds what the file's last write reported and analysis cannot, while the analyzed content is
-  // the written one.
+  // the written one. A failed write is the file on disk's: an edited buffer's analysis is its own.
   private CompileResponse withWriteDiagnostics(
       final OpenDocument snapshot, final CompileResponse result) {
-    final WriteDiagnostics write = writeDiagnostics.get(snapshot.uri());
-    if (write == null || !write.content().equals(snapshot.content())) {
-      return result;
-    }
-
     final List<Diagnostic> merged =
-        WritePass.withWriteOnly(result.diagnostics(), write.diagnostics());
+        unsaved.contains(snapshot.uri())
+            ? WritePass.withWriteOnly(result.diagnostics(), writeOnly(snapshot))
+            : withBuildFindings(snapshot, result.diagnostics());
     return merged.size() == result.diagnostics().size()
         ? result
         : new CompileResponse(result.uri(), result.generation(), merged);
+  }
+
+  // What the file's last write reported, while the snapshot holds the content written.
+  private List<Diagnostic> writeOnly(final OpenDocument snapshot) {
+    final WriteDiagnostics write = writeDiagnostics.get(snapshot.uri());
+    return write != null && write.content().equals(snapshot.content())
+        ? write.diagnostics()
+        : List.of();
   }
 
   private Set<Path> openSourcePaths() {
