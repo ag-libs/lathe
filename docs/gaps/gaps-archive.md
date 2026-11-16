@@ -12935,6 +12935,41 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-41 — MCP edits written to a CRLF file add LF line endings — done
+
+**Status: done** (2026-11-16)
+
+**Kind: bug**
+
+**Affects: MCP file edits, particularly `fix_imports`.**
+
+Found by the pre-release probes on EqualsVerifier, then reproduced on Helidon and Caffeine.
+Import edits contained LF line endings, and `DiskEdits` wrote them verbatim into CRLF files, leaving mixed line endings.
+An earlier attempt was reverted because it shared separator detection through `SourceLocator`, outside the component that writes the files.
+
+### Fix
+
+`DiskEdits.applyFileEdits` converts each replacement to the separator terminating the original line at the edit's start.
+For an unterminated last line it uses the preceding separator; a file with no line breaks uses LF.
+It normalizes CRLF in the replacement before conversion, preventing doubled carriage returns.
+Untouched file regions and the original editor-facing `TextEdit` objects remain unchanged.
+This also respects local separators in a file that already has mixed line endings.
+
+Validated on JDK 26: all 45 disk-edit, engine-edit and engine-rename tests passed.
+The Caffeine MCP import probe reported zero bare LF line endings, no doubled carriage returns, and byte-for-byte stability on a repeated import fix.
+
+### Regression targets
+
+- `DiskEditsTest.apply_uniformLineEndings_preservesTheFileSeparatorAndTheOriginalEdit`
+- `DiskEditsTest.apply_mixedLineEndings_matchesEachEditedLineWithoutRewritingTheOtherLines`
+- `DiskEditsTest.apply_unterminatedLastLine_usesThePreviousLineSeparator`
+- `DiskEditsTest.apply_noExistingLineBreak_usesLf`
+- `DiskEditsTest.apply_identifierReplacement_preservesMixedLineEndingsExactly`
+- `LatheEngineEditTest.fixImports_uniformLineEndings_preservesTheSeparator`
+- `LatheEngineEditTest.format_uniformLineEndings_preservesTheSeparator`
+
+---
+
 ## MC-68 — `analyze_change` has no caller-selected output limit or exact capped counts — done
 
 **Status: done.**
