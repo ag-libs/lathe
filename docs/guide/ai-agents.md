@@ -25,6 +25,8 @@ For Gradle, apply the Lathe settings plugin and build once (`./gradlew latheSync
 [Gradle guide](gradle.md).
 That build does two things at once: it writes `.lathe/`, and its sync step installs the MCP
 launcher (below). If the server reports a missing `.lathe/`, this is the fix.
+A project set up from Neovim with [`:LatheInit`](editors/neovim.md#set-up-a-project) already has both,
+as its first build is this one with Lathe passed in from outside.
 For `run_test`, the module's test launch must also be captured once:
 `.lathe/lathe-sync.sh --tests <module>` does that without running the tests (see
 [test capture](test-capture.md)); `run_test` names this command when the capture is missing.

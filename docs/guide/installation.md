@@ -11,6 +11,11 @@ Lathe has two parts, set up independently and in either order.
    | Gradle 8.8+ | [Lathe for Gradle](gradle.md) |
    | The OpenJDK `make` build | [Lathe for OpenJDK](openjdk.md) |
 
+   From Neovim, [`:LatheInit`](editors/neovim.md#set-up-a-project) does this without changing the
+   project's files: it passes Lathe to the build from outside and runs the first build.
+   A project set up that way is refreshed by `:LatheSync`, not by the builds you run yourself;
+   registering Lathe in the build makes every build refresh it.
+
 2. **The editor client**, for [Neovim](editors/neovim.md#install), [VS Code](editors/vscode.md),
    [Emacs](editors/emacs.md) or [Zed](editors/zed.md); an AI agent uses the [MCP server](ai-agents.md).
    A client that finds no `.lathe/` yet asks you to run the build.
