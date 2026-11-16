@@ -31,9 +31,26 @@ Which file answers which question:
   user authorization.
 - **Ask before coding when in doubt** — if the approach is unclear or multiple valid designs exist,
   present the options and ask the user to choose before writing any code.
-- **Comprehensive Commit Messages** — all commit messages must be comprehensive and clear,
-  describing both the "what" and the "why" of the changes, and following standard prefix naming (
-  e.g., `refactor:`, `test:`, `docs:`, `feat:`).
+- **One gap per pull request** — every PR is reviewed by hand.
+  A PR resolves one gap from `docs/gaps/gaps.md` and names it in the title or first line (`Fixes MC-41`).
+  A gap sized `L` is split into several PRs, each a reviewable step (`Part of FR-029, 1 of 3`).
+  Only gap-registry bookkeeping (triage, deferrals) may cover several gaps in one PR.
+  Work with no gap gets one filed first, or is a trivial `chore:` or `docs:` PR.
+- **Commits within a PR** — a PR may have several commits.
+  Each builds, passes its tests, and has its own message; a preparatory refactor comes first, then the change.
+  Fold review feedback into the commit it corrects (`git commit --fixup`, `git rebase --autosquash`); never push an "Address review" commit.
+  PRs are merged with a merge commit, so the commits stay as written.
+- **Commit messages** follow Conventional Commits and the 50/72 rule.
+    * Subject: `type(scope): imperative summary`, lowercase after the colon, at most 50 characters (72 is the hard limit), no trailing period.
+    * Types: `fix` only for a bug a user would notice; otherwise `feat`, `refactor`, `test`, `docs`, `perf`, `build`, `ci`, or `chore`.
+    * Scope: the module without its `lathe-` prefix (`mcp`, `server`, `analysis`, `gradle`), or `gaps` for gap-registry edits; omit it for a change across many modules.
+    * Body: wrapped at 72 columns (`git log` does not reflow); the problem first, then the fix and why it is right, in short plain sentences.
+      Test results go in the PR description, not the commit.
+    * Trailers: `Refs: MC-41` for the gap.
+- **Clean PR descriptions** — the description is what the reviewer reads first.
+  Write it as plain prose with no section headings: the gap on the first line when there is one, then the problem, the change and why it is right, in a few short paragraphs.
+  Say how it was tested in a sentence when the tests in the diff do not make it obvious.
+  No filler, no narration of the diff, no file-by-file change log, no template.
 - **No backward compatibility requirement** — the tool has no external adopters yet; schema changes,
   format changes, and API changes may break existing files without migration support.
 - **Public repo — genericize private-workspace identifiers** — never commit real paths, packages,
@@ -274,9 +291,9 @@ against the `multi-module` invoker workspace — both use the checkout build dir
 
 ## Markdown style
 
-- Use semantic line breaks for prose: one sentence per line, or one natural clause per line for long
-  sentences.
-- Do not hard-wrap prose in the middle of a phrase only to satisfy a fixed column.
+- Write one sentence per line, the format that is easiest to read and to review in a diff: a change to one sentence shows as a change to one line.
+- Split a long sentence at a natural clause boundary, never in the middle of a phrase.
+- Do not hard-wrap prose to a fixed column.
 - Preserve code blocks, tables, property examples, and directory trees as-is.
 - Prefer dedicated formatting-only commits when reflowing large existing documents.
 
