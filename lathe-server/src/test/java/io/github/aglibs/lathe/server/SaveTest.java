@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -37,7 +38,7 @@ class SaveTest extends ServiceTestBase {
   void didSave_processorReportsOnTheWrite_mergedIntoThePublishUntilTheBufferChanges()
       throws Exception {
     final Path processors = TestCompiler.noteProcessor(tmp);
-    final Path note = saveWithProcessor(List.of(), List.of(processors));
+    final Path note = saveWithProcessor(List.of(), List.of(processors), List.of());
 
     // Edited, the buffer no longer holds what was written, so the write's warning no longer
     // applies.
@@ -56,7 +57,7 @@ class SaveTest extends ServiceTestBase {
   @Test
   void didSave_syncReloadsWithAnotherBuild_writeReportGoneFromThePublish() throws Exception {
     final Path processors = TestCompiler.noteProcessor(tmp);
-    final Path note = saveWithProcessor(List.of(), List.of(processors));
+    final Path note = saveWithProcessor(List.of(), List.of(processors), List.of());
     clearInvocations(client);
 
     TestCompiler.writeModuleParams(
@@ -77,17 +78,35 @@ class SaveTest extends ServiceTestBase {
         .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
   }
 
+  // Under -Werror the write fails on the processor's warning: the saved file shows it once, as the
+  // error that breaks the build, though the analysis, which runs no processor, finds nothing.
+  @Test
+  void didSave_processorWarningUnderWerror_publishedAsTheWritesError() throws Exception {
+    final Path processors = TestCompiler.noteProcessor(tmp);
+    final Path note = saveWithProcessor(List.of(), List.of(processors), List.of("-Werror"));
+
+    verify(client, timeout(TIMEOUT_MS))
+        .publishDiagnostics(
+            argThat(
+                p ->
+                    isFor(p, note)
+                        && p.getDiagnostics().size() == 1
+                        && p.getDiagnostics().get(0).getSeverity() == DiagnosticSeverity.Error
+                        && hasMessage(p, "noted by processor (-Werror)")));
+  }
+
   // Without a processor path javac finds processors on the classpath, as Maven's build does.
   @Test
   void didSave_processorOnTheClasspathOnly_reportsOnTheWrite() throws Exception {
     final Path processors = TestCompiler.noteProcessor(tmp);
 
-    saveWithProcessor(List.of(processors), List.of());
+    saveWithProcessor(List.of(processors), List.of(), List.of());
   }
 
   // Opens and saves a module source whose build runs NoteProcessor from the given paths, and waits
   // for the write's warning. Returns the saved source.
-  private Path saveWithProcessor(final List<Path> classpath, final List<Path> processorPath)
+  private Path saveWithProcessor(
+      final List<Path> classpath, final List<Path> processorPath, final List<String> extraArgs)
       throws Exception {
     final Path note =
         TestCompiler.writeMirroredModule(
@@ -104,7 +123,7 @@ class SaveTest extends ServiceTestBase {
         null,
         classpath,
         processorPath,
-        List.of("-processor", "proc.NoteProcessor"));
+        Stream.concat(Stream.of("-processor", "proc.NoteProcessor"), extraArgs.stream()).toList());
     host.initialize(tmp);
     awaitStartup();
     openDoc(note, Files.readString(note));
