@@ -18,6 +18,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 import java.io.Serial;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -71,8 +72,8 @@ final class LatheMcpTools {
   private static final String POSITION_PROPERTIES =
       """
       "file":{"type":"string","description":"Absolute path to a .java file."},
-      "line":{"type":"integer","description":"1-based line of the symbol."},
-      "column":{"type":"integer","description":"1-based column of the symbol; optional with 'symbol'."},
+      "line":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based line of the symbol."},
+      "column":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based column of the symbol; optional with 'symbol'."},
       "symbol":{"type":"string","description":"The symbol's name as written on that line (a method, field, type or variable name); finds its column, so 'column' may be left out."}\
       """;
 
@@ -121,7 +122,7 @@ final class LatheMcpTools {
             "find_references",
             positionSchema(
                 """
-                    ,"maxResults":{"type":"integer","minimum":1,
+                    ,"maxResults":{"type":"integer","minimum":1,"maximum":2147483647,
                      "description":"Max references to return (default 50)."},
                     "access":{"type":"string","enum":["read","write"],
                      "description":"Only the uses that read, or only those that write, a field or variable (omit for all)."}\
@@ -208,7 +209,7 @@ final class LatheMcpTools {
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
                     "scope":{"type":"string","enum":["reactor","all"],
                      "description":"reactor (default) leaves out calls into the JDK and dependencies; all keeps them."},
-                    "maxResults":{"type":"integer","minimum":1,"description":"Max calls to return (default 50)."}\
+                    "maxResults":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Max calls to return (default 50)."}\
                     """),
             READ_ONLY,
             """
@@ -240,7 +241,7 @@ final class LatheMcpTools {
                  "properties":{
                    "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
                    "scope":{"type":"string","enum":["reactor","all"],"description":"all (default) also finds JDK and dependency types, listed after the reactor's; reactor finds only the project's own."},
-                   "maxResults":{"type":"integer","minimum":1,"description":"Max symbols to return (default 50)."}}}\
+                   "maxResults":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Max symbols to return (default 50)."}}}\
                 """,
             READ_ONLY,
             """
@@ -257,7 +258,7 @@ final class LatheMcpTools {
             "find_implementations",
             positionSchema(
                 """
-                    ,"maxResults":{"type":"integer","minimum":1,
+                    ,"maxResults":{"type":"integer","minimum":1,"maximum":2147483647,
                      "description":"Max implementations to return (default 50)."}\
                     """),
             READ_ONLY,
@@ -275,7 +276,7 @@ final class LatheMcpTools {
             "analyze_change",
             positionSchema(
                 """
-                    ,"maxResults":{"type":"integer","minimum":1,
+                    ,"maxResults":{"type":"integer","minimum":1,"maximum":2147483647,
                      "description":"Max members of each override-family list to show (default 50); the counts are of all."}\
                     """),
             READ_ONLY,
@@ -416,6 +417,27 @@ final class LatheMcpTools {
       final CallToolRequest request,
       final String tool,
       final ToolHandler handler) {
+    for (final String argument : List.of("line", "column", "maxResults")) {
+      final Object value = args(request).get(argument);
+      if (value == null) {
+        continue;
+      }
+
+      final String error =
+          "%s '%s' must be an integer between 1 and %d"
+              .formatted(tool, argument, Integer.MAX_VALUE);
+      if (!(value instanceof Number)) {
+        return McpText.error(error);
+      }
+
+      try {
+        final var integer = new BigDecimal(value.toString());
+        integer.intValueExact();
+      } catch (final NumberFormatException | ArithmeticException e) {
+        return McpText.error(error);
+      }
+    }
+
     // The schemas' minimum, which a client need not enforce; a negative value would make
     // Stream.limit throw.
     final Integer max = intArg(request, "maxResults");
