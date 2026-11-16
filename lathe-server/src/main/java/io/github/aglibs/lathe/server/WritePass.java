@@ -616,6 +616,12 @@ final class WritePass {
     return error;
   }
 
+  // A source's own diagnostics from a write: -Werror's error is javac's, put on whichever file of
+  // the compile it reached last, so it belongs to none.
+  static List<Diagnostic> ownDiagnostics(final List<Diagnostic> diagnostics) {
+    return diagnostics.stream().filter(diagnostic -> !isWerror(diagnostic)).toList();
+  }
+
   private static boolean isWerror(final Diagnostic diagnostic) {
     return diagnostic.getCode() != null && WERROR_CODE.equals(diagnostic.getCode().getLeft());
   }

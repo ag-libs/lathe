@@ -53,12 +53,13 @@ NullAway), while the check behind the notes runs with them.
 ### Resolution
 
 The analysis compile still runs no javac plugin and no processor, which keeps it fast; the editor already showed their findings after a save, merged from the file's last write.
-`get_diagnostics` now merges them too: when the build's compile of the file failed on the file as it is, its errors join the analysis diagnostics, so the answer and its notes agree.
-The engine reads the write pass's failed write, as it opens a file only after the write it asks about.
+`get_diagnostics` now merges them too, so the answer and its notes agree: a failed write's errors, and the warnings a successful write reported, while the file still has the content written.
+The session keeps every written file's findings, not only an open one's, as the engine opens a file only after the write it asks about; javac's `-Werror` marker, which it puts on whichever file it compiled last, is left out.
 
 ### Regression targets
 
-`LatheEngineVerifyTest.diagnostics_fileFailsOnlyTheBuildsCompile_listsItsErrorBesideTheNote`
+- `LatheEngineVerifyTest.diagnostics_fileFailsOnlyTheBuildsCompile_listsItsErrorBesideTheNote`
+- `LatheEngineVerifyTest.diagnostics_buildOnlyWarning_listedForItsFileOnly`
 
 ---
 
