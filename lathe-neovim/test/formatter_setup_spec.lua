@@ -73,12 +73,92 @@ lathe.format(pom_buf)
 spec.check("format(): pom.xml routes to pom.format_buffer", pom_called, pom_buf)
 spec.check("format(): pom.xml skips the fold path", fold_called, nil)
 
+-- A Java buffer formats when an attached server formats it (Lathe, or another formatter beside it);
+-- otherwise the user is told why, in Lathe's words when it gives them. The get_clients stub honours
+-- the name and method filters, so a check that looked at the wrong client would fail here.
+local attached = {}
+local real_get_clients = vim.lsp.get_clients
+vim.lsp.get_clients = function(filter)
+  return vim.tbl_filter(function(client)
+    if filter.name and client.name ~= filter.name then
+      return false
+    end
+
+    return not filter.method or client.server_capabilities.documentFormattingProvider == true
+  end, attached)
+end
+local notes = {}
+vim.notify = function(msg)
+  table.insert(notes, msg)
+end
+local function lathe_client(capabilities, initialized)
+  return { name = "lathe", initialized = initialized ~= false, server_capabilities = capabilities }
+end
+
 pom_called = nil
+attached = { lathe_client({ documentFormattingProvider = true }) }
 local java_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_name(java_buf, "/tmp/proj/Foo.java")
 lathe.format(java_buf)
 spec.check("format(): .java routes to the fold path", fold_called, java_buf)
 spec.check("format(): .java skips the pom path", pom_called, nil)
+spec.check("format(): a formatting server is not explained", #notes, 0)
+
+-- Another formatter beside a Lathe that formats nothing still formats.
+fold_called = nil
+attached = {
+  lathe_client({}),
+  { name = "null-ls", initialized = true, server_capabilities = { documentFormattingProvider = true } },
+}
+lathe.format(java_buf)
+spec.check("format(): another formatting server still formats", fold_called, java_buf)
+spec.check("format(): another formatting server is not explained", #notes, 0)
+
+fold_called = nil
+attached = {
+  lathe_client({
+    experimental = { latheFormatterUnavailable = "The project's formatter is not resolved." },
+  }),
+}
+lathe.format(java_buf)
+spec.check("format(): no formatter skips the fold path", fold_called, nil)
+spec.check(
+  "format(): no formatter shows the server's reason",
+  notes[1],
+  "Lathe: The project's formatter is not resolved."
+)
+
+notes = {}
+attached = { lathe_client({}) }
+lathe.format(java_buf)
+spec.check("format(): an older server's missing reason skips the fold path", fold_called, nil)
+spec.check(
+  "format(): an older server's missing reason points at lathe-style.json",
+  notes[1] ~= nil and notes[1]:find("lathe-style.json", 1, true) ~= nil,
+  true
+)
+
+notes = {}
+attached = { lathe_client({}, false) }
+lathe.format(java_buf)
+spec.check("format(): a starting server skips the fold path", fold_called, nil)
+spec.check(
+  "format(): a starting server says so, not that there is no formatter",
+  notes[1] ~= nil and notes[1]:find("still starting", 1, true) ~= nil,
+  true
+)
+
+notes = {}
+attached = {}
+lathe.format(java_buf)
+spec.check("format(): no server skips the fold path", fold_called, nil)
+spec.check(
+  "format(): no server says it is not attached",
+  notes[1] ~= nil and notes[1]:find("not attached", 1, true) ~= nil,
+  true
+)
+vim.lsp.get_clients = real_get_clients
+vim.notify = notify
 
 -- A re-attach (:lsp restart) replaces the buffer's format-on-save hooks rather than adding more,
 -- so a save formats once.

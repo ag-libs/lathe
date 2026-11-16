@@ -86,7 +86,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
-    final var capabilities = createCapabilities(formatEngine);
+    final var capabilities = createCapabilities(formatEngine, formatSpec);
     final var result = new InitializeResult(capabilities);
     result.setServerInfo(serverInfo());
     return CompletableFuture.completedFuture(result);
@@ -100,7 +100,9 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
         SERVER_NAME, LatheBuildInfo.version(LatheLanguageServer.class).orElse(null));
   }
 
-  static ServerCapabilities createCapabilities(final FormatEngine formatEngine) {
+  // `formatSpec` is what the style files name, null for none: without an engine, it says why.
+  static ServerCapabilities createCapabilities(
+      final FormatEngine formatEngine, final FormatterSpec formatSpec) {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
@@ -143,8 +145,23 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
     capabilities.setExecuteCommandProvider(new ExecuteCommandOptions(LatheCommands.ALL));
-    capabilities.setExperimental(Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL));
+    capabilities.setExperimental(experimental(formatEngine, formatSpec));
     return capabilities;
+  }
+
+  // An editor without a formatting provider cannot ask why: the reason travels with the handshake,
+  // fixed for the session as the provider itself is.
+  private static Map<String, Object> experimental(
+      final FormatEngine formatEngine, final FormatterSpec formatSpec) {
+    if (formatEngine != null) {
+      return Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL);
+    }
+
+    return Map.of(
+        LatheFlags.PROTOCOL_CAPABILITY,
+        LatheFlags.LATHE_PROTOCOL,
+        LatheFlags.FORMATTER_UNAVAILABLE_CAPABILITY,
+        FormatService.unavailable(formatSpec));
   }
 
   @Override

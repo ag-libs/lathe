@@ -703,9 +703,19 @@ That warning's example also suggests `{"engine": "google"}`, though JUnit's Spot
 Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
 Let the sync's example name the engine Spotless runs when the build says which.
 
+### Progress
+
+Done (2026-11-16): the server says at `initialize` why it does not format (`capabilities.experimental.latheFormatterUnavailable`, the reason MCP's `format_file` gives), and `:LatheFormat` shows it instead of Neovim's "no matching language servers" when no attached server formats the buffer; the reason now names the Gradle case too.
+The editor exploratory round (2026-11-16) hit the same message on a Maven build with no formatter at all.
+Left:
+
+- The Gradle sync's example still suggests `{"engine": "google"}` whatever Spotless runs.
+- The reason is the one at startup: after a sync resolves the formatter, `:LatheFormat` still says to run the sync until Lathe restarts (the server already says to restart).
+- Formatting a selection with a whole-file engine (`command`), which advertises no range formatting, still gets Neovim's "no matching language servers".
+
 ### Regression targets
 
-None yet.
+`LatheLanguageServerTest.createCapabilities_noFormatter_saysWhyInExperimental`, `initialize_pinnedFormatterUnresolved_saysToSync`; `formatter_setup_spec.lua` `format(): no formatter shows the server's reason`.
 
 ---
 
