@@ -315,10 +315,11 @@ jobs:
         # the Gradle cache above does not cover: each job regenerated the Gradle API jar (about
         # 185 MB) and recompiled the fixture scripts, slowest on Windows. Per OS, Gradle and JDK,
         # since those generated files depend on all three.
+        # Include the root POM so a pinned formatter dependency change can save a refreshed cache.
         uses: actions/cache@v6
         with:
           path: ${{ env.GRADLE_USER_HOME }}/lathe-testkit/caches
-          key: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ hashFiles('lathe-gradle-plugin/build.gradle.kts', 'lathe-gradle-plugin/settings.gradle.kts', 'lathe-gradle-plugin/gradle.properties') }}
+          key: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ hashFiles('pom.xml', 'lathe-gradle-plugin/build.gradle.kts', 'lathe-gradle-plugin/settings.gradle.kts', 'lathe-gradle-plugin/gradle.properties') }}
           restore-keys: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-
 
       - name: Build and test the Gradle plugin
