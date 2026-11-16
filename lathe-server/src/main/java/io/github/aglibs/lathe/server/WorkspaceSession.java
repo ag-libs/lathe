@@ -361,7 +361,8 @@ final class WorkspaceSession {
             route,
             snapshot,
             CompileMode.OPEN,
-            (ignored, response) -> result.complete(reactor ? response.diagnostics() : List.of()))
+            (ignored, response) ->
+                result.complete(reactor ? withFailedWrite(uri, response.diagnostics()) : List.of()))
         .exceptionally(
             ex -> {
               result.completeExceptionally(ex);
@@ -628,6 +629,19 @@ final class WorkspaceSession {
                     new WriteDiagnostics(
                         source.content(),
                         written.diagnosticsByUri().getOrDefault(source.uri(), List.of()))));
+  }
+
+  // The analysis runs no javac plugin (Error Prone, NullAway): when the build's compile of the
+  // file,
+  // with them, failed on the file as it is, its errors are the file's too. The editor gets them
+  // through withWriteDiagnostics, kept for files open at the write; the engine opens a file after
+  // the write it asks about, so it reads the failure the notes report.
+  private List<Diagnostic> withFailedWrite(final String uri, final List<Diagnostic> analyzed) {
+    final Path file = LatheUri.toPath(uri);
+    final WritePass.FailedWrite failed = writePass.failedCompiles().get(file);
+    return WritePass.failedUnchanged(failed, WritePass.mtimeMillis(file))
+        ? WritePass.withWriteOnly(analyzed, failed.causes())
+        : analyzed;
   }
 
   // Adds what the file's last write reported and analysis cannot, while the analyzed content is

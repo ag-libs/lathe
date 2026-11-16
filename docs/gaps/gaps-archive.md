@@ -7,6 +7,35 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-084 — Diagnostics skip the build's javac plugins, and contradict the notes that run them — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `get_diagnostics` (and the editor's diagnostics, which compile the same way).**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Related: CA-18.
+
+### Observed behaviour
+
+`get_diagnostics` answers "No errors or warnings in LatheProbe.java" and, in the same reply,
+"Not compiled: … [NullAway] …" (also seen with `[ReturnValueIgnored]`). Plain javac errors are reported,
+and `--release 17` is honoured: the open compile runs without the build's `-Xplugin` (Error Prone,
+NullAway), while the check behind the notes runs with them.
+
+### Resolution
+
+The analysis compile still runs no javac plugin and no processor, which keeps it fast; the editor already showed their findings after a save, merged from the file's last write.
+`get_diagnostics` now merges them too: when the build's compile of the file failed on the file as it is, its errors join the analysis diagnostics, so the answer and its notes agree.
+The engine reads the write pass's failed write, as it opens a file only after the write it asks about.
+
+### Regression targets
+
+`LatheEngineVerifyTest.diagnostics_fileFailsOnlyTheBuildsCompile_listsItsErrorBesideTheNote`
+
+---
+
 ## EG-106 — Hover drops the text of a Markdown doc comment, keeping only its links — done
 
 **Status: done.**

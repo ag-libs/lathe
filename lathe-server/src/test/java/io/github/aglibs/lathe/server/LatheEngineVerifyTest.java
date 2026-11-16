@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
+import io.github.aglibs.lathe.server.engine.Noted;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -542,6 +543,26 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(verify.failedWrites()).containsExactly(path);
     assertThat(engine.diagnostics(callee).notes().notCompiled())
         .contains("%s:2: noted by processor (-Werror)".formatted(tmp.relativize(callee)));
+  }
+
+  // What fails only the build's compile (its processors and javac plugins, which the analysis does
+  // not run) is in the file's diagnostics too, not only in the notes beside them: the answer never
+  // says "no errors" while its notes name one.
+  @Test
+  void diagnostics_fileFailsOnlyTheBuildsCompile_listsItsErrorBesideTheNote() throws Exception {
+    final Path callee = moduleBuiltWithTheNoteProcessor(List.of("-Werror"));
+    engine = new LatheEngine(tmp);
+    writeNewer(
+        callee, "package com.example;\nclass Callee {\n  void greet() {}\n  void wave() {}\n}\n");
+
+    final Noted<List<LatheDiagnostic>> failing = engine.diagnostics(callee);
+
+    assertThat(failing.notes().notCompiled()).isNotEmpty();
+    assertThat(failing.value())
+        .anyMatch(
+            d ->
+                d.severity() == LatheDiagnostic.Severity.ERROR
+                    && d.message().equals("noted by processor (-Werror)"));
   }
 
   // The classes of a change the build's compile fails stay those of its last good compile: its
