@@ -116,7 +116,7 @@ Lathe: set up Lathe 0.3.1 (now 0.3.0) for the Maven build in: ~/work/app█
 | Maven or Gradle that registers Lathe | the same first build, without the activation; on Gradle with an init script that only keeps compile errors |
 | OpenJDK | Lathe's OpenJDK goal at the client's version, once the JDK is configured and built in exactly one configuration |
 
-The first build is the documented first run, with compile errors kept from stopping it: Maven `clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false`, Gradle `latheSync -Plathe.capture.only=true --continue`.
+The first build is the documented first run, with compile errors kept from stopping it: Maven `-Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false clean test`, Gradle `-Plathe.capture.only=true --continue latheSync`; capture only comes first, so the command shows at a glance that the tests do not run.
 `clean`, as Maven compiles nothing it finds up to date, and Lathe captures a module only as it compiles it: a project built before would otherwise set up with no module. Gradle reruns a compile whose inputs changed, so it needs no clean.
 The tests are captured, not run, so the first test run needs no sync.
 
@@ -327,7 +327,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
 1. **Check:** a Maven root found ([Finding the build's root](#finding-the-builds-root)), Lathe not registered (else a plain build).
 2. **Pre-flight:** find Maven (project `mvnw`, else `mvn` on `PATH`, else the bundled wrapper); Maven 3.6.3+; Maven's JDK 17+ ([Detecting and explaining](#detecting-and-explaining)).
 3. **Fetch** the activation jars if missing.
-4. **Run** `<maven> -Dmaven.ext.class.path=… clean test -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false` at the reactor root: the tests are captured, not run.
+4. **Run** `<maven> -Dmaven.ext.class.path=… -Dlathe.capture.only=true -DfailIfNoTests=false -Dmaven.compiler.failOnError=false clean test` at the reactor root: the tests are captured, not run.
 5. **Attach** when the build ends with a launcher; `.lathe/.gitignore` keeps `.lathe/` out of git.
 
 ### Gradle personal mode
@@ -358,7 +358,7 @@ Text files only: no binary history in `lathe.nvim`, no reactor-built jar in the 
    }
    ```
 
-4. **Run** `<gradle> --init-script <that file> latheSync -Plathe.capture.only=true --continue` at the root build: the tests are captured, not run.
+4. **Run** `<gradle> --init-script <that file> -Plathe.capture.only=true --continue latheSync` at the root build: the tests are captured, not run.
 5. **Attach** as in Maven personal mode.
 
 Passed with `--init-script`, never written to `~/.gradle/init.d/`: one project gets Lathe, not every Gradle build on the machine.

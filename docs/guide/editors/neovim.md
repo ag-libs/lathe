@@ -94,7 +94,7 @@ the server when the build ends:
   into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. A build that registers
   Lathe builds as it is.
 - The first build is a clean one that records your tests without running them (Maven
-  `clean test -Dlathe.capture.only=true`, Gradle `latheSync -Plathe.capture.only=true`), so the
+  `-Dlathe.capture.only=true clean test`, Gradle `-Plathe.capture.only=true latheSync`), so the
   server knows every module and tests run at once. Code that does not compile still sets up: compile
   errors don't stop it, and the server shows them.
 - An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).

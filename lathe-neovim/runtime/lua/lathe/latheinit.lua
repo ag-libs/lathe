@@ -28,15 +28,16 @@ local OPENJDK_SYNC = "io.github.ag-libs:lathe-openjdk-maven-plugin:%s:sync"
 local KINDS = { maven = "Maven", gradle = "Gradle", openjdk = "OpenJDK" }
 -- The first build: clean, as Maven compiles nothing it finds up to date and Lathe captures a module
 -- only as it compiles it; the tests captured without running; compile errors kept from stopping
--- it. Gradle reruns a compile whose inputs changed, so it needs no clean.
+-- it. Gradle reruns a compile whose inputs changed, so it needs no clean. Capture only comes first,
+-- so the command shows at a glance that the tests do not run.
 local MAVEN_FIRST_BUILD = {
-  "clean",
-  "test",
   "-Dlathe.capture.only=true",
   "-DfailIfNoTests=false",
   "-Dmaven.compiler.failOnError=false",
+  "clean",
+  "test",
 }
-local GRADLE_FIRST_BUILD = { "latheSync", "-Plathe.capture.only=true", "--continue" }
+local GRADLE_FIRST_BUILD = { "-Plathe.capture.only=true", "--continue", "latheSync" }
 
 local function exists(path)
   return vim.uv.fs_stat(path) ~= nil
