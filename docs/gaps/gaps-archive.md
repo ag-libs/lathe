@@ -60,7 +60,7 @@ The server retains those roots for analysis and references while classifying the
 Schema 7 requires this classification; upgrading existing workspaces requires regenerating all compiler captures with a clean build.
 Outputs outside known generated roots and generator-specific links to blueprint declarations remain outside this fix; MC-39 still tracks the latter.
 
-Validated on JDK 26: 2,150 Java tests (two skipped), all nine Maven integration fixture builds, eight Gradle unit tests and 34 Gradle functional tests passed.
+Validated on JDK 26 after integration with main: 2,162 Java tests (two skipped), all nine Maven integration fixture builds, eight Gradle unit tests and 34 Gradle functional tests passed.
 Helidon and Caffeine both refused the unsafe rename through live MCP and LSP checks without applying source edits.
 A Caffeine parameter rename still returned valid edits.
 
