@@ -147,7 +147,8 @@ class WorkspaceModuleRegistryTest {
             null,
             null,
             false,
-            testCode),
+            testCode,
+            List.of()),
         tmp.resolve(LatheLayout.LATHE_DIR)
             .resolve("app")
             .resolve(LatheLayout.paramsFileName(tree)));

@@ -38,9 +38,11 @@ public record ModuleSourceConfig(
     // test-classes tree is.
     Boolean testCode,
     // Maps sibling modules' build outputs on the paths above to their .lathe/ mirrors.
-    ReactorRewrite reactorRewrite) {
+    ReactorRewrite reactorRewrite,
+    List<Path> generatedSourceRoots) {
 
   public ModuleSourceConfig {
+    generatedSourceRoots = List.copyOf(generatedSourceRoots);
     // Older maven-compiler-plugin versions list their processor output among the source locations;
     // the generated root is always the .lathe mirror (generatedSourcesDir), never Maven's copy.
     sourceRoots =
@@ -84,11 +86,11 @@ public record ModuleSourceConfig(
         .max(Comparator.comparingInt(Path::getNameCount));
   }
 
-  // The build's annotation-processor output, or Lathe's mirror of it: sources the processors
-  // rewrite from the hand-written ones.
+  // Generators own these sources, so refactorings must not rewrite them.
   public boolean isGenerated(final Path file) {
     return file.startsWith(generatedSourcesDir())
-        || (originalGenSourcesDir != null && file.startsWith(originalGenSourcesDir));
+        || (originalGenSourcesDir != null && file.startsWith(originalGenSourcesDir))
+        || generatedSourceRoots.stream().anyMatch(file::startsWith);
   }
 
   // Source roots plus the .lathe generated-sources mirror (when the module has generated sources).
@@ -159,7 +161,8 @@ public record ModuleSourceConfig(
         config.analysisMode(),
         config.externalOutput(),
         config.testCode(),
-        reactorRewrite);
+        reactorRewrite,
+        toPaths(config.generatedSourceRoots()));
   }
 
   private static List<Path> toPaths(final List<String> strings) {

@@ -215,10 +215,8 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
   }
 
   @Test
-  void rename_methodAlsoCalledFromGeneratedSource_leavesTheGeneratedSourceAlone() throws Exception {
+  void rename_methodAlsoCalledFromGeneratedSource_refusesBeforeWritingAnyFile() throws Exception {
     final GreetFixture fx = greetFixture();
-    // An annotation processor's output that calls the method: it regenerates from the renamed
-    // source, so editing it would only collide with the regenerated copy.
     TestCompiler.writeModuleParams(
         tmp,
         "module",
@@ -235,13 +233,89 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
             1_000L);
     engine = new LatheEngine(tmp);
 
-    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
-
-    assertThat(rename.files())
-        .extracting(LatheFileEdit::uri)
-        .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"))
-        .noneSatisfy(uri -> assertThat(uri).endsWith("CalleeHelper.java"));
+    assertThatThrownBy(() -> renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome"))
+        .hasMessageContaining("generated source")
+        .hasMessageContaining("CalleeHelper.java");
+    assertThat(Files.readString(fx.callee())).isEqualTo(fx.calleeSource());
+    assertThat(Files.readString(fx.caller())).isEqualTo(fx.callerSource());
     assertThat(Files.readString(generated)).isEqualTo(generatedSource);
+  }
+
+  @Test
+  void rename_blueprintGetterWithGeneratedBuilder_refusesBeforeLeavingSetterCallsBehind()
+      throws Exception {
+    final String blueprintSource =
+        "package com.example; interface Blueprint { boolean enabled(); }";
+    final Path blueprint =
+        TestCompiler.writeModuleSource(tmp, "com/example/Blueprint.java", blueprintSource);
+    final String callerSource =
+        "package com.example; class Caller { void run(Config.Builder b) { b.enabled(true); } }";
+    final Path caller =
+        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
+    final String generatedSource =
+        """
+        package com.example;
+        interface Config extends Blueprint {
+          boolean enabled();
+          class Builder { Builder enabled(boolean enabled) { return this; } }
+        }
+        """;
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(LatheLayout.LATHE_DIR)
+                .resolve("module")
+                .resolve(LatheLayout.GENERATED_SOURCES)
+                .resolve("com/example/Config.java"),
+            generatedSource,
+            1_000L);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    compileIntoMirror(blueprint, caller, generated);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(blueprint, blueprintSource, "enabled", "active"))
+        .hasMessageContaining("generated source")
+        .hasMessageContaining("Config.java");
+    assertThat(Files.readString(blueprint)).isEqualTo(blueprintSource);
+    assertThat(Files.readString(caller)).isEqualTo(callerSource);
+    assertThat(Files.readString(generated)).isEqualTo(generatedSource);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void rename_taskGeneratedRoots_refusesGeneratedCallersAndDeclarationsBeforeWriting(
+      final boolean generatedRoot) throws Exception {
+    final GreetFixture fx = greetFixture();
+    final Path root = tmp.resolve("module/custom-output/generated");
+    final String callerSource =
+        "package com.example; class TaskCaller { void run(Callee c) { c.greet(); } }";
+    final Path caller =
+        TestCompiler.writeAt(root.resolve("com/example/TaskCaller.java"), callerSource, 1_000L);
+    TestCompiler.writeGeneratedModuleParams(
+        tmp,
+        "module",
+        List.of(tmp.resolve("module/src/main/java"), root),
+        generatedRoot ? List.of(root) : List.of());
+    compileIntoMirror(fx.callee(), fx.caller(), caller);
+    engine = new LatheEngine(tmp);
+
+    if (!generatedRoot) {
+      renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+      assertThat(Files.readString(caller)).contains("c.welcome()");
+      return;
+    }
+
+    assertThatThrownBy(() -> renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome"))
+        .hasMessageContaining("generated source")
+        .hasMessageContaining("TaskCaller.java");
+    assertThatThrownBy(() -> renameAt(caller, callerSource, "run", "execute"))
+        .hasMessageContaining("generated source");
+    assertThat(Files.readString(fx.callee())).isEqualTo(fx.calleeSource());
+    assertThat(Files.readString(fx.caller())).isEqualTo(fx.callerSource());
+    assertThat(Files.readString(caller)).isEqualTo(callerSource);
   }
 
   @Test

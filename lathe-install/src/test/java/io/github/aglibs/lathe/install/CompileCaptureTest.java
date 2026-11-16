@@ -218,7 +218,8 @@ class CompileCaptureTest {
         List.of(),
         null,
         false,
-        null);
+        null,
+        List.of());
   }
 
   private Path write(final String relative, final long mtime) throws Exception {

@@ -169,6 +169,9 @@ The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build prin
   toolchain compiles on an older JDK than the daemon runs, declare the version (the sync warns when the
   server's JDK cannot run the formatter).
   See [The formatter version](installation.md#the-formatter-version).
+- **Generated source roots:** source roots beneath the project's configured build directory are recorded as generated, including roots written by tasks such as JavaPoet.
+  Navigation and references still include them, but a rename touching them is refused before editing any file.
+  This is conservative: even a rename a generator could safely regenerate is refused when it has generated occurrences.
 - **Composite builds:** only the main build's projects are covered; an included build of Java projects the editor
   should see is not yet.
 

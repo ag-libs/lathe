@@ -152,8 +152,20 @@ final class RenameService {
   // What a rename's edits would leave behind: an override that also overrides a method outside the
   // renamed family, or a static import that also names members outside it -- kept for them, it
   // leaves the renamed member's calls in that file without one.
-  private static void requireNothingLeftBehind(
+  private void requireNothingLeftBehind(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
+    eventLoop.checkOnLoop();
+    final Optional<Path> generated =
+        matches.stream()
+            .map(match -> LatheUri.toPath(match.uri()))
+            .filter(this::isGeneratedSource)
+            .findFirst();
+    if (generated.isPresent()) {
+      throw FeatureAnswers.refused(
+          "`%s` cannot be renamed: generated source %s refers to it; update the generator and rebuild instead"
+              .formatted(target.simpleName(), generated.get()));
+    }
+
     refuseIfPresent(
         matches.stream()
             .map(match -> leftBehind(target, match))
@@ -401,23 +413,21 @@ final class RenameService {
 
   private WorkspaceEdit renameEdit(
       final ReferenceTarget target,
-      final List<Location> occurrences,
+      final List<ReferenceMatch> matches,
       final String newName,
       final String fromUri,
       final boolean fileRenameSupported) {
-    // Generated sources are left alone: their processors regenerate them from the renamed sources,
-    // and an edited copy written alongside would collide with the regenerated one.
-    final List<Location> editable =
-        occurrences.stream()
-            .filter(location -> !isGeneratedSource(LatheUri.toPath(location.getUri())))
-            .toList();
-    if (editable.isEmpty()) {
+    // The binding check is asynchronous; a reload may have changed the generated roots since it
+    // began.
+    requireNothingLeftBehind(target, matches);
+    final List<Location> occurrences = ReferenceSearch.toLocations(matches);
+    if (occurrences.isEmpty()) {
       return null;
     }
 
     final Optional<Path> declaringFile = renameDeclaringFile(target, fromUri);
     if (declaringFile.isEmpty()) {
-      return RenameProvider.toWorkspaceEdit(editable, newName);
+      return RenameProvider.toWorkspaceEdit(occurrences, newName);
     }
 
     if (!fileRenameSupported) {
@@ -427,7 +437,7 @@ final class RenameService {
     final var file = declaringFile.get();
     final var oldUri = LatheUri.fromPath(file);
     final var newUri = LatheUri.fromPath(movedFile(file, newName));
-    return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
+    return RenameProvider.toWorkspaceEditWithFileRename(occurrences, newName, oldUri, newUri);
   }
 
   private boolean isGeneratedSource(final Path file) {
@@ -519,7 +529,7 @@ final class RenameService {
                                               kept ->
                                                   renameEdit(
                                                       searchTarget,
-                                                      ReferenceSearch.toLocations(matches),
+                                                      matches,
                                                       newName,
                                                       uri,
                                                       fileRenameSupported))));

@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ModuleSourceConfigTest {
 
@@ -65,6 +66,27 @@ class ModuleSourceConfigTest {
     assertThat(config.isGenerated(src.resolve("com/example/User.java"))).isFalse();
   }
 
+  @Test
+  void isGenerated_taskRoots_staySearchableAndDoNotMatchNeighboringRoots(@TempDir final Path tmp)
+      throws Exception {
+    final Path handwritten = tmp.resolve("module/src/main/java");
+    final Path generated = tmp.resolve("module/custom-output/generated");
+    final Path neighbor = tmp.resolve("module/custom-output/generated-neighbor");
+    TestCompiler.writeGeneratedModuleParams(
+        tmp, "module", List.of(handwritten, generated, neighbor), List.of(generated));
+    final Path module = tmp.resolve(LatheLayout.LATHE_DIR).resolve("module");
+    final ModuleSourceConfig config =
+        ModuleSourceConfig.load(
+            module.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)),
+            module,
+            ReactorRewrite.none());
+
+    assertThat(config.searchRoots()).containsExactly(handwritten, generated, neighbor);
+    assertThat(config.isGenerated(generated.resolve("Generated.java"))).isTrue();
+    assertThat(config.isGenerated(handwritten.resolve("App.java"))).isFalse();
+    assertThat(config.isGenerated(neighbor.resolve("Handwritten.java"))).isFalse();
+  }
+
   private static ModuleSourceConfig config(
       final Path originalGenSourcesDir, final Path sourceRoot) {
     final Path moduleDir = LATHE_DIR.resolve("module");
@@ -108,7 +130,8 @@ class ModuleSourceConfigTest {
             config.analysisMode(),
             config.externalOutput(),
             config.testCode(),
-            config.reactorRewrite());
+            config.reactorRewrite(),
+            List.of());
 
     assertThat(config(null, src)).isEqualTo(config).hasSameHashCodeAs(config);
     assertThat(otherClasspath).isNotEqualTo(config).hasSameHashCodeAs(config);
@@ -146,7 +169,8 @@ class ModuleSourceConfigTest {
             null,
             false,
             null,
-            rewrite);
+            rewrite,
+            List.of());
 
     assertThat(config.remappedClasspath())
         .containsExactly(LATHE_DIR.resolve("platform/core/classes"), external, inRepoJar);

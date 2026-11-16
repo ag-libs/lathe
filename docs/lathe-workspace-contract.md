@@ -83,6 +83,7 @@ The compiler configuration of one source tree: `ModuleConfigData`.
 | `sourceTree` | `classes`, `test-classes`, or a Gradle source set's `classes-<name>` |
 | `outputDir` | the build's real output directory, absolute |
 | `generatedSourcesDir` | the build's annotation-processor output, or null |
+| `generatedSourceRoots` | required array of additional build-generated source roots, absolute; Gradle records source roots beneath its configured build directory; these remain in `sourceRoots` and are read in place |
 | `sourceRoots`, `classpath`, `modulepath`, `processorPath` | absolute paths |
 | `release`, `encoding`, `parameters`, `enablePreview`, `proc`, `compilerArgs` | javac options as the build passes them |
 | `analysisMode` | `CLASSPATH` or `MODULE_SYSTEM` |
@@ -279,7 +280,12 @@ Details: [Pinned Formatters](done/lathe-pinned-formatters.md).
 One version covers all of `.lathe/`: `schemaVersion` in `workspace.json` (`LatheLayout.SCHEMA_VERSION`).
 Any change to the format of any `.lathe/` file bumps it; the other files carry no version of their own.
 A server that finds another version ignores `workspace.json` and warns to run `.lathe/lathe-sync.sh`, which rewrites it.
-A bump that changes a per-module file must also make the sync rewrite that file for every module, including those whose compile is up to date.
+A bump that changes a per-module file requires recapturing that file for every module, including those whose compile would otherwise be up to date.
+When the new format requires information an existing capture cannot supply, use a clean Lathe-enabled build rather than migrate or silently default the missing information.
+
+Schema 7 adds the required `generatedSourceRoots` array.
+When upgrading an existing workspace, regenerate every compiler capture: run a clean Lathe-enabled Maven build (`clean process-test-classes`) or Gradle `clean latheSync`.
+A capture without the classification is rejected rather than silently treating generated inputs as hand-written.
 
 The single check is enough because `.lathe/` is regenerable, never migrated:
 the fix for any mismatch is a rebuild, so the version only has to detect it and say so.

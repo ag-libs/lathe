@@ -26,7 +26,9 @@ public record ModuleConfigData(
     // Whether the tree is test code, as the build tool counts it: Maven's test compile, a Gradle
     // source set by Gradle's own convention. Decides go-to-test and suggestions, never visibility.
     // A params file written before the flag existed has none: its test tree is test-classes.
-    Boolean testCode) {
+    Boolean testCode,
+    // Task-generated inputs stay in sourceRoots; only processor output is mirrored.
+    List<String> generatedSourceRoots) {
 
   public ModuleConfigData {
     encoding = Objects.requireNonNullElse(encoding, "UTF-8");
@@ -36,7 +38,12 @@ public record ModuleConfigData(
     modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
     processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
     compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
-    ValidCheck.check().notNull(sourceTree, "sourceTree").notNull(outputDir, "outputDir").validate();
+    ValidCheck.check()
+        .notNull(sourceTree, "sourceTree")
+        .notNull(outputDir, "outputDir")
+        .notNull(generatedSourceRoots, "generatedSourceRoots")
+        .validate();
+    generatedSourceRoots = List.copyOf(generatedSourceRoots);
     testCode =
         Objects.requireNonNullElse(testCode, LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
   }
@@ -68,6 +75,7 @@ public record ModuleConfigData(
         compilerArgs,
         analysisMode,
         true,
-        false);
+        false,
+        List.of());
   }
 }

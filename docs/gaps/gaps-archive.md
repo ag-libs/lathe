@@ -35,6 +35,47 @@ A live Helidon descriptor returned its five directive children through both LSP 
 
 ---
 
+## FR-020 — Renaming generator inputs breaks generated callers or edits generated output — done
+
+**Status: done** (2026-11-16)
+
+**Kind: bug**
+
+**Affects: editor and MCP rename.**
+
+Before the fix, Helidon's blueprint rename found six occurrences but omitted four generated occurrences and returned two hand-written edits.
+Caffeine's `FrequencySketch.ensureCapacity` rename proposed 67 edits in 22 files, including 16 task-generated files that the next build would overwrite.
+These proposals were inspected without applying them.
+
+### Fix
+
+The shared rename service refuses the entire rename when an occurrence belongs to a known generated source, naming one such file.
+It checks before binding validation and again before returning the edit, since a workspace reload can occur during the asynchronous check.
+Generated occurrences are no longer silently filtered from the returned edit.
+Ordinary renames whose occurrences are all hand-written remain supported.
+This deliberately refuses some regeneratable changes: Lathe cannot prove which other generated APIs and callers a generator will rename.
+
+Gradle capture records source roots beneath the configured build directory as `generatedSourceRoots`, covering task generators and custom build directories without hardcoded directory names.
+The server retains those roots for analysis and references while classifying their files as generated for rename safety.
+Schema 7 requires this classification; upgrading existing workspaces requires regenerating all compiler captures with a clean build.
+Outputs outside known generated roots and generator-specific links to blueprint declarations remain outside this fix; MC-39 still tracks the latter.
+
+Validated on JDK 26: 2,150 Java tests (two skipped), all nine Maven integration fixture builds, eight Gradle unit tests and 34 Gradle functional tests passed.
+Helidon and Caffeine both refused the unsafe rename through live MCP and LSP checks without applying source edits.
+A Caffeine parameter rename still returned valid edits.
+
+### Regression targets
+
+- `ModuleConfigDataTest.constructor_generatedRoots_defensivelyCopied`
+- `ModuleConfigDataTest.constructor_missingGeneratedRoots_refusesUnclassifiedCapture`
+- `ModuleSourceConfigTest.isGenerated_taskRoots_staySearchableAndDoNotMatchNeighboringRoots`
+- `LatheEngineRenameTest.rename_methodAlsoCalledFromGeneratedSource_refusesBeforeWritingAnyFile`
+- `LatheEngineRenameTest.rename_blueprintGetterWithGeneratedBuilder_refusesBeforeLeavingSetterCallsBehind`
+- `LatheEngineRenameTest.rename_taskGeneratedRoots_refusesGeneratedCallersAndDeclarationsBeforeWriting`
+- `LatheCaptureTaskFunctionalTest.capture_taskGeneratedRoots_recordsOnlyRootsInsideTheConfiguredBuildDirectory`
+
+---
+
 ## EG-108 — Semantic tokens mark deprecated methods but not deprecated types — done
 
 **Status: done.**

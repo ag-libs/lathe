@@ -7,6 +7,11 @@ enum-constant rename, the public top-level type file rename, and renaming a symb
 mentions (`{@link}`, `@see`, `@throws`). The sections below are kept as the design record; where they
 say "deferred" or "refused", the notes in Deferred and Non-goals give what shipped.
 
+Generated-source safety (FR-020): a rename with any occurrence in known generated source is refused before edits are returned or applied.
+This includes annotation-processor output and Gradle source roots inside the configured build directory.
+The refusal names an affected generated file; no generator-specific naming links are inferred.
+The guard runs before binding checks and again before producing edits, because an asynchronous binding check can span a workspace reload.
+
 Two guards shipped with it:
 
 - **The cursor must name the target.** `prepareRename`/`rename` accept a target only when the identifier

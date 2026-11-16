@@ -778,7 +778,8 @@ class ModuleSourceCompilerTest {
         config.analysisMode(),
         config.externalOutput(),
         null,
-        config.reactorRewrite());
+        config.reactorRewrite(),
+        List.of());
   }
 
   private static boolean hasError(final CompilerResult result) {

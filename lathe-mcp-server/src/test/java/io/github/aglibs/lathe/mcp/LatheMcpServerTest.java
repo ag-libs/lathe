@@ -180,7 +180,8 @@ class LatheMcpServerTest {
             List.of(),
             null,
             false,
-            false),
+            false,
+            List.of()),
         module.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)));
     return source;
   }

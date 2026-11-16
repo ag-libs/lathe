@@ -886,7 +886,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             null,
             null,
             false,
-            true),
+            true,
+            List.of()),
         moduleDir.resolve(LatheLayout.paramsFileName(tree)));
   }
 

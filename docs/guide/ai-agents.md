@@ -184,6 +184,8 @@ All three **refuse to touch a file outside the project**.
 `rename_symbol` applies javac-computed edits.
 It also refuses a symbol declared outside the project (JDK or a dependency) or in generated source,
 and a method overriding one, since renaming only its uses would break them; the error says which.
+If any occurrence belongs to a known generated source, it refuses the entire rename before writing files and names that source.
+Update the generator and rebuild instead: Lathe cannot prove that regeneration will update every generated API and its callers.
 It refuses a method one of whose overrides also overrides an unrelated method, which the rename would
 leave behind.
 It refuses a Lombok field or a member Lombok generates, whose accessors' calls the rename would leave behind,

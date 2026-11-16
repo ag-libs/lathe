@@ -778,46 +778,6 @@ None yet.
 
 ---
 
-## FR-020 — Renaming a Helidon blueprint option leaves the generated builder's callers broken
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: M**
-
-**Affects: MCP and the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Helidon.
-
-### Observed behaviour
-
-`rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
-The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Refuse a blueprint rename with the reason, as for Lombok members (`RenameConflicts.lombokRefusal`), or rename the generated members' callers too when the generator links them.
-
-Verified against the code (2026-11-16): still present.
-`RenameService` refuses only a symbol declared in a generated source, and nothing links a generated member to the declaration it was generated from;
-`ModuleSourceConfig.isGenerated` counts only the Lathe mirror and the build's generated-sources directory, so the Caffeine case below holds too.
-
-Also (exploratory round, 2026-11-04): renaming Dropwizard's JMH `parseDuration` leaves 10 generated callers with no note; `verify_change` says clean while `get_diagnostics` on the generated file shows the errors.
-
-Also (pre-release Gradle round, 2026-11-15): a generator that is not an annotation processor writes into a plain source root, which Lathe takes for hand-written code.
-Caffeine's `codeGen` source set compiles `build/generated/sources/local-cache`, written by its own JavaPoet task;
-`rename_symbol` on `FrequencySketch.ensureCapacity` edits 16 of its `*EvictionPolicy.java` files, which the next build overwrites and `git checkout` cannot undo,
-and only flags the generator's template (`AddMaximum.java:173`) as "Not renamed — review".
-Taking a source root inside the Gradle build directory as generated would leave those files to the generator, as annotation-processor output is.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-029 — References to a widely used method take 12–27 s on a very large codebase
 
 **Status: deferred** (triaged 2026-11-16: what is left, parallel batches per module and cached answers, needs its own design)
@@ -2024,7 +1984,7 @@ None yet.
 
 ## MC-39 — `rename_symbol` refuses a generated symbol without naming the blueprint method to rename
 
-**Status: deferred** (triaged 2026-11-16: waits on FR-020's generator link)
+**Status: deferred** (triaged 2026-11-16: requires generator-specific links)
 
 **Kind: bug**
 
@@ -2042,8 +2002,8 @@ The ordering half of this gap is done: capped answers list hand-written sources 
 
 ### Fix direction
 
-When refusing a generated symbol, name its blueprint declaration. Waits on FR-020's generator link, which
-connects a generated member to the declaration it was generated from.
+When refusing a generated symbol, name its blueprint declaration. Requires a generator-specific link from a generated member to its input declaration.
+FR-020's conservative refusal does not infer that link.
 
 Verified against the code (2026-11-16): the refusal (`RenameService`) is still the generic "rename the source it is generated from instead", and the generator link does not exist.
 MC-70's resolution also mentions "MC-39" for ranking generated types after hand-written ones in `search_symbols`; that is the ordering half, not this entry's open half.

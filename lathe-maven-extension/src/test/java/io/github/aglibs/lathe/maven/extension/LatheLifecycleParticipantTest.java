@@ -195,7 +195,8 @@ class LatheLifecycleParticipantTest {
         Map.of(
             "sourceTree", LatheLayout.CLASSES_DIR,
             "outputDir", root.resolve(module).resolve("target/classes").toString(),
-            "sourceRoots", List.of(sourceRoot.toString())),
+            "sourceRoots", List.of(sourceRoot.toString()),
+            "generatedSourceRoots", List.of()),
         moduleDir.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)));
     return moduleDir;
   }

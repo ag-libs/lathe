@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.gradle;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
@@ -67,6 +68,9 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   @Internal
   public abstract ConfigurableFileCollection getSourceRoots();
+
+  @Input
+  public abstract Property<String> getBuildDirectory();
 
   // The compile task's own sources, which a build may narrow or replace from the source set's.
   @Internal
@@ -223,6 +227,13 @@ public abstract class LatheCaptureTask extends DefaultTask {
 
   private ModuleConfigData moduleConfig() {
     final List<String> sourceRoots = GradleFiles.paths(getSourceRoots());
+    final Path buildDirectory = FileUtil.absolute(getBuildDirectory().get());
+    final List<String> generatedSourceRoots =
+        sourceRoots.stream()
+            .map(FileUtil::absolute)
+            .filter(root -> root.startsWith(buildDirectory))
+            .map(Path::toString)
+            .toList();
     final List<String> classpath = GradleFiles.paths(getClasspath());
     final Map<Boolean, List<String>> split =
         isModular(sourceRoots)
@@ -252,7 +263,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
             : compilerArgs,
         AnalysisMode.CLASSPATH,
         false,
-        getTestCode().get());
+        getTestCode().get(),
+        generatedSourceRoots);
   }
 
   private boolean isModular(final List<String> sourceRoots) {

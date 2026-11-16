@@ -17,6 +17,8 @@ import org.gradle.testkit.runner.BuildTask;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LatheCaptureTaskFunctionalTest {
 
@@ -88,6 +90,45 @@ class LatheCaptureTaskFunctionalTest {
         .containsExactly("-source", "17", "-target", "17", "-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
         .contains(fixture.path("build/classes/java/main"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"build", "custom-output"})
+  void capture_taskGeneratedRoots_recordsOnlyRootsInsideTheConfiguredBuildDirectory(
+      final String buildDirectory) throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file("settings.gradle", SETTINGS)
+            .file(
+                "build.gradle",
+                GradleFixture.JAVA
+                    + """
+                layout.buildDirectory = layout.projectDirectory.dir('%s')
+                sourceSets.main.java.srcDirs(
+                    layout.buildDirectory.dir('generated/first'),
+                    layout.buildDirectory.dir('generated/second'),
+                    '%s-neighbor')
+                """
+                        .formatted(buildDirectory, buildDirectory))
+            .file("src/main/java/com/example/App.java", "package com.example; class App {}")
+            .file(
+                buildDirectory + "/generated/first/com/example/First.java",
+                "package com.example; class First {}")
+            .file(
+                buildDirectory + "/generated/second/com/example/Second.java",
+                "package com.example; class Second {}")
+            .file(
+                buildDirectory + "-neighbor/com/example/Neighbor.java",
+                "package com.example; class Neighbor {}");
+
+    fixture.runner("classes", "--configuration-cache").build();
+    final var second = fixture.runner("classes", "--configuration-cache").build();
+
+    assertThat(params("", LatheLayout.CLASSES_DIR).generatedSourceRoots())
+        .containsExactly(
+            fixture.path(buildDirectory + "/generated/first"),
+            fixture.path(buildDirectory + "/generated/second"));
+    assertThat(second.getOutput()).contains("Configuration cache entry reused.");
   }
 
   // The capture is best-effort, as Maven's: a module lock it cannot take skips it, never the build.

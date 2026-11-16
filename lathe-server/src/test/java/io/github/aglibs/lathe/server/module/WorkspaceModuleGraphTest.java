@@ -37,7 +37,8 @@ class WorkspaceModuleGraphTest {
         null,
         false,
         null,
-        REWRITE);
+        REWRITE,
+        List.of());
   }
 
   private static Path reactorTarget(final String moduleRel) {
