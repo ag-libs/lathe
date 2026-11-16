@@ -6,8 +6,10 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheUri;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,8 +56,21 @@ final class DiskEdits {
 
   private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
     final var path = LatheUri.toPath(uri);
-    final String updated =
-        Positions.applyEdits(IOUtil.unchecked(() -> Files.readString(path)), edits);
-    IOUtil.unchecked(() -> Files.writeString(path, updated));
+    final String content = IOUtil.unchecked(() -> Files.readString(path, StandardCharsets.UTF_8));
+    final var diskEdits = new ArrayList<TextEdit>();
+    for (final TextEdit edit : edits) {
+      final int offset = Positions.toOffset(content, edit.getRange().getStart());
+      int newline = content.indexOf('\n', offset);
+      if (newline < 0) {
+        newline = content.lastIndexOf('\n', offset - 1);
+      }
+
+      final String separator = newline > 0 && content.charAt(newline - 1) == '\r' ? "\r\n" : "\n";
+      final String replacement = edit.getNewText().replace("\r\n", "\n").replace("\n", separator);
+      diskEdits.add(new TextEdit(edit.getRange(), replacement));
+    }
+
+    final String updated = Positions.applyEdits(content, List.copyOf(diskEdits));
+    IOUtil.unchecked(() -> Files.writeString(path, updated, StandardCharsets.UTF_8));
   }
 }

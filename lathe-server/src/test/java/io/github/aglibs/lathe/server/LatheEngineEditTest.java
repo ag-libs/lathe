@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -21,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 // The file-editing tools: format_file and fix_imports.
 class LatheEngineEditTest extends LatheEngineTestBase {
@@ -253,6 +256,47 @@ class LatheEngineEditTest extends LatheEngineTestBase {
     assertThat(imports.added()).isEmpty();
     assertThat(imports.unresolved()).isEmpty();
     assertThat(Files.readString(source)).isEqualTo(clean);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"\n", "\r\n"})
+  void fixImports_uniformLineEndings_preservesTheSeparator(final String separator)
+      throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/util/Helper.java", "package com.example.util; public class Helper {}");
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/app/App.java",
+            "package com.example.app;\nclass App { Helper helper; }\n".replace("\n", separator));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.fixImports(source).added()).containsExactly("com.example.util.Helper");
+    final String updated = Files.readString(source, StandardCharsets.UTF_8);
+    assertThat(updated).contains("import com.example.util.Helper;" + separator);
+    assertThat(updated.replace(separator, "")).doesNotContain("\n", "\r");
+    assertThat(engine.fixImports(source).added()).isEmpty();
+    assertThat(Files.readString(source, StandardCharsets.UTF_8)).isEqualTo(updated);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"\n", "\r\n"})
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
+  void format_uniformLineEndings_preservesTheSeparator(final String separator) throws Exception {
+    pinGoogleJavaFormat();
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Sample.java",
+            "package com.example;\nclass Sample { int twice(int n) {return n*2;} }\n"
+                .replace("\n", separator));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.format(source)).isPresent();
+    final String updated = Files.readString(source, StandardCharsets.UTF_8);
+    assertThat(updated).contains("return n * 2;" + separator);
+    assertThat(updated.replace(separator, "")).doesNotContain("\n", "\r");
+    assertThat(engine.format(source)).isEmpty();
   }
 
   // The style file lathe:sync writes for a project whose Spotless step pins google-java-format.

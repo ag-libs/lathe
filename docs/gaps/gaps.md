@@ -1996,58 +1996,6 @@ connects a generated member to the declaration it was generated from.
 
 ---
 
-## MC-41 — MCP edits written to a CRLF file add LF line endings
-
-**Status: deferred.**
-
-**Kind: bug**
-
-Decision (2026-10-27): a real but narrow problem; a fix was written and reverted (see below).
-**Affects: MCP `fix_imports`.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-Server edits break lines with `\n`, which is right for an editor: it applies them in its buffer, in the
-document's own line separator.
-`DiskEdits.applyFileEdits` writes them to disk verbatim, so in a CRLF file (Git for Windows'
-default `core.autocrlf=true` checkout) `fix_imports` leaves mixed line endings:
-
-```
-package nl.jqno.equalsverifier;\r\n
-\n
-import java.util.Objects;\n
-\r\n
-public class LatheCrlf {\r\n
-```
-
-Only `fix_imports` inserts line breaks today: `rename_symbol` replaces identifiers, and `format_file`
-writes the formatter's output, which keeps one separator.
-The effect is small: `git` with `autocrlf=true` normalizes the lines on commit; a local Spotless
-`check` (line endings from git attributes, so CRLF on such a machine) likely reports the file until it is
-formatted; Vim and Emacs show `^M` on the original lines; VS Code picks one separator. Placement is
-unaffected, since javac's line map counts `\r\n` as one break.
-The tests do not cover it: their sources are text blocks, so LF even on the Windows CI row.
-
-### Fix direction
-
-Convert at the disk-write boundary only, never in the edits an editor applies (a `\r` inside Neovim
-buffer lines): in `DiskEdits.applyFileEdits`, write each edit's line breaks in the file's separator,
-normalizing a `\r\n` already in an edit first so a CRLF formatter result does not become `\r\r\n`.
-Keep the check private to that method; the reverted attempt shared a `lineSeparatorOf` helper with
-`EclipseFormatEngine` through `SourceLocator`, which was the wrong home.
-Matching the separator of the line an edit lands next to, instead of a whole-file guess, would also
-handle files that are already mixed.
-Tests must build CRLF content explicitly (`"…\r\n"`): `fix_imports` and `format_file` on a CRLF file,
-asserting no bare `\n` and no `\r\r`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-50 — `call_hierarchy` returns one level per call
 
 **Status: deferred** (2026-11-15: a new capability, not a defect; one level per call is what the tool says it answers)
