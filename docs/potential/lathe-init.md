@@ -22,6 +22,7 @@ Nothing here is approved for implementation; [What changes](#what-changes) needs
 - **Gradle personal is a v1 mode** (2026-11-11): the Gradle front-end exists and its sync script already replays `--init-script`, so only the client step is missing ([Gradle personal mode](#gradle-personal-mode)).
 - **Code that does not compile still sets up** (2026-11-11): `failOnError` off in personal builds, on both tools ([spiked](#spike-results-2026-11-11)).
 - **The version is pinned at init; `:LatheInit` again upgrades** (2026-11-11), from version-scoped bootstrap files the sync script replays and checks ([Versions over time](#versions-over-time)).
+- **A root set up already is not built again** (2026-11-16): `:LatheInit` there names `:LatheSync` instead, and `:LatheInit!` builds anyway ([A root set up already](#a-root-set-up-already)).
 
 Related designs:
 - [Workspace Contract](../lathe-workspace-contract.md): the `.lathe/` files; every mode writes them through the existing Maven front-end.
@@ -102,8 +103,10 @@ Lathe: set up Lathe 0.3.1 (now 0.3.0) for the Maven build in: ~/work/app█
 - **No argument:** the kind and the root are detected ([below](#finding-the-builds-root)); a kind given looks only for that kind's root.
 - **The root is confirmed in a prompt**, pre-filled and editable, with folder completion: Enter accepts it, an edited root is taken as typed (no walking up), a relative one from the root offered, its kind read from its own files. Arguments mixing a kind and a folder were set aside as awkward to type and read.
 - **The prompt says what will happen:** the version brought in and the one set up now, or that the build registers Lathe and just builds. A root typed inside the one found gets a warning that a module is not set up alone; the build still runs, as the guess may be the wrong one.
+- **The prompt says where the root came from** when it was found from the current file outside `:pwd` ("found from the current file"): the file in the window, not the folder Neovim was started in, picked the project.
 - **A development client** without `LATHE_VERSION` is told so before the prompt, unless the build registers Lathe.
-- **It never syncs:** with no build found but a `.lathe/` present, it says `:LatheSync` refreshes it.
+- **It never syncs:** with no build found but a `.lathe/` present, it says `:LatheSync` refreshes it, and a root set up already gets the same message instead of a build ([below](#a-root-set-up-already)).
+- **A root with a run going** (a sync, or `:LatheInit`'s own download or build) asks nothing and says so.
 - **`plain`** joins the kinds when plain mode ships; team modes after it.
 
 | The build at the root | `:LatheInit` runs |
@@ -120,6 +123,25 @@ The tests are captured, not run, so the first test run needs no sync.
 A parent POM that registers Lathe is not seen by the text check; the build's own Lathe then wins over the one brought in, so after the build the client names the version `.lathe/workspace.json` records and says when it is not the one asked for.
 
 When the build ends with a launcher, the client starts the server for the open Java buffers under the root; without one, it asks whether the root is the build's root.
+
+#### A root set up already
+
+**Agreed 2026-11-16.** `:LatheInit` on a project its build had set up ran the whole first build again, a `clean test` that changed nothing `:LatheSync` would not.
+Running it again is still right when it changes how Lathe gets into the build, so the client builds only then.
+A root is set up when its build's sync wrote `workspace.json` and the launcher; one that is not (no `.lathe/`, a first build that stopped, a workspace without a server) always builds.
+On a root set up, the build at that root decides:
+
+| The build | Set up already when | So these still build |
+|---|---|---|
+| registers Lathe | always: the project's pin decides the version, which `:LatheInit` cannot change | — |
+| personal Maven | `.lathe/lathe-sync.sh` names `<bootstrap>/<v>/lib`, this client's activation | another version; a script rendered while the project registered Lathe (back to personal mode); a root set up through Gradle |
+| personal Gradle | the sync script names `<bootstrap>/<v>/lathe.init.gradle.kts` | the same, the other way round |
+| OpenJDK | `workspace.json` records this version | another version |
+
+The sync script is the test because it is what every later sync runs: when it does not bring this version in, a sync would not either.
+A sync script from a Lathe older than the replay of the activation names none, so such a root builds, as before.
+A root typed in the prompt is checked the same way.
+The message names the version, the root, `:LatheSync`, and `:LatheInit!`, which builds anyway: a newer snapshot at the same version, or a workspace thought to be partial.
 
 ### Finding the build's root
 

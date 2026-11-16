@@ -200,7 +200,7 @@ end
 
 -- The notification names what the client ran; the script prints the build command it resolves
 -- (`lathe-sync: mvnd …`) as its first stderr line, so that shows in the output console.
-local SCRIPT = ".lathe/lathe-sync.sh"
+local SCRIPT = require("lathe.workspace").SYNC_SCRIPT
 
 --- Runs `.lathe/lathe-sync.sh [--tests] [module ...]` at `root` as a background job, notifying on
 --- start and completion. `modules` (reactor-relative paths) scope it; empty/nil syncs everything.
@@ -318,6 +318,18 @@ function M.setting_up(path)
   for root, action in pairs(running) do
     local at = real(root)
     if action ~= "sync" and (wanted == at or vim.startswith(wanted, at .. "/")) then
+      return true
+    end
+  end
+
+  return false
+end
+
+--- Whether a run (a sync, or :LatheInit's download or first build) is going at root.
+function M.busy(root)
+  local wanted = real(root)
+  for at in pairs(running) do
+    if real(at) == wanted then
       return true
     end
   end
