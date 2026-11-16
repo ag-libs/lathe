@@ -7,6 +7,32 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-108 — Semantic tokens mark deprecated methods but not deprecated types — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: the editor's semantic highlighting.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+In a JUnit test, a call to the deprecated `TestPlan.getTestIdentifier(String)` gets the `deprecated` modifier; a reference to the deprecated class `org.junit.jupiter.api.extension.MediaType` gets none, though javac warns about both and hover says the class is deprecated.
+A deprecated class is what a reader most wants struck through.
+
+### Resolution
+
+A type's and an enum constant's use carried no modifier at all; it now carries `deprecated` when the element is, as a field's and a method's use already did.
+`static` stays on members only, so a nested type's uses look as before.
+
+### Regression targets
+
+`SemanticTokensTest.deprecatedTypeAndEnumConstant_usages_haveDeprecatedModifier`
+
+---
+
 ## EG-084 — Diagnostics skip the build's javac plugins, and contradict the notes that run them — done
 
 **Status: done.**

@@ -273,13 +273,13 @@ public final class TokenScanner extends WrittenSourceScanner {
     final var kind = element.getKind();
     final String typeToken = typeTokenType(kind);
     if (typeToken != null) {
-      addToken(pos, length, typeToken, Set.of());
+      addToken(pos, length, typeToken, deprecation(element));
       return;
     }
 
     switch (kind) {
       case TYPE_PARAMETER -> addToken(pos, length, "typeParameter", Set.of());
-      case ENUM_CONSTANT -> addToken(pos, length, "enumMember", Set.of());
+      case ENUM_CONSTANT -> addToken(pos, length, "enumMember", deprecation(element));
       case PARAMETER -> addToken(pos, length, "parameter", Set.of());
       case LOCAL_VARIABLE, RESOURCE_VARIABLE, BINDING_VARIABLE, EXCEPTION_PARAMETER ->
           addToken(pos, length, "variable", Set.of());
@@ -308,6 +308,12 @@ public final class TokenScanner extends WrittenSourceScanner {
       case LOCAL_VARIABLE, RESOURCE_VARIABLE, BINDING_VARIABLE, EXCEPTION_PARAMETER -> "variable";
       default -> null;
     };
+  }
+
+  // A type's or enum constant's use is struck through when deprecated, the use a reader most wants
+  // flagged; `static` stays the members', so a nested type's uses look as before.
+  private Set<String> deprecation(final Element element) {
+    return elements.isDeprecated(element) ? Set.of("deprecated") : Set.of();
   }
 
   private Set<String> interestingModifiers(final Element element) {

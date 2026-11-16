@@ -736,33 +736,6 @@ None yet.
 
 ---
 
-## EG-108 — Semantic tokens mark deprecated methods but not deprecated types
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: the editor's semantic highlighting.**
-
-Found by the pre-release JUnit editor round (2026-11-15).
-
-### Observed behaviour
-
-In a JUnit test, a call to the deprecated `TestPlan.getTestIdentifier(String)` gets the `deprecated` modifier; a reference to the deprecated class `org.junit.jupiter.api.extension.MediaType` gets none, though javac warns about both and hover says the class is deprecated.
-A deprecated class is what a reader most wants struck through.
-
-### Fix direction
-
-Give a reference to a deprecated type the `deprecated` modifier, as for members.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-109 — `:LatheNew` cannot create a type in a Gradle source set beyond `main` and `test`
 
 **Status: documented**
