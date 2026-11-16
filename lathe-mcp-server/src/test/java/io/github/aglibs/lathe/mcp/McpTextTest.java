@@ -744,21 +744,22 @@ class McpTextTest {
                         true,
                         List.of("app.Seller#sell(int)"),
                         List.of(base, override),
+                        5,
                         List.of(redeclaration),
+                        1,
                         4,
                         2,
-                        true,
                         List.of("app", "core"),
                         List.of("ShopTest")),
                     McpText.NO_NOTES)))
         .isEqualTo(
             lines(
                 "int sell(int count)",
-                "references: 4 production, 2 test (truncated)",
+                "references: 4 production, 2 test",
                 "affected modules: app, core",
                 "relevant tests: ShopTest",
                 "overrides: app.Seller#sell(int)",
-                "overridden by: 2",
+                "overridden by: 5 (showing first 2)",
                 "app/Base.java:4:1: abstract int sell(int count);",
                 "app/Shop.java:8:1: int sell(int count) {",
                 "redeclared by: 1",
@@ -767,7 +768,7 @@ class McpTextTest {
             text(
                 McpText.analyzeResult(
                     new LatheChangeImpact(
-                        "", false, List.of(), List.of(), List.of(), 0, 0, false, List.of(),
+                        "", false, List.of(), List.of(), 0, List.of(), 0, 0, 0, List.of(),
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(

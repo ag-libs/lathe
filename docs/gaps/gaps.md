@@ -2382,40 +2382,6 @@ None yet.
 
 ---
 
-## MC-68 — `analyze_change` has no caller-selected output limit or exact capped counts
-
-**Status: documented (a fixed internal cap exists; caller-selected limiting remains).**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP `analyze_change`.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-On `Handler.handle` it printed all 225 implementations in its override family,
-while the other tools take `maxResults`.
-
-### Current behavior
-
-`LatheEngine.IMPACT_MAX_RESULTS` already caps references and implementations at 1,000 each.
-`McpText.analyzeResult` marks truncated references, but the tool has no `maxResults` argument, the override-family truncation is not exposed, and the displayed counts are derived from capped references.
-The original claim of no limit at all is inaccurate; the user-controlled limit and exact counts remain open.
-
-### Fix direction
-
-Take `maxResults` like the other tools, cap the listed locations, and keep the counts exact with a
-"(N more)" line.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-85 — `verify_change` says nothing about uses in modules the sync leaves out
 
 **Status: documented**

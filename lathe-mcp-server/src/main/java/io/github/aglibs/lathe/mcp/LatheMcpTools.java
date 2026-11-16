@@ -273,7 +273,11 @@ final class LatheMcpTools {
             engine,
             mapper,
             "analyze_change",
-            positionSchema(""),
+            positionSchema(
+                """
+                    ,"maxResults":{"type":"integer","minimum":1,
+                     "description":"Max members of each override-family list to show (default 50); the counts are of all."}\
+                    """),
             READ_ONLY,
             """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
@@ -557,7 +561,9 @@ final class LatheMcpTools {
         tool,
         request,
         (file, line, column) ->
-            render(engine.analyzeChange(file, line, column), McpText::analyzeResult));
+            render(
+                engine.analyzeChange(file, line, column, maxResults(request)),
+                McpText::analyzeResult));
   }
 
   private static CallToolResult handleVerifyChange(
