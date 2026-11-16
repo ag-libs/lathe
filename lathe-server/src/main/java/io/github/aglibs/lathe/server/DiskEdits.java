@@ -59,6 +59,11 @@ final class DiskEdits {
     final String content = IOUtil.unchecked(() -> Files.readString(path, StandardCharsets.UTF_8));
     final var diskEdits = new ArrayList<TextEdit>();
     for (final TextEdit edit : edits) {
+      if (!edit.getNewText().contains("\n")) {
+        diskEdits.add(edit);
+        continue;
+      }
+
       final int offset = Positions.toOffset(content, edit.getRange().getStart());
       int newline = content.indexOf('\n', offset);
       if (newline < 0) {

@@ -23,15 +23,13 @@ class DiskEditsTest {
   void apply_uniformLineEndings_preservesTheFileSeparatorAndTheOriginalEdit() throws Exception {
     for (final String separator : List.of("\n", "\r\n")) {
       for (final String insertedSeparator : List.of("\n", "\r\n")) {
-        final String content = "first%ssecond%s".formatted(separator, separator);
-        final String replacement = "added%sline%s".formatted(insertedSeparator, insertedSeparator);
+        final String content = "first\nsecond\n".replace("\n", separator);
+        final String replacement = "added\nline\n".replace("\n", insertedSeparator);
         final var edit =
             new TextEdit(new Range(new Position(1, 0), new Position(1, 0)), replacement);
 
         assertThat(apply(content, List.of(edit)))
-            .isEqualTo(
-                "first%sadded%sline%ssecond%s"
-                    .formatted(separator, separator, separator, separator));
+            .isEqualTo("first\nadded\nline\nsecond\n".replace("\n", separator));
         assertThat(edit.getNewText()).isEqualTo(replacement);
       }
     }
