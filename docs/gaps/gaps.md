@@ -724,12 +724,20 @@ Found by the pre-release JUnit editor round (2026-11-15).
 ### Observed behaviour
 
 From `junit-platform-engine/src/testFixtures/java/org/junit/platform/fakes/TestDescriptorStub.java`, `:LatheNew class` opens the global "Where:" picker (163 rows) instead of a name prompt in `org.junit.platform.fakes`, and none of its rows is a `testFixtures` or `jmh` destination.
-`lathe.workspace.context` answers `{}` for such a buffer.
+`lathe.workspace.context` answers `null` for such a buffer.
 From a `main` file it prompts in the file's package and creates the type.
+
+### Cause (verified against the code, 2026-11-16)
+
+The exclusion is deliberate: `SourceLayout.resolveContext`, `destinations()` and `packages()` drop every source-set tree (`classes-<set>`, `LatheLayout.SOURCE_SET_TREE_PREFIX`), noting that such a tree "has no place in the create-type scopes yet".
+`SourceScope` has only `MAIN` and `TEST`, and `sourceRootFor` and `createType` work by scope, so neither the context nor a destination can name a source set.
+`lathe-neovim/runtime/lua/lathe/new.lua` then falls back to the global picker on the `null` answer.
 
 ### Fix direction
 
-Answer the workspace context, and list destinations, for every source-set tree, as for `main` and `test`.
+Answer the workspace context, and list destinations, for every source-set tree, as for `main` and `test`:
+a destination needs a way to name its source set, beyond the two `SourceScope` values, not only the filter removed.
+The same `null` context hides a source-set file's module from neotest's discovery (TE-18).
 
 ### Regression targets
 
@@ -790,7 +798,11 @@ The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_
 
 ### Fix direction
 
-Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
+Refuse a blueprint rename with the reason, as for Lombok members (`RenameConflicts.lombokRefusal`), or rename the generated members' callers too when the generator links them.
+
+Verified against the code (2026-11-16): still present.
+`RenameService` refuses only a symbol declared in a generated source, and nothing links a generated member to the declaration it was generated from;
+`ModuleSourceConfig.isGenerated` counts only the Lathe mirror and the build's generated-sources directory, so the Caffeine case below holds too.
 
 Also (exploratory round, 2026-11-04): renaming Dropwizard's JMH `parseDuration` leaves 10 generated callers with no note; `verify_change` says clean while `get_diagnostics` on the generated file shows the errors.
 
@@ -808,7 +820,7 @@ None yet.
 
 ## FR-029 — References to a widely used method take 12–27 s on a very large codebase
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: what is left, parallel batches per module and cached answers, needs its own design)
 
 **Kind: bug**
 
@@ -878,9 +890,17 @@ and after (the machine was partly loaded, load average 3–15):
 Remaining: following exposures transitively, so a common name compiles only the files that can reach the method
 (lever (b) of the design), and each module caching its answers until it changes (lever (c)).
 
+### Status of the fix directions (verified against the code, 2026-11-16)
+
+- Direction 1 is done for reactor types: `ReferenceCandidatePlanner.planStaticMethod` searches the files naming the declaring type first and defers the rest (ebd41702, narrowed to reactor types in bdbef9ee).
+  This entry's headline query, the static `StringHelper.isEmpty`, takes that path: the 2026-11-08 benchmark measured `StringHelper.isNotEmpty` at 2.0 s.
+  The slow queries left are instance methods (`EntityAction.getId`) and static methods of library types, which `ReferenceCandidatePlanner` still searches in every file spelling the name.
+- Lever (b), following exposures transitively, was tried and shelved on 2026-11-10 ([design](../planned/lathe-search-speed.md)); it is not "remaining".
+- Directions 2 and 3 are open; the design lists (c), the answer cache, and an exposure graph read from class files as post-release candidates.
+
 ### Fix direction
 
-1. **Narrow static methods to their family, exactly.**
+1. **Narrow static methods to their family, exactly.** (Done; see above.)
    Compile first every file that names the declaring type or a subtype, or imports the method statically, whether or not it spells the method.
    A file outside that set can reach the method only through an expression of a family type, whose type comes from a non-family type's non-private declaration naming the family, so in that set:
    check those declarations (as javac's model of each type, so Lombok's and a record's generated members count), and compile the files spelling only the method's name when one exposes a family type, or when a class in the set extends a family type the type index does not know.
@@ -906,7 +926,7 @@ None yet.
 
 ## FR-032 — Implementations of an interface method and incoming calls take seconds on a large codebase
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: what is left is FR-029's)
 
 **Kind: bug**
 
@@ -954,7 +974,9 @@ Remaining: following exposures transitively, so a common name compiles only the 
 
 ### Fix direction
 
-Stage 3 of the [comparison plan](../planned/lathe-jdtls-comparison.md) lists compiling a module's candidate files in batches instead of one javac task per file; FR-029's per-module parallelism applies here too.
+Batching (stage 3 of the [comparison plan](../planned/lathe-jdtls-comparison.md)) is done (#158).
+Verified against the code (2026-11-16): implementations of a method still compile every subtype file and every lambda or method-reference file (`ReferenceSearch.implementationsIn`), and incoming calls the reference candidates, in batches of 32 run one after another on the module's worker; only implementations of a type answer from the type index.
+What is left is FR-029's directions 2 and 3: a module's batches in parallel, and cached answers.
 
 ### Regression targets
 
@@ -1067,6 +1089,9 @@ The build's import-order check fails on each until the file is formatted.
 
 Record the order the project declares, Spotless `importOrder` or an Eclipse `.importorder` file, in the sync's style, and place imports by it when there is one.
 
+Verified against the code (2026-11-16): still present.
+`ImportLayout` places an import from the file's own imports only (one group takes everything; a new group sorts alphabetically; a group sorts in natural order), all three entry points use it, and nothing reads an import order (`FormatterSpec` carries none).
+
 ### Regression targets
 
 None yet.
@@ -1110,26 +1135,33 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0062 — A member overriding one with a type-use-annotated parameter may be listed twice
+## CQ-0062 — Simple-name completion's duplicate check keys a method on annotated parameter text
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: narrow and not reproduced)
 
 **Kind: bug**
 
-**Affects: member completion, on a server running JDK 21 or older, or for a `SOURCE`-retained annotation.**
+**Value: low — Size: S**
 
-Found reviewing the FR-031 fix (2026-11-08); suspected from the code, not yet reproduced.
+**Affects: simple-name completion (no qualifier) inside a nested class or with static imports, on a server running JDK 21 or older, or for a `SOURCE`-retained annotation.**
+
+Found reviewing the FR-031 fix (2026-11-08); suspected from the code, not reproduced.
+Rewritten after checking the code (2026-11-16): the override case first suspected cannot happen.
 
 ### Suspected behaviour
 
-`SimpleNameProvider.memberKey`, which keeps a member and an inherited one of the same signature from both being listed, keys a method on its parameters' type text (`asType().toString()`).
+`SimpleNameProvider.memberKey`, which keeps the same member reached twice from being listed twice, keys a method on its parameters' type text (`asType().toString()`).
 FR-031 showed that text carries type-use annotations for a type compiled from source and lacks them for the same type read from a class file on JDK 21 and older.
-A source override of a library method declared `void put(@NonNull String key)` (or the reverse) would then key differently from the inherited method and be listed twice.
+
+An override is not affected: `SimpleNameProvider` takes a class's members from `Elements.getAllMembers`, which already drops a supertype method that a member overrides, by erasure, so the two never meet in `memberKey`.
+Member completion after a dot goes through `CandidateGenerator` and does not use `memberKey` at all.
+What is left is the same signature reached through two `getAllMembers` calls: an enclosing class's members (`addMembersOutwards`) or a static import.
+A mismatch there would list the method twice, though an inner class's method of the same name usually shadows the outer one, so the case is narrow.
 
 ### Probe
 
-A class compiled from source overriding a method of a class-file supertype whose parameter carries a `SOURCE`-retained type-use annotation; member completion on an instance should list the method once.
-The likely fix keys on `ReferenceTarget.erasedTypeName`, which names a type without its annotations.
+Simple-name completion inside a nested class whose outer class and a static import both reach one class-file method with a `SOURCE`-retained type-use annotation on a parameter; the method should be listed once.
+The likely fix keys on `ReferenceTarget.erasedTypeName`, which names a type without its annotations; it is harmless hardening even if the probe does not reproduce.
 
 ### Regression targets
 
@@ -1336,7 +1368,7 @@ None yet.
 
 ## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: seen once, not reproduced; revisit when it recurs)
 
 **Kind: bug**
 
@@ -1357,6 +1389,10 @@ Two reduced attempts (add a file, sync, delete it, sync) did not repeat it.
 Reproduce first: find what made the pass write the generated sources twice (a reload landing mid-pass, or stamps the sync
 rewrote after the first write).
 
+Both are possible in the code (checked 2026-11-16): `WritePass.onReload` bumps the pass generation, but `writeLevels` checks it only between dependency levels, so a level already compiling finishes and the next pass may write it again;
+the stamps guess would sit in `stableSources`/`pendingStale` and the stamp map.
+No commit since the report targets either.
+
 ### Regression targets
 
 None yet.
@@ -1365,7 +1401,9 @@ None yet.
 
 ## WS-37 — Java that Groovy compiles jointly, under `src/<source set>/groovy`, is in no module
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: a feature, deferred under the feature freeze)
+
+**Kind: feature**
 
 **Value: low — Size: L**
 
@@ -1385,6 +1423,41 @@ so an agent knows to check it with grep.
 
 Capture the Groovy compile's Java sources as a tree of their own, compiled by javac against the Groovy classes from the build;
 the Groovy sources themselves stay unread.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-38 — An empty dependency-source marker fails every later sync
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: every sync (Maven, Gradle, OpenJDK) whose Lathe cache holds a truncated `.lathe-source.json`.**
+
+Found while running `mvn clean install` after a machine crash (2026-11-16).
+
+### Observed behaviour
+
+A hard crash while the Gradle plugin's functional tests ran left `deps/com.example/withsrc/1.0/.lathe-source.json` in the fixtures' Lathe cache as a 0-byte file:
+`ZipCache` writes the marker into a temporary directory and renames it into place, which a crash before the data reaches the disk does not survive.
+Every later sync failed with `[lathe] workspace files not refreshed: Cannot invoke "…DependencySourceSync$SourceMarker.schema()" because "m" is null`, and wrote no `.lathe/workspace.json`.
+Only deleting the cache by hand recovered it.
+
+### Cause
+
+Gson reads an empty file as `null`, and `DependencySourceSync.isSourceCacheCurrent` dereferences the result; its `catch (IOException)` does not catch the `NullPointerException`.
+The other cache readers already tolerate it: `TypeIndexFiles.current` catches `RuntimeException`, `CompiledStamps` checks for `null`.
+`WorkspaceTypeIndex.loadFile` (the server) has the same weakness: an empty shard becomes `Stream.of(null)`.
+
+### Fix direction
+
+Take a `null` marker as a stale cache, so the sources are extracted again and the marker rewritten; treat an empty type-index shard as missing.
 
 ### Regression targets
 
@@ -1526,9 +1599,18 @@ Found by the pre-release JUnit editor round (2026-11-15).
 With the `archUnit` source set's launch captured (`test-launch-classes-archUnit.json`), `ArchUnitTests.java` shows no tests in neotest: the file's runnables know `@Test`-style methods only, not ArchUnit's `@ArchTest` fields, and module discovery (`lathe.tests.discover`) reads the `test` source set only, listing 53 tests and none of `archUnit`'s.
 These tests cannot be run from the editor at all.
 
+### Cause (verified against the code, 2026-11-16)
+
+- Module discovery (`RunCoordinator.launchDiscovery` through `SourceLayout.testConfigs()`) keeps the `test-classes` tree only.
+- `RunnableScanner` knows `@Test`, `@ParameterizedTest`, `@TestFactory`, `@RepeatedTest`, suites, `@Nested` and JUnit 3 classes, not `@ArchTest` fields.
+- neotest finds an unopened file's module through `lathe.workspace.context`, which answers `null` for a source-set file (EG-109), so such a file has no module to discover in.
+
+Running is not the missing part: `checkedTestLaunch` reads `test-launch-classes-<set>.json`, which the Gradle plugin captures; the editor has no target to run.
+
 ### Fix direction
 
 Discover each captured source set's launch, which finds the ArchUnit engine's tests, and place the file's runnables from that discovery.
+Fix EG-109's context first: discovery alone leaves neotest without the file's module.
 
 ### Regression targets
 
@@ -1942,7 +2024,7 @@ None yet.
 
 ## MC-39 — `rename_symbol` refuses a generated symbol without naming the blueprint method to rename
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: waits on FR-020's generator link)
 
 **Kind: bug**
 
@@ -1962,6 +2044,9 @@ The ordering half of this gap is done: capped answers list hand-written sources 
 
 When refusing a generated symbol, name its blueprint declaration. Waits on FR-020's generator link, which
 connects a generated member to the declaration it was generated from.
+
+Verified against the code (2026-11-16): the refusal (`RenameService`) is still the generic "rename the source it is generated from instead", and the generator link does not exist.
+MC-70's resolution also mentions "MC-39" for ranking generated types after hand-written ones in `search_symbols`; that is the ordering half, not this entry's open half.
 
 ### Regression targets
 
@@ -2215,7 +2300,7 @@ None yet.
 
 ## MC-85 — `verify_change` says nothing about uses in modules the sync leaves out
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-16: waits on `verify_change` telling an API change from a body change)
 
 **Kind: bug**
 
@@ -2237,6 +2322,10 @@ behind the root `tests` profile and not synced.
 List the files outside the built modules that name a changed type only when its API changed:
 for a change inside a method body the same list would come back on every call, and agents learn to skip it.
 Waits on `verify_change` telling an API change from a body change.
+
+Verified against the code (2026-11-16): still present, and the blocker stands.
+`LatheEngine.verifyChange` never calls `OutsideSources` (only rename does), and `ChangeVerifier` compares content fingerprints and finds callers by token and constant-pool matches; nothing diffs signatures or members.
+A `verify_change` version also has to choose which names to search for, since rename searches the one old name.
 
 ### Regression targets
 
