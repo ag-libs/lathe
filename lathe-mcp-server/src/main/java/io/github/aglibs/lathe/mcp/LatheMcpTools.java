@@ -418,23 +418,12 @@ final class LatheMcpTools {
       final String tool,
       final ToolHandler handler) {
     for (final String argument : List.of("line", "column", "maxResults")) {
-      final Object value = args(request).get(argument);
-      if (value == null) {
-        continue;
-      }
-
-      final String error =
-          "%s '%s' must be an integer between 1 and %d"
-              .formatted(tool, argument, Integer.MAX_VALUE);
-      if (!(value instanceof Number)) {
-        return McpText.error(error);
-      }
-
       try {
-        final var integer = new BigDecimal(value.toString());
-        integer.intValueExact();
+        intArg(request, argument);
       } catch (final NumberFormatException | ArithmeticException e) {
-        return McpText.error(error);
+        return McpText.error(
+            "%s '%s' must be an integer between 1 and %d"
+                .formatted(tool, argument, Integer.MAX_VALUE));
       }
     }
 
@@ -902,7 +891,17 @@ final class LatheMcpTools {
   }
 
   private static Integer intArg(final CallToolRequest request, final String name) {
-    return args(request).get(name) instanceof Number n ? n.intValue() : null;
+    final Object value = args(request).get(name);
+    if (value == null) {
+      return null;
+    }
+
+    if (!(value instanceof Number)) {
+      throw new NumberFormatException();
+    }
+
+    final var integer = new BigDecimal(value.toString());
+    return integer.intValueExact();
   }
 
   // Optional "files" array; absent or malformed means "detect the change set".

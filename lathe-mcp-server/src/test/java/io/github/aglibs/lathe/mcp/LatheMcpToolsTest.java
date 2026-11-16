@@ -162,7 +162,7 @@ class LatheMcpToolsTest {
               throw new AssertionError("Invalid integers must not start the engine");
             },
             McpJsonDefaults.getMapper());
-    final List<Number> invalid =
+    final List<Object> invalid =
         List.of(
             2147483648L,
             4294967297L,
@@ -173,7 +173,9 @@ class LatheMcpToolsTest {
             new BigDecimal("1.5"),
             new BigDecimal("1.00000000000000000001"),
             Double.NaN,
-            Double.POSITIVE_INFINITY);
+            Double.POSITIVE_INFINITY,
+            "1",
+            true);
     for (final SyncToolSpecification spec : specs) {
       final Map<?, ?> properties = (Map<?, ?>) spec.tool().inputSchema().get("properties");
       for (final String argument : List.of("line", "column", "maxResults")) {
@@ -181,7 +183,7 @@ class LatheMcpToolsTest {
           continue;
         }
 
-        for (final Number value : invalid) {
+        for (final Object value : invalid) {
           final CallToolResult result = call(spec.tool().name(), Map.of(argument, value));
           assertThat(result.isError()).as("%s %s=%s", spec.tool().name(), argument, value).isTrue();
           assertThat(text(result))
