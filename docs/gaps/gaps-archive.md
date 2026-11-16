@@ -21,12 +21,13 @@ Each name combines the directive keyword with its primary module, package, or se
 The full directive range and target selection range come from javac trees, including multiline directives and targets separated by comments.
 An incomplete directive with no positioned target is omitted rather than exposing javac's synthesized error name.
 
-Validated on JDK 26: 15 scanner tests and 29 engine navigation tests passed.
+Validated on JDK 26: 16 scanner tests and 29 engine navigation tests passed.
 A live Helidon descriptor returned its five directive children through both LSP and MCP.
 
 ### Regression targets
 
 - `DocumentSymbolScannerTest.scan_moduleDirectives_listsAllFiveKindsInSourceOrder`
+- `DocumentSymbolScannerTest.scan_serviceClassDirectives_useANeutralSymbolKind`
 - `DocumentSymbolScannerTest.scan_multilineDirectiveWithComments_rangesComeFromTheJavacTrees`
 - `DocumentSymbolScannerTest.scan_openModuleWithoutDirectives_hasNoChildren`
 - `DocumentSymbolScannerTest.scan_incompleteDirective_doesNotEmitAnInvalidSelectionRange`

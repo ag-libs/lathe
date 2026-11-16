@@ -89,41 +89,14 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
 
   @Override
   public Void visitUses(final UsesTree node, final Void unused) {
-    addDirective(node, node.getServiceName(), "uses", SymbolKind.Interface);
+    addDirective(node, node.getServiceName(), "uses", SymbolKind.Object);
     return null;
   }
 
   @Override
   public Void visitProvides(final ProvidesTree node, final Void unused) {
-    addDirective(node, node.getServiceName(), "provides", SymbolKind.Interface);
+    addDirective(node, node.getServiceName(), "provides", SymbolKind.Object);
     return null;
-  }
-
-  private void addDirective(
-      final Tree directive, final Tree target, final String keyword, final SymbolKind kind) {
-    if (target == null) {
-      return;
-    }
-
-    final var positions = trees.getSourcePositions();
-    final long start = positions.getStartPosition(compilationUnit, directive);
-    final long end = positions.getEndPosition(compilationUnit, directive);
-    final long targetStart = positions.getStartPosition(compilationUnit, target);
-    final long targetEnd = positions.getEndPosition(compilationUnit, target);
-    if (start < 0
-        || end < start
-        || targetStart < start
-        || targetEnd <= targetStart
-        || targetEnd > end) {
-      return;
-    }
-
-    add(
-        new DocumentSymbol(
-            "%s %s".formatted(keyword, target),
-            kind,
-            range(start, end),
-            range(targetStart, targetEnd)));
   }
 
   @Override
@@ -175,6 +148,33 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
     super.visitVariable(node, unused);
     stack.pop();
     return null;
+  }
+
+  private void addDirective(
+      final Tree directive, final Tree target, final String keyword, final SymbolKind kind) {
+    if (target == null) {
+      return;
+    }
+
+    final var positions = trees.getSourcePositions();
+    final long start = positions.getStartPosition(compilationUnit, directive);
+    final long end = positions.getEndPosition(compilationUnit, directive);
+    final long targetStart = positions.getStartPosition(compilationUnit, target);
+    final long targetEnd = positions.getEndPosition(compilationUnit, target);
+    if (start < 0
+        || end < start
+        || targetStart < start
+        || targetEnd <= targetStart
+        || targetEnd > end) {
+      return;
+    }
+
+    add(
+        new DocumentSymbol(
+            "%s %s".formatted(keyword, target),
+            kind,
+            range(start, end),
+            range(targetStart, targetEnd)));
   }
 
   // javac gives every enum constant the initializer new E(...), with E the enum itself; no other

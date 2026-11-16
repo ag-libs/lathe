@@ -749,8 +749,8 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             tuple("module", "requires java.logging", 1, 1, 11),
             tuple("package", "exports com.example", 1, 2, 10),
             tuple("package", "opens com.example", 1, 3, 8),
-            tuple("interface", "uses java.lang.Runnable", 1, 4, 7),
-            tuple("interface", "provides java.lang.Runnable", 1, 5, 11));
+            tuple("object", "uses java.lang.Runnable", 1, 4, 7),
+            tuple("object", "provides java.lang.Runnable", 1, 5, 11));
   }
 
   // A file's structure needs no compile: a file no module compiles is outlined from a parse, and

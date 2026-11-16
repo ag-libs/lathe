@@ -282,8 +282,25 @@ class DocumentSymbolScannerTest {
             tuple("requires java.logging", SymbolKind.Module),
             tuple("exports com.example.api", SymbolKind.Package),
             tuple("opens com.example.internal", SymbolKind.Package),
-            tuple("uses com.example.Service", SymbolKind.Interface),
-            tuple("provides com.example.Service", SymbolKind.Interface));
+            tuple("uses com.example.Service", SymbolKind.Object),
+            tuple("provides com.example.Service", SymbolKind.Object));
+  }
+
+  @Test
+  void scan_serviceClassDirectives_useANeutralSymbolKind() {
+    final String source =
+        """
+        module example {
+          uses java.util.ResourceBundle;
+          provides java.util.ResourceBundle with com.example.Bundle;
+        }
+        """;
+
+    assertThat(children(scanAs(source, "module-info.java").get(0)))
+        .extracting(DocumentSymbol::getName, DocumentSymbol::getKind)
+        .containsExactly(
+            tuple("uses java.util.ResourceBundle", SymbolKind.Object),
+            tuple("provides java.util.ResourceBundle", SymbolKind.Object));
   }
 
   @Test
