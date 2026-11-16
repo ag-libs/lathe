@@ -739,7 +739,7 @@ None yet.
 
 ## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed
 
-**Status: documented**
+**Status: deferred** (2026-11-16)
 
 **Kind: bug**
 
@@ -1343,7 +1343,7 @@ None yet.
 
 ## WS-34 — A build check that scans the whole project finds the class mirror in `.lathe/`
 
-**Status: documented**
+**Status: deferred** (2026-11-16: the workaround is documented; the proper fix is the External Content Directory design)
 
 **Kind: bug**
 
@@ -1376,6 +1376,8 @@ Two ways to need no exclusion are open:
 - **Move the mirror out of the project** into the per-user cache, leaving `.lathe/` the small files.
   No scanner or Docker context would see it, at the cost of a per-workspace cache and its cleanup.
   The mirror must stay outside `target/` and `build/`: it outlives a clean and a failed build (`lathe-gradle-support.md`).
+  This is the [External Content Directory](../potential/lathe-external-content-dir.md) design, which covers every
+  scanner, not only nohttp: the proper fix, taken up if more users hit this.
 
 ### Regression targets
 
