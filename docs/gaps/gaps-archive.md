@@ -12587,6 +12587,38 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-13 — A server killed by a signal ends without a Lathe notification — done
+
+**Status: done** (2026-11-16)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: the Neovim client when the server process is killed, most often by the out-of-memory killer on a large project.**
+
+Found by the editor exploratory round (2026-11-16).
+
+### Observed behaviour
+
+Killed with SIGKILL, the server exits with code 0 and signal 9.
+The client passed only the code to `on_server_exit`, which took code 0 for a clean shutdown and stayed silent.
+The user saw only Neovim's own `Client lathe quit with exit code 0 and signal 9`, with no word of how to get the server back; saving the file does not restart it, reopening it does.
+
+### Resolution
+
+The client's `on_exit` passes the signal on, and a signal counts as an unexpected exit, as a non-zero code already did.
+SIGTERM stays silent: it is how Neovim itself stops a client (`:lsp restart`, a shutdown that times out), and Neovim's own check excludes it too.
+A kill's notification names the signal and says to run `:LatheStart`, which restarts the server without touching unsaved changes (`:edit` refuses a modified buffer).
+An exit with an error code keeps its message without that hint: such a server failed on its own and would fail again.
+Neovim's own `Client lathe quit…` warning still appears beside Lathe's.
+
+### Regression targets
+
+`lathestart_spec.lua`: `on_server_exit: killed by a signal notifies`, `on_server_exit: kill names the signal and :LatheStart`, `on_server_exit: SIGTERM from Neovim is silent`, `on_server_exit: code with a signal names the signal`, `on_server_exit: crash names the code, with no restart hint`, `on_server_exit: clean exit with no signal is silent`.
+
+---
+
 ## NV-12 — A refused clone of the neotest end-to-end check's plugins failed the CI build — done
 
 **Status: done.**

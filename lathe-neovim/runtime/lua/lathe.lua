@@ -43,22 +43,33 @@ M.cache_root = workspace.cache_root
 -- On-demand formatting that keeps a closed imports fold shut; see lathe.format.
 M.format = require("lathe.format").format
 
+-- The signal Neovim stops a client with when it does not exit on request.
+local SIGTERM = 15
+
 --- Notify the user when the language server process exits unexpectedly. A clean
---- shutdown (exit code 0) or Neovim itself quitting stays silent; any other exit
+--- shutdown (exit code 0, no signal) or Neovim itself quitting stays silent; any other exit
 --- surfaces an error pointing at `:LspLog`, since a dead server cannot report for
---- itself. Wired as the `lathe` client's on_exit, so it covers both the
+--- itself. A process killed by a signal (the OOM killer's SIGKILL) exits with code 0, so the
+--- signal is what tells it from a clean shutdown; SIGTERM is how Neovim itself stops a client
+--- (`:lsp restart`, a shutdown that times out), so it stays silent, as Neovim's own check does.
+--- Only a kill gets the restart hint: a server that exits with an error code failed on its own
+--- and would fail again. Wired as the `lathe` client's on_exit, so it covers both the
 --- filetype auto-start and `:LatheStart`.
 ---@param code integer process exit code
-function M.on_server_exit(code)
-  if code == 0 or vim.v.exiting ~= vim.NIL then
+---@param signal integer? the signal that ended the process, 0 or nil for none
+function M.on_server_exit(code, signal)
+  local killed = signal ~= nil and signal ~= 0 and signal ~= SIGTERM
+  if (code == 0 and not killed) or vim.v.exiting ~= vim.NIL then
     return
   end
 
-  vim.notify(
-    ("Lathe: language server exited unexpectedly (code %d); see :LspLog."):format(code),
-    vim.log.levels.ERROR,
-    { title = "Lathe" }
-  )
+  -- :LatheStart, not :edit, which a buffer with unsaved changes refuses (E37).
+  local message = killed
+      and ("Lathe: language server was killed (signal %d); run :LatheStart to restart it — see :LspLog."):format(
+        signal
+      )
+    or ("Lathe: language server exited unexpectedly (code %d); see :LspLog."):format(code)
+  vim.notify(message, vim.log.levels.ERROR, { title = "Lathe" })
 end
 
 --- Start (or reuse) the Lathe client for the current directory and attach it to
@@ -252,8 +263,8 @@ function M.setup(opts)
     end,
     filetypes = { "java" },
     single_file_support = false,
-    on_exit = function(code)
-      M.on_server_exit(code)
+    on_exit = function(code, signal)
+      M.on_server_exit(code, signal)
     end,
     on_init = function(client)
       M.check_protocol(

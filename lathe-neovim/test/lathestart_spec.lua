@@ -77,8 +77,8 @@ vim.lsp.start = function(config)
   table.insert(started, config)
   return 1
 end
-vim.notify = function()
-  table.insert(notes, true)
+vim.notify = function(msg)
+  table.insert(notes, msg)
 end
 
 -- start() from a marked project resolves the working directory and starts there.
@@ -101,8 +101,44 @@ spec.check("start: no client without a workspace", #started, 0)
 notes = {}
 lathe.on_server_exit(0)
 spec.check("on_server_exit: clean exit is silent", #notes, 0)
+lathe.on_server_exit(0, 0)
+spec.check("on_server_exit: clean exit with no signal is silent", #notes, 0)
 lathe.on_server_exit(134)
 spec.check("on_server_exit: crash notifies", #notes, 1)
+spec.check(
+  "on_server_exit: crash names the code, with no restart hint",
+  notes[1] ~= nil and notes[1]:find("code 134", 1, true) ~= nil and notes[1]:find(
+    "LatheStart",
+    1,
+    true
+  ) == nil,
+  true
+)
+
+-- A SIGKILL (the OOM killer) ends the process with code 0: the signal tells it from a clean exit.
+notes = {}
+lathe.on_server_exit(0, 9)
+spec.check("on_server_exit: killed by a signal notifies", #notes, 1)
+spec.check(
+  "on_server_exit: kill names the signal and :LatheStart",
+  notes[1] ~= nil
+    and notes[1]:find("killed (signal 9)", 1, true) ~= nil
+    and notes[1]:find(":LatheStart", 1, true) ~= nil,
+  true
+)
+
+-- SIGTERM is how Neovim itself stops a client (:lsp restart, a timed-out shutdown).
+notes = {}
+lathe.on_server_exit(0, 15)
+spec.check("on_server_exit: SIGTERM from Neovim is silent", #notes, 0)
+
+-- A code and a signal together: the kill is what the user needs to hear.
+lathe.on_server_exit(137, 9)
+spec.check(
+  "on_server_exit: code with a signal names the signal",
+  notes[1] ~= nil and notes[1]:find("signal 9", 1, true) ~= nil,
+  true
+)
 
 vim.fn.delete(work, "rf")
 spec.finish()
