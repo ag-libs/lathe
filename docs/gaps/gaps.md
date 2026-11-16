@@ -1814,7 +1814,7 @@ None yet.
 
 ## NV-10 — Signature help highlights no parameter when the active overload is not the first
 
-**Status: documented**
+**Status: deferred** (2026-11-16: the fix is blink.cmp's, in its open PR #2497; re-check on its next release)
 
 **Kind: bug**
 
@@ -1845,9 +1845,12 @@ signature and highlights correctly.
 
 ### Fix direction
 
-Report it to blink.cmp: the line must be the active signature's index in its own buffer, not Neovim's.
-Until it is fixed, Lathe could list the active signature first (`activeSignature` 0) in `SignatureHelpResolver`,
-which every client renders correctly, at the cost of the overload order changing as the arguments change.
+The fix is blink.cmp's: [PR #2497](https://github.com/saghen/blink.cmp/pull/2497) (open since 2026-04-19, for this
+Java overload case) takes the line from the active signature's index in its own buffer. Not in v1.10.2, the latest
+release on 2026-11-16; once a release has it, check the example config and close this gap.
+The Neovim guide's troubleshooting names the workaround: `<C-s>`, Neovim's own signature help, highlights correctly.
+Lathe listing the active signature first (`activeSignature` 0) was not taken: every client's overload order would
+change as the arguments change, to work around one plugin.
 
 Related, on the server: when the call does not attribute yet, `SignatureHelpResolver` now makes active the first
 overload whose arity fits the arguments typed, not the first declared
