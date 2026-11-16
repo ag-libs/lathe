@@ -777,7 +777,7 @@ None yet.
 
 ## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed
 
-**Status: documented**
+**Status: deferred** (2026-11-16)
 
 **Kind: bug**
 
