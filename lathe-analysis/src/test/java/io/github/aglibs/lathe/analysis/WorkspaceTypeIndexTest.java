@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -191,6 +192,19 @@ class WorkspaceTypeIndexTest {
     final var missing = tmp.resolve("missing.json");
     final var index = WorkspaceTypeIndex.build(List.of(missing));
     assertThat(index.search("Foo", 10)).isEmpty();
+  }
+
+  // A crash can leave a shard truncated to nothing: it is skipped, and the other shards still load.
+  @Test
+  void build_emptyShard_skippedAndOtherShardsLoaded() throws IOException {
+    final var empty = Files.createFile(tmp.resolve("empty.json"));
+    final var shardB = writeShard(tmp, "b.json", shard(entry("Beta", "com.b")));
+
+    final var index = WorkspaceTypeIndex.build(List.of(empty, shardB));
+
+    assertThat(index.search("Beta", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.b.Beta");
   }
 
   @Test

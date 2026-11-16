@@ -262,7 +262,14 @@ public final class WorkspaceTypeIndex {
 
   private static Stream<TypeIndexFile> loadFile(final Path shard) {
     try {
-      return Stream.of(Json.read(shard, TypeIndexFile.class));
+      final TypeIndexFile file = Json.read(shard, TypeIndexFile.class);
+      // Gson reads an empty file, such as one a crash truncated, as null.
+      if (file == null) {
+        LOG.warning(() -> "[type-index] shard %s empty, skipped".formatted(shard));
+        return Stream.empty();
+      }
+
+      return Stream.of(file);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[type-index] failed to load shard %s".formatted(shard));
       return Stream.empty();
