@@ -133,13 +133,14 @@ On a root set up, the build at that root decides:
 
 | The build | Set up already when | So these still build |
 |---|---|---|
-| registers Lathe | always: the project's pin decides the version, which `:LatheInit` cannot change | — |
-| personal Maven | `.lathe/lathe-sync.sh` names `<bootstrap>/<v>/lib`, this client's activation | another version; a script rendered while the project registered Lathe (back to personal mode); a root set up through Gradle |
-| personal Gradle | the sync script names `<bootstrap>/<v>/lathe.init.gradle.kts` | the same, the other way round |
+| registers Lathe | its sync script brings no Lathe in from outside: the project's registration then decides the version, which `:LatheInit` cannot change | a script left by a personal setup (the project registered Lathe since), whose activation would win over the registration until a build renders a new script |
+| personal Maven | `.lathe/lathe-sync.sh` names `<bootstrap>/<v>/lib`, this client's activation, and that folder is there | another version; a script rendered while the project registered Lathe (back to personal mode); a root set up through Gradle; a bootstrap folder deleted since, which the script refuses to sync without |
+| personal Gradle | the sync script names `<bootstrap>/<v>/lathe.init.gradle.kts`, and that file is there | the same, the other way round |
 | OpenJDK | `workspace.json` records this version | another version |
 
 The sync script is the test because it is what every later sync runs: when it does not bring this version in, a sync would not either.
 A sync script from a Lathe older than the replay of the activation names none, so such a root builds, as before.
+So does a path the script had to quote (a cache folder with an apostrophe): a text search errs only towards building, never towards a message.
 A root typed in the prompt is checked the same way.
 The message names the version, the root, `:LatheSync`, and `:LatheInit!`, which builds anyway: a newer snapshot at the same version, or a workspace thought to be partial.
 

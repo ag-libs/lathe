@@ -628,7 +628,7 @@ spec.check("and asks nothing", #prompts, prompts_at)
 spec.check(
   "it names the version the build pins and :LatheSync",
   last_note_has(
-    "server 7.0.0 is set up at " .. work .. "/ready-team, as the project's build pins it"
+    "server 7.0.0 is set up at " .. work .. "/ready-team by the project's build"
   ) and last_note_has("`:LatheSync` refreshes it, and `:LatheInit!` rebuilds it from clean."),
   true
 )
@@ -647,6 +647,13 @@ write(work .. "/no-launcher/.lathe/workspace.json", '{"serverVersion": "7.0.0"}'
 before = #calls
 run_from("/no-launcher")
 spec.check("a workspace without a launcher builds again", #calls, before + 1)
+finish_build(0)
+
+-- Registered since a personal setup: its script still brings the old Lathe in, over the pin.
+set_up("/no-launcher", "7.0.0", "mvn -Dmaven.ext.class.path=" .. boot .. "/lib/lathe-core.jar")
+before = #calls
+run_from("/no-launcher")
+spec.check("a registered build whose script replays an activation builds", #calls, before + 1)
 finish_build(0)
 
 -- Personal: set up when the sync script brings this version in for this kind.
@@ -688,6 +695,11 @@ spec.check(
   last_note_has("`:LatheInit!` sets it up again."),
   true
 )
+-- The script refuses to sync once its bootstrap file is gone: only a setup brings it back.
+vim.fn.delete(boot .. "/lathe.init.gradle.kts")
+run_from("/ready-mixed", "gradle")
+spec.check("a setup whose bootstrap file is gone builds", #calls, before + 1)
+finish_build(0)
 run_from("/ready-mixed", "maven")
 spec.check("Maven at a root set up through Gradle builds", last_cmd()[4], "clean")
 finish_build(0)
@@ -714,7 +726,7 @@ run_from("/multi")
 spec.check("a typed root set up already runs nothing", #calls, before)
 spec.check(
   "and says so",
-  last_note_has(work .. "/ready-team, as the project's build pins it"),
+  last_note_has(work .. "/ready-team by the project's build"),
   true
 )
 
@@ -725,6 +737,15 @@ run_from("/multi/core")
 spec.check("a root with a run going asks nothing", #prompts, prompts_at)
 spec.check(
   "and says a run is going",
+  last_note_has("already running at " .. work .. "/multi"),
+  true
+)
+before = #calls
+next_answer = work .. "/multi"
+run_from("/ready-maven")
+spec.check("a typed root with a run going runs nothing", #calls, before)
+spec.check(
+  "and says a run is going there",
   last_note_has("already running at " .. work .. "/multi"),
   true
 )
@@ -757,8 +778,16 @@ run_from("/gradle")
 spec.check("a development version asks nothing", #prompts, prompts_before)
 spec.check("a development version runs nothing", #calls, before)
 spec.check("and says to set LATHE_VERSION", last_note_has("LATHE_VERSION"), true)
+local dev_notes = #notes
 run_from("/team-gradle")
 spec.check("but builds a build that registers Lathe", #calls, before + 1)
+spec.check(
+  "without asking for LATHE_VERSION",
+  vim.iter(vim.list_slice(notes, dev_notes + 1)):any(function(note)
+    return note:find("LATHE_VERSION", 1, true) ~= nil
+  end),
+  false
+)
 finish_build(0)
 
 latheinit.setup()
