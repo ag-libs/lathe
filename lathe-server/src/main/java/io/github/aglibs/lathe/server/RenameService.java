@@ -155,6 +155,17 @@ final class RenameService {
   private void requireNothingLeftBehind(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
     eventLoop.checkOnLoop();
+    requireNoGeneratedOccurrences(target, matches);
+    refuseIfPresent(
+        matches.stream()
+            .map(match -> leftBehind(target, match))
+            .flatMap(Optional::stream)
+            .findFirst());
+  }
+
+  private void requireNoGeneratedOccurrences(
+      final ReferenceTarget target, final List<ReferenceMatch> matches) {
+    eventLoop.checkOnLoop();
     final Optional<Path> generated =
         matches.stream()
             .map(match -> LatheUri.toPath(match.uri()))
@@ -165,12 +176,6 @@ final class RenameService {
           "`%s` cannot be renamed: generated source %s refers to it; update the generator and rebuild instead"
               .formatted(target.simpleName(), generated.get()));
     }
-
-    refuseIfPresent(
-        matches.stream()
-            .map(match -> leftBehind(target, match))
-            .flatMap(Optional::stream)
-            .findFirst());
   }
 
   private static Optional<String> leftBehind(
@@ -266,7 +271,6 @@ final class RenameService {
       final CancelChecker cancelChecker) {
     final Map<String, List<Range>> renamed =
         matches.stream()
-            .filter(match -> !isGeneratedSource(LatheUri.toPath(match.uri())))
             .collect(
                 Collectors.groupingBy(
                     ReferenceMatch::uri,
@@ -419,7 +423,7 @@ final class RenameService {
       final boolean fileRenameSupported) {
     // The binding check is asynchronous; a reload may have changed the generated roots since it
     // began.
-    requireNothingLeftBehind(target, matches);
+    requireNoGeneratedOccurrences(target, matches);
     final List<Location> occurrences = ReferenceSearch.toLocations(matches);
     if (occurrences.isEmpty()) {
       return null;
