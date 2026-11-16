@@ -631,11 +631,10 @@ final class WorkspaceSession {
                         written.diagnosticsByUri().getOrDefault(source.uri(), List.of()))));
   }
 
-  // The analysis runs no javac plugin (Error Prone, NullAway): when the build's compile of the
-  // file,
-  // with them, failed on the file as it is, its errors are the file's too. The editor gets them
-  // through withWriteDiagnostics, kept for files open at the write; the engine opens a file after
-  // the write it asks about, so it reads the failure the notes report.
+  // The analysis runs no annotation processor or javac plugin (Error Prone, NullAway): when the
+  // build's compile of the file, with them, failed on the file as it is, its errors are the file's
+  // too. The editor gets them through withWriteDiagnostics, kept for files open at the write; the
+  // engine opens a file after the write it asks about, so it reads the failure the notes report.
   private List<Diagnostic> withFailedWrite(final String uri, final List<Diagnostic> analyzed) {
     final Path file = LatheUri.toPath(uri);
     final WritePass.FailedWrite failed = writePass.failedCompiles().get(file);
