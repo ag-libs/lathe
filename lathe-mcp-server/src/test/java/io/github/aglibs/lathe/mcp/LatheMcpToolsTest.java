@@ -9,6 +9,8 @@ import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -150,6 +152,73 @@ class LatheMcpToolsTest {
     assertThat(text(call("find_references", Map.of("maxResults", 1))))
         .as("a valid value reaches the tool's own argument check")
         .startsWith("find_references requires 'file'");
+  }
+
+  @Test
+  void integerArguments_overflowOrFraction_rejectedBeforeTheEngineStarts() {
+    specs =
+        LatheMcpTools.all(
+            () -> {
+              throw new AssertionError("Invalid integers must not start the engine");
+            },
+            McpJsonDefaults.getMapper());
+    final List<Object> invalid =
+        List.of(
+            2147483648L,
+            4294967297L,
+            4294967437L,
+            Long.MAX_VALUE,
+            Long.MIN_VALUE,
+            new BigInteger("18446744073709551617"),
+            new BigDecimal("1.5"),
+            new BigDecimal("1.00000000000000000001"),
+            Double.NaN,
+            Double.POSITIVE_INFINITY,
+            "1",
+            true);
+    for (final SyncToolSpecification spec : specs) {
+      final Map<?, ?> properties = (Map<?, ?>) spec.tool().inputSchema().get("properties");
+      for (final String argument : List.of("line", "column", "maxResults")) {
+        if (!properties.containsKey(argument)) {
+          continue;
+        }
+
+        for (final Object value : invalid) {
+          final CallToolResult result = call(spec.tool().name(), Map.of(argument, value));
+          assertThat(result.isError()).as("%s %s=%s", spec.tool().name(), argument, value).isTrue();
+          assertThat(text(result))
+              .isEqualTo(
+                  "%s '%s' must be an integer between 1 and 2147483647"
+                      .formatted(spec.tool().name(), argument));
+        }
+      }
+    }
+  }
+
+  @Test
+  void integerArguments_validBoundariesAndAbsentOptionals_reachTheTool() throws Exception {
+    final Path file = tmp.resolve("A.java");
+    Files.writeString(file, "class A {}\n");
+    for (final Number value :
+        List.of(1, Integer.MAX_VALUE, (long) Integer.MAX_VALUE, new BigDecimal("2147483647.0"))) {
+      assertThat(text(call("find_references", Map.of("maxResults", value))))
+          .startsWith("find_references requires 'file'");
+      assertThat(
+              text(
+                  call(
+                      "describe_symbol",
+                      Map.of("file", file.toString(), "line", value, "symbol", "A"))))
+          .doesNotContain("must be an integer between");
+      assertThat(
+              text(
+                  call(
+                      "describe_symbol",
+                      Map.of("file", file.toString(), "line", 1, "column", value))))
+          .doesNotContain("must be an integer between");
+    }
+
+    assertThat(call("search_symbols", Map.of("query", "A")).isError()).isNotEqualTo(true);
+    assertThat(named(file, 1, "A", null).isError()).isNotEqualTo(true);
   }
 
   @Test
@@ -473,13 +542,27 @@ class LatheMcpToolsTest {
 
   // The SDK validates arguments against the schema, so a count below 1 is refused with the reason.
   @Test
-  void maxResults_everyToolTakingIt_declaresAMinimumOfOne() {
+  void maxResults_everyToolTakingIt_declaresTheSupportedRange() {
     assertThat(specs)
         .map(spec -> ((Map<?, ?>) spec.tool().inputSchema().get("properties")).get("maxResults"))
         .filteredOn(Objects::nonNull)
         .as("find_references, find_implementations, call_hierarchy, search_symbols, analyze_change")
         .hasSize(5)
-        .allSatisfy(schema -> assertThat(schema.toString()).contains("minimum=1"));
+        .allSatisfy(
+            schema -> assertThat(schema.toString()).contains("minimum=1", "maximum=2147483647"));
+  }
+
+  @Test
+  void positions_everyToolTakingThem_declaresTheSupportedRange() {
+    for (final SyncToolSpecification spec : specs) {
+      final Map<?, ?> properties = (Map<?, ?>) spec.tool().inputSchema().get("properties");
+      for (final String argument : List.of("line", "column")) {
+        if (properties.containsKey(argument)) {
+          assertThat(properties.get(argument).toString())
+              .contains("minimum=1", "maximum=2147483647");
+        }
+      }
+    }
   }
 
   @Test
