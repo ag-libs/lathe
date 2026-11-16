@@ -688,6 +688,13 @@ confirm the launcher exists (`:LatheStart` reports when it is missing) and run t
 `./gradlew latheSync -Plathe.capture.only=true` on Gradle.
 For workspace-level issues (`.lathe/` not found, missing params file), see [Troubleshooting](../troubleshooting.md).
 
+**blink.cmp's signature window highlights no parameter on an overloaded call** — when the overload you are
+typing is not the first one listed (the second argument of `list.add(0, |)`), blink.cmp paints the active
+parameter on the first overload's line, where it falls outside the text.
+Lathe's answer is right; the fix is blink.cmp's open [pull request #2497](https://github.com/saghen/blink.cmp/pull/2497).
+Until a release includes it, `<C-s>` (Neovim's own `vim.lsp.buf.signature_help()`, in the example config) shows the
+active overload with its parameter highlighted.
+
 **`Lathe: launcher not found at ~/.cache/lathe/current/lathe-launcher.sh; run mvn process-test-classes`**
 — this is an **outdated client**. Older versions resolved the server through a machine-global
 `~/.cache/lathe/current` symlink; discovery is now per-workspace (`<project>/.lathe/lathe-launcher.sh`),
