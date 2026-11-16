@@ -714,6 +714,45 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
                     .isEqualTo(FileUtil.slashed(tmp.relativize(source))));
   }
 
+  @Test
+  void outline_moduleInfo_listsDirectivesAsModuleChildrenAtTheirTargets() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/Task.java",
+        "package com.example; public class Task implements Runnable { public void run() {} }");
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "module-info.java",
+            """
+            module example {
+              requires java.logging;
+              exports com.example;
+              opens com.example;
+              uses java.lang.Runnable;
+              provides java.lang.Runnable with com.example.Task;
+            }
+            """);
+    engine = new LatheEngine(tmp);
+
+    final List<LatheOutlineItem> outline = engine.outline(source).value();
+
+    assertThat(outline)
+        .extracting(
+            LatheOutlineItem::kind,
+            LatheOutlineItem::name,
+            LatheOutlineItem::depth,
+            item -> item.location().line(),
+            item -> item.location().column())
+        .containsExactly(
+            tuple("module", "example", 0, 0, 7),
+            tuple("module", "requires java.logging", 1, 1, 11),
+            tuple("package", "exports com.example", 1, 2, 10),
+            tuple("package", "opens com.example", 1, 3, 8),
+            tuple("interface", "uses java.lang.Runnable", 1, 4, 7),
+            tuple("interface", "provides java.lang.Runnable", 1, 5, 11));
+  }
+
   // A file's structure needs no compile: a file no module compiles is outlined from a parse, and
   // still noted as not checked.
   @Test
