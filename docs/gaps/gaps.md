@@ -557,33 +557,6 @@ A VS Code command over the same server command.
 
 ---
 
-## EG-083 — The outline of `module-info.java` shows only the module line
-
-**Status: deferred** (2026-11-15: feature freeze)
-
-**Kind: feature**
-
-**Value: low — Size: S**
-
-**Affects: MCP `outline` and the editor's document symbols.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-`outline` on a `module-info.java` lists the `module` declaration only, not its `requires`, `exports`,
-`opens`, `uses` and `provides` directives.
-
-### Fix direction
-
-Emit each directive as a child of the module symbol, from the module declaration's tree.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-091 — No inlay hints
 
 **Status: deferred** (2026-11-15: feature freeze)

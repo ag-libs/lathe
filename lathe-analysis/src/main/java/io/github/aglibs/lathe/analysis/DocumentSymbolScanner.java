@@ -2,10 +2,15 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExportsTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModuleTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.OpensTree;
+import com.sun.source.tree.ProvidesTree;
+import com.sun.source.tree.RequiresTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.UsesTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
@@ -56,7 +61,41 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
   @Override
   public Void visitModule(final ModuleTree node, final Void unused) {
     final String name = node.getName().toString();
-    add(symbol(node, name, SymbolKind.Module));
+    final var module = symbol(node, name, SymbolKind.Module);
+    add(module);
+    stack.push(module);
+    super.visitModule(node, unused);
+    stack.pop();
+    return null;
+  }
+
+  @Override
+  public Void visitRequires(final RequiresTree node, final Void unused) {
+    addDirective(node, node.getModuleName(), "requires", SymbolKind.Module);
+    return null;
+  }
+
+  @Override
+  public Void visitExports(final ExportsTree node, final Void unused) {
+    addDirective(node, node.getPackageName(), "exports", SymbolKind.Package);
+    return null;
+  }
+
+  @Override
+  public Void visitOpens(final OpensTree node, final Void unused) {
+    addDirective(node, node.getPackageName(), "opens", SymbolKind.Package);
+    return null;
+  }
+
+  @Override
+  public Void visitUses(final UsesTree node, final Void unused) {
+    addDirective(node, node.getServiceName(), "uses", SymbolKind.Object);
+    return null;
+  }
+
+  @Override
+  public Void visitProvides(final ProvidesTree node, final Void unused) {
+    addDirective(node, node.getServiceName(), "provides", SymbolKind.Object);
     return null;
   }
 
@@ -109,6 +148,33 @@ final class DocumentSymbolScanner extends WrittenSourceScanner {
     super.visitVariable(node, unused);
     stack.pop();
     return null;
+  }
+
+  private void addDirective(
+      final Tree directive, final Tree target, final String keyword, final SymbolKind kind) {
+    if (target == null) {
+      return;
+    }
+
+    final var positions = trees.getSourcePositions();
+    final long start = positions.getStartPosition(compilationUnit, directive);
+    final long end = positions.getEndPosition(compilationUnit, directive);
+    final long targetStart = positions.getStartPosition(compilationUnit, target);
+    final long targetEnd = positions.getEndPosition(compilationUnit, target);
+    if (start < 0
+        || end < start
+        || targetStart < start
+        || targetEnd <= targetStart
+        || targetEnd > end) {
+      return;
+    }
+
+    add(
+        new DocumentSymbol(
+            "%s %s".formatted(keyword, target),
+            kind,
+            range(start, end),
+            range(targetStart, targetEnd)));
   }
 
   // javac gives every enum constant the initializer new E(...), with E the enum itself; no other

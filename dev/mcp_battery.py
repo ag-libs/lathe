@@ -256,8 +256,7 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured, pinned):
             % (first(summary), modules))
     if cfg.get("module_info"):
         b.call("outline module-info", "outline", {"file": str(ws / cfg["module_info"])},
-               ok=lambda t, r: "requires" in t or "exports" in t,
-               known="the outline of module-info.java shows only the module line")
+               ok=lambda t, r: "requires" in t or "exports" in t)
 
     test = ws / cfg["test"][0]
     if not tests_captured:

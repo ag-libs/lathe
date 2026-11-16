@@ -7,6 +7,34 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-083 — The outline of `module-info.java` shows only the module line — done
+
+**Status: done** (2026-11-16)
+
+**Kind: feature**
+
+**Affects: MCP `outline` and editor document symbols.**
+
+Previously the module declaration was the only symbol emitted for a module descriptor.
+The shared `DocumentSymbolScanner` now emits `requires`, `exports`, `opens`, `uses`, and `provides` as children of that module, in source order.
+Each name combines the directive keyword with its primary module, package, or service target.
+The full directive range and target selection range come from javac trees, including multiline directives and targets separated by comments.
+An incomplete directive with no positioned target is omitted rather than exposing javac's synthesized error name.
+
+Validated on JDK 26: 16 scanner tests and 29 engine navigation tests passed.
+A live Helidon descriptor returned its five directive children through both LSP and MCP.
+
+### Regression targets
+
+- `DocumentSymbolScannerTest.scan_moduleDirectives_listsAllFiveKindsInSourceOrder`
+- `DocumentSymbolScannerTest.scan_serviceClassDirectives_useANeutralSymbolKind`
+- `DocumentSymbolScannerTest.scan_multilineDirectiveWithComments_rangesComeFromTheJavacTrees`
+- `DocumentSymbolScannerTest.scan_openModuleWithoutDirectives_hasNoChildren`
+- `DocumentSymbolScannerTest.scan_incompleteDirective_doesNotEmitAnInvalidSelectionRange`
+- `LatheEngineNavigationTest.outline_moduleInfo_listsDirectivesAsModuleChildrenAtTheirTargets`
+
+---
+
 ## EG-108 — Semantic tokens mark deprecated methods but not deprecated types — done
 
 **Status: done.**

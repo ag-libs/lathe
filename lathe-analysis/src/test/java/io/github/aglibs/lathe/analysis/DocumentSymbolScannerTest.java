@@ -261,6 +261,93 @@ class DocumentSymbolScannerTest {
     assertThat(symbols.get(0).getKind()).isEqualTo(SymbolKind.Module);
   }
 
+  @Test
+  void scan_moduleDirectives_listsAllFiveKindsInSourceOrder() {
+    final String source =
+        """
+        module com.example {
+          requires static transitive java.logging;
+          exports com.example.api to client.one, client.two;
+          opens com.example.internal to client.one;
+          uses com.example.Service;
+          provides com.example.Service with com.example.First, com.example.Second;
+        }
+        """;
+    final List<DocumentSymbol> symbols = scanAs(source, "module-info.java");
+
+    assertThat(symbols).hasSize(1);
+    assertThat(children(symbols.get(0)))
+        .extracting(DocumentSymbol::getName, DocumentSymbol::getKind)
+        .containsExactly(
+            tuple("requires java.logging", SymbolKind.Module),
+            tuple("exports com.example.api", SymbolKind.Package),
+            tuple("opens com.example.internal", SymbolKind.Package),
+            tuple("uses com.example.Service", SymbolKind.Object),
+            tuple("provides com.example.Service", SymbolKind.Object));
+  }
+
+  @Test
+  void scan_serviceClassDirectives_useANeutralSymbolKind() {
+    final String source =
+        """
+        module example {
+          uses java.util.ResourceBundle;
+          provides java.util.ResourceBundle with com.example.Bundle;
+        }
+        """;
+
+    assertThat(children(scanAs(source, "module-info.java").get(0)))
+        .extracting(DocumentSymbol::getName, DocumentSymbol::getKind)
+        .containsExactly(
+            tuple("uses java.util.ResourceBundle", SymbolKind.Object),
+            tuple("provides java.util.ResourceBundle", SymbolKind.Object));
+  }
+
+  @Test
+  void scan_multilineDirectiveWithComments_rangesComeFromTheJavacTrees() {
+    final String source =
+        """
+        module example {
+          exports /* com.example.api */ com.example /* name */ . api
+              to client.one,
+                 client.two;
+        }
+        """;
+    final List<DocumentSymbol> directives = children(scanAs(source, "module-info.java").get(0));
+
+    assertThat(directives).hasSize(1);
+    final var directive = directives.get(0);
+    assertThat(directive.getName()).isEqualTo("exports com.example.api");
+    assertThat(directive.getRange().getStart())
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("exports")));
+    assertThat(directive.getRange().getEnd())
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf(';') + 1));
+    final String target = "com.example /* name */ . api";
+    final int start = source.indexOf(target);
+    assertThat(directive.getSelectionRange().getStart())
+        .isEqualTo(Positions.offsetToPosition(source, start));
+    assertThat(directive.getSelectionRange().getEnd())
+        .isEqualTo(Positions.offsetToPosition(source, start + target.length()));
+  }
+
+  @Test
+  void scan_openModuleWithoutDirectives_hasNoChildren() {
+    final List<DocumentSymbol> symbols = scanAs("open module example {}", "module-info.java");
+
+    assertThat(symbols).hasSize(1);
+    assertThat(symbols.get(0).getName()).isEqualTo("example");
+    assertThat(children(symbols.get(0))).isEmpty();
+  }
+
+  @Test
+  void scan_incompleteDirective_doesNotEmitAnInvalidSelectionRange() {
+    final List<DocumentSymbol> symbols =
+        scanAs("module example { requires ; }", "module-info.java");
+
+    assertThat(symbols).hasSize(1);
+    assertThat(children(symbols.get(0))).isEmpty();
+  }
+
   private static List<DocumentSymbol> scan(final String source) {
     return scanAs(source, "Test.java");
   }
