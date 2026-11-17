@@ -266,7 +266,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
         (session, cancelChecker, progress) ->
             session
                 .renames()
-                .renameFuture(uri, pos, newName, fileRenameSupported, cancelChecker, progress));
+                .renameFuture(uri, pos, newName, fileRenameSupported, cancelChecker, progress)
+                .thenApply(RenameEdit::edit));
   }
 
   @Override

@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
 import io.github.aglibs.lathe.server.workspace.UnreadLanguage;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -44,6 +45,10 @@ final class ChangeVerifier {
   private final WorkspaceState state;
   private final FeatureRouter router;
   private final WritePass writePass;
+  // Generated files a rename left calling the old name, with their content then: verify_change
+  // checks them as callers until their generator rewrites them. The referrer search cannot reach
+  // every one (JMH's names only a generated subclass of the renamed member's class).
+  private final Map<Path, ContentFingerprint> leftByRename = new HashMap<>();
 
   ChangeVerifier(
       final WorkspaceState state, final FeatureRouter router, final WritePass writePass) {
@@ -57,6 +62,25 @@ final class ChangeVerifier {
     return new TextMentions.Sources(
         state.candidateIndex().candidateUris(name).stream().map(LatheUri::toPath).toList(),
         state.manifest().resourceSourceDirs());
+  }
+
+  // A file that cannot be read now (its generator removed it) has nothing left to check.
+  void checkUntilRegenerated(final List<Path> generated) {
+    for (final Path file : generated) {
+      try {
+        leftByRename.put(file, FileUtil.fingerprint(file));
+      } catch (final IOException e) {
+        leftByRename.remove(file);
+      }
+    }
+  }
+
+  // A file its generator rewrote, or removed, is no longer the rename's to check.
+  private List<Path> stillLeftByRename() {
+    leftByRename
+        .entrySet()
+        .removeIf(entry -> !ServerFiles.hasContent(entry.getKey(), entry.getValue()));
+    return List.copyOf(leftByRename.keySet());
   }
 
   // Every synced module's source roots: a Java file below none is one the last build left out.
@@ -147,13 +171,16 @@ final class ChangeVerifier {
   }
 
   // Files to diagnose for verify_change, by module: each changed file, then the files that see it,
-  // the changed files' modules first.
+  // the changed files' modules first, then the generated callers a rename left.
   private Map<String, List<Path>> verifyTargetsByModule(
-      final List<Path> changed, final Map<Path, List<Path>> referrers) {
+      final List<Path> changed,
+      final Map<Path, List<Path>> referrers,
+      final List<Path> leftCallers) {
     final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
     changed.forEach(file -> addVerifyTarget(byModule, file));
     changed.forEach(
         file -> seenBy(file, referrers).forEach(path -> addVerifyTarget(byModule, path)));
+    leftCallers.forEach(file -> addVerifyTarget(byModule, file));
     return Collections.unmodifiableMap(
         byModule.entrySet().stream()
             .collect(
@@ -541,7 +568,8 @@ final class ChangeVerifier {
                 .toList()
             : files;
     final List<Path> changed = differingFromBuild(touched);
-    if (changed.isEmpty()) {
+    final List<Path> leftCallers = files.isEmpty() ? stillLeftByRename() : List.of();
+    if (changed.isEmpty() && leftCallers.isEmpty()) {
       return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of());
     }
 
@@ -549,7 +577,7 @@ final class ChangeVerifier {
     return new VerifyPlan(
         outcome,
         changed,
-        verifyTargetsByModule(changed, referrers),
+        verifyTargetsByModule(changed, referrers, leftCallers),
         downstreamModuleRels(changed, referrers),
         reactorModuleCount(),
         failedWrites(changed));

@@ -31,7 +31,6 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
 import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
@@ -426,35 +425,40 @@ final class RenameService {
     return file.resolveSibling("%s.java".formatted(newName));
   }
 
-  private WorkspaceEdit renameEdit(
+  private RenameEdit renameEdit(
       final ReferenceTarget target,
       final List<Location> occurrences,
       final String newName,
       final String fromUri,
       final boolean fileRenameSupported) {
     // Generated sources are left alone: their processors regenerate them from the renamed sources,
-    // and an edited copy written alongside would collide with the regenerated one.
-    final List<Location> editable =
+    // and an edited copy written alongside would collide with the regenerated one. The answer names
+    // them, as they use the old name until then.
+    final Map<Boolean, List<Location>> byGenerated =
         occurrences.stream()
-            .filter(location -> !isGeneratedSource(LatheUri.toPath(location.getUri())))
-            .toList();
+            .collect(
+                Collectors.partitioningBy(
+                    location -> isGeneratedSource(LatheUri.toPath(location.getUri()))));
+    final List<Location> editable = byGenerated.get(false);
+    final List<Location> generated = byGenerated.get(true);
     if (editable.isEmpty()) {
-      return null;
+      return new RenameEdit(null, generated);
     }
 
     final Optional<Path> declaringFile = renameDeclaringFile(target, fromUri);
     if (declaringFile.isEmpty()) {
-      return RenameProvider.toWorkspaceEdit(editable, newName);
+      return new RenameEdit(RenameProvider.toWorkspaceEdit(editable, newName), generated);
     }
 
     if (!fileRenameSupported) {
-      return null;
+      return RenameEdit.none();
     }
 
     final var file = declaringFile.get();
     final var oldUri = LatheUri.fromPath(file);
     final var newUri = LatheUri.fromPath(movedFile(file, newName));
-    return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
+    return new RenameEdit(
+        RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri), generated);
   }
 
   private boolean isGeneratedSource(final Path file) {
@@ -472,7 +476,7 @@ final class RenameService {
         : file.toString();
   }
 
-  CompletableFuture<WorkspaceEdit> renameFuture(
+  CompletableFuture<RenameEdit> renameFuture(
       final String uri,
       final Position pos,
       final String newName,
@@ -493,7 +497,7 @@ final class RenameService {
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null
         || !(router.routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
-      return CompletableFuture.completedFuture(null);
+      return CompletableFuture.completedFuture(RenameEdit.none());
     }
 
     final var cursorWorker = module.worker();
@@ -511,7 +515,7 @@ final class RenameService {
             target -> {
               cancelChecker.checkCanceled();
               if (target == null) {
-                return CompletableFuture.completedFuture((WorkspaceEdit) null);
+                return CompletableFuture.completedFuture(RenameEdit.none());
               }
 
               requireRenameable(target, uri);
