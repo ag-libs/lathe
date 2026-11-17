@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.install.dependency;
 
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -9,14 +8,16 @@ import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.ZipCache;
 import io.github.aglibs.lathe.install.typeindex.DependencyTypeIndexSync;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.zip.ZipException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,10 +28,11 @@ public final class DependencySourceSync {
   private DependencySourceSync() {}
 
   // A sync's whole dependency-source step, shared by every build tool: extracts each -sources jar,
-  // indexes every external jar's types, and gives each source its jar's type index.
+  // indexes every external jar's types, and gives each source its jar's type index. A dependency
+  // whose -sources jar cannot be read is one without sources.
   public static List<DependencySource> prepare(
       final List<DependencySource> sources, final List<ResolvedJar> externalJars) {
-    extract(DependencySource.withSources(sources));
+    final Set<String> unreadable = extract(DependencySource.withSources(sources));
     DependencyTypeIndexSync.index(externalJars);
     final Map<Path, Path> jarToTypeIndex =
         externalJars.stream()
@@ -42,26 +44,50 @@ public final class DependencySourceSync {
     return sources.stream()
         .map(
             source ->
+                unreadable.contains(source.gav())
+                    ? DependencySource.missing(source.gav(), source.jar(), source.classpath())
+                    : source)
+        .map(
+            source ->
                 Optional.ofNullable(jarToTypeIndex.get(source.jar()))
                     .map(source::withTypeIndex)
                     .orElse(source))
         .toList();
   }
 
-  public static void extract(final Collection<DependencySource> sources) {
+  // Answers the dependencies whose -sources jar is not a readable zip. Such a jar is skipped, not
+  // fatal: the DB2 driver publishes a text file as its sources jar, and sources serve only
+  // navigation. Any other failure, writing the cache say, still fails the sync.
+  public static Set<String> extract(final Collection<DependencySource> sources) {
     final var t = Stopwatch.start();
-    try {
-      final Map<Boolean, Long> counts =
-          sources.stream()
-              .map(source -> IOUtil.unchecked(() -> extract(source)))
-              .collect(Collectors.partitioningBy(b -> b, Collectors.counting()));
-      LOG.info(
-          "[sync] extracted %d source artifacts, %d already cached in %dms"
-              .formatted(
-                  counts.getOrDefault(true, 0L), counts.getOrDefault(false, 0L), t.elapsedMs()));
-    } catch (final UncheckedIOException e) {
-      throw new SyncException("Lathe sync failed to extract source artifacts", e);
+    int extracted = 0;
+    int cached = 0;
+    final var unreadable = new LinkedHashSet<String>();
+    for (final DependencySource source : sources) {
+      final Path sourceJar = source.sourceArtifact().jar();
+      try {
+        if (extract(source)) {
+          extracted++;
+        } else {
+          cached++;
+        }
+      } catch (final ZipException e) {
+        LOG.warn(
+            "[sync] %s sources jar %s is not a readable zip (%s); using no sources for it"
+                .formatted(source.gav(), sourceJar, e.getMessage()));
+        unreadable.add(source.gav());
+      } catch (final IOException e) {
+        throw new SyncException(
+            "Lathe sync failed to extract the sources of %s from %s"
+                .formatted(source.gav(), sourceJar),
+            e);
+      }
     }
+
+    LOG.info(
+        "[sync] extracted %d source artifacts, %d already cached, %d unreadable in %dms"
+            .formatted(extracted, cached, unreadable.size(), t.elapsedMs()));
+    return Set.copyOf(unreadable);
   }
 
   private static boolean extract(final DependencySource source) throws IOException {

@@ -1546,35 +1546,6 @@ None yet.
 
 ---
 
-## WS-39 — A dependency's sources jar that is not a zip fails the whole sync
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: every sync (Maven, Gradle, OpenJDK) of a project with a dependency whose published `-sources.jar` is not a valid zip — `com.ibm.db2:jcc:12.1.4.0` on Maven Central, so any project using the DB2 JDBC driver.**
-
-Found by the editor exploratory round on jdbi (2026-11-17), whose `testcontainers` module depends on the DB2 driver.
-
-### Observed behaviour
-
-`jcc-12.1.4.0-sources.jar` on Central is a 189-byte text file (an IBM copyright notice), published that way with a matching checksum.
-`:LatheInit` on jdbi fails after the build compiles nothing:
-`Failed to execute goal io.github.ag-libs:lathe-maven-plugin:0.1.0-SNAPSHOT:sync (lathe-sync) on project jdbi3-parent: Lathe sync failed to extract source artifacts: java.util.zip.ZipException: zip END header not found`.
-`DependencySourceSync.extract` turns the first unreadable jar into a `SyncException`; the message does not name the jar, and no other module is set up.
-Replacing that one file with an empty zip lets the same setup succeed.
-
-### Fix direction
-
-Skip a sources jar that cannot be read, with one warning naming its coordinates, and set up the rest; dependency sources only serve navigation.
-Related: [WS-38](#ws-38--an-empty-dependency-source-marker-fails-every-later-sync), another unreadable dependency-source file that fails every sync.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
