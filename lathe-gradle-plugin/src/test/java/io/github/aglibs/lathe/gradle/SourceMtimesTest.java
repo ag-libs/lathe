@@ -30,4 +30,17 @@ class SourceMtimesTest {
     assertThat(file).doesNotExist();
     assertThat(SourceMtimes.take(file)).isEmpty();
   }
+
+  // A snapshot a crash cut off tells nothing: no source is stamped, the capture goes on, and the
+  // file goes.
+  @Test
+  void take_damagedSnapshot_noneAndTheFileGone() throws Exception {
+    final Path file =
+        Files.createDirectories(tmp.resolve(".lathe/app"))
+            .resolve(SourceMtimes.fileName("classes"));
+    Files.writeString(file, "{\"byPath\": {\"/src/Foo.java\": 10");
+
+    assertThat(SourceMtimes.take(file)).isEmpty();
+    assertThat(file).doesNotExist();
+  }
 }

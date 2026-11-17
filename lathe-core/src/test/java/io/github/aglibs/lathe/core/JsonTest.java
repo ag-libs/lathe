@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,5 +36,25 @@ final class JsonTest {
           .isInstanceOf(IOException.class)
           .hasMessageContaining(file.toString());
     }
+  }
+
+  // A failure of the reader itself, here bytes that are not UTF-8, is not reported as damaged JSON.
+  @Test
+  void read_undecodableBytes_throwsIOExceptionNamingAReadFailure() throws IOException {
+    final Path file = Files.write(tmp.resolve("latin1.json"), new byte[] {'{', (byte) 0xFF, '}'});
+
+    assertThatThrownBy(() -> Json.read(file, ContentFingerprint.class))
+        .isInstanceOf(IOException.class)
+        .hasMessage("unreadable JSON file %s".formatted(file));
+  }
+
+  // Well-formed but incomplete, or written by another schema: the record's validation fails.
+  @Test
+  void read_valueFailingRecordValidation_throwsIOExceptionNamingTheFile() throws IOException {
+    final Path file = Files.writeString(tmp.resolve("index.json"), "{\"types\": []}");
+
+    assertThatThrownBy(() -> Json.read(file, TypeIndexFile.class))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(file.toString());
   }
 }

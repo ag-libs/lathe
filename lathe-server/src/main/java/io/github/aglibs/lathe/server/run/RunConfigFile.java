@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.run;
 
 import io.github.aglibs.lathe.core.Json;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -26,10 +27,10 @@ record RunConfigFile(List<RunConfigEntry> defaults, Map<String, RunConfigEntry> 
     return new RunConfigFile(List.of(), Map.of());
   }
 
-  // A layer the user created but left empty holds no entries; Json.read takes an empty file as
+  // A layer the user created but left blank holds no entries; Json.read takes a blank file as
   // damaged.
   static RunConfigFile readOrEmpty(final Path file) throws IOException {
-    if (!Files.exists(file) || Files.size(file) == 0) {
+    if (!Files.exists(file) || Files.readString(file, StandardCharsets.UTF_8).isBlank()) {
       return empty();
     }
 

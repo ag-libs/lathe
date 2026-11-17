@@ -2,11 +2,14 @@ package io.github.aglibs.lathe.core;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonIOException;
 import com.google.gson.JsonParseException;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+import com.google.gson.stream.MalformedJsonException;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
@@ -53,7 +56,7 @@ public final class Json {
   }
 
   // Never null: a file a crash left empty or cut off fails as an IOException, which every caller
-  // already handles, not as null (Gson's answer for an empty file) or an unchecked Gson exception.
+  // already handles, not as null (Gson's answer for an empty file) or an unchecked exception.
   public static <T> T read(final Path path, final Class<T> type) throws IOException {
     try (final Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
       final T value = GSON.fromJson(reader, type);
@@ -63,7 +66,18 @@ public final class Json {
 
       return value;
     } catch (final JsonParseException e) {
-      throw new IOException("malformed JSON file %s".formatted(path), e);
+      // Gson wraps the reader's own failures too; only a syntax error means the file is damaged.
+      final boolean readFailure =
+          e instanceof JsonIOException
+              || (e.getCause() instanceof IOException
+                  && !(e.getCause() instanceof MalformedJsonException)
+                  && !(e.getCause() instanceof EOFException));
+      throw new IOException(
+          "%s JSON file %s".formatted(readFailure ? "unreadable" : "malformed", path), e);
+    } catch (final RuntimeException e) {
+      // Gson reports a record's compact constructor rejecting what the file holds (a field left
+      // out, another schema's shape) as a plain RuntimeException.
+      throw new IOException("invalid JSON file %s".formatted(path), e);
     }
   }
 

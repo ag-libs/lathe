@@ -118,6 +118,15 @@ final class WorkspaceStyleTest {
     }
   }
 
+  // A committed file left blank declares nothing: the generated style still applies.
+  @Test
+  void read_blankCommittedFile_readsGenerated() throws IOException {
+    writeGenerated(new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4));
+    Files.writeString(root.resolve(LatheLayout.STYLE_SHARED_FILE), "\n");
+
+    assertThat(WorkspaceStyle.read(root).formatter().engine()).isEqualTo("google");
+  }
+
   @Test
   void read_malformedFile_throws() throws IOException {
     Files.writeString(root.resolve(LatheLayout.STYLE_SHARED_FILE), "{ not json");

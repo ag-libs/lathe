@@ -207,6 +207,19 @@ class WorkspaceTypeIndexTest {
         .containsExactly("com.b.Beta");
   }
 
+  // A shard without the fields its schema requires fails validation: it is skipped too.
+  @Test
+  void build_incompleteShard_skippedAndOtherShardsLoaded() throws IOException {
+    final Path incomplete = Files.writeString(tmp.resolve("incomplete.json"), "{\"types\": []}");
+    final var shardB = writeShard(tmp, "b.json", shard(entry("Beta", "com.b")));
+
+    final var index = WorkspaceTypeIndex.build(List.of(incomplete, shardB));
+
+    assertThat(index.search("Beta", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.b.Beta");
+  }
+
   @Test
   void build_multipleShards_mergedIntoIndex() throws IOException {
     final var shardA = writeShard(tmp, "a.json", shard(entry("Alpha", "com.a")));
