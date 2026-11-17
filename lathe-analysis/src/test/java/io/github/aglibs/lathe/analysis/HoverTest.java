@@ -771,7 +771,88 @@ class HoverTest extends SampleFixture {
         }
         """;
     final var md = hoverText(src, "first(java.util.List.of", "first");
-    assertThat(md).contains("<T>").contains("first");
+    assertThat(md).contains("<T> T first(").doesNotContain("extends").doesNotContain("throws");
+  }
+
+  // EG-111: an agent writing the call needs the bound and the checked exception it must handle.
+  @Test
+  void hover_methodWithBoundAndThrows_rendersBothAsDeclared() {
+    final var src =
+        """
+        class Jdbi {
+          <R, X extends Exception> R withHandle(java.util.concurrent.Callable<R> callback) throws X {
+            return null;
+          }
+          void use() throws Exception { withHandle(() -> 1); }
+        }
+        """;
+    final var md = hoverText(src, "withHandle(() ->", "withHandle");
+    assertThat(md).contains("<R, X extends Exception> R withHandle(Callable<R> callback) throws X");
+  }
+
+  @Test
+  void hover_jdkMethodDeclaringThrows_rendersThrowsClause() {
+    final var src =
+        """
+        class Use {
+          int use() throws java.io.IOException { return new java.io.StringReader("a").read(); }
+        }
+        """;
+    final var md = hoverText(src, ".read()", "read");
+    assertThat(md).contains("int read() throws IOException");
+  }
+
+  @Test
+  void hover_constructorDeclaringThrows_rendersThrowsClause() {
+    final var src =
+        """
+        class Conn {
+          Conn(String url) throws java.io.IOException {}
+          static Conn open() throws java.io.IOException { return new Conn("db"); }
+        }
+        """;
+    final var md = hoverText(src, "new Conn(", "Conn");
+    assertThat(md).contains("Conn(String url) throws IOException");
+  }
+
+  // An explicit Object bound fixes the erasure, so it is part of the declaration; a lone one is
+  // implied and left out.
+  @Test
+  void hover_explicitObjectBound_keptBesideAnotherBound() {
+    final var src =
+        """
+        class Use {
+          Integer use() { return java.util.Collections.max(java.util.List.of(1)); }
+        }
+        """;
+    final var md = hoverText(src, ".max(", "max");
+    assertThat(md).contains("<T extends Object & Comparable<? super T>> T max(");
+  }
+
+  @Test
+  void hover_typeWithIntersectionBound_rendersTheBound() {
+    final var src =
+        """
+        class Box<T extends Number & Comparable<T>> {
+          Box<Integer> self;
+        }
+        """;
+    final var md = hoverText(src, "Box<Integer>", "Box");
+    assertThat(md).contains("class Box<T extends Number & Comparable<T>>");
+  }
+
+  // A type variable's own hover is its declaration, bound included, not `T T`.
+  @Test
+  void hover_typeVariable_rendersItsDeclaration() {
+    final var src =
+        """
+        class Box<T extends Number, U> {
+          T value;
+          U other;
+        }
+        """;
+    assertThat(hoverText(src, "T value", "T")).contains("```java\nT extends Number\n```");
+    assertThat(hoverText(src, "U other", "U")).contains("```java\nU\n```");
   }
 
   @Test
