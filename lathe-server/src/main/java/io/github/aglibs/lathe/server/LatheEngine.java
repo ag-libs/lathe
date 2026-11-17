@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceRole;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
@@ -262,11 +263,17 @@ public final class LatheEngine {
             .filter(match -> kept.contains(access(match)))
             .sorted(Comparator.comparing(ReferenceMatch::toLocation, locationOrder()))
             .toList();
+    // The declaration is no use: an unused symbol must not read as having one.
+    final long filteredOut =
+        matches.stream()
+            .filter(match -> match.role() != ReferenceRole.DECLARATION)
+            .filter(match -> !kept.contains(access(match)))
+            .count();
     return new LatheReferences(
         uses.size(),
         uses.size() > maxResults,
         uses.stream().limit(maxResults).map(this::toLatheReference).toList(),
-        matches.size() - uses.size());
+        (int) filteredOut);
   }
 
   private LatheReference toLatheReference(final ReferenceMatch match) {
