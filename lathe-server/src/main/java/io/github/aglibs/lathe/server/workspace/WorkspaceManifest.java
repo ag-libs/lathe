@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -31,6 +33,9 @@ public final class WorkspaceManifest {
 
   private final LibrarySources libraries;
   private final List<Path> typeIndexShardPaths;
+  // The shards of the dependencies without sources (none published, or an unreadable sources jar):
+  // their types have no file to point at, only the dependency that declares them.
+  private final Set<Path> sourcelessShardPaths;
   private final List<Path> buildFiles;
   // The content the sync saw, for the build files watched by content (POMs); OpenJDK's touch-only
   // batch markers have none.
@@ -53,6 +58,7 @@ public final class WorkspaceManifest {
   private WorkspaceManifest(
       final LibrarySources libraries,
       final List<Path> typeIndexShardPaths,
+      final Set<Path> sourcelessShardPaths,
       final List<Path> buildFiles,
       final Map<Path, ContentFingerprint> buildFileFingerprints,
       final List<Path> runnerClasspath,
@@ -64,6 +70,7 @@ public final class WorkspaceManifest {
       final String jdkSourcesNote) {
     this.libraries = libraries;
     this.typeIndexShardPaths = typeIndexShardPaths;
+    this.sourcelessShardPaths = sourcelessShardPaths;
     this.buildFiles = buildFiles;
     this.buildFileFingerprints = buildFileFingerprints;
     this.runnerClasspath = runnerClasspath;
@@ -92,6 +99,7 @@ public final class WorkspaceManifest {
     return new WorkspaceManifest(
         LibrarySources.none(),
         List.of(),
+        Set.of(),
         List.of(),
         Map.of(),
         List.of(),
@@ -136,6 +144,13 @@ public final class WorkspaceManifest {
                       : Stream.empty())
               .distinct()
               .toList();
+      final Set<Path> sourcelessShardPaths =
+          entries.stream()
+              .filter(e -> e.status() == SourceStatus.MISSING)
+              .map(DependencyData::typeIndex)
+              .filter(p -> p != null && !p.isBlank())
+              .map(Path::of)
+              .collect(Collectors.toUnmodifiableSet());
       final List<Path> resolvedBuildFiles =
           data.buildFiles().stream()
               .map(buildFile -> workspaceRoot.resolve(buildFile.path()))
@@ -158,6 +173,7 @@ public final class WorkspaceManifest {
               jdk != null ? jdk.version() : null,
               jdk != null ? jdk.sourceDir() : null),
           typeIndexShardPaths,
+          sourcelessShardPaths,
           resolvedBuildFiles,
           buildFileFingerprints,
           runnerClasspath,
@@ -230,6 +246,10 @@ public final class WorkspaceManifest {
 
   public List<Path> typeIndexShardPaths() {
     return typeIndexShardPaths;
+  }
+
+  public Set<Path> sourcelessShardPaths() {
+    return sourcelessShardPaths;
   }
 
   public List<Path> buildFiles() {

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.SourcelessSymbol;
 import io.github.aglibs.lathe.analysis.WorkspaceSymbolResolver;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -104,7 +105,8 @@ final class ReactorTypeIndex {
         scan(
             List.copyOf(state.registry().allConfigs()),
             openSourcePaths.get(),
-            state.manifest().typeIndexShardPaths()));
+            state.manifest().typeIndexShardPaths(),
+            state.manifest().sourcelessShardPaths()));
   }
 
   // After a build, the same trees rescanned off the loop and applied back on it: requests meanwhile
@@ -122,12 +124,13 @@ final class ReactorTypeIndex {
     final List<ModuleSourceConfig> configs = List.copyOf(state.registry().allConfigs());
     final Set<Path> openSources = Set.copyOf(openSourcePaths.get());
     final List<Path> dependencyShards = state.manifest().typeIndexShardPaths();
+    final Set<Path> sourcelessShards = state.manifest().sourcelessShardPaths();
     final var refreshed = new CompletableFuture<Void>();
     refreshing = refreshed;
     eventLoop
         .rejoin(
             CompletableFuture.supplyAsync(
-                () -> scan(configs, openSources, dependencyShards), scans))
+                () -> scan(configs, openSources, dependencyShards, sourcelessShards), scans))
         .whenComplete(
             (result, error) -> {
               refreshing = null;
@@ -179,7 +182,8 @@ final class ReactorTypeIndex {
   private static FullScan scan(
       final List<ModuleSourceConfig> configs,
       final Set<Path> openSources,
-      final List<Path> dependencyShards) {
+      final List<Path> dependencyShards,
+      final Set<Path> sourcelessShards) {
     final var trees = new LinkedHashMap<ModuleSourceConfig, ClassFileTypeScanner.ReactorScan>();
     final var shards = new LinkedHashMap<ModuleSourceConfig, List<TypeIndexEntry>>();
     final var failed = new HashSet<ModuleSourceConfig>();
@@ -203,7 +207,7 @@ final class ReactorTypeIndex {
         shards,
         failed,
         usageCounts,
-        WorkspaceTypeIndex.build(dependencyShards, shardsByTree(shards))
+        WorkspaceTypeIndex.build(dependencyShards, shardsByTree(shards), sourcelessShards)
             .withUsageCounts(usageCounts));
   }
 
@@ -338,6 +342,17 @@ final class ReactorTypeIndex {
     }
 
     return List.copyOf(results);
+  }
+
+  // The types a search finds in dependencies without sources, which symbols leaves out: they have
+  // no file to point at, only the dependency that declares them.
+  List<SourcelessSymbol> sourcelessSymbols(final String query, final boolean reactorOnly) {
+    eventLoop.checkOnLoop();
+    if (reactorOnly) {
+      return List.of();
+    }
+
+    return WorkspaceSymbolResolver.sourceless(query, typeIndex, entry -> true);
   }
 
   record Declaration(ModuleSourceConfig owner, TypeIndexEntry entry) {

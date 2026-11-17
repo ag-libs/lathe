@@ -593,10 +593,16 @@ final class McpText {
     return result(text, notes);
   }
 
+  // A type from a dependency without sources has no file: its dependency stands in its place, so
+  // the agent knows the type exists and where it comes from.
   static String symbolLine(final LatheSymbol symbol) {
     final String where = symbol.container().isBlank() ? "" : " — %s".formatted(symbol.container());
-    return "%s (%s)%s  %s"
-        .formatted(symbol.name(), symbol.kind(), where, position(symbol.location()));
+    final String at =
+        symbol
+            .sourcelessDependency()
+            .map("%s, no sources"::formatted)
+            .orElseGet(() -> position(symbol.location()));
+    return "%s (%s)%s  %s".formatted(symbol.name(), symbol.kind(), where, at);
   }
 
   static String callLine(final String arrow, final LatheCall call) {

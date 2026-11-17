@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.SourcelessSymbol;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
@@ -635,6 +636,12 @@ final class DocumentFeatures {
     LOG.info(
         () -> "[symbol] query=%s %dms hits=%d".formatted(query, t.elapsedMs(), results.size()));
     return results;
+  }
+
+  // The types the same search finds in dependencies without sources: MCP lists them by their
+  // dependency; an editor's symbol needs a file to open, so workspaceSymbol leaves them out.
+  List<SourcelessSymbol> sourcelessSymbols(final String query, final boolean reactorOnly) {
+    return reactorIndex.sourcelessSymbols(query, reactorOnly);
   }
 
   private static List<String> completionModuleNames(final CompilerRoute route, final String uri) {

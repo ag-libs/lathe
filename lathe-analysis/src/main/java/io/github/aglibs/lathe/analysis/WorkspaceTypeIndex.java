@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -52,6 +53,9 @@ public final class WorkspaceTypeIndex {
   private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
   // How many reactor classes reference each type (document frequency); a completion-ranking signal.
   private final Map<String, Integer> usageCounts;
+  // The types of the dependencies without sources, by binary name, each mapped to its dependency's
+  // GAV: only those, so a large workspace keeps no such map of every dependency type.
+  private final Map<String, String> sourcelessDependencies;
 
   private WorkspaceTypeIndex(
       final List<TypeIndexEntry> staticEntries,
@@ -61,7 +65,8 @@ public final class WorkspaceTypeIndex {
       final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower,
       final NavigableMap<String, TypeIndexEntry> byBinaryName,
       final Map<String, List<TypeIndexEntry>> directSubtypesByParent,
-      final Map<String, Integer> usageCounts) {
+      final Map<String, Integer> usageCounts,
+      final Map<String, String> sourcelessDependencies) {
     this.staticEntries = staticEntries;
     this.reactorTrees = reactorTrees;
     this.seenTree = seenTree;
@@ -70,6 +75,7 @@ public final class WorkspaceTypeIndex {
     this.byBinaryName = byBinaryName;
     this.directSubtypesByParent = directSubtypesByParent;
     this.usageCounts = usageCounts;
+    this.sourcelessDependencies = sourcelessDependencies;
   }
 
   public static WorkspaceTypeIndex empty() {
@@ -81,6 +87,7 @@ public final class WorkspaceTypeIndex {
         Collections.emptyNavigableMap(),
         Collections.emptyNavigableMap(),
         Map.of(),
+        Map.of(),
         Map.of());
   }
 
@@ -88,18 +95,35 @@ public final class WorkspaceTypeIndex {
     return build(shardPaths, Map.of());
   }
 
-  // reactorEntries: each source tree's types, by the tree's classes dir.
   public static WorkspaceTypeIndex build(
       final List<Path> shardPaths, final Map<Path, List<TypeIndexEntry>> reactorEntries) {
+    return build(shardPaths, reactorEntries, Set.of());
+  }
+
+  // reactorEntries: each source tree's types, by the tree's classes dir. sourcelessShards: the
+  // shards of the dependencies without sources, among shardPaths.
+  public static WorkspaceTypeIndex build(
+      final List<Path> shardPaths,
+      final Map<Path, List<TypeIndexEntry>> reactorEntries,
+      final Set<Path> sourcelessShards) {
     final var t = Stopwatch.start();
-    final List<TypeIndexFile> files =
-        shardPaths.stream()
-            .filter(WorkspaceTypeIndex::shardExists)
-            .flatMap(WorkspaceTypeIndex::loadFile)
-            .toList();
+    final var files = new ArrayList<TypeIndexFile>();
+    final var sourceless = new HashMap<String, String>();
+    for (final Path shard : shardPaths) {
+      if (!shardExists(shard)) {
+        continue;
+      }
+
+      final List<TypeIndexFile> loaded = loadFile(shard).toList();
+      files.addAll(loaded);
+      if (sourcelessShards.contains(shard)) {
+        loaded.forEach(file -> putSourceless(sourceless, file));
+      }
+    }
+
     final List<TypeIndexEntry> staticEntries =
         files.stream().flatMap(file -> file.types().stream()).toList();
-    final var index = create(staticEntries, reactorEntries, Map.of());
+    final var index = create(staticEntries, reactorEntries, Map.of(), Map.copyOf(sourceless));
     LOG.fine(
         () ->
             "[type-index] loaded index: %d simple names from %d/%d shard(s) + %d reactor shard(s) %dms"
@@ -123,7 +147,8 @@ public final class WorkspaceTypeIndex {
         symbolsBySimpleNameLower,
         byBinaryName,
         directSubtypesByParent,
-        Map.copyOf(usageCounts));
+        Map.copyOf(usageCounts),
+        sourcelessDependencies);
   }
 
   // The same index for one file, which sees only the given trees: its own and those it compiles
@@ -137,14 +162,15 @@ public final class WorkspaceTypeIndex {
         symbolsBySimpleNameLower,
         byBinaryName,
         directSubtypesByParent,
-        usageCounts);
+        usageCounts,
+        sourcelessDependencies);
   }
 
   public WorkspaceTypeIndex withReactorEntries(
       final Map<Path, List<TypeIndexEntry>> reactorEntries) {
     final var t = Stopwatch.start();
     // Usage counts carry over: they are refreshed only on a full build, not on an incremental save.
-    final var index = create(staticEntries, reactorEntries, usageCounts);
+    final var index = create(staticEntries, reactorEntries, usageCounts, sourcelessDependencies);
     LOG.fine(
         () ->
             "[type-index] refreshed reactor index: %d simple names from %d static type(s) + %d reactor shard(s) %dms"
@@ -159,7 +185,8 @@ public final class WorkspaceTypeIndex {
   private static WorkspaceTypeIndex create(
       final List<TypeIndexEntry> staticEntries,
       final Map<Path, List<TypeIndexEntry>> reactorEntries,
-      final Map<String, Integer> usageCounts) {
+      final Map<String, Integer> usageCounts,
+      final Map<String, String> sourcelessDependencies) {
     final Map<String, Set<Path>> reactorTrees =
         reactorEntries.entrySet().stream()
             .flatMap(
@@ -221,7 +248,24 @@ public final class WorkspaceTypeIndex {
         symbolMap,
         Collections.unmodifiableNavigableMap(byBinaryName),
         Map.copyOf(directSubtypesByParent),
-        Map.copyOf(usageCounts));
+        Map.copyOf(usageCounts),
+        sourcelessDependencies);
+  }
+
+  private static void putSourceless(final Map<String, String> into, final TypeIndexFile file) {
+    if (file.origin().dependency() == null) {
+      return;
+    }
+
+    final String gav = file.origin().dependency().gav();
+    for (final TypeIndexEntry entry : file.types()) {
+      into.putIfAbsent(entry.binaryName(), gav);
+    }
+  }
+
+  // The GAV of the dependency without sources that declares the type, if one does.
+  public Optional<String> sourcelessDependency(final String binaryName) {
+    return Optional.ofNullable(sourcelessDependencies.get(binaryName));
   }
 
   public int usageCount(final String binaryName) {

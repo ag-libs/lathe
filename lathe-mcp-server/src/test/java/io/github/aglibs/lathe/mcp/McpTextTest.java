@@ -741,6 +741,17 @@ class McpTextTest {
         .isEqualTo("No symbols matching 'Cart'.");
   }
 
+  // A type from a dependency without sources names its dependency where a file would be.
+  @Test
+  void searchResult_typeFromADependencyWithoutSources_namesTheDependency() {
+    final var symbols =
+        List.of(new LatheSymbol("DataSource", "Class", "com.db", null, "com.db:driver:1.0"));
+
+    assertThat(text(McpText.searchResult("Data", symbols, McpText.NO_NOTES)))
+        .isEqualTo(
+            lines("1 symbol(s):", "DataSource (Class) — com.db  com.db:driver:1.0, no sources"));
+  }
+
   // A run that reported no test says how the JVM ended instead of a PASS over nothing.
   @Test
   void testRunResult_blockedNothingRanFailedAndPassed_eachSaysWhatHappened() {

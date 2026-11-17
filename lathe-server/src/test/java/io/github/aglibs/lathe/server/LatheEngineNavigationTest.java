@@ -585,6 +585,31 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     assertThat(engine.searchSymbols("*", SymbolScope.ALL, 50).value()).isEmpty();
   }
 
+  // A type from a dependency without sources has no file, but it exists: the search lists it by
+  // its dependency, so an agent does not conclude it does not.
+  @Test
+  void searchSymbols_typeFromADependencyWithoutSources_listedWithItsDependency() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/Caller.java", "package com.example; class Caller { com.lib.Lib lib; }");
+    TestCompiler.recordSourcelessDependency(
+        tmp, "com.lib:lib:1", Map.of("com/lib/Lib.java", "package com.lib; public class Lib {}"));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.searchSymbols("Lib", SymbolScope.ALL, 50).value())
+        .filteredOn(symbol -> symbol.name().equals("Lib"))
+        .singleElement()
+        .satisfies(
+            symbol -> {
+              assertThat(symbol.container()).isEqualTo("com.lib");
+              assertThat(symbol.sourcelessDependency()).hasValue("com.lib:lib:1");
+              assertThat(symbol.location()).isNull();
+            });
+    assertThat(engine.searchSymbols("Lib", SymbolScope.REACTOR, 50).value())
+        .as("not the reactor's")
+        .extracting(LatheSymbol::name)
+        .doesNotContain("Lib");
+  }
+
   // No project code can use a type in a JDK package its module does not export to everyone.
   @Test
   void jdkInternal_containers_onlyTheJdksUnexportedPackages() {

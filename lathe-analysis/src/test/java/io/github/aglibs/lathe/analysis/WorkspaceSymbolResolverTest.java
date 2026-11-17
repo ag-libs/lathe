@@ -9,7 +9,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.eclipse.lsp4j.SymbolInformation;
+import org.eclipse.lsp4j.SymbolKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -60,6 +63,25 @@ class WorkspaceSymbolResolverTest {
     assertThat(
             WorkspaceSymbolResolver.resolve(
                 "Widget", index, List.of(tmp.resolve("absent")), entry -> true))
+        .isEmpty();
+  }
+
+  // A dependency without sources still declares its types: the search names its dependency instead
+  // of a file, where a dependency that only lacks this one file says nothing.
+  @Test
+  void sourceless_typeOfADependencyWithoutSources_namesItsDependency_otherDependencyNot()
+      throws IOException {
+    final Path shard = tmp.resolve("shard.json");
+    TempSourceCompiler.typeIndex(shard, INTERNAL);
+    final var sourceless = WorkspaceTypeIndex.build(List.of(shard), Map.of(), Set.of(shard));
+    final var withSources = WorkspaceTypeIndex.build(List.of(shard));
+
+    assertThat(WorkspaceSymbolResolver.sourceless("Widget", sourceless, entry -> true))
+        .containsExactly(
+            new SourcelessSymbol("Widget", SymbolKind.Class, "com.example.impl", "test:lib:1.0"));
+    assertThat(WorkspaceSymbolResolver.sourceless("Widget", withSources, entry -> true)).isEmpty();
+    assertThat(WorkspaceSymbolResolver.sourceless("Widget", sourceless, entry -> false))
+        .as("narrowed out")
         .isEmpty();
   }
 }

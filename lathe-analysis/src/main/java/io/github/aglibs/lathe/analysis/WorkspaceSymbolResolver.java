@@ -38,6 +38,32 @@ public final class WorkspaceSymbolResolver {
     }
   }
 
+  // The types the same search finds in dependencies without sources, which resolve leaves out: an
+  // LSP symbol needs a file to open, and these have only the dependency that declares them.
+  public static List<SourcelessSymbol> sourceless(
+      final String query,
+      final WorkspaceTypeIndex typeIndex,
+      final Predicate<TypeIndexEntry> keep) {
+    if (query.isBlank()) {
+      return List.of();
+    }
+
+    return mergedEntries(query, typeIndex, keep).stream()
+        .flatMap(
+            entry ->
+                typeIndex
+                    .sourcelessDependency(entry.binaryName())
+                    .map(
+                        dependency ->
+                            new SourcelessSymbol(
+                                entry.simpleName(),
+                                SymbolKinds.fromTypeIndex(entry.kind()),
+                                containerName(entry),
+                                dependency))
+                    .stream())
+        .toList();
+  }
+
   // Exact prefix search over the symbol index covers everything (JDK, dependencies, reactor),
   // including package-private top-level types so a stack frame's internal impl class resolves.
   // CamelCase-hump matching is a supplementary, reactor-only layer on top, so a type like

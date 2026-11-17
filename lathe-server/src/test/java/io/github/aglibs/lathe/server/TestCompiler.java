@@ -16,6 +16,11 @@ import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -336,8 +341,9 @@ public final class TestCompiler {
         WorkspaceManifestData::dependencySources);
   }
 
-  // A dependency jar declaring the given sources, recorded as a sync records one without sources
-  // (none published, or an unreadable sources jar), on the classpath of the single module that
+  // A dependency jar declaring the given sources' public top-level classes, with its type index,
+  // recorded as a sync records one without sources (none published, or an unreadable sources jar),
+  // on the classpath of the single module that
   // writeModuleSource writes: called after it, which writes the module's params without one.
   // Returns the jar.
   public static Path recordSourcelessDependency(
@@ -345,19 +351,31 @@ public final class TestCompiler {
       throws IOException {
     final Path sourceRoot = workspaceRoot.resolve("lib-src");
     final var paths = new ArrayList<Path>();
+    final var types = new ArrayList<TypeIndexEntry>();
     for (final var source : sources.entrySet()) {
       final Path path = sourceRoot.resolve(source.getKey());
       Files.createDirectories(path.getParent());
       Files.writeString(path, source.getValue());
       paths.add(path);
+      types.add(typeIndexEntry(Path.of(source.getKey())));
     }
 
     final Path jar = workspaceRoot.resolve("repo/lib.jar");
     Files.createDirectories(jar.getParent());
     TestJavac.compileToJar(
         jar, workspaceRoot.resolve("lib-classes"), List.of(), paths.toArray(Path[]::new));
+    final Path typeIndex = workspaceRoot.resolve("cache/type-index/lib.json");
+    Files.createDirectories(typeIndex.getParent());
+    Json.write(
+        new TypeIndexFile(
+            LatheLayout.CACHE_SCHEMA_VERSION,
+            TypeIndexOrigin.dependency(
+                new DependencyTypeIndexOrigin(gav, jar.toString(), Files.size(jar), 0L)),
+            types),
+        typeIndex);
     final var dependency =
-        new DependencyData(gav, jar.toString(), SourceStatus.MISSING, null, List.of(), null);
+        new DependencyData(
+            gav, jar.toString(), SourceStatus.MISSING, null, List.of(), typeIndex.toString());
     rewriteManifest(
         workspaceRoot,
         WorkspaceManifestData::outputs,
@@ -571,6 +589,19 @@ public final class TestCompiler {
             buildDir != null ? buildDir.toString() : null);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree));
     Json.write(config, paramsFile);
+  }
+
+  // The index entry of the public top-level class a source file declares, named after the file.
+  private static TypeIndexEntry typeIndexEntry(final Path relativePath) {
+    final String binaryName = FileUtil.slashed(relativePath).replace(".java", "").replace('/', '.');
+    final int lastDot = binaryName.lastIndexOf('.');
+    return new TypeIndexEntry(
+        binaryName.substring(lastDot + 1),
+        binaryName,
+        lastDot < 0 ? "" : binaryName.substring(0, lastDot),
+        TypeKind.CLASS,
+        true,
+        List.of());
   }
 
   /**

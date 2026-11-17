@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.analysis.ReferenceRole;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
+import io.github.aglibs.lathe.analysis.SourcelessSymbol;
 import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CollectionUtil;
@@ -537,14 +538,29 @@ public final class LatheEngine {
             (session, cancel, progress) ->
                 session
                     .reconcileForVerify()
-                    .thenApply(outcome -> session.features().workspaceSymbol(name, reactorOnly)))
+                    .thenApply(
+                        outcome ->
+                            new SymbolHits(
+                                session.features().workspaceSymbol(name, reactorOnly),
+                                session.features().sourcelessSymbols(name, reactorOnly))))
         .map(
-            symbols ->
-                symbols.stream()
-                    .sorted(Comparator.comparingInt(this::rank))
+            hits ->
+                Stream.concat(
+                        hits.located().stream()
+                            .sorted(Comparator.comparingInt(this::rank))
+                            .map(this::toLatheSymbol),
+                        hits.sourceless().stream().map(LatheEngine::toLatheSymbol))
                     .limit(maxResults)
-                    .map(this::toLatheSymbol)
                     .toList());
+  }
+
+  // A search's hits with a file, and those in dependencies without sources, which have none.
+  private record SymbolHits(List<SymbolInformation> located, List<SourcelessSymbol> sourceless) {
+    SymbolHits {
+      ValidCheck.check().notNull(located, "located").notNull(sourceless, "sourceless").validate();
+      located = List.copyOf(located);
+      sourceless = List.copyOf(sourceless);
+    }
   }
 
   // The reactor's hand-written types first, then its generated ones, then the JDK's and
@@ -599,6 +615,11 @@ public final class LatheEngine {
         kindName(symbol.getKind()),
         container,
         toLatheLocation(symbol.getLocation()));
+  }
+
+  private static LatheSymbol toLatheSymbol(final SourcelessSymbol symbol) {
+    return new LatheSymbol(
+        symbol.name(), kindName(symbol.kind()), symbol.container(), null, symbol.dependency());
   }
 
   /**
