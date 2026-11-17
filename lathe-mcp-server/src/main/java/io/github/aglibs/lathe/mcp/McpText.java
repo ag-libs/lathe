@@ -688,23 +688,37 @@ final class McpText {
     final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
     final long errors = errorCount(verify);
     return usesResult(
-        "%s%s%s%s"
+        "%s%s%s%s%s"
             .formatted(
-                verifyHeadline(errors, total - errors, notes.notChecked().size()),
+                verifyHeadline(
+                    errors,
+                    total - errors,
+                    notes.notChecked().size(),
+                    verify.uncheckedCallers().size()),
                 verifyDiagnosticLines(verify.perModule()),
                 failedWritesNote(verify),
+                uncheckedCallersNote(verify),
                 crossModuleNote(verify, errors)),
         notes);
   }
 
-  // Callers report errors only, so every warning is in a changed file. A file it could not check
-  // must not read as compiling.
-  static String verifyHeadline(final long errors, final long warnings, final int unchecked) {
+  // Callers report errors only, so every warning is in a changed file. A file it could not check,
+  // named or a caller javac cannot read, must not read as compiling.
+  static String verifyHeadline(
+      final long errors, final long warnings, final int unchecked, final int uncheckedCallers) {
     final String warned =
         warnings == 0 ? "" : "; %d warning(s) in the changed files".formatted(warnings);
-    if (errors == 0 && unchecked > 0) {
-      return "No errors in what was checked%s; %d named file(s) not checked."
-          .formatted(warned, unchecked);
+    final List<String> skipped =
+        Stream.of(
+                unchecked > 0 ? "%d named file(s)".formatted(unchecked) : "",
+                uncheckedCallers > 0
+                    ? "%d Kotlin or Groovy caller(s)".formatted(uncheckedCallers)
+                    : "")
+            .filter(part -> !part.isEmpty())
+            .toList();
+    if (errors == 0 && !skipped.isEmpty()) {
+      return "No errors in what was checked%s; %s not checked."
+          .formatted(warned, String.join(" and ", skipped));
     }
 
     return errors == 0
@@ -728,6 +742,16 @@ final class McpText {
             .formatted(String.join(", ", verify.failedWrites()));
   }
 
+  // A Kotlin or Groovy caller is found by its compiled class, but javac cannot read its source, so
+  // only a build checks it.
+  static String uncheckedCallersNote(final LatheVerifyChange verify) {
+    final List<String> callers = verify.uncheckedCallers();
+    return callers.isEmpty()
+        ? ""
+        : "%n%nNot checked — %d Kotlin or Groovy caller(s), which javac cannot read: %s; build their modules to check them."
+            .formatted(callers.size(), listed(callers));
+  }
+
   // A change to a core module names over a hundred dependents; the count and the sync command carry
   // what matters.
   static String crossModuleNote(final LatheVerifyChange verify, final long errors) {
@@ -737,9 +761,11 @@ final class McpText {
 
     final List<String> modules = verify.affectedModules();
     final String advice =
-        errors == 0
-            ? "their callers compile, so a full build is optional"
-            : "fix the errors and re-check, or build them with";
+        errors > 0
+            ? "fix the errors and re-check, or build them with"
+            : verify.uncheckedCallers().isEmpty()
+                ? "their callers compile, so a full build is optional"
+                : "build them to check the callers Lathe could not";
     return "%n%n%d module(s) depend on your change (%s); %s:%n  %s"
         .formatted(modules.size(), listed(modules), advice, verify.suggestedSync());
   }

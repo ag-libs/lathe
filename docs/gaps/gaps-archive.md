@@ -13136,6 +13136,36 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-96 — `verify_change` fails whenever a dependent module has Kotlin sources in a Maven source root — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: `verify_change` on a Maven reactor where a module that depends on the change registers a Kotlin source root (jdbi's `kotlin-sqlobject`, `src/test/kotlin`).**
+
+Found by the MCP exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+After any edit in jdbi's `core` (a new method nobody calls, or a 54-file rename), `verify_change` answers only `the request failed; see the server log`.
+The log: `IllegalArgumentException: Compilation unit is not of SOURCE kind: "/tmp/lathe-compile-…/org/jdbi/v3/sqlobject/kotlin/TestIssue2961.kt"`, from `JavacRunner.createTask` under `JavacRunner.attributeBatch` while checking the dependents.
+The `.kt` file is `kotlin-sqlobject/src/test/kotlin/…/TestIssue2961.kt`.
+With nothing changed, or after a deletion, `verify_change` answers normally; on resilience4j (Gradle, Kotlin module `resilience4j-kotlin`) it works.
+On jdbi an agent cannot check any change to `core`.
+
+### Resolution
+
+`verify_change` finds a change's callers partly by their compiled classes, and `ClassOutputs.sourceOf` maps a Kotlin class to its `.kt` source.
+`ChangeVerifier` now diagnoses only `.java` files and names the other callers as not checked (`LatheVerifyChange.uncheckedCallers`), in the changed module as in a dependent one: the answer reads `No errors in what was checked; N Kotlin or Groovy caller(s) not checked.`, lists them, and no longer calls the build optional.
+On jdbi, adding a method to `core` and renaming `Jdbi.open` across 54 files both verify again.
+
+### Regression targets
+
+`LatheEngineVerifyTest.verifyChange_callerCompiledFromKotlin_namesItAsNotCheckedAndChecksTheRest`, `verifyChange_kotlinCallerInTheChangedModule_namesItAsNotChecked`; `McpTextTest.verifyChangeResult_uncheckedKotlinCaller_namesItAndAsksForTheBuild`, `verifyHeadline_namedAndCallersNotChecked_namesBoth`.
+
+---
+
 ## MC-41 — MCP edits written to a CRLF file add LF line endings — done
 
 **Status: done** (2026-11-16)

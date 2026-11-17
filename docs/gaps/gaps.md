@@ -2628,34 +2628,6 @@ None yet.
 
 ---
 
-## MC-96 — `verify_change` fails whenever a dependent module has Kotlin sources in a Maven source root
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: `verify_change` on a Maven reactor where a module that depends on the change registers a Kotlin source root (jdbi's `kotlin-sqlobject`, `src/test/kotlin`).**
-
-Found by the MCP exploratory round on jdbi (2026-11-17).
-
-### Observed behaviour
-
-After any edit in jdbi's `core` (a new method nobody calls, or a 54-file rename), `verify_change` answers only `the request failed; see the server log`.
-The log: `IllegalArgumentException: Compilation unit is not of SOURCE kind: "/tmp/lathe-compile-…/org/jdbi/v3/sqlobject/kotlin/TestIssue2961.kt"`, from `JavacRunner.createTask` under `JavacRunner.attributeBatch` while checking the dependents.
-The `.kt` file is `kotlin-sqlobject/src/test/kotlin/…/TestIssue2961.kt`.
-With nothing changed, or after a deletion, `verify_change` answers normally; on resilience4j (Gradle, Kotlin module `resilience4j-kotlin`) it works.
-On jdbi an agent cannot check any change to `core`.
-
-### Fix direction
-
-Never hand a non-`.java` file to javac when collecting a dependent module's sources; check the rest and name the Kotlin sources as not checked, as the other tools already do (`Kotlin sources in … are not searched`).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running
 
 **Status: documented**

@@ -1057,11 +1057,12 @@ public final class LatheEngine {
           outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
               ? null
               : LatheLayout.SYNC_SCRIPT_COMMAND;
-      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync, List.of());
+      return new LatheVerifyChange(
+          outcome.deferral(), List.of(), List.of(), sync, List.of(), List.of());
     }
 
     if (plan.changed().isEmpty() && plan.targets().isEmpty()) {
-      return new LatheVerifyChange(null, List.of(), List.of(), null, List.of());
+      return new LatheVerifyChange(null, List.of(), List.of(), null, List.of(), List.of());
     }
 
     final var checked = Stopwatch.start();
@@ -1120,6 +1121,9 @@ public final class LatheEngine {
         plan.failedWrites().keySet().stream()
             .map(file -> displayPath(file, LatheUri.fromPath(file)))
             .sorted()
+            .toList(),
+        plan.uncheckedCallers().stream()
+            .map(file -> displayPath(file, LatheUri.fromPath(file)))
             .toList());
   }
 

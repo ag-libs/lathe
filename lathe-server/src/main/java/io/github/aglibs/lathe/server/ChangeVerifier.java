@@ -191,9 +191,11 @@ final class ChangeVerifier {
                     LinkedHashMap::new)));
   }
 
-  // A deleted file has nothing to diagnose, but its callers still do.
+  // A deleted file has nothing to diagnose, but its callers still do. Only Java is diagnosed: a
+  // Kotlin or Groovy caller, found by its compiled class, is a source javac cannot read, which the
+  // answer names as not checked (uncheckedCallers).
   private void addVerifyTarget(final Map<String, Set<Path>> byModule, final Path file) {
-    if (Files.notExists(file)) {
+    if (Files.notExists(file) || !FileUtil.isJavaFile(file)) {
       return;
     }
 
@@ -557,7 +559,7 @@ final class ChangeVerifier {
   // written or changed since the build) and, per module, the files that see them.
   VerifyPlan plan(final ReconcileOutcome outcome, final List<Path> files) {
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
-      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of());
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of(), List.of());
     }
 
     final List<Path> touched =
@@ -570,7 +572,7 @@ final class ChangeVerifier {
     final List<Path> changed = differingFromBuild(touched);
     final List<Path> leftCallers = files.isEmpty() ? stillLeftByRename() : List.of();
     if (changed.isEmpty() && leftCallers.isEmpty()) {
-      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of());
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0, Map.of(), List.of());
     }
 
     final Map<Path, List<Path>> referrers = referrersOf(changed);
@@ -580,7 +582,18 @@ final class ChangeVerifier {
         verifyTargetsByModule(changed, referrers, leftCallers),
         downstreamModuleRels(changed, referrers),
         reactorModuleCount(),
-        failedWrites(changed));
+        failedWrites(changed),
+        uncheckedCallers(referrers));
+  }
+
+  // The callers javac cannot read: a Kotlin or Groovy source, found by its compiled class.
+  private static List<Path> uncheckedCallers(final Map<Path, List<Path>> referrers) {
+    return referrers.values().stream()
+        .flatMap(List::stream)
+        .filter(file -> !FileUtil.isJavaFile(file) && Files.exists(file))
+        .distinct()
+        .sorted()
+        .toList();
   }
 
   // The changed files the build's compile fails for a cause of their own, unchanged since, with
@@ -601,7 +614,8 @@ final class ChangeVerifier {
       Map<String, List<Path>> targets,
       List<String> downstream,
       int moduleCount,
-      Map<Path, List<Diagnostic>> failedWrites) {
+      Map<Path, List<Diagnostic>> failedWrites,
+      List<Path> uncheckedCallers) {
 
     VerifyPlan {
       ValidCheck.check().notNull(outcome, "outcome").validate();
@@ -611,6 +625,7 @@ final class ChangeVerifier {
       targets = Collections.unmodifiableMap(new LinkedHashMap<>(targets));
       downstream = List.copyOf(downstream);
       failedWrites = Map.copyOf(failedWrites);
+      uncheckedCallers = List.copyOf(uncheckedCallers);
     }
   }
 }
