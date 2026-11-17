@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core.schema;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -70,6 +71,22 @@ class ModuleConfigDataTest {
                     null, "/out", null, List.of(), List.of(), List.of(), List.of(), null, null,
                     false, false, null, null, null, false, null, null))
         .hasMessageContaining("sourceTree");
+  }
+
+  // A relative build directory would never contain a source root, so nothing would count as build
+  // output: refused where it is read, not silently ignored.
+  @Test
+  void constructor_buildDirAbsoluteOrAbsent_relativeThrows() {
+    final String absolute = Path.of("out").toAbsolutePath().toString();
+    assertThat(buildDirConfig(absolute).buildDir()).isEqualTo(absolute);
+    assertThat(buildDirConfig(null).buildDir()).isNull();
+    assertThatThrownBy(() -> buildDirConfig("target")).hasMessageContaining("buildDir");
+  }
+
+  private static ModuleConfigData buildDirConfig(final String buildDir) {
+    return new ModuleConfigData(
+        "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
+        false, null, null, null, false, null, buildDir);
   }
 
   @Test

@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -148,10 +149,7 @@ final class RenameService {
               .formatted(target.simpleName()));
     }
 
-    final List<ModuleSourceConfig> configs = state.registry().allConfigs();
-    if (declarations.values().stream()
-        .flatMap(Optional::stream)
-        .anyMatch(file -> configs.stream().anyMatch(config -> config.isBuildOutput(file)))) {
+    if (declarations.values().stream().flatMap(Optional::stream).anyMatch(this::isBuildOutput)) {
       throw FeatureAnswers.refused(
           "`%s` is declared, or overrides a method declared, in source a build task generates; change the generator instead"
               .formatted(target.simpleName()));
@@ -195,18 +193,17 @@ final class RenameService {
   private void requireNoBuildOutputEdits(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
     eventLoop.checkOnLoop();
-    final List<ModuleSourceConfig> configs = state.registry().allConfigs();
     refuseIfPresent(
         matches.stream()
             .map(ReferenceMatch::uri)
             .distinct()
             .map(LatheUri::toPath)
-            .filter(file -> configs.stream().anyMatch(config -> config.isBuildOutput(file)))
+            .filter(this::isBuildOutput)
             .findFirst()
             .map(
                 file ->
                     "`%s` cannot be renamed: it occurs in %s, which a build task generates, and the next build would overwrite the edit there; change the generator, then rebuild and rename"
-                        .formatted(target.simpleName(), file.getFileName())));
+                        .formatted(target.simpleName(), workspacePath(file))));
   }
 
   // A subtype implementing the method through a superclass outside the override family keeps that
@@ -462,6 +459,17 @@ final class RenameService {
 
   private boolean isGeneratedSource(final Path file) {
     return state.registry().allConfigs().stream().anyMatch(config -> config.isGenerated(file));
+  }
+
+  private boolean isBuildOutput(final Path file) {
+    return state.registry().allConfigs().stream().anyMatch(config -> config.isBuildOutput(file));
+  }
+
+  // Generated files often share a name across roots and modules: the path tells which one.
+  private String workspacePath(final Path file) {
+    return file.startsWith(state.root())
+        ? FileUtil.slashed(state.root().relativize(file))
+        : file.toString();
   }
 
   CompletableFuture<WorkspaceEdit> renameFuture(

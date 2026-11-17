@@ -193,6 +193,7 @@ It refuses an interface method a project class implements through a superclass o
 It refuses a symbol a build task's output uses (a source root under the build directory, such as a code generator's), since the next build would overwrite the edit there;
 change the generator, rebuild, then rename.
 Annotation-processor output is left alone: the processors regenerate it from the renamed sources.
+Only the compile's own processor output counts as that: a processor run outside the compile (`maven-processor-plugin` into `target/generated-sources/apt`, Kotlin's kapt) writes a source root under the build directory, so a rename its output uses is refused as for a build task.
 It refuses a rename that would change what a name means, in any module that sees the symbol:
 a use the new name would capture (a field a renamed parameter would shadow, another call that would pick the renamed overload,
 a subclass method that would override it) or a renamed use that would then refer to something else (another overload, an inherited method);

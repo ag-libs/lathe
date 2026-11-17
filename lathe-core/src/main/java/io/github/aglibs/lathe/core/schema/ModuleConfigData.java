@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core.schema;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 
@@ -39,7 +40,11 @@ public record ModuleConfigData(
     modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
     processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
     compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
-    ValidCheck.check().notNull(sourceTree, "sourceTree").notNull(outputDir, "outputDir").validate();
+    ValidCheck.check()
+        .notNull(sourceTree, "sourceTree")
+        .notNull(outputDir, "outputDir")
+        .when(buildDir != null, v -> v.assertTrue(Path.of(buildDir).isAbsolute(), "buildDir"))
+        .validate();
     testCode =
         Objects.requireNonNullElse(testCode, LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
   }
