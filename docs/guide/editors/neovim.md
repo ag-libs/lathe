@@ -680,9 +680,8 @@ tail -f ~/.local/state/nvim/lsp.log
 
 ## Troubleshooting (Neovim)
 
-If the server exits unexpectedly or is killed (the system's out-of-memory killer, say), Lathe notifies you
-(`language server exited unexpectedly (code N)` or `language server was killed (signal N)`; Neovim adds its own `Client lathe quit…` line).
-After a kill, `:LatheStart` starts the server again without touching unsaved changes.
+If the server exits unexpectedly or is killed (the system's out-of-memory killer, say), Lathe notifies you (`language server exited unexpectedly (code N)` or `language server was killed (signal N)`; Neovim adds its own `Client lathe quit…` line).
+After a kill, `:LatheStart` starts the server again for the current buffer without touching unsaved changes; each other Java buffer reattaches when you enter it.
 Check the LSP log above, with `LATHE_DEBUG=1` for verbose compiler logging.
 A server that fails before it starts (a bad JDK, a module missing from the server's module path) also
 reports there: the JVM's startup errors appear as `stderr` lines in the LSP log. If it does not attach at all,

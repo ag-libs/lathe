@@ -97,13 +97,40 @@ started = {}
 lathe.start(vim.api.nvim_create_buf(false, true))
 spec.check("start: no client without a workspace", #started, 0)
 
+-- Neovim calls on_exit in a fast event, where the real vim.notify raises E5560. Run the callback
+-- from a libuv timer the same way, and let the stub fail a notification made there.
+local fast_notes = 0
+vim.notify = function(msg)
+  if vim.in_fast_event() then
+    fast_notes = fast_notes + 1
+    return
+  end
+
+  table.insert(notes, msg)
+end
+
+local function server_exit(code, signal)
+  notes = {}
+  local done = false
+  local timer = vim.uv.new_timer()
+  timer:start(0, 0, function()
+    timer:close()
+    lathe.on_server_exit(code, signal)
+    vim.schedule(function()
+      done = true
+    end)
+  end)
+  vim.wait(1000, function()
+    return done
+  end)
+end
+
 -- on_server_exit notifies on an unexpected exit and stays silent on a clean one.
-notes = {}
-lathe.on_server_exit(0)
+server_exit(0)
 spec.check("on_server_exit: clean exit is silent", #notes, 0)
-lathe.on_server_exit(0, 0)
+server_exit(0, 0)
 spec.check("on_server_exit: clean exit with no signal is silent", #notes, 0)
-lathe.on_server_exit(134)
+server_exit(134)
 spec.check("on_server_exit: crash notifies", #notes, 1)
 spec.check(
   "on_server_exit: crash names the code, with no restart hint",
@@ -116,8 +143,7 @@ spec.check(
 )
 
 -- A SIGKILL (the OOM killer) ends the process with code 0: the signal tells it from a clean exit.
-notes = {}
-lathe.on_server_exit(0, 9)
+server_exit(0, 9)
 spec.check("on_server_exit: killed by a signal notifies", #notes, 1)
 spec.check(
   "on_server_exit: kill names the signal and :LatheStart",
@@ -128,17 +154,33 @@ spec.check(
 )
 
 -- SIGTERM is how Neovim itself stops a client (:lsp restart, a timed-out shutdown).
-notes = {}
-lathe.on_server_exit(0, 15)
+server_exit(0, 15)
 spec.check("on_server_exit: SIGTERM from Neovim is silent", #notes, 0)
 
+-- The JVM handles SIGTERM with its shutdown hooks and exits with 128 + 15, no signal.
+server_exit(143, 0)
+spec.check("on_server_exit: JVM exit after SIGTERM is silent", #notes, 0)
+
 -- A code and a signal together: the kill is what the user needs to hear.
-lathe.on_server_exit(137, 9)
+server_exit(137, 9)
+spec.check("on_server_exit: code with a signal notifies once", #notes, 1)
 spec.check(
   "on_server_exit: code with a signal names the signal",
   notes[1] ~= nil and notes[1]:find("signal 9", 1, true) ~= nil,
   true
 )
+
+-- A launcher that does not exec the JVM reports its SIGKILL as 128 + 9, with no signal.
+server_exit(137, 0)
+spec.check("on_server_exit: kill reported as a code notifies once", #notes, 1)
+spec.check(
+  "on_server_exit: kill reported as a code names the signal and :LatheStart",
+  notes[1] ~= nil
+    and notes[1]:find("killed (signal 9)", 1, true) ~= nil
+    and notes[1]:find(":LatheStart", 1, true) ~= nil,
+  true
+)
+spec.check("on_server_exit: no notification in a fast event", fast_notes, 0)
 
 vim.fn.delete(work, "rf")
 spec.finish()

@@ -12609,13 +12609,15 @@ The user saw only Neovim's own `Client lathe quit with exit code 0 and signal 9`
 
 The client's `on_exit` passes the signal on, and a signal counts as an unexpected exit, as a non-zero code already did.
 SIGTERM stays silent: it is how Neovim itself stops a client (`:lsp restart`, a shutdown that times out), and Neovim's own check excludes it too.
+The JVM handles SIGTERM with its shutdown hooks and exits with code 143 and no signal, so that code is silent as well; code 137, a SIGKILL reported by a launcher that does not exec the JVM, counts as a kill.
+Neovim runs `on_exit` in a fast event, where `vim.notify` fails (E5560), so the notification is scheduled.
 A kill's notification names the signal and says to run `:LatheStart`, which restarts the server without touching unsaved changes (`:edit` refuses a modified buffer).
 An exit with an error code keeps its message without that hint: such a server failed on its own and would fail again.
 Neovim's own `Client lathe quit…` warning still appears beside Lathe's.
 
 ### Regression targets
 
-`lathestart_spec.lua`: `on_server_exit: killed by a signal notifies`, `on_server_exit: kill names the signal and :LatheStart`, `on_server_exit: SIGTERM from Neovim is silent`, `on_server_exit: code with a signal names the signal`, `on_server_exit: crash names the code, with no restart hint`, `on_server_exit: clean exit with no signal is silent`.
+`lathestart_spec.lua`: `on_server_exit: killed by a signal notifies`, `on_server_exit: kill names the signal and :LatheStart`, `on_server_exit: SIGTERM from Neovim is silent`, `on_server_exit: code with a signal names the signal`, `on_server_exit: crash names the code, with no restart hint`, `on_server_exit: clean exit with no signal is silent`, `on_server_exit: JVM exit after SIGTERM is silent`, `on_server_exit: kill reported as a code names the signal and :LatheStart`, `on_server_exit: no notification in a fast event`.
 
 ---
 
