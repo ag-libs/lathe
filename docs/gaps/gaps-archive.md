@@ -7,6 +7,41 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-020 — Renaming edits sources a build task generates, which the next build overwrites — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: MCP `rename_symbol` and the editor's rename.**
+
+Found by the pre-release Gradle round (2026-11-15) on Caffeine.
+Its `codeGen` source set compiles `build/generated/sources/local-cache`, written by its own JavaPoet task, which Lathe took for hand-written code:
+`rename_symbol` on `FrequencySketch.ensureCapacity` edited 16 of its `*EvictionPolicy.java` files, which the next build overwrites and `git checkout` cannot undo.
+
+Maven (through the extension), Gradle and OpenJDK now record the build directory in each tree's params (`buildDir`).
+A source under it, other than the compile's processor output, is build-task output (`ModuleSourceConfig.isBuildOutput`), kept apart from annotation-processor output (`isGenerated`), so the write pass, the reference index and `verify_change` still treat it as any source.
+A symbol declared there is refused up front, and a rename with an occurrence there is refused whole, naming the file, before any edit is written.
+A Maven module records its build directory from its next compile, so an up-to-date module is protected after a clean build.
+Processor output is still left unedited while the rename goes ahead.
+
+The Helidon blueprint case first filed here, a processor deriving a separate member from the renamed one, is FR-034.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_methodCalledFromBuildTaskOutput_refusesNamingTheFileAndEditsNothing`
+- `LatheEngineRenameTest.rename_methodUnusedInBuildTaskOutput_renamesTheHandWrittenSources`
+- `ModuleSourceConfigTest.isBuildOutput_rootUnderBuildDir_true_handWrittenOrAdjacentRoot_false`
+- `ModuleSourceConfigTest.isBuildOutput_projectDirRoot_fileUnderBuildDir_true`
+- `ModuleSourceConfigTest.isBuildOutput_processorOutputUnderBuildDir_false`
+- `ModuleSourceConfigTest.isBuildOutput_noBuildDirRecorded_false`
+- `OpenJdkSyncTest.sync_builtModuleAndTool_writesPinnedScriptAndBatchMarkersAndReleasesLock` (its `buildDir`)
+- `MavenModuleConfigTest.write_buildDirDeclaredByExtension_recordsIt`
+- `LatheModelInjectorTest.injectTreeScopes_buildDirectory_declaredForBothOutputDirs`
+- `LatheCaptureTaskFunctionalTest.capture_javaProject_capturesFromCacheRefillsAWipedLatheAndKeepsTheLastGoodOne` (its `buildDir`)
+
+---
+
 ## EG-111 — Signatures drop type-parameter bounds and `throws` clauses — done
 
 **Status: done** (2026-11-17)
@@ -13553,6 +13588,30 @@ The editor is unchanged: it re-analyzes every open file downstream of a write.
 
 - `LatheEngineVerifyTest.verifyChange_callerReachesTheChangedTypeOnlyThroughAChain_reportsIt`
 - `LatheEngineVerifyTest.verifyChange_typeReachedOnlyThroughAChainDeleted_reportsTheCaller`
+
+---
+
+## MC-98 — `verify_change` calls a rename clean while a generated caller still uses the old name — done
+
+**Status: done.**
+
+**Affects: MCP `rename_symbol` and `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard, and first recorded under FR-020.
+Renaming the JMH benchmark method `DurationBenchmark.parseDuration` left 10 generated callers on the old name, as a rename leaves annotation-processor output to its processor, but the answer did not say so, and `verify_change` said clean while `get_diagnostics` on the generated file showed the errors.
+JMH's generated classes call the benchmark through a generated subclass (`*_jmhType`), so neither the name nor the class-file search connects them to the changed file.
+
+### Resolution
+
+`rename_symbol` lists the uses it left in annotation-processor output under "Left to the generator" (`LatheRename.generated`).
+`verify_change` with no files checks those files as callers until their content changes from what it was before the rename's write (`ChangeVerifier.checkUntilRegenerated`), so a caller still on the old name is reported, and one the write regenerated is not.
+A file list passed to `verify_change` is checked exactly, without them.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_methodAlsoCalledFromGeneratedSource_leavesAndListsTheGeneratedSource`
+- `LatheEngineRenameTest.verifyChange_afterRenameLeavingGeneratedCaller_reportsItUntilRegenerated`
+- `McpTextTest.renameResult_editsMentionsAndGenerated_filesThenWhatToReview_orNothingToRename`
 
 ---
 

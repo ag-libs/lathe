@@ -190,6 +190,11 @@ It refuses a Lombok field or a member Lombok generates, whose accessors' calls t
 and one member of a statically imported name the import also brings in other members of.
 It refuses a new name the owner already declares or inherits, a sibling type already has, or a variable in scope already uses.
 It refuses an interface method a project class implements through a superclass outside the project, which keeps its method.
+It refuses a symbol a build task's output uses (a source root under the build directory, such as a code generator's), since the next build would overwrite the edit there;
+change the generator, rebuild, then rename.
+Annotation-processor output is left alone: the processors regenerate it from the renamed sources.
+The answer lists the uses it left there under "Left to the generator", as they keep the old name until then.
+Only the compile's own processor output counts as that: a processor run outside the compile (`maven-processor-plugin` into `target/generated-sources/apt`, Kotlin's kapt) writes a source root under the build directory, so a rename its output uses is refused as for a build task.
 It refuses a rename that would change what a name means, in any module that sees the symbol:
 a use the new name would capture (a field a renamed parameter would shadow, another call that would pick the renamed overload,
 a subclass method that would override it) or a renamed use that would then refer to something else (another overload, an inherited method);
@@ -208,6 +213,7 @@ It leads with the error count ("No errors — …" or "N error(s)") and lists ea
 grep-style line, errors first: `path:line:column: severity: message`.
 It reports errors and warnings of the changed files, but only errors of their callers, whose warnings
 were there before the change.
+The generated files a rename left still using the old name count as callers until their generator rewrites them, even those the caller search cannot reach (JMH's benchmark classes call through a generated subclass).
 Unused-code hints are left out (`get_diagnostics` on one file still shows them).
 When the change reaches other modules, it names them (the first ten, then a count) and gives the sync command that builds them, e.g.
 `.lathe/lathe-sync.sh core`.

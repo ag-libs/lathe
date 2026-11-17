@@ -42,7 +42,8 @@ final class MavenModuleConfig {
                 enablePreview(config)),
         AnalysisMode.CLASSPATH,
         false,
-        LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
+        LatheLayout.TEST_CLASSES_DIR.equals(sourceTree),
+        System.getProperty(LatheLayout.Maven.buildDirProperty(config.getOutputLocation())));
   }
 
   // The server runs on the JDK Maven runs on, whose javac cannot compile for a newer toolchain's

@@ -218,6 +218,7 @@ class CompileCaptureTest {
         List.of(),
         null,
         false,
+        null,
         null);
   }
 

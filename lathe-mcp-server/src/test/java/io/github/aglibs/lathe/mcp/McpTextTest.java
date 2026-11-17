@@ -611,9 +611,9 @@ class McpTextTest {
   }
 
   // The places where the old name is still text are listed for the agent to decide, never edited,
-  // and then the files no synced module compiles that name it.
+  // then the files no synced module compiles that name it, then what generated source still uses.
   @Test
-  void renameResult_editsAndMentions_filesThenTheMentionsToReview_orNothingToRename() {
+  void renameResult_editsMentionsAndGenerated_filesThenWhatToReview_orNothingToRename() {
     final var rename =
         new LatheRename(
             "total",
@@ -629,7 +629,9 @@ class McpTextTest {
             List.of(location("app/Shop.java", 7, "// the count of items")),
             4,
             List.of(location("it/ShopIT.java", 12, "shop.count();")),
-            1);
+            1,
+            List.of(location("gen/ShopModel_.java", 5, "shop.count();")),
+            2);
 
     final String text = text(McpText.renameResult(rename, McpText.NO_NOTES));
 
@@ -645,11 +647,16 @@ class McpTextTest {
                 "app/Shop.java:7:1: // the count of items",
                 "",
                 "Not checked — 1 Java file(s) outside every synced source root name it:",
-                "it/ShopIT.java:12:1: shop.count();"));
+                "it/ShopIT.java:12:1: shop.count();",
+                "",
+                "Left to the generator — 2 place(s) in generated source still use the old name until it regenerates them (showing first 1):",
+                "gen/ShopModel_.java:5:1: shop.count();",
+                "verify_change reports them until they are regenerated."));
     assertThat(
             text(
                 McpText.renameResult(
-                    new LatheRename("total", 0, List.of(), List.of(), 0, List.of(), 0),
+                    new LatheRename(
+                        "total", 0, List.of(), List.of(), 0, List.of(), 0, List.of(), 0),
                     McpText.NO_NOTES)))
         .isEqualTo("No references to rename.");
   }

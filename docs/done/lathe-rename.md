@@ -7,6 +7,9 @@ enum-constant rename, the public top-level type file rename, and renaming a symb
 mentions (`{@link}`, `@see`, `@throws`). The sections below are kept as the design record; where they
 say "deferred" or "refused", the notes in Deferred and Non-goals give what shipped.
 
+Annotation-processor output (MC-98): a rename leaves its uses there to the processor, and `rename_symbol` lists them.
+`verify_change` checks those files as callers until they are regenerated, so an agent is never told a change is clean while a generated caller still uses the old name, even one the caller search cannot reach.
+
 Two guards shipped with it:
 
 - **The cursor must name the target.** `prepareRename`/`rename` accept a target only when the identifier
@@ -94,6 +97,11 @@ Validate the position and return the identifier range, or fail with a clear mess
      Renaming only its uses would break every one of them, so `prepareRename` and `rename` both fail
      with a `RequestFailed` error that says why; the MCP `rename_symbol` tool shares the check.
    - the element does not resolve, or is a non-renameable / synthetic-only kind.
+   - the element is declared in a source a build task writes: one under the module's build
+     directory (`buildDir`) that is not the compile's processor output; and, after the search, any
+     occurrence lies in one (`RenameService.requireNoBuildOutputEdits`). The next build would
+     overwrite the edit, so the whole rename is refused. Annotation-processor output is not edited
+     either, but the rename goes ahead: the processors regenerate it.
    - the element is an unsupported kind for M2 (see Non-goals — e.g. a package, an enum constant).
    - the element is a **public top-level type** whose file would have to move — deferred (see
      Deferred). Nested and non-public top-level types are fine.

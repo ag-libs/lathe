@@ -57,6 +57,11 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Internal
   public abstract DirectoryProperty getModuleDir();
 
+  // The project's build directory, recorded for the server to tell the source roots a build task
+  // writes (under it) from hand-written ones. Not an input: a relocated checkout keeps its capture.
+  @Internal
+  public abstract DirectoryProperty getBuildDir();
+
   // The source files make the task skip a source set with none, as the compile does; the roots
   // are what lsp-params records.
   @InputFiles
@@ -252,7 +257,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
             : compilerArgs,
         AnalysisMode.CLASSPATH,
         false,
-        getTestCode().get());
+        getTestCode().get(),
+        getBuildDir().get().getAsFile().getPath());
   }
 
   private boolean isModular(final List<String> sourceRoots) {

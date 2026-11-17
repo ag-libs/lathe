@@ -91,6 +91,31 @@ class MavenModuleConfigTest {
     assertThat(result.processorPath()).isEmpty();
     assertThat(result.proc()).isNull();
     assertThat(result.release()).isNull();
+    assertThat(result.buildDir()).isNull();
+  }
+
+  @Test
+  void write_buildDirDeclaredByExtension_recordsIt() throws Exception {
+    final var moduleRoot = tmp.resolve("module-g");
+    final var outputDir = moduleRoot.resolve("out/classes");
+    final var latheModuleDir = tmp.resolve(".lathe/module-g");
+    Files.createDirectories(latheModuleDir);
+    final var config = new CompilerConfiguration();
+    config.setWorkingDirectory(moduleRoot.toFile());
+    config.setOutputLocation(outputDir.toString());
+    final String key = LatheLayout.Maven.buildDirProperty(outputDir.toString());
+    System.setProperty(key, moduleRoot.resolve("out").toString());
+    try {
+      CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
+
+      final var result =
+          Json.read(
+              latheModuleDir.resolve(LatheLayout.paramsFileName("classes")),
+              ModuleConfigData.class);
+      assertThat(result.buildDir()).isEqualTo(moduleRoot.resolve("out").toString());
+    } finally {
+      System.clearProperty(key);
+    }
   }
 
   @Test

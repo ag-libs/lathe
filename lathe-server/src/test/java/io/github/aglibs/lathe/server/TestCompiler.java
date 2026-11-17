@@ -95,7 +95,8 @@ public final class TestCompiler {
         config.analysisMode(),
         config.externalOutput(),
         testCode,
-        config.reactorRewrite());
+        config.reactorRewrite(),
+        config.buildDir());
   }
 
   public static ModuleSourceConfig moduleConfig(
@@ -136,7 +137,8 @@ public final class TestCompiler {
         null,
         false,
         null,
-        ReactorRewrite.none());
+        ReactorRewrite.none(),
+        null);
   }
 
   // MODULE_SYSTEM analysis: blank release (so patching a system module is not rejected), no
@@ -162,7 +164,8 @@ public final class TestCompiler {
         AnalysisMode.MODULE_SYSTEM,
         true,
         null,
-        ReactorRewrite.none());
+        ReactorRewrite.none(),
+        null);
   }
 
   // Compiles, under root, a processor that warns "noted by processor" on every root element but one
@@ -413,7 +416,8 @@ public final class TestCompiler {
         compilerArgs,
         false,
         null,
-        false);
+        false,
+        null);
   }
 
   // A Gradle source set's tree beyond main and test, as a sync writes its params.
@@ -436,7 +440,32 @@ public final class TestCompiler {
         List.of(),
         testCode,
         null,
-        false);
+        false,
+        null);
+  }
+
+  // A main tree with a second source root a build task writes under the build directory, as a
+  // Gradle code-generation task's output (build/generated/sources/<task>).
+  public static void writeBuildOutputParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Path sourceRoot,
+      final Path buildOutputRoot,
+      final Path buildDir)
+      throws IOException {
+    writeTreeParams(
+        workspaceRoot,
+        moduleName,
+        LatheLayout.CLASSES_DIR,
+        List.of(sourceRoot, buildOutputRoot),
+        null,
+        List.of(),
+        List.of(),
+        List.of(),
+        false,
+        null,
+        false,
+        buildDir);
   }
 
   // A main tree whose classes the server reads in the build's own output, as OpenJDK's modules.
@@ -457,7 +486,8 @@ public final class TestCompiler {
         List.of(),
         false,
         outputDir,
-        true);
+        true,
+        null);
   }
 
   private static void writeTreeParams(
@@ -471,7 +501,8 @@ public final class TestCompiler {
       final List<String> compilerArgs,
       final boolean testCode,
       final Path outputDir,
-      final boolean externalOutput)
+      final boolean externalOutput,
+      final Path buildDir)
       throws IOException {
     final var latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
     Files.createDirectories(latheModuleDir);
@@ -492,7 +523,8 @@ public final class TestCompiler {
             compilerArgs,
             null,
             externalOutput,
-            testCode);
+            testCode,
+            buildDir != null ? buildDir.toString() : null);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree));
     Json.write(config, paramsFile);
   }

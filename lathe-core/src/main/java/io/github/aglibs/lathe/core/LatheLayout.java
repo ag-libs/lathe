@@ -215,6 +215,13 @@ public final class LatheLayout {
       return TREE_PROPERTY_PREFIX + FileUtil.absolute(outputDirectory);
     }
 
+    // The project's build directory, handed to the shim the same way, keyed by output directory.
+    private static final String BUILD_DIR_PROPERTY_PREFIX = "lathe.buildDir:";
+
+    public static String buildDirProperty(final String outputDirectory) {
+      return BUILD_DIR_PROPERTY_PREFIX + FileUtil.absolute(outputDirectory);
+    }
+
     private Maven() {}
   }
 

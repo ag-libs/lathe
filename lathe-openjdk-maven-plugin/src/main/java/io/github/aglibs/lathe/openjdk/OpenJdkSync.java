@@ -69,7 +69,7 @@ public final class OpenJdkSync {
           log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
           continue;
         }
-        moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot));
+        moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot, buildDir));
         moduleCmdlines.add(cmdline);
       }
     }
@@ -126,7 +126,11 @@ public final class OpenJdkSync {
 
   // Returns the module's source roots, so the build-tool pass can skip tools that overlap a module.
   private static List<Path> syncModule(
-      final String module, final Path moduleOut, final Path cmdlineFile, final Path workspaceRoot)
+      final String module,
+      final Path moduleOut,
+      final Path cmdlineFile,
+      final Path workspaceRoot,
+      final Path buildDir)
       throws IOException {
     final CmdlineReader.Parsed parsed = CmdlineReader.read(Files.readString(cmdlineFile), module);
     final List<Path> sourceRoots = existingRoots(parsed.sourceRootPatterns());
@@ -138,7 +142,8 @@ public final class OpenJdkSync {
             List.of(),
             parsed.encoding(),
             parsed.compilerArgs(),
-            AnalysisMode.MODULE_SYSTEM);
+            AnalysisMode.MODULE_SYSTEM,
+            buildDir.toAbsolutePath().toString());
     final List<Path> sources = readFilelist(batchFile(cmdlineFile, ".filelist"));
     writeConfig(latheDir(workspaceRoot).resolve(module), config, sources, sourceRoots);
     return sourceRoots;
@@ -176,7 +181,8 @@ public final class OpenJdkSync {
               parsed.classpath(),
               parsed.encoding(),
               parsed.compilerArgs(),
-              AnalysisMode.CLASSPATH);
+              AnalysisMode.CLASSPATH,
+              buildDir.toAbsolutePath().toString());
       writeConfig(
           latheDir(workspaceRoot).resolve(batchName(cmdline)), config, sources, sourceRoots);
       synced.add(cmdline);

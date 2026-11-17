@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -30,7 +31,6 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
 import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
@@ -147,6 +147,12 @@ final class RenameService {
           "`%s` is declared, or overrides a method declared, in generated source; rename the source it is generated from instead"
               .formatted(target.simpleName()));
     }
+
+    if (declarations.values().stream().flatMap(Optional::stream).anyMatch(this::isBuildOutput)) {
+      throw FeatureAnswers.refused(
+          "`%s` is declared, or overrides a method declared, in source a build task generates; change the generator instead"
+              .formatted(target.simpleName()));
+    }
   }
 
   // What a rename's edits would leave behind: an override that also overrides a method outside the
@@ -177,6 +183,26 @@ final class RenameService {
     }
 
     return Optional.empty();
+  }
+
+  // A source a build task writes (a code generator's output root) is written again by the next
+  // build, so an edit there is lost and its callers break: the whole rename is refused, never
+  // applied without it. Processor output is not: the processors regenerate it from the renamed
+  // sources, and the rename leaves it alone.
+  private void requireNoBuildOutputEdits(
+      final ReferenceTarget target, final List<ReferenceMatch> matches) {
+    eventLoop.checkOnLoop();
+    refuseIfPresent(
+        matches.stream()
+            .map(ReferenceMatch::uri)
+            .distinct()
+            .map(LatheUri::toPath)
+            .filter(this::isBuildOutput)
+            .findFirst()
+            .map(
+                file ->
+                    "`%s` cannot be renamed: it occurs in %s, which a build task generates, and the next build would overwrite the edit there; change the generator, then rebuild and rename"
+                        .formatted(target.simpleName(), workspacePath(file))));
   }
 
   // A subtype implementing the method through a superclass outside the override family keeps that
@@ -399,42 +425,58 @@ final class RenameService {
     return file.resolveSibling("%s.java".formatted(newName));
   }
 
-  private WorkspaceEdit renameEdit(
+  private RenameEdit renameEdit(
       final ReferenceTarget target,
       final List<Location> occurrences,
       final String newName,
       final String fromUri,
       final boolean fileRenameSupported) {
     // Generated sources are left alone: their processors regenerate them from the renamed sources,
-    // and an edited copy written alongside would collide with the regenerated one.
-    final List<Location> editable =
+    // and an edited copy written alongside would collide with the regenerated one. The answer names
+    // them, as they use the old name until then.
+    final Map<Boolean, List<Location>> byGenerated =
         occurrences.stream()
-            .filter(location -> !isGeneratedSource(LatheUri.toPath(location.getUri())))
-            .toList();
+            .collect(
+                Collectors.partitioningBy(
+                    location -> isGeneratedSource(LatheUri.toPath(location.getUri()))));
+    final List<Location> editable = byGenerated.get(false);
+    final List<Location> generated = byGenerated.get(true);
     if (editable.isEmpty()) {
-      return null;
+      return new RenameEdit(null, generated);
     }
 
     final Optional<Path> declaringFile = renameDeclaringFile(target, fromUri);
     if (declaringFile.isEmpty()) {
-      return RenameProvider.toWorkspaceEdit(editable, newName);
+      return new RenameEdit(RenameProvider.toWorkspaceEdit(editable, newName), generated);
     }
 
     if (!fileRenameSupported) {
-      return null;
+      return RenameEdit.none();
     }
 
     final var file = declaringFile.get();
     final var oldUri = LatheUri.fromPath(file);
     final var newUri = LatheUri.fromPath(movedFile(file, newName));
-    return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
+    return new RenameEdit(
+        RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri), generated);
   }
 
   private boolean isGeneratedSource(final Path file) {
     return state.registry().allConfigs().stream().anyMatch(config -> config.isGenerated(file));
   }
 
-  CompletableFuture<WorkspaceEdit> renameFuture(
+  private boolean isBuildOutput(final Path file) {
+    return state.registry().allConfigs().stream().anyMatch(config -> config.isBuildOutput(file));
+  }
+
+  // Generated files often share a name across roots and modules: the path tells which one.
+  private String workspacePath(final Path file) {
+    return file.startsWith(state.root())
+        ? FileUtil.slashed(state.root().relativize(file))
+        : file.toString();
+  }
+
+  CompletableFuture<RenameEdit> renameFuture(
       final String uri,
       final Position pos,
       final String newName,
@@ -455,7 +497,7 @@ final class RenameService {
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null
         || !(router.routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
-      return CompletableFuture.completedFuture(null);
+      return CompletableFuture.completedFuture(RenameEdit.none());
     }
 
     final var cursorWorker = module.worker();
@@ -473,7 +515,7 @@ final class RenameService {
             target -> {
               cancelChecker.checkCanceled();
               if (target == null) {
-                return CompletableFuture.completedFuture((WorkspaceEdit) null);
+                return CompletableFuture.completedFuture(RenameEdit.none());
               }
 
               requireRenameable(target, uri);
@@ -504,6 +546,7 @@ final class RenameService {
                                                     searchTarget.simpleName(),
                                                     matches.size()));
                                     requireNothingLeftBehind(searchTarget, matches);
+                                    requireNoBuildOutputEdits(searchTarget, matches);
                                     return matches;
                                   })
                               .thenCompose(

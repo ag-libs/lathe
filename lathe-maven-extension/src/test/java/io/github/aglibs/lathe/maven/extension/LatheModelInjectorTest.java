@@ -40,6 +40,8 @@ class LatheModelInjectorTest {
   void clearTreeScopes() {
     System.clearProperty(LatheLayout.Maven.treeProperty(OUTPUT_DIR));
     System.clearProperty(LatheLayout.Maven.treeProperty(TEST_OUTPUT_DIR));
+    System.clearProperty(LatheLayout.Maven.buildDirProperty(OUTPUT_DIR));
+    System.clearProperty(LatheLayout.Maven.buildDirProperty(TEST_OUTPUT_DIR));
   }
 
   private static Plugin compilerPlugin(final MavenProject project) {
@@ -125,6 +127,28 @@ class LatheModelInjectorTest {
       System.clearProperty(mainKey);
       System.clearProperty(testKey);
     }
+  }
+
+  @Test
+  void injectTreeScopes_buildDirectory_declaredForBothOutputDirs() {
+    final MavenProject project = project();
+    project.getBuild().setDirectory("/ws/app/out");
+
+    new LatheModelInjector(VERSION).injectTreeScopes(project);
+
+    assertThat(System.getProperty(LatheLayout.Maven.buildDirProperty(OUTPUT_DIR)))
+        .isEqualTo("/ws/app/out");
+    assertThat(System.getProperty(LatheLayout.Maven.buildDirProperty(TEST_OUTPUT_DIR)))
+        .isEqualTo("/ws/app/out");
+  }
+
+  @Test
+  void injectTreeScopes_noBuildDirectory_declaresNone() {
+    final MavenProject project = project();
+
+    new LatheModelInjector(VERSION).injectTreeScopes(project);
+
+    assertThat(System.getProperty(LatheLayout.Maven.buildDirProperty(OUTPUT_DIR))).isNull();
   }
 
   @Test

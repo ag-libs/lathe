@@ -847,7 +847,7 @@ None yet.
 
 ---
 
-## FR-020 — Renaming a Helidon blueprint option leaves the generated builder's callers broken
+## FR-034 — Renaming a member a processor derives another from leaves the derived member's callers broken
 
 **Status: documented**
 
@@ -857,29 +857,24 @@ None yet.
 
 **Affects: MCP and the editor.**
 
+Split from FR-020 (2026-11-17), whose build-task half is done.
 Found by the pre-release test rounds (2026-10-29/30) on Helidon.
 
 ### Observed behaviour
 
 `rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
 The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
-0.1.24 behaves the same.
+The annotation processor regenerates the builder from the renamed blueprint, so its member gets the new name, and the hand-written callers of the old one break.
+A JPA metamodel attribute (`Foo_.name`) used by hand-written queries behaves the same.
+
+Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_change` called clean, was split out as MC-98 (done).
 
 ### Fix direction
 
-Refuse a blueprint rename with the reason, as for Lombok members (`RenameConflicts.lombokRefusal`), or rename the generated members' callers too when the generator links them.
-
-Verified against the code (2026-11-16): still present.
-`RenameService` refuses only a symbol declared in a generated source, and nothing links a generated member to the declaration it was generated from;
-`ModuleSourceConfig.isGenerated` counts only the Lathe mirror and the build's generated-sources directory, so the Caffeine case below holds too.
-
-Also (exploratory round, 2026-11-04): renaming Dropwizard's JMH `parseDuration` leaves 10 generated callers with no note; `verify_change` says clean while `get_diagnostics` on the generated file shows the errors.
-
-Also (pre-release Gradle round, 2026-11-15): a generator that is not an annotation processor writes into a plain source root, which Lathe takes for hand-written code.
-Caffeine's `codeGen` source set compiles `build/generated/sources/local-cache`, written by its own JavaPoet task;
-`rename_symbol` on `FrequencySketch.ensureCapacity` edits 16 of its `*EvictionPolicy.java` files, which the next build overwrites and `git checkout` cannot undo,
-and only flags the generator's template (`AddMaximum.java:173`) as "Not renamed — review".
-Taking a source root inside the Gradle build directory as generated would leave those files to the generator, as annotation-processor output is.
+Processor output stays unedited, and renames only it refers to (Dagger factories, MapStruct implementations) go ahead.
+Refuse when a generated file that refers to the symbol also declares a member of the old name that hand-written code uses (`Builder.allowAll(boolean)`, `Foo_.name`), naming that member and one caller.
+Find those members with javac trees through the existing file queries, and run the check only when processor output refers to the target.
+Generated types named after a renamed type (`Foo_Factory`) are out of scope.
 
 ### Regression targets
 
@@ -2088,7 +2083,7 @@ None yet.
 
 ## MC-39 — `rename_symbol` refuses a generated symbol without naming the blueprint method to rename
 
-**Status: deferred** (triaged 2026-11-16: waits on FR-020's generator link)
+**Status: deferred** (triaged 2026-11-16: waits on FR-034's generator link)
 
 **Kind: bug**
 
@@ -2106,7 +2101,7 @@ The ordering half of this gap is done: capped answers list hand-written sources 
 
 ### Fix direction
 
-When refusing a generated symbol, name its blueprint declaration. Waits on FR-020's generator link, which
+When refusing a generated symbol, name its blueprint declaration. Waits on FR-034's generator link, which
 connects a generated member to the declaration it was generated from.
 
 Verified against the code (2026-11-16): the refusal (`RenameService`) is still the generic "rename the source it is generated from instead", and the generator link does not exist.

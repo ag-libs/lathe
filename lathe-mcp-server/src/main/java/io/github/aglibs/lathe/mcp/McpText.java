@@ -154,7 +154,7 @@ final class McpText {
     }
 
     final String text =
-        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s%s"
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s%s%s"
             .formatted(
                 rename.newName(),
                 rename.totalEdits(),
@@ -164,7 +164,8 @@ final class McpText {
                     .collect(Collectors.joining(System.lineSeparator())),
                 RENAME_AUTHORITY,
                 mentionLines(rename),
-                outsideLines(rename));
+                outsideLines(rename),
+                generatedLines(rename));
     return usesResult(text, notes);
   }
 
@@ -195,6 +196,21 @@ final class McpText {
             : "";
     return "%n%nNot checked — %d Java file(s) outside every synced source root name it%s:%n%s"
         .formatted(rename.outsideCount(), more, locationLines(rename.outside()));
+  }
+
+  // Annotation-processor output is the processor's to rewrite, on the module's next compile. Until
+  // then these places still use the old name, and verify_change reports them.
+  static String generatedLines(final LatheRename rename) {
+    if (rename.generatedCount() == 0) {
+      return "";
+    }
+
+    final String more =
+        rename.generatedCount() > rename.generated().size()
+            ? " (showing first %d)".formatted(rename.generated().size())
+            : "";
+    return "%n%nLeft to the generator — %d place(s) in generated source still use the old name until it regenerates them%s:%n%s%nverify_change reports them until they are regenerated."
+        .formatted(rename.generatedCount(), more, locationLines(rename.generated()));
   }
 
   // A null format: the file was already formatted.

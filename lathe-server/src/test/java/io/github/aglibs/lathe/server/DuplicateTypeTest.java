@@ -272,7 +272,8 @@ class DuplicateTypeTest extends LatheEngineTestBase {
             List.of(),
             null,
             false,
-            true),
+            true,
+            null),
         module.resolve(LatheLayout.paramsFileName(LatheLayout.TEST_CLASSES_DIR)));
     engine = new LatheEngine(tmp);
     final Path selected = testTree ? testCopy : mainFiles.get(0);
