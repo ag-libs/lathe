@@ -49,6 +49,24 @@ class DependencySourceSyncTest extends AbstractCachePropertyTest {
     assertThat(source.dir().resolve("sentinel")).hasContent("unchanged");
   }
 
+  // A crash can leave the marker truncated to nothing, which Gson reads as null: the sources are
+  // extracted again and the marker rewritten, instead of every later sync failing.
+  @Test
+  void extract_emptyMarker_reextractsAndRewritesMarker() throws IOException {
+    final DependencySource source = presentSource();
+    DependencySourceSync.extract(List.of(source));
+    final var marker = source.dir().resolve(LatheLayout.DEPENDENCY_SOURCE_FILENAME);
+    Files.writeString(source.dir().resolve("sentinel"), "stale");
+    Files.writeString(marker, "");
+
+    DependencySourceSync.extract(List.of(source));
+
+    assertThat(source.dir().resolve("sentinel")).doesNotExist();
+    assertThat(source.dir().resolve("com/example/A.java")).exists();
+    assertThat(Json.read(marker, MarkerSnapshot.class).schema())
+        .isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
+  }
+
   // One source with a -sources jar and one without: the first is extracted, and each gets its jar's
   // type index.
   @Test

@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -57,11 +58,14 @@ public final class TestDiscoveryStore {
       return Optional.empty();
     }
 
-    final PersistedDiscovery persisted =
-        IOUtil.unchecked(() -> Json.read(file, PersistedDiscovery.class));
-    return persisted.stampMillis() == stamp.toMillis()
-        ? Optional.of(persisted.discovery())
-        : Optional.empty();
+    try {
+      final PersistedDiscovery persisted = Json.read(file, PersistedDiscovery.class);
+      return persisted.stampMillis() == stamp.toMillis()
+          ? Optional.of(persisted.discovery())
+          : Optional.empty();
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
   }
 
   // Stores a complete discovery; a blocked one (no capture yet) is not worth keeping.
