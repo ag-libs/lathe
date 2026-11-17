@@ -1,6 +1,6 @@
 # Lathe — Test Capture and Running on Java 8
 
-Status: potential — not on the roadmap; Java 8 is the priority among older test JVMs.
+Status: potential, deferred — not planned; Lathe keeps the documented limit (tests on a JDK older than 17 run, but are not captured) until there is demand.
 Capture the test launch, and run and debug tests from the editor, when the build runs the tests on a JDK older than 17, Java 8 first.
 Lathe itself (build plugins, server) keeps its Java 17 floor; only what loads inside the test JVM goes down to Java 8.
 
