@@ -13561,7 +13561,7 @@ The editor is unchanged: it re-analyzes every open file downstream of a write.
 
 ---
 
-## MC-90 — `verify_change` calls a rename clean while a generated caller still uses the old name — done
+## MC-98 — `verify_change` calls a rename clean while a generated caller still uses the old name — done
 
 **Status: done.**
 

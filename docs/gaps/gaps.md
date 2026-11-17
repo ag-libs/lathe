@@ -867,7 +867,7 @@ The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_
 The annotation processor regenerates the builder from the renamed blueprint, so its member gets the new name, and the hand-written callers of the old one break.
 A JPA metamodel attribute (`Foo_.name`) used by hand-written queries behaves the same.
 
-Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_change` called clean, was split out as MC-90 (done).
+Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_change` called clean, was split out as MC-98 (done).
 
 ### Fix direction
 
