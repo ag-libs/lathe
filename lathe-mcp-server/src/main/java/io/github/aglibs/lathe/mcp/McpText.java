@@ -845,11 +845,11 @@ final class McpText {
                 .collect(Collectors.joining(System.lineSeparator())));
   }
 
-  // An empty answer into the JDK says what to install, not just that nothing was found.
+  // An empty answer says why: what to install for the JDK, or the dependency without sources.
   static CallToolResult definitionResult(final LatheDefinition definition, final LatheNotes notes) {
     final String text =
         definition.targets().isEmpty()
-            ? definition.jdkSourcesNote().orElse("No definition found.")
+            ? definition.explanation().orElse("No definition found.")
             : locationLines(definition.targets());
     return result(text, notes);
   }

@@ -185,6 +185,54 @@ class LibrarySourcesTest extends SampleFixture {
     }
   }
 
+  // A dependency recorded without sources (none published, or an unreadable sources jar) declares
+  // its types; one with sources, and the JDK, do not count.
+  @Test
+  void sourcelessDeclaration_jarWithoutSources_namesTypeAndDependency_otherwiseEmpty()
+      throws Exception {
+    final Path greeterSrc = tmp.resolve("lib-src/com/example/Greeter.java");
+    Files.createDirectories(greeterSrc.getParent());
+    Files.writeString(greeterSrc, "package com.example; public class Greeter {}");
+    final Path jar = tmp.resolve("repo/greeter.jar");
+    Files.createDirectories(jar.getParent());
+    TestJavac.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
+    final var sourceless =
+        LibrarySources.from(
+            List.of(
+                new DependencyData(
+                    "com.example:greeter:1",
+                    jar.toString(),
+                    SourceStatus.MISSING,
+                    null,
+                    List.of(),
+                    null)),
+            null,
+            null);
+    final var withSources =
+        LibrarySources.from(
+            List.of(
+                dependency(
+                    "com.example:greeter:1", jar, tmp.resolve("sources/greeter"), List.of())),
+            null,
+            null);
+
+    final Path userSrc = tmp.resolve("User.java");
+    Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, jar)) {
+      final var elements = parsed.task().getElements();
+      final var greeter = elements.getTypeElement("com.example.Greeter");
+
+      assertThat(sourceless.sourcelessDeclaration(greeter, parsed.fm()))
+          .hasValue(new SourcelessDeclaration("com.example.Greeter", "com.example:greeter:1"));
+      assertThat(withSources.sourcelessDeclaration(greeter, parsed.fm())).isEmpty();
+      assertThat(
+              sourceless.sourcelessDeclaration(
+                  elements.getTypeElement("java.lang.String"), parsed.fm()))
+          .as("the JDK's")
+          .isEmpty();
+    }
+  }
+
   private static DependencyData dependency(
       final String gav, final Path jar, final Path sourceDir, final List<Path> classpath) {
     return new DependencyData(

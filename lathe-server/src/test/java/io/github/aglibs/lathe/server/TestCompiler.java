@@ -9,10 +9,12 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
@@ -300,7 +302,8 @@ public final class TestCompiler {
         existing ->
             Stream.concat(existing.outputs().stream(), targetOutputs(moduleName).stream()).toList(),
         WorkspaceManifestData::buildFiles,
-        WorkspaceManifestData::jdk);
+        WorkspaceManifestData::jdk,
+        WorkspaceManifestData::dependencySources);
   }
 
   // Records the build files in workspace.json as a sync that just read them does, so a later edit
@@ -318,7 +321,8 @@ public final class TestCompiler {
         workspaceRoot,
         WorkspaceManifestData::outputs,
         existing -> synced,
-        WorkspaceManifestData::jdk);
+        WorkspaceManifestData::jdk,
+        WorkspaceManifestData::dependencySources);
   }
 
   // Records the JDK a front-end's sync found, its sources present or missing.
@@ -328,14 +332,54 @@ public final class TestCompiler {
         workspaceRoot,
         WorkspaceManifestData::outputs,
         WorkspaceManifestData::buildFiles,
-        existing -> jdk);
+        existing -> jdk,
+        WorkspaceManifestData::dependencySources);
+  }
+
+  // A dependency jar declaring the given sources, recorded as a sync records one without sources
+  // (none published, or an unreadable sources jar), on the classpath of the single module that
+  // writeModuleSource writes: called after it, which writes the module's params without one.
+  // Returns the jar.
+  public static Path recordSourcelessDependency(
+      final Path workspaceRoot, final String gav, final Map<String, String> sources)
+      throws IOException {
+    final Path sourceRoot = workspaceRoot.resolve("lib-src");
+    final var paths = new ArrayList<Path>();
+    for (final var source : sources.entrySet()) {
+      final Path path = sourceRoot.resolve(source.getKey());
+      Files.createDirectories(path.getParent());
+      Files.writeString(path, source.getValue());
+      paths.add(path);
+    }
+
+    final Path jar = workspaceRoot.resolve("repo/lib.jar");
+    Files.createDirectories(jar.getParent());
+    TestJavac.compileToJar(
+        jar, workspaceRoot.resolve("lib-classes"), List.of(), paths.toArray(Path[]::new));
+    final var dependency =
+        new DependencyData(gav, jar.toString(), SourceStatus.MISSING, null, List.of(), null);
+    rewriteManifest(
+        workspaceRoot,
+        WorkspaceManifestData::outputs,
+        WorkspaceManifestData::buildFiles,
+        WorkspaceManifestData::jdk,
+        existing ->
+            Stream.concat(existing.dependencySources().stream(), Stream.of(dependency)).toList());
+    writeModuleParams(
+        workspaceRoot,
+        "module",
+        workspaceRoot.resolve("module").resolve("src/main/java"),
+        null,
+        List.of(jar));
+    return jar;
   }
 
   private static void rewriteManifest(
       final Path workspaceRoot,
       final Function<WorkspaceManifestData, List<OutputData>> outputs,
       final Function<WorkspaceManifestData, List<BuildFileData>> buildFiles,
-      final Function<WorkspaceManifestData, JdkSourceData> jdk)
+      final Function<WorkspaceManifestData, JdkSourceData> jdk,
+      final Function<WorkspaceManifestData, List<DependencyData>> dependencySources)
       throws IOException {
     final Path manifestFile =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -361,7 +405,7 @@ public final class TestCompiler {
             existing.serverVersion(),
             existing.runnerClasspath(),
             jdk.apply(existing),
-            existing.dependencySources(),
+            dependencySources.apply(existing),
             buildFiles.apply(existing),
             existing.resourceRoots(),
             outputs.apply(existing),

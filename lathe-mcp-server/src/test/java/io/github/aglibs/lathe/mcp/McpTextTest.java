@@ -47,7 +47,7 @@ class McpTextTest {
   @TempDir private Path tmp;
 
   @Test
-  void definitionResult_emptyWithJdkSourcesNote_showsTheNote_otherwiseNoneFound() {
+  void definitionResult_emptyWithExplanation_showsIt_otherwiseNoneFound() {
     final var notes = LatheNotes.ofNotChecked(List.of());
 
     assertThat(

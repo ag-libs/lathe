@@ -23,6 +23,9 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   The build's sync logs `[sync] JDK sources are missing: …`, and the editor says so the first time a jump into the JDK finds nothing.
   Install the JDK's sources (on Debian/Ubuntu the `openjdk-<version>-source` package; most other JDK installers include them or have a source option),
   or build with a JDK that has `lib/src.zip` (`JAVA_HOME`, or the Gradle toolchain), then sync again.
+- **Go to definition into a dependency finds nothing** — the dependency publishes no sources jar, or one that is not a readable zip (the sync warns about it).
+  The editor says which dependency declares the type, once per dependency, and MCP's `get_definition` says so with every answer.
+  Hover and `describe_symbol` still show the declaration, read from the class file.
 - **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
   its LSP log (Neovim: [cheatsheet](editors/neovim.md#verbose-logging)). An unexpected exit
   is also surfaced as an editor notification pointing at the log, and a server that fails at JVM

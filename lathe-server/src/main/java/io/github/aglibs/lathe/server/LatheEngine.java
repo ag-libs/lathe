@@ -229,7 +229,17 @@ public final class LatheEngine {
             answer ->
                 new LatheDefinition(
                     answer.locations().stream().map(this::toLatheLocation).toList(),
-                    answer.jdkSourcesNote().orElse(null)));
+                    answer
+                        .jdkSourcesNote()
+                        .or(
+                            () ->
+                                answer
+                                    .sourcelessNote()
+                                    .map(
+                                        note ->
+                                            "%s; describe_symbol shows its declaration from the class file."
+                                                .formatted(note)))
+                        .orElse(null)));
   }
 
   /**

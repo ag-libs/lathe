@@ -806,6 +806,30 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             });
   }
 
+  // A dependency without sources still declares its types: the answer says where, so an agent does
+  // not take the type for one that does not exist.
+  @Test
+  void definition_typeFromADependencyWithoutSources_namesItsDependency() throws Exception {
+    final String source = "package com.example; class Caller { com.lib.Lib lib; }";
+    final Path caller = TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", source);
+    TestCompiler.recordSourcelessDependency(
+        tmp, "com.lib:lib:1", Map.of("com/lib/Lib.java", "package com.lib; public class Lib {}"));
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(source, "Lib lib");
+
+    final LatheDefinition answer =
+        engine.definition(caller, pos.getLine(), pos.getCharacter()).value();
+
+    assertThat(answer.targets()).isEmpty();
+    assertThat(answer.explanation())
+        .hasValue(
+            "com.lib.Lib is declared in com.lib:lib:1, which has no sources; describe_symbol shows its declaration from the class file.");
+    final var none = positionOf(source, "lib;");
+    assertThat(engine.definition(caller, none.getLine(), none.getCharacter()).value().targets())
+        .as("a field of the project's own goes to its declaration")
+        .isNotEmpty();
+  }
+
   @Test
   void definition_jdkTypeWithSourcesMissing_explainsWithEveryAnswer() throws Exception {
     final String source = "package com.example; class Caller { String text = \"x\"; }";
@@ -821,7 +845,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
       final LatheDefinition answer =
           engine.definition(caller, pos.getLine(), pos.getCharacter()).value();
       assertThat(answer.targets()).isEmpty();
-      assertThat(answer.jdkSourcesNote())
+      assertThat(answer.explanation())
           .hasValueSatisfying(
               note ->
                   assertThat(note)

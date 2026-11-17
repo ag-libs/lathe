@@ -234,6 +234,33 @@ public record LibrarySources(
     }
   }
 
+  // The element's top-level type and its dependency, when the element is read from a dependency
+  // jar whose dependency has no sources (none published, or an unreadable sources jar), so
+  // navigating to it can show none.
+  public Optional<SourcelessDeclaration> sourcelessDeclaration(
+      final Element element, final StandardJavaFileManager fm) {
+    final var entry = classify(element);
+    if (entry == null) {
+      return Optional.empty();
+    }
+
+    try {
+      final Optional<Path> jar =
+          entry.moduleName() != null
+              ? jarForModulePath(entry.moduleName(), entry.qualifiedName(), fm)
+              : classpathJar(entry.qualifiedName(), fm);
+      return jar.filter(path -> !jarToSourceDir.containsKey(path))
+          .map(jarToGav::get)
+          .map(gav -> new SourcelessDeclaration(entry.qualifiedName(), gav));
+    } catch (final IOException e) {
+      LOG.log(
+          Level.FINE,
+          e,
+          () -> "[origin] jar lookup failed for %s".formatted(entry.qualifiedName()));
+      return Optional.empty();
+    }
+  }
+
   static boolean inSystemModules(final String qualifiedName, final StandardJavaFileManager fm)
       throws IOException {
     for (final Set<JavaFileManager.Location> modules :
@@ -345,6 +372,11 @@ public record LibrarySources(
 
   private Optional<Path> classpathSourceRoot(
       final String qualifiedName, final StandardJavaFileManager fm) throws IOException {
+    return classpathJar(qualifiedName, fm).map(jarToSourceDir::get);
+  }
+
+  private static Optional<Path> classpathJar(
+      final String qualifiedName, final StandardJavaFileManager fm) throws IOException {
     final var jfo =
         fm.getJavaFileForInput(
             StandardLocation.CLASS_PATH, qualifiedName, JavaFileObject.Kind.CLASS);
@@ -352,7 +384,7 @@ public record LibrarySources(
       return Optional.empty();
     }
 
-    return extractJarPath(jfo.toUri()).map(jarToSourceDir::get);
+    return extractJarPath(jfo.toUri());
   }
 
   private static Optional<String> extractReactorModuleName(final URI uri) {
