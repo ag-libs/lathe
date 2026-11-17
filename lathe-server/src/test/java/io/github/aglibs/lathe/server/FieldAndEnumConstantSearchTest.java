@@ -142,12 +142,41 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
     assertThat(accesses(counter, method, Set.of(LatheReference.Access.WRITE))).isEmpty();
   }
 
+  // MC-93: the result counts what the access filter left out, so an empty answer for a used
+  // symbol (a method's calls, a field never written) can say it has uses.
+  @Test
+  void references_accessFilter_countsTheUsesItLeftOut() throws Exception {
+    final List<Path> files =
+        writeModule(
+            "Total.java",
+            """
+            class Total {
+              final int limit = 3;
+              int total() { return limit; }
+              int twice() { return total() + total(); }
+            }
+            """);
+    final Path total = files.get(0);
+    final String source = Files.readString(total);
+    final var method = offsetToPosition(source, source.indexOf("total() {"));
+    final var field = offsetToPosition(source, source.indexOf("limit = 3"));
+    final Set<LatheReference.Access> write = Set.of(LatheReference.Access.WRITE);
+
+    assertThat(references(total, method, write).filteredOut()).isEqualTo(3);
+    assertThat(references(total, field, write).filteredOut()).isEqualTo(2);
+    assertThat(references(total, method, ANY_ACCESS).filteredOut()).isZero();
+  }
+
   private List<LatheReference.Access> accesses(
       final Path file, final Position pos, final Set<LatheReference.Access> kept) {
-    final LatheReferences references =
-        engine.references(file, pos.getLine(), pos.getCharacter(), 50, kept).value();
+    final LatheReferences references = references(file, pos, kept);
     assertThat(references.total()).isEqualTo(references.references().size());
     return references.references().stream().map(LatheReference::access).toList();
+  }
+
+  private LatheReferences references(
+      final Path file, final Position pos, final Set<LatheReference.Access> kept) {
+    return engine.references(file, pos.getLine(), pos.getCharacter(), 50, kept).value();
   }
 
   private List<Path> writeModule(final String... namesAndSources) throws Exception {

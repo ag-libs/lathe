@@ -265,7 +265,8 @@ public final class LatheEngine {
     return new LatheReferences(
         uses.size(),
         uses.size() > maxResults,
-        uses.stream().limit(maxResults).map(this::toLatheReference).toList());
+        uses.stream().limit(maxResults).map(this::toLatheReference).toList(),
+        matches.size() - uses.size());
   }
 
   private LatheReference toLatheReference(final ReferenceMatch match) {

@@ -72,7 +72,17 @@ final class McpText {
       "Only javac-resolved uses of this declaration were renamed (overload- and scope-correct);"
           + " same-named unrelated symbols were left untouched.";
 
+  // An access filter that left out every use must not read as an unused symbol (a method's calls
+  // are neither reads nor writes): say how many uses there are and how to list them.
   static CallToolResult referencesResult(final LatheReferences refs, final LatheNotes notes) {
+    if (refs.references().isEmpty() && refs.filteredOut() > 0) {
+      return usesResult(
+          ("No references with that access found. %d other use(s) are listed when `access` is"
+                  + " omitted; it sorts only a field's or variable's reads and writes.")
+              .formatted(refs.filteredOut()),
+          notes);
+    }
+
     return locationListResult(
         "reference",
         refs.total(),
