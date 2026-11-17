@@ -25,7 +25,9 @@ status=0
 for spec in "$here"/*_spec.lua; do
   name="$(basename "$spec")"
   echo "[neovim-specs] running $name"
-  if ! nvim --headless --clean -u NONE \
+  # --clean drops the developer's config but not their environment: the dogfooding overrides would
+  # point every spec at a real server and client. A spec that tests one sets it itself.
+  if ! env -u LATHE_SERVER_DIR -u LATHE_NVIM_DIR -u LATHE_DEBUG nvim --headless --clean -u NONE \
     --cmd "set rtp+=$neovim_runtime" \
     --cmd "set rtp+=$here" \
     -l "$spec"; then
