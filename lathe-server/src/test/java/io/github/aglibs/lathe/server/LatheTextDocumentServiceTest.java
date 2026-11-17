@@ -1214,8 +1214,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 m ->
                     m.getType() == MessageType.Info
                         && m.getMessage()
-                            .equals(
-                                "com.lib.Lib is declared in com.lib:lib:1, which has no sources: there is no source to go to.")));
+                            .equals("No source for com.lib.Lib: com.lib:lib:1 has no sources.")));
   }
 
   private List<? extends Location> definitionAt(

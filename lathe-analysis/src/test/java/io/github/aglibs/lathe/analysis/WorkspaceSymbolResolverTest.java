@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.junit.jupiter.api.Test;
@@ -83,5 +84,42 @@ class WorkspaceSymbolResolverTest {
     assertThat(WorkspaceSymbolResolver.sourceless("Widget", sourceless, entry -> false))
         .as("narrowed out")
         .isEmpty();
+  }
+
+  // The search keeps its first hits only; the types with sources that match first must not push
+  // a sourceless one out of them.
+  @Test
+  void sourceless_moreTypesWithSourcesMatchFirst_stillFindsTheSourcelessOne() throws IOException {
+    final Path sourced = tmp.resolve("sourced.json");
+    final Path sourceless = tmp.resolve("sourceless.json");
+    TempSourceCompiler.typeIndex(
+        sourced,
+        IntStream.range(0, 150)
+            .mapToObj(
+                i ->
+                    new TypeIndexEntry(
+                        "WidgetA%03d".formatted(i),
+                        "com.example.WidgetA%03d".formatted(i),
+                        "com.example",
+                        TypeKind.CLASS,
+                        true,
+                        List.of()))
+            .toArray(TypeIndexEntry[]::new));
+    // Ranked after them all: a longer name, as the ranking puts the shorter name first.
+    TempSourceCompiler.typeIndex(
+        sourceless,
+        new TypeIndexEntry(
+            "WidgetZFactoryImpl",
+            "com.example.WidgetZFactoryImpl",
+            "com.example",
+            TypeKind.CLASS,
+            true,
+            List.of()));
+    final var index =
+        WorkspaceTypeIndex.build(List.of(sourced, sourceless), Map.of(), Set.of(sourceless));
+
+    assertThat(WorkspaceSymbolResolver.sourceless("Widget", index, entry -> true))
+        .extracting(SourcelessSymbol::name)
+        .containsExactly("WidgetZFactoryImpl");
   }
 }

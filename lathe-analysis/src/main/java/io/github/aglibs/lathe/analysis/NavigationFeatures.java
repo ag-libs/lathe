@@ -275,9 +275,13 @@ public final class NavigationFeatures {
     }
 
     final LibrarySources libraries = request.libraries();
+    if (libraries.jdkElementWithoutSources(element, compiler.fileManager())) {
+      return new DefinitionResult(result, true, null);
+    }
+
     return new DefinitionResult(
         result,
-        libraries.jdkElementWithoutSources(element, compiler.fileManager()),
+        false,
         libraries.sourcelessDeclaration(element, compiler.fileManager()).orElse(null));
   }
 

@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
-import java.util.Optional;
 import org.eclipse.lsp4j.Location;
 
 // A definition's locations and, when it found none, why: it names a JDK element while the workspace
@@ -18,9 +17,5 @@ public record DefinitionResult(
 
   public static DefinitionResult none() {
     return new DefinitionResult(List.of(), false, null);
-  }
-
-  public Optional<SourcelessDeclaration> sourcelessDeclaration() {
-    return Optional.ofNullable(sourceless);
   }
 }

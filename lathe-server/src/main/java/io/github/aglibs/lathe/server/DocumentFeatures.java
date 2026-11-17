@@ -315,8 +315,7 @@ final class DocumentFeatures {
                   .formatted(uri, answer.sourceless().dependency()));
       client.showMessage(
           new MessageParams(
-              MessageType.Info,
-              "%s: there is no source to go to.".formatted(answer.sourcelessNote().orElseThrow())));
+              MessageType.Info, "%s.".formatted(answer.sourcelessNote().orElseThrow())));
     }
 
     return answer.locations();

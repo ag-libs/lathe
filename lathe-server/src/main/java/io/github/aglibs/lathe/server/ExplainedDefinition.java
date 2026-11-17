@@ -21,12 +21,12 @@ record ExplainedDefinition(
     return Optional.ofNullable(note);
   }
 
-  // Where the type is declared; each client ends it with its own advice.
+  // The type and its dependency, which fits a member's jump too; each client ends it its own way.
   Optional<String> sourcelessNote() {
     return Optional.ofNullable(sourceless)
         .map(
             declaration ->
-                "%s is declared in %s, which has no sources"
+                "No source for %s: %s has no sources"
                     .formatted(declaration.typeName(), declaration.dependency()));
   }
 }

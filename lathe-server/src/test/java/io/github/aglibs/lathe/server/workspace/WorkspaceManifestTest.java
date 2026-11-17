@@ -88,6 +88,36 @@ class WorkspaceManifestTest {
         .containsExactly(runnerJar, launcherJar);
   }
 
+  // A jar's type-index shard is a sourceless one by the jar's first entry, as LibrarySources
+  // decides whether the jar has sources: the search and the definition agree.
+  @Test
+  void load_jarListedTwice_sourcelessShardByTheFirstEntry() throws Exception {
+    final Path jar = tmp.resolve("repo/lib-1-tests.jar");
+    final Path typeIndex = tmp.resolve("cache/type-index/lib.json");
+    final var withSources =
+        new DependencyData(
+            "com.example:lib:test-jar:tests:1",
+            jar.toString(),
+            SourceStatus.PRESENT,
+            tmp.resolve("sources/lib").toString(),
+            List.of(),
+            typeIndex.toString());
+    final var without =
+        new DependencyData(
+            "com.example:lib:jar:tests:1",
+            jar.toString(),
+            SourceStatus.MISSING,
+            null,
+            List.of(),
+            typeIndex.toString());
+
+    writeWorkspaceManifest(List.of(withSources, without));
+    assertThat(WorkspaceManifest.load(tmp).sourcelessShardPaths()).isEmpty();
+
+    writeWorkspaceManifest(List.of(without, withSources));
+    assertThat(WorkspaceManifest.load(tmp).sourcelessShardPaths()).containsExactly(typeIndex);
+  }
+
   // A test-jar dependency and a tests-classifier one name the same jar: the manifest loads, with
   // its libraries and type-index shards from the first entry.
   @Test

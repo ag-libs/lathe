@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -144,8 +145,14 @@ public final class WorkspaceManifest {
                       : Stream.empty())
               .distinct()
               .toList();
+      // One jar can be listed twice; the first entry stands for it, as LibrarySources has it.
       final Set<Path> sourcelessShardPaths =
           entries.stream()
+              .collect(
+                  Collectors.toMap(
+                      DependencyData::jar, e -> e, (first, ignored) -> first, LinkedHashMap::new))
+              .values()
+              .stream()
               .filter(e -> e.status() == SourceStatus.MISSING)
               .map(DependencyData::typeIndex)
               .filter(p -> p != null && !p.isBlank())

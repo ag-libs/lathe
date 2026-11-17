@@ -106,6 +106,8 @@ public final class LatheEngine {
   // As long as an unused module session is kept, so a pause finds them released.
   private static final long IDLE_SCAN_PAUSE_MS = 5 * 60 * 1000;
   private static final int TEST_CLASS_CANDIDATES = 20;
+  // A JDK type in a package its module does not export to everyone: listed last.
+  private static final int JDK_INTERNAL_RANK = 3;
   private static final int LISTED_MENTIONS = 20;
   private static final Set<String> JDK_PACKAGES =
       systemPackages(descriptor -> descriptor.packages().stream());
@@ -543,15 +545,23 @@ public final class LatheEngine {
                             new SymbolHits(
                                 session.features().workspaceSymbol(name, reactorOnly),
                                 session.features().sourcelessSymbols(name, reactorOnly))))
-        .map(
-            hits ->
-                Stream.concat(
-                        hits.located().stream()
-                            .sorted(Comparator.comparingInt(this::rank))
-                            .map(this::toLatheSymbol),
-                        hits.sourceless().stream().map(LatheEngine::toLatheSymbol))
-                    .limit(maxResults)
-                    .toList());
+        .map(hits -> ranked(hits).limit(maxResults).toList());
+  }
+
+  // The located hits by rank, with the sourceless ones among the dependencies' types, ahead of the
+  // JDK internals. Lazy, so only the hits kept read their snippet.
+  private Stream<LatheSymbol> ranked(final SymbolHits hits) {
+    final List<SymbolInformation> located =
+        hits.located().stream().sorted(Comparator.comparingInt(this::rank)).toList();
+    return Stream.of(
+            located.stream()
+                .filter(symbol -> rank(symbol) < JDK_INTERNAL_RANK)
+                .map(this::toLatheSymbol),
+            hits.sourceless().stream().map(LatheEngine::toLatheSymbol),
+            located.stream()
+                .filter(symbol -> rank(symbol) == JDK_INTERNAL_RANK)
+                .map(this::toLatheSymbol))
+        .flatMap(Function.identity());
   }
 
   // A search's hits with a file, and those in dependencies without sources, which have none.
@@ -570,7 +580,7 @@ public final class LatheEngine {
     return switch (origin(LatheUri.toPath(symbol.getLocation().getUri()))) {
       case REACTOR -> 0;
       case GENERATED -> 1;
-      case EXTERNAL -> jdkInternal(symbol.getContainerName()) ? 3 : 2;
+      case EXTERNAL -> jdkInternal(symbol.getContainerName()) ? JDK_INTERNAL_RANK : 2;
     };
   }
 

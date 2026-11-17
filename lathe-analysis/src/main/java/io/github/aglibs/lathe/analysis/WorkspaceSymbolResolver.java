@@ -40,6 +40,7 @@ public final class WorkspaceSymbolResolver {
 
   // The types the same search finds in dependencies without sources, which resolve leaves out: an
   // LSP symbol needs a file to open, and these have only the dependency that declares them.
+  // Narrowed to them before the cap, so the types with sources that match first do not starve them.
   public static List<SourcelessSymbol> sourceless(
       final String query,
       final WorkspaceTypeIndex typeIndex,
@@ -48,7 +49,9 @@ public final class WorkspaceSymbolResolver {
       return List.of();
     }
 
-    return mergedEntries(query, typeIndex, keep).stream()
+    final Predicate<TypeIndexEntry> sourceless =
+        entry -> typeIndex.sourcelessDependency(entry.binaryName()).isPresent();
+    return mergedEntries(query, typeIndex, keep.and(sourceless)).stream()
         .flatMap(
             entry ->
                 typeIndex

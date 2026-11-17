@@ -116,8 +116,12 @@ public final class WorkspaceTypeIndex {
 
       final List<TypeIndexFile> loaded = loadFile(shard).toList();
       files.addAll(loaded);
-      if (sourcelessShards.contains(shard)) {
-        loaded.forEach(file -> putSourceless(sourceless, file));
+      if (!sourcelessShards.contains(shard)) {
+        continue;
+      }
+
+      for (final TypeIndexFile file : loaded) {
+        putSourceless(sourceless, file);
       }
     }
 

@@ -848,7 +848,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     assertThat(answer.targets()).isEmpty();
     assertThat(answer.explanation())
         .hasValue(
-            "com.lib.Lib is declared in com.lib:lib:1, which has no sources; describe_symbol shows its declaration from the class file.");
+            "No source for com.lib.Lib: com.lib:lib:1 has no sources; describe_symbol shows its declaration from the class file.");
     final var none = positionOf(source, "lib;");
     assertThat(engine.definition(caller, none.getLine(), none.getCharacter()).value().targets())
         .as("a field of the project's own goes to its declaration")
