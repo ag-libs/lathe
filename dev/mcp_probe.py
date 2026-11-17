@@ -94,8 +94,7 @@ def run(b, ws: Path, probe: Probe):
 def consistency_checks(b, probe):
     mc.outline_resolves(b, probe.file)
     mc.override_family_present(b, probe.pos("return side * side", "area", offset=-1),
-                               "probe: override family of Square.area",
-                               known="analyze_change reports no override family for a method that overrides one")
+                               "probe: override family of Square.area")
     mc.diagnostics_agree_with_notes(b, probe.file, "probe: diagnostics agree with notes")
 
 

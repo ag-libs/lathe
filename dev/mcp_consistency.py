@@ -103,11 +103,14 @@ def implementations_agree(b, type_pos, method_pos, label, known=None):
 
 
 def override_family_present(b, pos, label, known=None):
-    """A method that overrides or is overridden has an override family in analyze_change."""
+    """A method that overrides or is overridden has an override family in analyze_change: for a
+    method, what it overrides, what overrides it and what redeclares it, each its own line; for
+    any other symbol, one `override family:` line."""
     text = b.raw("analyze_change", pos)[0]
-    family = re.search(r"override family: (.*)", text)
-    b.check(label, bool(family) and family.group(1).strip() != "none",
-            (family.group(0) if family else text[:120]).strip(), known=known)
+    lines = re.findall(r"^(overrides|overridden by|redeclared by|override family): (.*)$", text, re.M)
+    members = ["%s: %s" % (kind, value.strip()) for kind, value in lines if value.strip() != "none"]
+    shown = members or ["%s: %s" % line for line in lines] or [text[:120].strip()]
+    b.check(label, bool(members), "; ".join(shown), known=known)
 
 
 def analyze_modules_cover(b, ws: Path, pos, label, known=None):
