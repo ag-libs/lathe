@@ -783,33 +783,6 @@ None yet.
 
 ---
 
-## EG-111 — Signatures drop type-parameter bounds and `throws` clauses
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: the rendered signature of `describe_symbol` and `analyze_change` (MCP), and probably hover, which renders the same way (unverified).**
-
-Found by the MCP exploratory round on jdbi (2026-11-17).
-
-### Observed behaviour
-
-jdbi's `Jdbi.withHandle` is declared `public <R, X extends Exception> R withHandle(HandleCallback<R, X> callback) throws X`.
-`describe_symbol` and `analyze_change` render it as `public <R, X> R withHandle(HandleCallback<R, X> callback)`: the bound `extends Exception` and `throws X` are gone.
-The JDK's `DriverManager.getConnection(String url)`, declared `throws SQLException`, renders without it too.
-An agent reading the signature to write a call cannot see the checked exception it must handle.
-
-### Fix direction
-
-Render each type parameter's bounds and the method's thrown types, as javac's own signature does.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-112 — A type from a dependency without sources is reported as not existing
 
 **Status: documented**
@@ -1265,34 +1238,6 @@ None yet.
 
 ---
 
-## CQ-0063 — The first completion in a module not analysed yet answers empty and complete
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion right after opening a file in a module of a large workspace, before the module's first analysis; Neovim with blink.cmp or `vim.lsp.completion`.**
-
-Found by the editor exploratory round on jdbi (2026-11-17).
-
-### Observed behaviour
-
-Open `core/src/test/java/org/jdbi/v3/core/TestJdbi.java`, type `h.create` inside `try (Handle h = db.open()) { … }`, and ask for completion about three seconds after opening.
-The answer takes about 1.7 s and is `items=0 incomplete=false`; the FINE log reads `[completion] parsed valid=false sentinelCtx=null receiver=|null| class=null method=null role=ORDINARY`.
-A second later the same request goes through `[completion] inject prefix=|create| receiver=|h|` and answers 9 items (`createBatch` first).
-Six requests in a row right after opening all answered 0 items; the small two-module fixture never does.
-Because the empty answer says it is complete, the client does not ask again: the user sees no completion on the first keystrokes.
-
-### Fix direction
-
-Find why the sentinel recovery is skipped before the module's first analysis (the incomplete-text path needs it); until it can run, wait for it or answer `isIncomplete=true` so the client asks again.
-
-### Regression targets
-
-None yet.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
@@ -1547,41 +1492,6 @@ so an agent knows to check it with grep.
 
 Capture the Groovy compile's Java sources as a tree of their own, compiled by javac against the Groovy classes from the build;
 the Groovy sources themselves stay unread.
-
-### Regression targets
-
-None yet.
-
----
-
-## WS-38 — An empty dependency-source marker fails every later sync
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: every sync (Maven, Gradle, OpenJDK) whose Lathe cache holds a truncated `.lathe-source.json`.**
-
-Found while running `mvn clean install` after a machine crash (2026-11-16).
-
-### Observed behaviour
-
-A hard crash while the Gradle plugin's functional tests ran left `deps/com.example/withsrc/1.0/.lathe-source.json` in the fixtures' Lathe cache as a 0-byte file:
-`ZipCache` writes the marker into a temporary directory and renames it into place, which a crash before the data reaches the disk does not survive.
-Every later sync failed with `[lathe] workspace files not refreshed: Cannot invoke "…DependencySourceSync$SourceMarker.schema()" because "m" is null`, and wrote no `.lathe/workspace.json`.
-Only deleting the cache by hand recovered it.
-
-### Cause
-
-Gson reads an empty file as `null`, and `DependencySourceSync.isSourceCacheCurrent` dereferences the result; its `catch (IOException)` does not catch the `NullPointerException`.
-The other cache readers already tolerate it: `TypeIndexFiles.current` catches `RuntimeException`, `CompiledStamps` checks for `null`.
-`WorkspaceTypeIndex.loadFile` (the server) has the same weakness: an empty shard becomes `Stream.of(null)`.
-
-### Fix direction
-
-Take a `null` marker as a stale cache, so the sources are extracted again and the marker rewritten; treat an empty type-index shard as missing.
 
 ### Regression targets
 
