@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
@@ -23,6 +24,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngines;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -37,7 +39,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.Location;
@@ -58,6 +62,9 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   // A formatter the style can name without jars; a test that only reloads it never runs it.
   private static final String COMMAND_STYLE =
       "{\"formatter\":{\"engine\":\"command\",\"command\":[\"fmt\"]}}";
+
+  // How long a close blocked on a busy worker is watched before the worker is let go.
+  private static final long CLOSE_WAIT_MS = 300;
 
   private LatheWorkspaceService workspace;
 
@@ -600,6 +607,44 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                 "Lathe: the formatter is now command; restart Lathe to format with it."));
     verify(client, times(2))
         .showMessage(argThat(m -> m.getMessage().contains("the formatter is now")));
+  }
+
+  // A reload retires the old registry, whose workers close behind their queued work; the session's
+  // close waits for them, so nothing they hold outlives the server.
+  @Test
+  void close_afterAReloadRetiredABusyWorker_waitsForIt() throws Exception {
+    final ShopFixture shop = openShop();
+    final CompilationWorker retiring =
+        host.onLoop(session -> session.workerFor(shop.shop().toUri().toString()).orElseThrow())
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+    final var release = new CountDownLatch(1);
+    retiring.submit(session -> awaitRelease(release));
+    reloadAddingModule("added");
+
+    final CompletableFuture<Void> closing = CompletableFuture.runAsync(host::close);
+
+    assertThatThrownBy(() -> closing.get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS))
+        .isInstanceOf(TimeoutException.class);
+    release.countDown();
+    closing.get(TIMEOUT_S, TimeUnit.SECONDS);
+  }
+
+  // Without a reload there is nothing retired to wait for.
+  @Test
+  void close_noReload_returnsAtOnce() throws Exception {
+    openShop();
+
+    CompletableFuture.runAsync(host::close).get(TIMEOUT_S, TimeUnit.SECONDS);
+  }
+
+  // Bounded, so a close that never waits cannot leave the worker blocked past the test.
+  private static boolean awaitRelease(final CountDownLatch release) {
+    try {
+      return release.await(TIMEOUT_S, TimeUnit.SECONDS);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
   }
 
   private void reloadAddingModule(final String name) throws Exception {

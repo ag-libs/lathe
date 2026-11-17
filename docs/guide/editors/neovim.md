@@ -94,14 +94,17 @@ the server when the build ends:
   into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. A build that registers
   Lathe builds as it is.
 - The first build is a clean one that records your tests without running them (Maven
-  `clean test -Dlathe.capture.only=true`, Gradle `latheSync -Plathe.capture.only=true`), so the
+  `-Dlathe.capture.only=true clean test`, Gradle `-Plathe.capture.only=true latheSync`), so the
   server knows every module and tests run at once. Code that does not compile still sets up: compile
   errors don't stop it, and the server shows them.
 - An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).
 - It runs the project's `mvnw`/`gradlew`, else `mvn`/`gradle` from `PATH`, and sets up this client's
   Lathe version; a development checkout of the client needs `LATHE_VERSION` set.
 
+- The prompt says "found from the current file" when the root came from the file in the window, not from `:pwd`.
+
 Afterwards `:LatheSync` refreshes the workspace; `:LatheInit` again moves it to this client's version.
+On a project already set up at this version, or one whose build registers Lathe, `:LatheInit` builds nothing and says `:LatheSync` refreshes it; `:LatheInit!` builds it again anyway.
 
 ### Updating
 
@@ -151,7 +154,7 @@ freely.
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` / convert to `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
-| Set Lathe up for the build around the current file ([below](#set-up-a-project)) | `:LatheInit [maven\|gradle\|openjdk]` | — | — |
+| Set Lathe up for the build around the current file ([below](#set-up-a-project)) | `:LatheInit[!] [maven\|gradle\|openjdk]` | — | — |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |

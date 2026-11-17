@@ -64,6 +64,9 @@ final class WorkspaceSession {
   // runs at a time, apart from the common pool the index rebuilds use.
   private final ExecutorService typeIndexScans =
       Executors.newSingleThreadExecutor(WorkspaceSession::newTypeIndexScanThread);
+  // The registries reloads replaced, still closing behind their workers' queued work: the session's
+  // close waits for them, so nothing they hold outlives it.
+  private final List<CompletableFuture<Void>> retiredRegistries = new ArrayList<>();
   private final RunCoordinator runs;
   private final FeatureRouter router;
   private final DocumentFeatures features;
@@ -173,6 +176,12 @@ final class WorkspaceSession {
     return writePass;
   }
 
+  // Test seam: the module worker that compiles the file, if one does.
+  Optional<CompilationWorker> workerFor(final String uri) {
+    eventLoop.checkOnLoop();
+    return router.routeCompiler(uri).analysisWorker();
+  }
+
   // Test seam: every module worker's queued work done and its results delivered.
   CompletableFuture<Void> workersDrained() {
     eventLoop.checkOnLoop();
@@ -240,6 +249,27 @@ final class WorkspaceSession {
     formats.close();
     typeIndexScans.shutdownNow();
     state.registry().close();
+    // A worker whose close failed has logged why; the others are still waited for.
+    CompletableFuture.allOf(retiredRegistries.toArray(CompletableFuture[]::new))
+        .exceptionally(error -> null)
+        .join();
+    awaitTypeIndexScans();
+  }
+
+  // A scan reads the mirror's class files; one still running when close returns can hold them open,
+  // which on Windows keeps a deleted workspace from going away. Bounded, so a stuck read cannot
+  // hold up the exit.
+  private void awaitTypeIndexScans() {
+    try {
+      if (!typeIndexScans.awaitTermination(TYPE_INDEX_STOP_WAIT_MS, TimeUnit.MILLISECONDS)) {
+        LOG.warning(
+            () ->
+                "[shutdown] type index scan still running after %dms"
+                    .formatted(TYPE_INDEX_STOP_WAIT_MS));
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private static Thread newTypeIndexScanThread(final Runnable task) {
@@ -696,6 +726,7 @@ final class WorkspaceSession {
   private static final long IDLE_SESSION_MS = 5 * 60 * 1000;
   // Under pressure, a session asked for within this long is left: it would only be rebuilt at once.
   private static final long PRESSURE_IDLE_MS = 10_000;
+  private static final long TYPE_INDEX_STOP_WAIT_MS = 5_000;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -844,7 +875,8 @@ final class WorkspaceSession {
     refreshOpenDocuments();
     // Not waited for, which would hold the loop behind a batch write: the old workers finish their
     // queued work and close, and a pass still writing through them ends before the next starts.
-    old.closeAsync();
+    retiredRegistries.removeIf(CompletableFuture::isDone);
+    retiredRegistries.add(old.closeAsync());
     scheduleAllOpenFiles();
     formats.reloadStyle();
     showWorkspaceStatus("Lathe: workspace reloaded.");
