@@ -10185,6 +10185,37 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-39 — A dependency's sources jar that is not a zip fails the whole sync — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: every sync (Maven, Gradle, OpenJDK) of a project with a dependency whose published `-sources.jar` is not a valid zip — `com.ibm.db2:jcc:12.1.4.0` on Maven Central, so any project using the DB2 JDBC driver.**
+
+Found by the editor exploratory round on jdbi (2026-11-17), whose `testcontainers` module depends on the DB2 driver.
+
+### Observed behaviour
+
+`jcc-12.1.4.0-sources.jar` on Central is a 189-byte text file (an IBM copyright notice), published that way with a matching checksum.
+`:LatheInit` on jdbi fails after the build compiles nothing:
+`Failed to execute goal io.github.ag-libs:lathe-maven-plugin:0.1.0-SNAPSHOT:sync (lathe-sync) on project jdbi3-parent: Lathe sync failed to extract source artifacts: java.util.zip.ZipException: zip END header not found`.
+`DependencySourceSync.extract` turns the first unreadable jar into a `SyncException`; the message does not name the jar, and no other module is set up.
+Replacing that one file with an empty zip lets the same setup succeed.
+
+### Resolution
+
+`DependencySourceSync.extract` handles each sources jar on its own: one that is not a readable zip (`ZipException`) is skipped with a warning naming the dependency and the jar, and `prepare` records that dependency as one without sources (`MISSING`), as for a dependency that publishes none.
+No marker is written, so a later sync tries the jar again.
+Any other failure, writing the cache say, still fails the sync, now naming the dependency and the jar.
+Related: [WS-38](gaps.md#ws-38--an-empty-dependency-source-marker-fails-every-later-sync), another unreadable dependency-source file that fails every sync.
+
+### Regression targets
+
+`DependencySourceSyncTest.prepare_sourcesJarNotAZip_isMissingAndOthersExtracted`, `extract_sourcesJarNotAZip_answersItAndLeavesNoCache`, `extract_readableSourcesJar_answersNoneSkipped`.
+
+---
+
 ## WS-21 — A rename racing a build can leave the tree broken — done
 
 **Status: done.**
