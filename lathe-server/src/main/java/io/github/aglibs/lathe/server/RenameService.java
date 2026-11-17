@@ -147,6 +147,15 @@ final class RenameService {
           "`%s` is declared, or overrides a method declared, in generated source; rename the source it is generated from instead"
               .formatted(target.simpleName()));
     }
+
+    final List<ModuleSourceConfig> configs = state.registry().allConfigs();
+    if (declarations.values().stream()
+        .flatMap(Optional::stream)
+        .anyMatch(file -> configs.stream().anyMatch(config -> config.isBuildOutput(file)))) {
+      throw FeatureAnswers.refused(
+          "`%s` is declared, or overrides a method declared, in source a build task generates; change the generator instead"
+              .formatted(target.simpleName()));
+    }
   }
 
   // What a rename's edits would leave behind: an override that also overrides a method outside the
@@ -196,7 +205,7 @@ final class RenameService {
             .findFirst()
             .map(
                 file ->
-                    "`%s` cannot be renamed: %s, which a build task generates, uses it, and the next build would overwrite the edit there; change the generator, then rebuild and rename"
+                    "`%s` cannot be renamed: it occurs in %s, which a build task generates, and the next build would overwrite the edit there; change the generator, then rebuild and rename"
                         .formatted(target.simpleName(), file.getFileName())));
   }
 

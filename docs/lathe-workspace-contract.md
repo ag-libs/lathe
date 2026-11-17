@@ -88,7 +88,7 @@ The compiler configuration of one source tree: `ModuleConfigData`.
 | `analysisMode` | `CLASSPATH` or `MODULE_SYSTEM` |
 | `externalOutput` | true when the server reads `outputDir` in place instead of a `.lathe/` mirror |
 | `testCode` | whether the tree is test code: Maven's test compile, a Gradle source set by Gradle's own convention (a JVM test suite's source set, or a name containing `test`); absent, the `test-classes` tree is. Drives go-to-test, suggestions and the create-type scope, never visibility |
-| `buildDir` | the build tool's own output directory (Maven's `target`, Gradle's `build`), absolute, or absent. A source root under it is one a build task writes, which a rename does not edit |
+| `buildDir` | the build tool's own output directory (Maven's `target`, Gradle's `build`, OpenJDK's build configuration), absolute, or absent. A source under it, other than the compile's processor output, is one a build task writes, which a rename does not edit |
 
 A compile with no `--release` (and no preview) has `--system <the JDK it compiled against>`, `-source` and `-target` at the head of `compilerArgs`, unless its own args already name a version:
 the server's javac, which may be a newer JDK's, then writes the class file version the build does and checks the same language level and JDK API.
@@ -102,7 +102,7 @@ looked up in `workspace.json`'s `outputs`; any other path is used as written.
 
 - **Maven** writes it after every compile (`CompileCapture` in `lathe-install`, called from the compiler shim's `LatheCompiler`), including scoped `-pl` builds.
 - **Gradle** writes it for every Java source set, each finalizing its compile (`LatheCaptureTask`), and `testCode` by Gradle's convention.
-- **Maven** and **Gradle** record `buildDir`; on Maven, only with the extension, which hands the shim the project's build directory.
+- **Maven**, **Gradle** and **OpenJDK** record `buildDir`; on Maven, only with the extension, which hands the shim the project's build directory, and only from the module's next compile.
 - **OpenJDK** writes the `classes` tree only, with `externalOutput=true`: `MODULE_SYSTEM` for JDK modules, `CLASSPATH` for build tools.
 - The server never writes it.
 

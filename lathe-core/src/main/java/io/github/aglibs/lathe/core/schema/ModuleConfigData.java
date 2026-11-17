@@ -54,7 +54,8 @@ public record ModuleConfigData(
       final List<String> classpath,
       final String encoding,
       final List<String> compilerArgs,
-      final AnalysisMode analysisMode) {
+      final AnalysisMode analysisMode,
+      final String buildDir) {
     return new ModuleConfigData(
         sourceTree,
         outputDir,
@@ -72,6 +73,6 @@ public record ModuleConfigData(
         analysisMode,
         true,
         false,
-        null);
+        buildDir);
   }
 }

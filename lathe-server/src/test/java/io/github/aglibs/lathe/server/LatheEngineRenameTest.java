@@ -264,7 +264,10 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
 
     assertThatThrownBy(() -> renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome"))
         .hasMessageContaining(
-            "`greet` cannot be renamed: GreetPolicy.java, which a build task generates, uses it");
+            "`greet` cannot be renamed: it occurs in GreetPolicy.java, which a build task generates");
+    assertThatThrownBy(() -> renameAt(generated, generatedSource, "run", "execute"))
+        .hasMessageContaining(
+            "`run` is declared, or overrides a method declared, in source a build task generates");
     assertThat(Files.readString(generated)).isEqualTo(generatedSource);
     assertThat(Files.readString(fx.callee())).isEqualTo(fx.calleeSource());
     assertThat(Files.readString(fx.caller())).isEqualTo(fx.callerSource());

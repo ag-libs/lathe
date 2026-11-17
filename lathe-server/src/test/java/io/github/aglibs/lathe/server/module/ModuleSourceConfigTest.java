@@ -71,7 +71,8 @@ class ModuleSourceConfigTest {
     final Path generated = WORKSPACE.resolve("module/build/generated/sources/codegen");
     final Path adjacent = WORKSPACE.resolve("module/build-tools/src");
     final var config =
-        buildOutputConfig(WORKSPACE.resolve("module/build"), List.of(src, generated, adjacent));
+        buildOutputConfig(
+            WORKSPACE.resolve("module/build"), null, List.of(src, generated, adjacent));
 
     assertThat(config.isBuildOutput(generated.resolve("com/example/Policy.java"))).isTrue();
     assertThat(config.isBuildOutput(src.resolve("com/example/Policy.java"))).isFalse();
@@ -79,21 +80,48 @@ class ModuleSourceConfigTest {
     assertThat(config.isGenerated(generated.resolve("com/example/Policy.java"))).isFalse();
   }
 
+  // A root holding the whole project (srcDir '.') still compiles what the build directory holds.
+  @Test
+  void isBuildOutput_projectDirRoot_fileUnderBuildDir_true() {
+    final Path project = WORKSPACE.resolve("module");
+    final var config = buildOutputConfig(project.resolve("build"), null, List.of(project));
+
+    assertThat(config.isBuildOutput(project.resolve("build/gen/com/example/Policy.java"))).isTrue();
+    assertThat(config.isBuildOutput(project.resolve("com/example/App.java"))).isFalse();
+  }
+
+  // The compile's own processor output is under the build directory too, but its processors
+  // regenerate it, so it is generated, not build-task output.
+  @Test
+  void isBuildOutput_processorOutputUnderBuildDir_false() {
+    final Path processorOutput = WORKSPACE.resolve("module/target/generated-sources/annotations");
+    final var config =
+        buildOutputConfig(
+            WORKSPACE.resolve("module/target"),
+            processorOutput,
+            List.of(WORKSPACE.resolve("module/src/main/java")));
+
+    assertThat(config.isBuildOutput(processorOutput.resolve("com/example/UserBuilder.java")))
+        .isFalse();
+    assertThat(config.isGenerated(processorOutput.resolve("com/example/UserBuilder.java")))
+        .isTrue();
+  }
+
   @Test
   void isBuildOutput_noBuildDirRecorded_false() {
     final Path generated = WORKSPACE.resolve("module/build/generated/sources/codegen");
-    final var config = buildOutputConfig(null, List.of(generated));
+    final var config = buildOutputConfig(null, null, List.of(generated));
 
     assertThat(config.isBuildOutput(generated.resolve("com/example/Policy.java"))).isFalse();
   }
 
   private static ModuleSourceConfig buildOutputConfig(
-      final Path buildDir, final List<Path> sourceRoots) {
+      final Path buildDir, final Path originalGenSourcesDir, final List<Path> sourceRoots) {
     return new ModuleSourceConfig(
         LATHE_DIR.resolve("module"),
         LatheLayout.CLASSES_DIR,
         WORKSPACE.resolve("module/build/classes/java/main"),
-        null,
+        originalGenSourcesDir,
         sourceRoots,
         List.of(),
         List.of(),

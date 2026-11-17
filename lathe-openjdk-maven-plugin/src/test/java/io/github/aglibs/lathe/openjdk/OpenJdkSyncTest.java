@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
@@ -92,6 +93,17 @@ class OpenJdkSyncTest {
         .extracting(SourceStamp::content)
         .isNull();
     assertThat(LatheLayout.reactorLockFile(latheDir)).doesNotExist();
+    assertThat(
+            FileUtil.walkFiles(
+                latheDir,
+                file ->
+                    file.getFileName().toString().equals(LatheLayout.paramsFileName("classes"))))
+        .as("the module and the tool both record the build directory, whose gensrc they compile")
+        .hasSize(2)
+        .allSatisfy(
+            params ->
+                assertThat(Json.read(params, ModuleConfigData.class).buildDir())
+                    .isEqualTo(build.toAbsolutePath().toString()));
   }
 
   // A module mid-rebuild has its output but no .cmdline yet, so it keeps its capture; a module or

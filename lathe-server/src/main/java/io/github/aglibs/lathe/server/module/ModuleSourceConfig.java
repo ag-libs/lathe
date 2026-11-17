@@ -93,12 +93,11 @@ public record ModuleSourceConfig(
         || (originalGenSourcesDir != null && file.startsWith(originalGenSourcesDir));
   }
 
-  // A source a build task writes (protobuf, a JavaPoet task): one under a source root inside the
-  // build directory. Unlike processor output (isGenerated), the server compiles and tracks it as
+  // A source a build task writes (protobuf, a JavaPoet task): one inside the build directory that
+  // is not the compile's own processor output (isGenerated). The server compiles and tracks it as
   // any source; only an edit to it is lost, the next build writing it again.
   public boolean isBuildOutput(final Path file) {
-    return buildDir != null
-        && sourceRootOf(file).filter(root -> root.startsWith(buildDir)).isPresent();
+    return buildDir != null && file.startsWith(buildDir) && !isGenerated(file);
   }
 
   // Source roots plus the .lathe generated-sources mirror (when the module has generated sources).
