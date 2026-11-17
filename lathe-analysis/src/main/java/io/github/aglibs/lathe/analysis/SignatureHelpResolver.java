@@ -416,7 +416,7 @@ final class SignatureHelpResolver {
       final JavadocLocator javadocLocator,
       final DocReader reader) {
     final var params = method.getParameters();
-    final var label = new StringBuilder();
+    final var label = new StringBuilder(HoverFormatter.typeParameterPrefix(method, fmt));
 
     final List<String> sourceNames = parser.resolveParamNames(method, sourceRoots);
 
@@ -442,7 +442,7 @@ final class SignatureHelpResolver {
       paramInfo.setLabel(Tuple.two(start, end));
       paramInfos.add(paramInfo);
     }
-    label.append(')');
+    label.append(')').append(HoverFormatter.throwsSuffix(method, fmt));
 
     final var sig = new SignatureInformation(label.toString());
     sig.setParameters(paramInfos);

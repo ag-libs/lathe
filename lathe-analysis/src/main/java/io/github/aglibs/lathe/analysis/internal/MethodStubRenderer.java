@@ -90,23 +90,28 @@ public final class MethodStubRenderer {
     }
 
     return method.getTypeParameters().stream()
-        .map(parameter -> declaration(parameter, formatter))
+        .map(parameter -> typeParameter(parameter, formatter::format))
         .collect(Collectors.joining(", ", "<", "> "));
   }
 
-  private static String declaration(
-      final TypeParameterElement parameter, final TypeDisplayFormatter formatter) {
-    final List<String> bounds = bounds(parameter).map(formatter::format).toList();
+  // A type parameter as the source declares it, e.g. "V extends Comparable<V>". Shared with hover,
+  // so a stub and a signature read alike.
+  public static String typeParameter(
+      final TypeParameterElement parameter, final Function<TypeMirror, String> display) {
+    final List<String> bounds = bounds(parameter).map(display).toList();
     return bounds.isEmpty()
         ? parameter.getSimpleName().toString()
         : "%s extends %s".formatted(parameter.getSimpleName(), String.join(" & ", bounds));
   }
 
+  // Only a lone Object is implied: `T extends Object & Comparable<? super T>` (Collections.max)
+  // writes it to fix T's erasure, and without it the declaration is another one.
   private static Stream<? extends TypeMirror> bounds(final TypeParameterElement parameter) {
-    return parameter.getBounds().stream().filter(bound -> !isObject(bound));
+    final List<? extends TypeMirror> bounds = parameter.getBounds();
+    return bounds.size() == 1 && isObject(bounds.get(0)) ? Stream.empty() : bounds.stream();
   }
 
-  private static boolean isObject(final TypeMirror type) {
+  public static boolean isObject(final TypeMirror type) {
     return type instanceof final DeclaredType declared
         && declared.asElement() instanceof final TypeElement element
         && element.getQualifiedName().contentEquals(OBJECT);
