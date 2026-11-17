@@ -32,34 +32,43 @@ public final class DefinitionLocator {
     this.parser = parser;
   }
 
+  /**
+   * Where {@code element} is declared. {@code current} is the compilation unit of the file at
+   * {@code sourceUri}, the file asked about.
+   */
   public Optional<Location> locate(
       final Element element,
       final Trees trees,
       final List<Path> sourceRoots,
-      final String sourceUri) {
+      final String sourceUri,
+      final CompilationUnitTree current) {
     if (element == null) {
       return Optional.empty();
     }
 
     // A member Lombok generated has no declaration of its own: go to the code it comes from.
     if (GeneratedCode.isGenerated(element)) {
-      return locateElement(GeneratedCode.generatedSource(element), trees, sourceRoots, sourceUri);
+      return locateElement(
+          GeneratedCode.generatedSource(element), trees, sourceRoots, sourceUri, current);
     }
 
-    final var direct = locateElement(element, trees, sourceRoots, sourceUri);
+    final var direct = locateElement(element, trees, sourceRoots, sourceUri, current);
     if (direct.isPresent()) {
       return direct;
     }
 
     final var component = recordComponentField(element);
-    return component == null ? direct : locateElement(component, trees, sourceRoots, sourceUri);
+    return component == null
+        ? direct
+        : locateElement(component, trees, sourceRoots, sourceUri, current);
   }
 
   private Optional<Location> locateElement(
       final Element element,
       final Trees trees,
       final List<Path> sourceRoots,
-      final String sourceUri) {
+      final String sourceUri,
+      final CompilationUnitTree current) {
     if (element instanceof final ModuleElement module && !module.isUnnamed()) {
       return locateModule(module, sourceRoots);
     }
@@ -69,11 +78,17 @@ public final class DefinitionLocator {
       final var cu = path.getCompilationUnit();
       // Reconstruct the target's real workspace file: its compilation unit may be the compiler's
       // temp overlay copy of an open buffer (/tmp/lathe-.../...), which opens detached with no
-      // language features. Fall back to the compilation unit only for generated/external sources.
+      // language features. The file asked about is that file even when its package is not its
+      // directory, where the package names no file. Fall back to the compilation unit only for
+      // generated/external sources.
       final String targetUri =
           findSourceFile(element, sourceRoots)
               .map(LatheUri::fromPath)
-              .orElseGet(() -> LatheUri.canonical(cu.getSourceFile().toUri().toString()));
+              .orElseGet(
+                  () ->
+                      cu == current
+                          ? sourceUri
+                          : LatheUri.canonical(cu.getSourceFile().toUri().toString()));
       try {
         final Optional<Position> position =
             DeclarationNames.declarationNamePosition(
