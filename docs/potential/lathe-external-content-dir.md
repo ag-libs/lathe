@@ -14,7 +14,7 @@ prove insufficient; the full design below stands, but it is not planned work.
 
 A second reason has surfaced since: a build check that scans the whole project directory (nohttp,
 license headers, a Docker context) finds the mirror's generated resources and fails from the second
-build on ([WS-34](../gaps/gaps.md)). An exclusion of `.lathe/` in that check works around it today; this
+build on ([WS-40](../gaps/gaps.md)). An exclusion of `.lathe/` in that check works around it today; this
 design would remove the need for one.
 
 ## Motivation

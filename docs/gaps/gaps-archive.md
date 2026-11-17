@@ -7,6 +7,56 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-067 — The first build floods the log with warnings — non-goal
+
+**Status: non-goal** (2026-11-17: both warnings are documented as expected in the [test-capture guide](../guide/test-capture.md) and the README; reopen if users report them)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+The README quick start (`mvn clean test -Dlathe.capture.only=true`) prints 56 `[WARNING]` lines on
+EqualsVerifier, a small reactor (2026-11-15):
+
+- 21 are Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, one per test class, because
+  capture-only excludes every test and Surefire reports skipped classes as warnings.
+  They come from the Kotlin, `-21`/`-25`/`-26`, mockito and signedjar modules;
+  `equalsverifier-core` and `equalsverifier-test` report `Tests run: 0, Skipped: 0` and no warning.
+- 27 lines, 9 blocks of `The following dependencies could not be resolved at this point of the build but seem to
+  be part of the reactor`, printed before `lathe:sync` on the parent.
+  `lathe:sync` is an aggregator with `requiresDependencyResolution = TEST`, bound to the parent's
+  `process-test-classes`, which runs before any child module is built.
+  The sync itself is complete.
+- 3 are maven-compiler's `I/O error reading dependency state` after `clean`, not Lathe's.
+
+A first-time user sees a wall of warnings from a command the README told them to run; a Helidon-size
+reactor prints thousands.
+
+### Fix direction
+
+Surefire's warnings: set `surefire.printSummary=false` in capture-only runs, which should drop the per-class lines
+but likely not the final results line (unverified), or exclude every test instead of JUnit's dry run, which reports
+`Tests run: 0` but gives up what the dry run keeps (a `@Suite` and Develocity see the tests).
+The reactor warnings: bind the sync to the reactor's last project, so everything is built when it resolves, or
+resolve its dependencies through Lathe's own resolver instead of Maven's aggregator resolution.
+Either needs a probe on a real reactor (EqualsVerifier) with this build's extension.
+
+### Delivered
+
+The other half of this entry, a disabled Lathe saying nothing: with `CI` set or `lathe.disabled=true`, the Maven extension
+and the Gradle settings plugin now say once that Lathe is off and which switch did it (`LatheFlags.disabledNotice`).
+
+### Regression targets
+
+- `LatheFlagsTest.disabledNotice_explicitSwitchOrCi_namesIt_noneWhenOn`
+- `LatheSettingsPluginFunctionalTest.apply_switches_commandLineWinsThenDotLatheThenCiAndGradleProperties`
+
+---
+
 ## FR-020 — Renaming edits sources a build task generates, which the next build overwrites — done
 
 **Status: done** (2026-11-17)
@@ -1325,7 +1375,7 @@ Two smaller differences from IntelliJ's parameter info turned up on the way:
 - Overloads the caller cannot access are listed: `new ArrayList<String>().add(|)` shows the private
   `void add(E, Object[], int)` beside the two public `add`s.
 - The active overload of an unresolved call is the first declared, not one whose arity fits the arguments typed so far
-  (also noted under [NV-10](gaps.md#nv-10--signature-help-highlights-no-parameter-when-the-active-overload-is-not-the-first)).
+  (also noted under [NV-10](#nv-10--signature-help-highlights-no-parameter-when-the-active-overload-is-not-the-first--non-goal)).
 
 ### Root cause
 
@@ -10270,6 +10320,94 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-35 — Lombok in the analysis compile reads a `lombok.config` up to 2 seconds old — non-goal
+
+**Status: non-goal** (2026-11-17: documented in the [troubleshooting guide](../guide/troubleshooting.md); reopen if Lombok users ask)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: the editor's diagnostics of Lombok classes right after a `lombok.config` edit; `verify_change` is not affected.**
+
+Found while batching `verify_change`'s checks (2026-11-15).
+
+### Observed behaviour
+
+Lombok runs inside the analysis compile, which stays loaded between compiles, and caches each `lombok.config` it read:
+it looks at the file again only when more than 2 seconds passed since it last did (`FileSystemSourceCache.RECHECK_FILESYSTEM`, Lombok 1.18.48).
+An analysis within those 2 seconds of an edit to `lombok.config` generates members from the old settings:
+after removing `lombok.accessors.prefix += f`, a class still gets `getCount()` for its field `fCount`, and a caller of it shows no error.
+The write pass runs a fresh Lombok for each compile and is not affected.
+`verify_change` checks a changed file alone, against the classes its write produced, so it is not affected either;
+the editor's batched refresh of open files is.
+
+### Fix direction
+
+Release the analysis sessions of the trees below an edited `lombok.config` before the refresh of their open files:
+each session loads Lombok in a class loader of its own, so the refresh runs a fresh Lombok that reads the new settings.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory — non-goal
+
+**Status: non-goal** (2026-11-17: Lathe sets no default heap limit, by the 2026-10-24 decision below; `LATHE_JVM_OPTS` caps it)
+
+**Kind: bug**
+
+Decision (2026-10-24): Lathe sets no default limit until users report how much memory they want it to
+use; machines with plenty of memory are expected to use it. The installation guide documents capping
+it with `LATHE_JVM_OPTS` (and `-XX:G1PeriodicGCInterval` to return memory when idle), and the agent
+guide's troubleshooting points there. Lathe's own dev tools cap their servers at 2 GB.
+**Affects: the editor and MCP.**
+
+Found by the MCP-quality probes (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+An MCP session on Helidon started at 752 MB RSS; three `verify_change` calls on `GenericType`
+(235–311 caller files in 36–60 modules each) took it to 9.6 GB.
+The launchers pass no `-Xmx`, so on a 60 GB machine the default maximum heap is about 15 GB, and the
+heap grows rather than collects.
+The same workload under `LATHE_JVM_OPTS=-Xmx2g` ran at the same speed (5.5–11 s per call) and stayed
+at about 2.6 GB, so most of the growth is uncollected garbage, not memory Lathe holds.
+An editor server and an MCP server per agent, all day, add up.
+These numbers predate releasing idle module sessions (after 5 idle minutes, or earlier under memory pressure; [design](../done/lathe-memory-pressure.md)) and need re-measuring.
+
+### Re-measured by the jdtls comparison's benchmark (2026-11-08)
+
+After idle module sessions are released, Lathe `0.3.99-c15d3a55`, each server's summed RSS at its peak while answering the benchmark's 17 to 23 queries (warm runs, medians), against one run per project with `LATHE_JVM_OPTS=-Xmx2G`:
+
+| Project | Uncapped | `-Xmx2G` | Queries at 2 GB | CPU at 2 GB |
+|---|---|---|---|---|
+| spring-petclinic | 1.1 GB | 0.8 GB | about the same | 1.3× |
+| Dropwizard | 9.3 GB | 2.6 GB | 0–36% slower | 1.3× |
+| Helidon | 6.3 GB | 2.6 GB | about the same | 1.1× |
+| Hibernate ORM | 6.7 GB | 2.7 GB | 0–20% slower | 1.5× |
+| Apache Fineract | 7.6 GB | 3.6 GB | up to 76% slower (FR-029's slowest queries) | 2.9× |
+| OpenMetadata | 3.8 GB | 2.9 GB | 0–15% slower | 1.9× |
+
+Every answer stayed the same at 2 GB.
+So the earlier conclusion holds: most of the growth is uncollected garbage, and a 2 GB cap costs CPU, not correctness; Fineract's reference searches are the case a cap would visibly slow.
+
+### Fix direction
+
+Give the launchers a default heap policy: a cap (absolute, or `-XX:MaxRAMPercentage`), and G1's
+periodic collection (`-XX:G1PeriodicGCInterval`) so an idle server returns memory; keep
+`LATHE_JVM_OPTS` as the override. Measure the cap against the largest probes first.
+Related: archived [EG-058](gaps-archive.md#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session--done),
+done: module sessions are now released when idle or under memory pressure.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## WS-38 — An empty dependency-source marker fails every later sync — done
 
 **Status: done** (2026-11-17)
@@ -12726,6 +12864,91 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-11 — The Java indenter still disagrees with google-java-format on 1% of lines — non-goal
+
+**Status: non-goal** (2026-11-17: stopped on purpose on 2026-11-12, to keep the indenter simple)
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: Neovim's live indentation (`indentexpr`, `gg=G`) of code the project formats with google-java-format.**
+
+Found measuring the indenter against formatted code (#176).
+
+### Observed behaviour
+
+`dev/indent-corpus.sh` asks the indenter for each line of this repository's own sources, which google-java-format formats.
+It disagrees on 536 of 53,893 non-blank lines (1.0%; 3.9% before #176), and on 591 of 57,020 (1.0%) after the 2026-11-15 fixes (`bfb12730`).
+What remains is continuation shapes that would each need a rule of their own:
+an argument after a multi-line argument,
+the first argument of a call that roots a method chain broken onto the next lines (google-java-format indents it two continuations deep),
+`&&`/`||` lines, and ternary branches.
+Format-on-save rewrites them, so the cost is a line typed at the wrong column, not a wrong file.
+
+### Fix direction
+
+Two of these were implemented and dropped in #176:
+the chain-root rule had to look ahead through the tree for a chain still being typed,
+and the multi-line-argument rule regressed hand-formatted code.
+Take one up only with a narrow, tree-based rule, measured with `dev/indent-corpus.sh` before and after.
+
+### Regression targets
+
+`lathe-neovim/test/indent_tree_spec.lua` and `indent_spec.lua`; the measure is `dev/indent-corpus.sh`.
+
+---
+
+## NV-10 — Signature help highlights no parameter when the active overload is not the first — non-goal
+
+**Status: non-goal** (2026-11-17: Lathe answers correctly; the fix is blink.cmp's PR #2497, and the workaround is documented)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim with blink.cmp's signature window, the setup in `examples/nvim/init.lua`.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+Typing the second argument of `list.add(0, |)`, the signature window lists both `ArrayList.add` overloads
+but highlights nothing.
+The server answers correctly: `[signatureHelp] sig=void add(int index, E element) param=1`,
+the second signature active and its second parameter (label offsets 20–29) active.
+A method with one overload, or an active overload listed first, highlights as expected.
+
+### Root cause
+
+blink.cmp (v1.10.2, `lua/blink/cmp/signature/window.lua`) writes every signature's label into its window,
+one per line, but takes the highlight from Neovim's `convert_signature_help_to_markdown_lines`,
+which renders only the active signature, inside a code fence.
+Its line (1, under the fence) minus one is 0, so blink paints the active parameter's columns on the first label:
+`boolean add(E e)` is 16 characters, so columns 20–29 show nothing.
+Introduced by blink's `b6f04e8` ("Update active parameter to use line and col range").
+Neovim's own `vim.lsp.buf.signature_help` (`<C-s>` in normal mode in the example config) renders only the active
+signature and highlights correctly.
+
+### Fix direction
+
+The fix is blink.cmp's: [PR #2497](https://github.com/saghen/blink.cmp/pull/2497) (open since 2026-04-19, for this
+Java overload case) takes the line from the active signature's index in its own buffer. Not in v1.10.2, the latest
+release on 2026-11-16; once a release has it, check the example config and close this gap.
+The Neovim guide's troubleshooting names the workaround: `<C-s>`, Neovim's own signature help, highlights correctly.
+Lathe listing the active signature first (`activeSignature` 0) was not taken: every client's overload order would
+change as the arguments change, to work around one plugin.
+
+Related, on the server: when the call does not attribute yet, `SignatureHelpResolver` now makes active the first
+overload whose arity fits the arguments typed, not the first declared
+([EG-088](gaps-archive.md#eg-088--signature-help-is-empty-inside-new-p-and-super-when-no-constructor-takes-zero-arguments--done)).
+
+### Regression targets
+
+None yet.
+
+---
+
 ## NV-13 — A server killed by a signal ends without a Lathe notification — done
 
 **Status: done** (2026-11-16)
@@ -13135,6 +13358,37 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-93 — `find_references` with `access` on a method answers "No references found" — done
+
+**Status: done** (2026-11-17, PR #368)
+
+**Kind: bug**
+
+**Affects: `find_references` with `access` set, on a method, type or other symbol that is neither a field nor a variable.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`find_references` on the method `total` with `access="write"` answers `No references found.`, although the method has a use.
+The schema says `access` filters reads and writes of a field or variable.
+
+### Fix direction
+
+Refuse `access` for a symbol it does not apply to, or ignore it and say so; never answer an empty list for a used symbol.
+
+### Resolution
+
+`find_references` counts the uses the access filter left out, the declaration aside; when it left out every use, the answer says how many there are and why.
+An unused symbol still answers "No references found."
+
+### Regression targets
+
+- `FieldAndEnumConstantSearchTest.references_accessFilter_countsTheUsesItLeftOutButNotTheDeclaration`
+- `McpTextTest.referencesResult_accessFilterLeftOutEveryUse_saysHowManyUsesThereAre`
+
+---
 
 ## MC-96 — `verify_change` fails whenever a dependent module has Kotlin sources in a Maven source root — done
 
