@@ -7,6 +7,9 @@ enum-constant rename, the public top-level type file rename, and renaming a symb
 mentions (`{@link}`, `@see`, `@throws`). The sections below are kept as the design record; where they
 say "deferred" or "refused", the notes in Deferred and Non-goals give what shipped.
 
+Annotation-processor output (MC-90): a rename leaves its uses there to the processor, and `rename_symbol` lists them.
+`verify_change` checks those files as callers until they are regenerated, so an agent is never told a change is clean while a generated caller still uses the old name, even one the caller search cannot reach.
+
 Two guards shipped with it:
 
 - **The cursor must name the target.** `prepareRename`/`rename` accept a target only when the identifier

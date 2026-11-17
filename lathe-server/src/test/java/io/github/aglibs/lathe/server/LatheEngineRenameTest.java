@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -215,7 +217,8 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
   }
 
   @Test
-  void rename_methodAlsoCalledFromGeneratedSource_leavesTheGeneratedSourceAlone() throws Exception {
+  void rename_methodAlsoCalledFromGeneratedSource_leavesAndListsTheGeneratedSource()
+      throws Exception {
     final GreetFixture fx = greetFixture();
     // An annotation processor's output that calls the method: it regenerates from the renamed
     // source, so editing it would only collide with the regenerated copy.
@@ -242,6 +245,60 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"))
         .noneSatisfy(uri -> assertThat(uri).endsWith("CalleeHelper.java"));
     assertThat(Files.readString(generated)).isEqualTo(generatedSource);
+    assertThat(rename.generatedCount()).isEqualTo(1);
+    assertThat(rename.generated())
+        .singleElement()
+        .satisfies(location -> assertThat(location.uri()).endsWith("CalleeHelper.java"));
+  }
+
+  // Until the processor regenerates it, the generated caller still calls the old name, so
+  // verify_change must not call the change clean, though the caller names only a generated
+  // subclass, which the referrer search cannot connect to the renamed method's class. Once the
+  // processor has rewritten it, it is no longer the rename's to report.
+  @Test
+  void verifyChange_afterRenameLeavingGeneratedCaller_reportsItUntilRegenerated() throws Exception {
+    final GreetFixture fx = greetFixture();
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    // As JMH generates them: a subclass of the benchmark, and a caller that names only the
+    // subclass.
+    final Path generatedDir =
+        tmp.resolve(".lathe/module").resolve(LatheLayout.generatedSourcesDir("classes"));
+    final Path subclass =
+        TestCompiler.writeAt(
+            generatedDir.resolve("com/example/Callee_jmhType.java"),
+            "package com.example; class Callee_jmhType extends Callee {}",
+            1_000L);
+    final Path generated =
+        TestCompiler.writeAt(
+            generatedDir.resolve("com/example/CalleeHelper.java"),
+            "package com.example; class CalleeHelper { void run(Callee_jmhType c) { c.greet(); } }",
+            1_000L);
+    compileIntoMirror(fx.callee(), fx.caller(), subclass, generated);
+    engine = new LatheEngine(tmp);
+
+    renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .flatExtracting(LatheModuleDiagnostics::diagnostics)
+        .anySatisfy(
+            diagnostic -> {
+              assertThat(diagnostic.path()).endsWith("CalleeHelper.java");
+              assertThat(diagnostic.severity()).isEqualTo(LatheDiagnostic.Severity.ERROR);
+            });
+    assertThat(engine.verifyChange(List.of(fx.caller())).perModule())
+        .as("files passed are checked exactly")
+        .flatExtracting(LatheModuleDiagnostics::diagnostics)
+        .noneSatisfy(diagnostic -> assertThat(diagnostic.path()).endsWith("CalleeHelper.java"));
+    writeNewer(
+        generated,
+        "package com.example; class CalleeHelper { void run(Callee_jmhType c) { c.welcome(); } }");
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .flatExtracting(LatheModuleDiagnostics::diagnostics)
+        .noneSatisfy(diagnostic -> assertThat(diagnostic.path()).endsWith("CalleeHelper.java"));
   }
 
   // A code-generation task's output root under the build directory, compiled as any source: the

@@ -13423,6 +13423,30 @@ The editor is unchanged: it re-analyzes every open file downstream of a write.
 
 ---
 
+## MC-90 — `verify_change` calls a rename clean while a generated caller still uses the old name — done
+
+**Status: done.**
+
+**Affects: MCP `rename_symbol` and `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard, and first recorded under FR-020.
+Renaming the JMH benchmark method `DurationBenchmark.parseDuration` left 10 generated callers on the old name, as a rename leaves annotation-processor output to its processor, but the answer did not say so, and `verify_change` said clean while `get_diagnostics` on the generated file showed the errors.
+JMH's generated classes call the benchmark through a generated subclass (`*_jmhType`), so neither the name nor the class-file search connects them to the changed file.
+
+### Resolution
+
+`rename_symbol` lists the uses it left in annotation-processor output under "Left to the generator" (`LatheRename.generated`).
+`verify_change` with no files checks those files as callers until their content changes from what it was before the rename's write (`ChangeVerifier.checkUntilRegenerated`), so a caller still on the old name is reported, and one the write regenerated is not.
+A file list passed to `verify_change` is checked exactly, without them.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_methodAlsoCalledFromGeneratedSource_leavesAndListsTheGeneratedSource`
+- `LatheEngineRenameTest.verifyChange_afterRenameLeavingGeneratedCaller_reportsItUntilRegenerated`
+- `McpTextTest.renameResult_editsMentionsAndGenerated_filesThenWhatToReview_orNothingToRename`
+
+---
+
 ## MC-89 — `verify_change` checks the callers of a change the build's compile fails against its old classes — done
 
 **Status: done.**
