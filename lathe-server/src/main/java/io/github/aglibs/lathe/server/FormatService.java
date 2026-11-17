@@ -196,9 +196,11 @@ final class FormatService {
         uri, (content, target) -> JavaFormatter.formatRanges(engine, content, target, ranges));
   }
 
+  // Why a workspace whose style files name `spec` (null for none) has no formatter: the agent's
+  // refusal and, through the initialize capabilities, the editor's answer to a format request.
   // Only a pinned formatter whose jars are missing is one a sync can supply; "none" is the
   // project's own choice.
-  private String unavailable() {
+  static String unavailable(final FormatterSpec spec) {
     if (spec != null && LatheFlags.PINNED_FORMATTERS.contains(spec.engine())) {
       return "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it)."
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
@@ -214,7 +216,7 @@ final class FormatService {
           .formatted(LatheLayout.STYLE_SHARED_FILE, spec.engine());
     }
 
-    return "No formatter for this workspace: the project declares none (no formatter in %s, and on Maven no Spotless Java step); declare one there to format here."
+    return "No formatter for this workspace: the project declares none. Declare one in %s to format here. On Maven, a Spotless Java step is found without it; on Gradle, name the formatter Spotless runs, as Lathe cannot read Spotless's settings there."
         .formatted(LatheLayout.STYLE_SHARED_FILE);
   }
 
@@ -224,7 +226,7 @@ final class FormatService {
     eventLoop.checkOnLoop();
     final FormatEngine engine = this.engine;
     if (engine == null) {
-      return CompletableFuture.failedFuture(FeatureAnswers.refused(unavailable()));
+      return CompletableFuture.failedFuture(FeatureAnswers.refused(unavailable(spec)));
     }
 
     return formatted(uri, (content, target) -> JavaFormatter.format(engine, content, target))

@@ -44,6 +44,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   static final String SERVER_NAME = "lathe";
 
+  // Key under capabilities.experimental saying why the server does not format, present only when it
+  // advertises no formatting provider: the editor shows it when the user asks to format. An older
+  // server leaves it out, so it needs no protocol bump.
+  static final String FORMATTER_UNAVAILABLE_CAPABILITY = "latheFormatterUnavailable";
+
   private final SessionHost host = new SessionHost();
   private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService(host);
 
@@ -86,7 +91,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
-    final var capabilities = createCapabilities(formatEngine);
+    final var capabilities = createCapabilities(formatEngine, formatSpec);
     final var result = new InitializeResult(capabilities);
     result.setServerInfo(serverInfo());
     return CompletableFuture.completedFuture(result);
@@ -100,7 +105,9 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
         SERVER_NAME, LatheBuildInfo.version(LatheLanguageServer.class).orElse(null));
   }
 
-  static ServerCapabilities createCapabilities(final FormatEngine formatEngine) {
+  // `formatSpec` is what the style files name, null for none: without an engine, it says why.
+  static ServerCapabilities createCapabilities(
+      final FormatEngine formatEngine, final FormatterSpec formatSpec) {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
@@ -143,7 +150,16 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
     capabilities.setExecuteCommandProvider(new ExecuteCommandOptions(LatheCommands.ALL));
-    capabilities.setExperimental(Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL));
+    // An editor without a formatting provider cannot ask why: the reason travels with the
+    // handshake, fixed for the session as the provider itself is.
+    capabilities.setExperimental(
+        formatEngine != null
+            ? Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL)
+            : Map.of(
+                LatheFlags.PROTOCOL_CAPABILITY,
+                LatheFlags.LATHE_PROTOCOL,
+                FORMATTER_UNAVAILABLE_CAPABILITY,
+                FormatService.unavailable(formatSpec)));
     return capabilities;
   }
 

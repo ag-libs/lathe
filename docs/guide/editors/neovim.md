@@ -331,6 +331,8 @@ Anywhere else (a Gradle build, Maven without Spotless) the project declares its 
 `lathe-style.json`, and the sync resolves it the same way; there is no formatter option in `setup()`.
 It runs on demand via `require('lathe').format()` or `:LatheFormat` (whole buffer); to format just a
 selection, call `require('lathe').format()` from a visual-mode mapping (as below).
+In a workspace with no formatter it formats nothing and says why: the project declares none, its pinned formatter is not resolved yet (run the sync script, `.lathe/lathe-sync.sh` or `.lathe\lathe-sync.cmd` on Windows), or `lathe-style.json` turns formatting off.
+A selection with a formatter that formats whole files only (a `command` engine) says so instead.
 Add `format_on_save = true` to also format on write (wired whenever the server advertises a formatter).
 To declare it, turn it off, or run another tool, see
 [installation](../installation.md#declaring-it), which also lists what Lathe does not apply compared
