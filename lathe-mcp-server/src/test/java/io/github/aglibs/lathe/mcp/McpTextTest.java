@@ -280,6 +280,7 @@ class McpTextTest {
                         List.of(),
                         List.of(),
                         ".lathe/lathe-sync.sh",
+                        List.of(),
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
@@ -292,6 +293,7 @@ class McpTextTest {
                         List.of(),
                         List.of(),
                         null,
+                        List.of(),
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
@@ -330,25 +332,29 @@ class McpTextTest {
 
     assertThat(
             McpText.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), twelve, sync, List.of()), 0))
+                new LatheVerifyChange(null, List.of(), twelve, sync, List.of(), List.of()), 0))
         .contains("12 module(s) depend on your change (mod1, mod2,")
         .contains("mod10, and 2 more)")
         .doesNotContain("mod11")
         .endsWith(sync);
     assertThat(
             McpText.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync, List.of()), 0))
+                new LatheVerifyChange(
+                    null, List.of(), List.of("a", "b"), sync, List.of(), List.of()),
+                0))
         .contains(
             "2 module(s) depend on your change (a, b); their callers compile, so a full build is optional")
         .doesNotContain("more");
     assertThat(
             McpText.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync, List.of()), 1))
+                new LatheVerifyChange(
+                    null, List.of(), List.of("a", "b"), sync, List.of(), List.of()),
+                1))
         .contains("(a, b); fix the errors and re-check, or build them with")
         .endsWith(sync);
     assertThat(
             McpText.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), twelve, null, List.of()), 0))
+                new LatheVerifyChange(null, List.of(), twelve, null, List.of(), List.of()), 0))
         .isEmpty();
   }
 
@@ -357,35 +363,77 @@ class McpTextTest {
   void failedWritesNote_changedFileTheBuildFails_namesIt_noneOtherwise() {
     assertThat(
             McpText.failedWritesNote(
-                new LatheVerifyChange(null, List.of(), List.of(), null, List.of("app/A.java"))))
+                new LatheVerifyChange(
+                    null, List.of(), List.of(), null, List.of("app/A.java"), List.of())))
         .isEqualTo(
             "%n%nThe build's compile fails app/A.java; its callers were checked against its edited source."
                 .formatted());
     assertThat(
             McpText.failedWritesNote(
-                new LatheVerifyChange(null, List.of(), List.of(), null, List.of())))
+                new LatheVerifyChange(null, List.of(), List.of(), null, List.of(), List.of())))
         .isEmpty();
   }
 
   @Test
   void verifyHeadline_errorsAndWarnings_leadsWithErrors() {
-    assertThat(McpText.verifyHeadline(0, 0, 0))
+    assertThat(McpText.verifyHeadline(0, 0, 0, 0))
         .isEqualTo("No errors — the changed files and their callers compile.");
-    assertThat(McpText.verifyHeadline(0, 7, 0))
+    assertThat(McpText.verifyHeadline(0, 7, 0, 0))
         .isEqualTo(
             "No errors — the changed files and their callers compile; 7 warning(s) in the changed files.");
-    assertThat(McpText.verifyHeadline(2, 1, 0))
+    assertThat(McpText.verifyHeadline(2, 1, 0, 0))
         .isEqualTo("2 error(s); 1 warning(s) in the changed files.");
-    assertThat(McpText.verifyHeadline(3, 0, 1)).isEqualTo("3 error(s).");
+    assertThat(McpText.verifyHeadline(3, 0, 1, 0)).isEqualTo("3 error(s).");
   }
 
   @Test
   void verifyHeadline_namedFileNotChecked_neverSaysEverythingCompiles() {
-    assertThat(McpText.verifyHeadline(0, 0, 1))
+    assertThat(McpText.verifyHeadline(0, 0, 1, 0))
         .isEqualTo("No errors in what was checked; 1 named file(s) not checked.");
-    assertThat(McpText.verifyHeadline(0, 2, 3))
+    assertThat(McpText.verifyHeadline(0, 2, 3, 0))
         .isEqualTo(
             "No errors in what was checked; 2 warning(s) in the changed files; 3 named file(s) not checked.");
+  }
+
+  // A Kotlin or Groovy caller javac cannot read is not checked: the answer never says everything
+  // compiles, names those callers, and does not call the build optional.
+  @Test
+  void verifyChangeResult_uncheckedKotlinCaller_namesItAndAsksForTheBuild() {
+    final String sync = ".lathe/lathe-sync.sh app";
+    final String text =
+        text(
+            McpText.verifyChangeResult(
+                new LatheVerifyChange(
+                    null,
+                    List.of(),
+                    List.of("app"),
+                    sync,
+                    List.of(),
+                    List.of("app/src/test/kotlin/com/x/FooTest.kt")),
+                McpText.NO_NOTES));
+
+    assertThat(text)
+        .startsWith("No errors in what was checked; 1 Kotlin or Groovy caller(s) not checked.")
+        .contains(
+            "Not checked — 1 Kotlin or Groovy caller(s), which javac cannot read: app/src/test/kotlin/com/x/FooTest.kt; build their modules to check them.")
+        .contains("build them to check the callers Lathe could not")
+        .doesNotContain("optional");
+  }
+
+  @Test
+  void verifyHeadline_namedAndCallersNotChecked_namesBoth() {
+    assertThat(McpText.verifyHeadline(0, 0, 1, 2))
+        .isEqualTo(
+            "No errors in what was checked; 1 named file(s) and 2 Kotlin or Groovy caller(s) not checked.");
+    assertThat(McpText.verifyHeadline(1, 0, 0, 2)).isEqualTo("1 error(s).");
+  }
+
+  @Test
+  void uncheckedCallersNote_noneUnchecked_isEmpty() {
+    assertThat(
+            McpText.uncheckedCallersNote(
+                new LatheVerifyChange(null, List.of(), List.of(), null, List.of(), List.of())))
+        .isEmpty();
   }
 
   // A reactor file carries no tag (most answers are reactor code); anything else says where it is.
@@ -449,7 +497,7 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.verifyChangeResult(
-                    new LatheVerifyChange(null, List.of(), List.of(), null, List.of()),
+                    new LatheVerifyChange(null, List.of(), List.of(), null, List.of(), List.of()),
                     withKotlin)))
         .endsWith(kotlinLine);
     assertThat(
@@ -460,6 +508,7 @@ class McpTextTest {
                         List.of(),
                         List.of(),
                         null,
+                        List.of(),
                         List.of()),
                     withKotlin)))
         .endsWith(kotlinLine);
