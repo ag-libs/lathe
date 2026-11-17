@@ -42,6 +42,31 @@ The Helidon blueprint case first filed here, a processor deriving a separate mem
 
 ---
 
+## EG-111 — Signatures drop type-parameter bounds and `throws` clauses — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: hover, signature help, and the rendered signature of `describe_symbol` and `analyze_change` (MCP).**
+
+Found by the MCP exploratory round on jdbi (2026-11-17): `Jdbi.withHandle`, declared `public <R, X extends Exception> R withHandle(HandleCallback<R, X> callback) throws X`, rendered as `public <R, X> R withHandle(HandleCallback<R, X> callback)`, and `DriverManager.getConnection` lost its `throws SQLException`.
+An agent writing the call could not see the checked exception it must handle.
+
+### Resolution
+
+Fixed in #362.
+Hover renders each type parameter's bounds as declared, intersections included, and a method's or constructor's thrown types, capped like `permits` and `implements`; signature help shares the same helpers.
+A type parameter is rendered by `MethodStubRenderer`, which override stubs already used, so the two cannot drift.
+Both now leave out only a lone `Object` bound: `Collections.max` declares `<T extends Object & Comparable<? super T>>`, where the `Object` fixes the erasure.
+A type variable's own hover is its declaration (`T extends Number`), no longer `T T`.
+
+### Regression targets
+
+`HoverTest.hover_methodWithBoundAndThrows_rendersBothAsDeclared`, `hover_jdkMethodDeclaringThrows_rendersThrowsClause`, `hover_constructorDeclaringThrows_rendersThrowsClause`, `hover_explicitObjectBound_keptBesideAnotherBound`, `hover_typeWithIntersectionBound_rendersTheBound`, `hover_typeVariable_rendersItsDeclaration`; `SignatureHelpTest.signatureHelp_boundAndThrows_inLabelWithParameterRangeShifted`, `signatureHelp_plainMethod_labelHasNoTypeParametersOrThrows`.
+
+---
+
 ## EG-083 — The outline of `module-info.java` shows only the module line — done
 
 **Status: done** (2026-11-16)
@@ -4074,6 +4099,31 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 ---
 
 # Completion (CQ) — resolved
+
+## CQ-0063 — The first completion in a module not analysed yet answers empty and complete — not a Lathe bug
+
+**Status: non-goal (not a Lathe bug)** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: nothing in Lathe; a test driver calling `client:request_sync(…, 0)` in Neovim.**
+
+Found by the editor exploratory round on jdbi (2026-11-17): the first completion after opening `TestJdbi.java` and typing `h.create` answered no items, `isIncomplete=false`, logging `[completion] parsed valid=false sentinelCtx=null receiver=|null|`.
+
+### Resolution
+
+Reproduced with the round's own driver (`comp4.lua`) on jdbi.
+Neovim's debug LSP log shows the client sent `textDocument/completion` before the `didChange` holding the typed line, so the server completed the text before the edit (`[sentinel-parse] sentinel moved`) and answered correctly for it.
+The driver's helper passed buffer `0` to `request_sync`; Neovim 0.12's `Client:request` flushes pending changes for the buffer number it is given before resolving `0` to the current buffer, so it flushed none, and the edit went out when the 150 ms debounce fired.
+Passing the real buffer number, the same driver's first completion answers 9 items while the module's first analysis is still running (about 1.8 s).
+blink.cmp and `vim.lsp.completion` pass a real buffer number, and Lathe's Neovim client requests with none (flushing every buffer) or a real one.
+On Dropwizard, completion right after opening, whole-text or keystroke by keystroke, answers from the first request.
+
+### Regression targets
+
+None: no Lathe change.
+
+---
 
 ## CQ-0061 — While typing, a `switch` case label offers no enum constants — done
 
@@ -10220,6 +10270,60 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-38 — An empty dependency-source marker fails every later sync — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: every sync (Maven, Gradle, OpenJDK), and every reader of a JSON file Lathe writes, after a crash leaves the file empty or cut off.**
+
+Found while running `mvn clean install` after a machine crash (2026-11-16): a 0-byte `.lathe-source.json` in the Gradle fixtures' Lathe cache made every later sync fail with a `NullPointerException` (`[lathe] workspace files not refreshed`), writing no `workspace.json`, until the cache was deleted by hand.
+Gson reads an empty file as `null`, and a cut-off or zero-filled one throws an unchecked `JsonParseException`; most `Json.read` callers handled neither.
+
+### Resolution
+
+Fixed in #352.
+`Json.read` never returns `null`: an empty file or a parse error is an `IOException` naming the file, which every caller already handles, so the marker is taken as stale and the sources extracted again, and an empty type-index shard is skipped.
+`TestDiscoveryStore` takes a damaged stored discovery as none; an empty run-config layer still holds no entries.
+
+### Regression targets
+
+`JsonTest.read_emptyCutOffOrZeroFilledFile_throwsIOExceptionNamingTheFile`, `DependencySourceSyncTest.extract_emptyMarker_reextractsAndRewritesMarker`, `WorkspaceTypeIndexTest.build_emptyShard_skippedAndOtherShardsLoaded`, `TestDiscoveryStoreTest.read_damagedFile_empty`, `RunConfigWriterTest.save_emptyLocalFile_writesTheConfig`.
+
+---
+
+## WS-39 — A dependency's sources jar that is not a zip fails the whole sync — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: every sync (Maven, Gradle, OpenJDK) of a project with a dependency whose published `-sources.jar` is not a valid zip — `com.ibm.db2:jcc:12.1.4.0` on Maven Central, so any project using the DB2 JDBC driver.**
+
+Found by the editor exploratory round on jdbi (2026-11-17), whose `testcontainers` module depends on the DB2 driver.
+
+### Observed behaviour
+
+`jcc-12.1.4.0-sources.jar` on Central is a 189-byte text file (an IBM copyright notice), published that way with a matching checksum.
+`:LatheInit` on jdbi fails after the build compiles nothing:
+`Failed to execute goal io.github.ag-libs:lathe-maven-plugin:0.1.0-SNAPSHOT:sync (lathe-sync) on project jdbi3-parent: Lathe sync failed to extract source artifacts: java.util.zip.ZipException: zip END header not found`.
+`DependencySourceSync.extract` turns the first unreadable jar into a `SyncException`; the message does not name the jar, and no other module is set up.
+Replacing that one file with an empty zip lets the same setup succeed.
+
+### Resolution
+
+`DependencySourceSync.extract` handles each sources jar on its own: one that is not a readable zip (`ZipException`) is skipped with a warning naming the dependency and the jar, and `prepare` records that dependency as one without sources (`MISSING`), as for a dependency that publishes none.
+No marker is written, so a later sync tries the jar again.
+Any other failure, writing the cache say, still fails the sync, now naming the dependency and the jar.
+Related: [WS-38](#ws-38--an-empty-dependency-source-marker-fails-every-later-sync--done), another unreadable dependency-source file that fails every sync.
+
+### Regression targets
+
+`DependencySourceSyncTest.prepare_sourcesJarNotAZip_isMissingAndOthersExtracted`, `extract_sourcesJarNotAZip_answersItAndLeavesNoCache`, `extract_readableSourcesJar_answersNoneSkipped`.
+
+---
+
 ## WS-21 — A rename racing a build can leave the tree broken — done
 
 **Status: done.**
@@ -12621,6 +12725,40 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 ---
 
 # Neovim client (resolved)
+
+## NV-13 — A server killed by a signal ends without a Lathe notification — done
+
+**Status: done** (2026-11-16)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: the Neovim client when the server process is killed, most often by the out-of-memory killer on a large project.**
+
+Found by the editor exploratory round (2026-11-16).
+
+### Observed behaviour
+
+Killed with SIGKILL, the server exits with code 0 and signal 9.
+The client passed only the code to `on_server_exit`, which took code 0 for a clean shutdown and stayed silent.
+The user saw only Neovim's own `Client lathe quit with exit code 0 and signal 9`, with no word of how to get the server back; saving the file does not restart it, reopening it does.
+
+### Resolution
+
+The client's `on_exit` passes the signal on, and a signal counts as an unexpected exit, as a non-zero code already did.
+SIGTERM stays silent: it is how Neovim itself stops a client (`:lsp restart`, a shutdown that times out), and Neovim's own check excludes it too.
+The JVM handles SIGTERM with its shutdown hooks and exits with code 143 and no signal, so that code is silent as well; code 137, a SIGKILL reported by a launcher that does not exec the JVM, counts as a kill.
+Neovim runs `on_exit` in a fast event, where `vim.notify` fails (E5560), so the notification is scheduled.
+A kill's notification names the signal and says to run `:LatheStart`, which restarts the server without touching unsaved changes (`:edit` refuses a modified buffer).
+An exit with an error code keeps its message without that hint: such a server failed on its own and would fail again.
+Neovim's own `Client lathe quit…` warning still appears beside Lathe's.
+
+### Regression targets
+
+`lathestart_spec.lua`: `on_server_exit: killed by a signal notifies`, `on_server_exit: kill names the signal and :LatheStart`, `on_server_exit: SIGTERM from Neovim is silent`, `on_server_exit: code with a signal names the signal`, `on_server_exit: crash names the code, with no restart hint`, `on_server_exit: clean exit with no signal is silent`, `on_server_exit: JVM exit after SIGTERM is silent`, `on_server_exit: kill reported as a code names the signal and :LatheStart`, `on_server_exit: no notification in a fast event`.
+
+---
 
 ## NV-12 — A refused clone of the neotest end-to-end check's plugins failed the CI build — done
 

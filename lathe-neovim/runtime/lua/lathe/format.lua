@@ -1,6 +1,47 @@
 -- Formatting a Java buffer without reopening its imports fold: on demand (:LatheFormat) and, when
 -- asked for, on every save.
+local util = require("lathe.util")
+
 local M = {}
+
+-- Where a server that formats nothing says why (capabilities.experimental); an older server does
+-- not.
+local UNAVAILABLE_CAPABILITY = "latheFormatterUnavailable"
+
+-- Why `bufnr` cannot be formatted with `opts`, nil when an attached server would format it: Lathe,
+-- or another formatter the user runs beside it. The clients are picked as vim.lsp.buf.format picks
+-- them, so a check that passes is a format that runs. Neovim's own answer, "no matching language
+-- servers", reads as if Lathe were not running.
+local function cannot_format(bufnr, opts)
+  opts = opts or {}
+  local method = opts.range and "textDocument/rangeFormatting" or "textDocument/formatting"
+  local clients =
+    vim.lsp.get_clients({ bufnr = bufnr, id = opts.id, name = opts.name, method = method })
+  if opts.filter then
+    clients = vim.tbl_filter(opts.filter, clients)
+  end
+
+  if #clients > 0 then
+    return nil
+  end
+
+  local client = util.client(bufnr)
+  if not client then
+    return "server not attached — formatting needs the language server."
+  end
+
+  -- Until initialize answers, the capabilities are empty: they say nothing about a formatter.
+  if not client.initialized then
+    return "the language server is still starting; format again once it is ready."
+  end
+
+  if opts.range and client.server_capabilities.documentFormattingProvider then
+    return "the project's formatter formats whole files only; format the whole buffer instead."
+  end
+
+  return vim.tbl_get(client.server_capabilities, "experimental", UNAVAILABLE_CAPABILITY)
+    or "the server does not format this workspace."
+end
 
 -- On-demand formatting that keeps a closed imports fold from springing open (NV-3). Map a format
 -- key to this instead of raw vim.lsp.buf.format, which reopens the fold on the buffer rewrite.
@@ -10,6 +51,12 @@ function M.format(bufnr, opts)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   if vim.fs.basename(vim.api.nvim_buf_get_name(bufnr)) == "pom.xml" then
     require("lathe.pom").format_buffer(bufnr)
+    return
+  end
+
+  local reason = cannot_format(bufnr, opts)
+  if reason then
+    util.notify(reason, vim.log.levels.WARN)
     return
   end
 
@@ -62,8 +109,8 @@ function M.setup(format_on_save)
     })
   end
 
-  -- Manual formatting is a no-op unless the server advertises it, so :LatheFormat is always
-  -- registered; it routes through M.format so the imports fold survives the whole-document rewrite.
+  -- :LatheFormat is always registered and says why when the server does not format; it routes
+  -- through M.format so the imports fold survives the whole-document rewrite.
   vim.api.nvim_create_user_command("LatheFormat", function()
     M.format(vim.api.nvim_get_current_buf())
   end, { desc = "Lathe: format the current buffer (preserving the imports fold)" })

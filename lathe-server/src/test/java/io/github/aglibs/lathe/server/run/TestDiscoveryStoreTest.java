@@ -35,6 +35,18 @@ class TestDiscoveryStoreTest {
     assertThat(tmp.resolve("other/test-discovery.json")).doesNotExist();
   }
 
+  // A stored discovery a crash cut off, or one without its discovery (another schema), is not
+  // reused: the module is discovered again.
+  @Test
+  void read_damagedOrIncompleteFile_empty() throws Exception {
+    final Path file = Files.createDirectories(tmp.resolve("module")).resolve("test-discovery.json");
+    for (final String content : List.of("{\"stampMillis\": 10", "{\"stampMillis\": 10}")) {
+      Files.writeString(file, content);
+
+      assertThat(TestDiscoveryStore.read(file, FileTime.fromMillis(10))).isEmpty();
+    }
+  }
+
   // A module's discovery is found once for its test classes, then kept, also across stores (a new
   // session); new test classes find it again.
   @Test

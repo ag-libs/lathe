@@ -1,12 +1,12 @@
 package io.github.aglibs.lathe.server.format;
 
-import com.google.gson.JsonParseException;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -85,15 +85,13 @@ public final class WorkspaceStyle {
     }
   }
 
+  // A style file left blank declares nothing, as the Gradle sync reads it (FormatterSteps), where
+  // Json.read takes a blank file as damaged.
   private static WorkspaceStyleData parseIfExists(final Path file) throws IOException {
-    return Files.exists(file) ? parse(file) : null;
-  }
-
-  private static WorkspaceStyleData parse(final Path file) throws IOException {
-    try {
-      return Json.read(file, WorkspaceStyleData.class);
-    } catch (final JsonParseException e) {
-      throw new IOException("malformed style file %s".formatted(file), e);
+    if (!Files.exists(file) || Files.readString(file, StandardCharsets.UTF_8).isBlank()) {
+      return null;
     }
+
+    return Json.read(file, WorkspaceStyleData.class);
   }
 }

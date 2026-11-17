@@ -703,9 +703,21 @@ That warning's example also suggests `{"engine": "google"}`, though JUnit's Spot
 Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
 Let the sync's example name the engine Spotless runs when the build says which.
 
+### Progress
+
+Done (2026-11-16): the server says at `initialize` why it does not format (`capabilities.experimental.latheFormatterUnavailable`, the reason MCP's `format_file` gives), and `:LatheFormat` shows it instead of Neovim's "no matching language servers" when no attached server formats the buffer; the reason now names the Gradle case too.
+The editor exploratory round (2026-11-16) hit the same message on a Maven build with no formatter at all.
+Formatting a selection with a whole-file engine (`command`), which advertises no range formatting, now says the formatter formats whole files only.
+Left:
+
+- The Gradle sync's example still suggests `{"engine": "google"}` whatever Spotless runs.
+- The reason is the one at startup: after a sync resolves the formatter, `:LatheFormat` still says to run the sync until Lathe restarts (the server already says to restart).
+  Keeping it current needs a way to tell the editor after `initialize` (a notification, or a command the client asks), which no existing message carries.
+- VS Code reads no `latheFormatterUnavailable`: the extension has no formatting code of its own, so it still shows VS Code's own answer.
+
 ### Regression targets
 
-None yet.
+`LatheLanguageServerTest.createCapabilities_noFormatter_saysWhyInExperimental`, `initialize_pinnedFormatterUnresolved_saysToSync`; `formatter_setup_spec.lua` `format(): no formatter shows the server's reason`, `format(): a range with a whole-file formatter says it formats whole files`, `format(): a name filter leaves the other formatter out`.
 
 ---
 
@@ -738,6 +750,63 @@ The exclusion is deliberate: `SourceLayout.resolveContext`, `destinations()` and
 Answer the workspace context, and list destinations, for every source-set tree, as for `main` and `test`:
 a destination needs a way to name its source set, beyond the two `SourceScope` values, not only the filter removed.
 The same `null` context hides a source-set file's module from neotest's discovery (TE-18).
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: go to definition on a parameter type inside a Javadoc member reference (`@see #m(Type)`, `{@link #m(Type)}`).**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+In jdbi's `Jdbi.java`, line 362 reads `@see #withHandle(HandleCallback)`.
+Definition with the cursor on `HandleCallback` lands on `Jdbi.java:410`, the `withHandle` method, as it does on `withHandle` itself.
+The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `HandleCallback.java:22`.
+
+### Fix direction
+
+Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-112 — A type from a dependency without sources is reported as not existing
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `search_symbols` and `get_definition` (MCP), and the editor's workspace symbols, which run the same search, on a type whose dependency publishes no sources jar or has an unreadable one ([WS-39](gaps-archive.md#ws-39--a-dependencys-sources-jar-that-is-not-a-zip-fails-the-whole-sync--done)).**
+
+Found while verifying WS-39 end to end (2026-11-17).
+
+### Observed behaviour
+
+In a project using the DB2 driver's `com.ibm.db2.jcc.DB2SimpleDataSource` (its dependency synced as one without sources):
+
+- `describe_symbol` answers the declaration from the class file, `source: com.ibm.db2:jcc:12.1.4.0`, and `find_references` finds the 3 uses.
+- `search_symbols DB2SimpleDataSource` answers `No symbols matching 'DB2SimpleDataSource'`, though the dependency's type index lists it.
+- `get_definition` on it answers `No definition found.`
+
+`WorkspaceSymbolResolver.toSymbolInformation` keeps only a type whose source file it can locate, and drops the rest without a word.
+An agent concludes the type does not exist and searches elsewhere.
+
+### Fix direction
+
+Short of a decompiler ([EG-063](#eg-063--a-dependency-without-a-sources-jar-has-no-source-to-navigate-to)), say what is known: list the type with its dependency instead of a file (`DB2SimpleDataSource (Class) — com.ibm.db2.jcc  com.ibm.db2:jcc:12.1.4.0, no sources`), and answer a definition with the dependency that declares it and a pointer to `describe_symbol`.
 
 ### Regression targets
 
@@ -1425,41 +1494,6 @@ None yet.
 
 ---
 
-## WS-38 — An empty dependency-source marker fails every later sync
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: every sync (Maven, Gradle, OpenJDK) whose Lathe cache holds a truncated `.lathe-source.json`.**
-
-Found while running `mvn clean install` after a machine crash (2026-11-16).
-
-### Observed behaviour
-
-A hard crash while the Gradle plugin's functional tests ran left `deps/com.example/withsrc/1.0/.lathe-source.json` in the fixtures' Lathe cache as a 0-byte file:
-`ZipCache` writes the marker into a temporary directory and renames it into place, which a crash before the data reaches the disk does not survive.
-Every later sync failed with `[lathe] workspace files not refreshed: Cannot invoke "…DependencySourceSync$SourceMarker.schema()" because "m" is null`, and wrote no `.lathe/workspace.json`.
-Only deleting the cache by hand recovered it.
-
-### Cause
-
-Gson reads an empty file as `null`, and `DependencySourceSync.isSourceCacheCurrent` dereferences the result; its `catch (IOException)` does not catch the `NullPointerException`.
-The other cache readers already tolerate it: `TypeIndexFiles.current` catches `RuntimeException`, `CompiledStamps` checks for `null`.
-`WorkspaceTypeIndex.loadFile` (the server) has the same weakness: an empty shard becomes `Stream.of(null)`.
-
-### Fix direction
-
-Take a `null` marker as a stale cache, so the sources are extracted again and the marker rewritten; treat an empty type-index shard as missing.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1613,6 +1647,36 @@ None yet.
 
 ---
 
+
+## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: Maven modules whose capture-only test run reports `Tests run: 0` (seen on jdbi: `core`, `sqlobject`, `postgres`, `spring` and others); `run_test`, neotest and `:LatheRun` on their tests.**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+`:LatheInit` on jdbi succeeds and captures 21 modules' test launches, but not `core`, `sqlobject` and other modules with tests; nothing in the output says so.
+Running `TestJdbi` then answers `blocked: no captured test launch for core; run .lathe/lathe-sync.sh --tests core`, and that command again reports `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0` and writes no `.lathe/core/test-launch.json`.
+`lathe-junit` is on the fork's test classpath (`-X`), Surefire uses the JUnit Platform provider with `forkCount=4`, and no fork reports a test class.
+`vavr`, with the same Surefire settings, captures (its dry run reports 3 skipped tests).
+`-Dtest=TestJdbi -Dlathe.capture.only=true` on `core` captures the launch (8 skipped).
+`CaptureLauncherSessionListener` swallows every `Throwable`, so a failed capture leaves no trace.
+[EG-067](#eg-067--the-first-build-floods-the-log-with-warnings) saw `Tests run: 0, Skipped: 0` on EqualsVerifier's `equalsverifier-core` and `equalsverifier-test`; whether those were captured is not recorded.
+
+### Fix direction
+
+Find why the whole-module dry run starts no test class in these modules; whatever the cause, have the sync say which modules ran tests but captured no launch, and have the listener print why a capture failed instead of nothing.
+
+### Regression targets
+
+None yet.
+
+---
 
 # Debug & Evaluation Gaps (DB)
 
@@ -2390,3 +2454,229 @@ Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-wo
 ### Regression targets
 
 None yet.
+
+---
+
+## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
+
+The temporary compile copy comes from `lathe-server` (`CompileTempDirs`), so the editor's definition and rename probably fail the same way; the editor was not checked.
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
+Lathe answers, for that file:
+
+- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
+- `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
+- `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
+
+A file with no `package` line behaves the same, including the silent rename.
+A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
+`find_references` maps every case back to the real file.
+An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
+
+### Fix direction
+
+Map the compile copy back to the source file whatever package javac reads, as `find_references` already does; compile a file whose package differs from its directory as the build does, or say plainly that Lathe needs them to match.
+A rename that finds the symbol must never answer "no references".
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-91 — Tool columns are UTF-16 code units, and nothing says so
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On `\tString label = "😀😀"; int after = count;`, `count` is at character column 35.
+`get_definition` at column 35 answers `Line 9 has no symbol at column 35`; column 37 (UTF-16, two units per emoji) works.
+`outline` lists `after` at `9:29` (character 27) and `find_references` reports `count` at `9:37`.
+The tool descriptions say only "1-based column".
+The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, `McpText.toWire`).
+`symbol` avoids the problem, and edits on such a line are exact.
+
+### Fix direction
+
+Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
+Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-92 — `run_test` runs a test whose dependency no longer compiles
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
+`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
+When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
+Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
+
+### Fix direction
+
+Block the run with the same "does not compile" answer when the classes the test needs do not compile, not only the test's own file.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-93 — `find_references` with `access` on a method answers "No references found"
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `find_references` with `access` set, on a method, type or other symbol that is neither a field nor a variable.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`find_references` on the method `total` with `access="write"` answers `No references found.`, although the method has a use.
+The schema says `access` filters reads and writes of a field or variable.
+
+### Fix direction
+
+Refuse `access` for a symbol it does not apply to, or ignore it and say so; never answer an empty list for a used symbol.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-94 — A `file://` URI as a tool's `file` is read as a relative path
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: every file tool given a `file://` URI instead of a path.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`outline` with `file="file:///…/Edge.java"` answers `/<workspace>/file:/…/Edge.java does not exist`.
+Agents that also drive an LSP carry URIs and may pass one.
+
+### Fix direction
+
+Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
+`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
+`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
+The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
+
+### Fix direction
+
+Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-96 — `verify_change` fails whenever a dependent module has Kotlin sources in a Maven source root
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `verify_change` on a Maven reactor where a module that depends on the change registers a Kotlin source root (jdbi's `kotlin-sqlobject`, `src/test/kotlin`).**
+
+Found by the MCP exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+After any edit in jdbi's `core` (a new method nobody calls, or a 54-file rename), `verify_change` answers only `the request failed; see the server log`.
+The log: `IllegalArgumentException: Compilation unit is not of SOURCE kind: "/tmp/lathe-compile-…/org/jdbi/v3/sqlobject/kotlin/TestIssue2961.kt"`, from `JavacRunner.createTask` under `JavacRunner.attributeBatch` while checking the dependents.
+The `.kt` file is `kotlin-sqlobject/src/test/kotlin/…/TestIssue2961.kt`.
+With nothing changed, or after a deletion, `verify_change` answers normally; on resilience4j (Gradle, Kotlin module `resilience4j-kotlin`) it works.
+On jdbi an agent cannot check any change to `core`.
+
+### Fix direction
+
+Never hand a non-`.java` file to javac when collecting a dependent module's sources; check the rest and name the Kotlin sources as not checked, as the other tools already do (`Kotlin sources in … are not searched`).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `verify_change` while the project's own `.lathe/lathe-sync.sh` (or any build Lathe sees writing `.lathe/`) runs.**
+
+Found by the MCP exploratory round on resilience4j (2026-11-17).
+
+### Observed behaviour
+
+During a `latheSync`, every `verify_change` answers at once ``Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.``; the first call after the build ends checks normally.
+Not stalling is right, but the advice is to start a second build while the first runs; an agent following it doubles the wait.
+`McpText.verifyChangeResult` names the suggested sync whenever there is one, whatever the deferral.
+
+### Fix direction
+
+For a build in progress, say to wait for it to finish and re-check; name the sync only when what is missing is one.
+
+### Regression targets
+
+None yet.
+

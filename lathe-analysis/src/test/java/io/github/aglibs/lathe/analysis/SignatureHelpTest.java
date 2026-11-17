@@ -51,6 +51,41 @@ class SignatureHelpTest {
     assertThat(help.getSignatures().get(0).getLabel()).contains("int count");
   }
 
+  // EG-111: the label reads as the hover does, and the parameter's range still covers its text
+  // after the type-parameter prefix.
+  @Test
+  void signatureHelp_boundAndThrows_inLabelWithParameterRangeShifted() {
+    final var source =
+        """
+        class Test {
+          <R, X extends Exception> R target(java.util.concurrent.Callable<R> callback) throws X {
+            return null;
+          }
+          void caller() throws Exception { target(§null); }
+        }
+        """;
+    final SignatureInformation signature = signatureHelpAt(source).getSignatures().get(0);
+    final String label = signature.getLabel();
+    final var range = signature.getParameters().get(0).getLabel().getRight();
+
+    assertThat(label).isEqualTo("<R, X extends Exception> R target(Callable<R> callback) throws X");
+    assertThat(label.substring(range.getFirst(), range.getSecond()))
+        .isEqualTo("Callable<R> callback");
+  }
+
+  @Test
+  void signatureHelp_plainMethod_labelHasNoTypeParametersOrThrows() {
+    final var source =
+        """
+        class Test {
+          void target(String name, int count) {}
+          void caller() { target("x", §1); }
+        }
+        """;
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void target(String name, int count)");
+  }
+
   @Test
   void signatureHelp_cursorInSecondArg_showsActiveParam1() {
     final var source =

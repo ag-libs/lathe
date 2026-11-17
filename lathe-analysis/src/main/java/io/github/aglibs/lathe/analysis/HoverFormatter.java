@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -48,31 +49,35 @@ final class HoverFormatter {
               .mapToObj(
                   i -> formatParam(params.get(i), fmt, sourceParamNames, i, varargs && i == last))
               .collect(Collectors.joining(", "));
-      final String typeParams = formatTypeParameters(exe.getTypeParameters());
-      final String typePrefix = typeParams.isEmpty() ? "" : "%s ".formatted(typeParams);
+      final String typePrefix = typeParameterPrefix(exe, fmt);
+      final String thrown = throwsSuffix(exe, fmt);
       if (exe.getKind() == ElementKind.CONSTRUCTOR) {
         // A constructor's element name is <init> and its return type is void; render it as the
         // enclosing type's name with no return type, matching how the source declares it, under
         // its class's line for context. An anonymous class has no name for that line.
         final var owner = (TypeElement) exe.getEnclosingElement();
         final String constructor =
-            "%s%s%s(%s)".formatted(modifiers(exe), typePrefix, owner.getSimpleName(), paramStr);
+            "%s%s%s(%s)%s"
+                .formatted(modifiers(exe), typePrefix, owner.getSimpleName(), paramStr, thrown);
         sig =
             owner.getSimpleName().isEmpty()
                 ? constructor
-                : "%s\n%s".formatted(typeLine(owner), constructor);
+                : "%s\n%s".formatted(typeLine(owner, fmt), constructor);
       } else {
         sig =
-            "%s%s%s %s(%s)"
+            "%s%s%s %s(%s)%s"
                 .formatted(
                     modifiers(exe),
                     typePrefix,
                     display(exe.getReturnType(), fmt),
                     exe.getSimpleName(),
-                    paramStr);
+                    paramStr,
+                    thrown);
       }
     } else if (element instanceof final TypeElement te) {
       sig = typeDeclaration(te, fmt);
+    } else if (element instanceof final TypeParameterElement tp) {
+      sig = MethodStubRenderer.typeParameter(tp, bound -> display(bound, fmt));
     } else if (element != null && type != null) {
       // A field's modifiers say how it is used; a local's add nothing. javac also models `this`,
       // `super` and a class literal's `class` as fields, whose names no real field can have.
@@ -111,7 +116,7 @@ final class HoverFormatter {
             ? List.of()
             : te.getPermittedSubclasses().stream().map(HoverFormatter::rawName).toList();
     return Stream.of(
-            Optional.of("%s%s".formatted(modifiers(te), typeLine(te))),
+            Optional.of("%s%s".formatted(modifiers(te), typeLine(te, fmt))),
             clause(
                 "extends", superclass(te).map(type -> supertype(te, type, fmt)).stream().toList()),
             clause(te.getKind().isInterface() ? "extends" : "implements", interfaces),
@@ -134,9 +139,7 @@ final class HoverFormatter {
   private static Optional<TypeMirror> superclass(final TypeElement te) {
     if (te.getKind() != ElementKind.CLASS
         || !(te.getSuperclass() instanceof final DeclaredType superclass)
-        || ((TypeElement) superclass.asElement())
-            .getQualifiedName()
-            .contentEquals("java.lang.Object")) {
+        || MethodStubRenderer.isObject(superclass)) {
       return Optional.empty();
     }
 
@@ -208,7 +211,7 @@ final class HoverFormatter {
     return fmt != null ? fmt.format(type) : type.toString();
   }
 
-  private static String typeLine(final TypeElement te) {
+  private static String typeLine(final TypeElement te, final TypeDisplayFormatter fmt) {
     final var kind =
         switch (te.getKind()) {
           case ANNOTATION_TYPE -> "@interface";
@@ -218,7 +221,7 @@ final class HoverFormatter {
           default -> "class";
         };
     return "%s %s%s"
-        .formatted(kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters()));
+        .formatted(kind, te.getSimpleName(), formatTypeParameters(te.getTypeParameters(), fmt));
   }
 
   // What javadoc's own pages show beside the text: that the element is deprecated, unless its
@@ -285,6 +288,20 @@ final class HoverFormatter {
         .formatted(label, method.getEnclosingElement().getSimpleName(), method.getSimpleName());
   }
 
+  // A method's type parameters and a space, e.g. "<R, X extends Exception> ", or "" when it has
+  // none; shared with signature help, so its label reads as the hover does.
+  static String typeParameterPrefix(final ExecutableElement exe, final TypeDisplayFormatter fmt) {
+    final String typeParams = formatTypeParameters(exe.getTypeParameters(), fmt);
+    return typeParams.isEmpty() ? "" : "%s ".formatted(typeParams);
+  }
+
+  // A space and a method's throws clause, e.g. " throws X", or "" when it throws nothing.
+  static String throwsSuffix(final ExecutableElement exe, final TypeDisplayFormatter fmt) {
+    return clause("throws", exe.getThrownTypes().stream().map(t -> display(t, fmt)).toList())
+        .map(" %s"::formatted)
+        .orElse("");
+  }
+
   static String formatParam(
       final VariableElement param,
       final TypeDisplayFormatter fmt,
@@ -304,14 +321,14 @@ final class HoverFormatter {
     return SourceParser.isSyntheticName(name) ? typeName : "%s %s".formatted(typeName, name);
   }
 
-  // A type-parameter declaration, e.g. "<T>" or "<K, V>", or "" when there is none. Names only
-  // (bounds omitted) to keep the hover line compact.
+  // A type-parameter declaration as the source writes it, e.g. "<K, V extends Comparable<V>>", or
+  // "" when there is none: a bound says what an argument must be, or what a thrown X can be.
   private static String formatTypeParameters(
-      final List<? extends TypeParameterElement> typeParams) {
+      final List<? extends TypeParameterElement> typeParams, final TypeDisplayFormatter fmt) {
     return typeParams.isEmpty()
         ? ""
         : typeParams.stream()
-            .map(tp -> tp.getSimpleName().toString())
+            .map(tp -> MethodStubRenderer.typeParameter(tp, bound -> display(bound, fmt)))
             .collect(Collectors.joining(", ", "<", ">"));
   }
 }

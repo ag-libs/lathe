@@ -33,7 +33,7 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_supportedFeatures_advertisesProviders() {
-    final var capabilities = LatheLanguageServer.createCapabilities(null);
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
 
     assertThat(capabilities.getTextDocumentSync().getLeft()).isEqualTo(TextDocumentSyncKind.Full);
     assertThat(capabilities.getCompletionProvider()).isNotNull();
@@ -53,7 +53,7 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_formattingDisabled_omitsFormattingProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(null);
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
 
     assertThat(capabilities.getDocumentFormattingProvider()).isNull();
   }
@@ -61,7 +61,7 @@ class LatheLanguageServerTest {
   @Test
   void createCapabilities_inProcessEngine_advertisesWholeAndRangeFormatting() {
     final var capabilities =
-        LatheLanguageServer.createCapabilities(FormatterFixtures.googleJavaFormat());
+        LatheLanguageServer.createCapabilities(FormatterFixtures.googleJavaFormat(), null);
 
     assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
     assertThat(capabilities.getDocumentRangeFormattingProvider().getRight().getRangesSupport())
@@ -73,7 +73,8 @@ class LatheLanguageServerTest {
     final var capabilities =
         LatheLanguageServer.createCapabilities(
             new ExternalCommandFormatEngine(
-                List.of("cat"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, root));
+                List.of("cat"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, root),
+            null);
 
     assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
     assertThat(capabilities.getDocumentRangeFormattingProvider()).isNull();
@@ -81,21 +82,21 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_includesTypeDefinitionProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(null);
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
 
     assertThat(capabilities.getTypeDefinitionProvider().getLeft()).isTrue();
   }
 
   @Test
   void createCapabilities_includesCallHierarchyProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(null);
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
 
     assertThat(capabilities.getCallHierarchyProvider().getLeft()).isTrue();
   }
 
   @Test
   void createCapabilities_includesExecuteCommandProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(null);
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
 
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
         .containsExactlyElementsOf(LatheCommands.ALL)
@@ -104,11 +105,47 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_always_advertisesLatheProtocol() {
-    final var capabilities = LatheLanguageServer.createCapabilities(null);
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
 
     assertThat(capabilities.getExperimental())
         .asInstanceOf(map(String.class, Object.class))
         .containsEntry(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL);
+  }
+
+  @Test
+  void createCapabilities_noFormatter_saysWhyInExperimental() {
+    final var capabilities = LatheLanguageServer.createCapabilities(null, null);
+
+    assertThat(capabilities.getExperimental())
+        .asInstanceOf(map(String.class, Object.class))
+        .hasEntrySatisfying(
+            LatheLanguageServer.FORMATTER_UNAVAILABLE_CAPABILITY,
+            reason ->
+                assertThat((String) reason)
+                    .startsWith("No formatter for this workspace")
+                    .contains(LatheLayout.STYLE_SHARED_FILE, "Spotless Java step", "Gradle"));
+  }
+
+  @Test
+  void createCapabilities_formatter_omitsUnavailableReason() {
+    final var capabilities =
+        LatheLanguageServer.createCapabilities(FormatterFixtures.googleJavaFormat(), null);
+
+    assertThat(capabilities.getExperimental())
+        .asInstanceOf(map(String.class, Object.class))
+        .doesNotContainKey(LatheLanguageServer.FORMATTER_UNAVAILABLE_CAPABILITY);
+  }
+
+  @Test
+  void initialize_pinnedFormatterUnresolved_saysToSync() throws Exception {
+    writeStyle("{\"formatter\":{\"engine\":\"google\"}}");
+
+    assertThat(initializeWithRoot(null).getExperimental())
+        .asInstanceOf(map(String.class, Object.class))
+        .containsEntry(
+            LatheLanguageServer.FORMATTER_UNAVAILABLE_CAPABILITY,
+            "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it)."
+                .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   static Stream<Arguments> initialize_optionFormatter_cases() {

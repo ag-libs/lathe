@@ -38,7 +38,7 @@ public final class RunConfigWriter {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final Path file = latheDir.resolve(LatheLayout.RUN_CONFIG_LOCAL_FILE);
 
-    final RunConfigFile existing = readOrEmpty(file);
+    final RunConfigFile existing = RunConfigFile.readOrEmpty(file);
     if (existing.configs().containsKey(name) && !overwrite) {
       throw new IllegalArgumentException(
           "config '%s' already exists — use :LatheRunSave! to overwrite".formatted(name));
@@ -62,15 +62,6 @@ public final class RunConfigWriter {
     }
 
     return RunConfigEntry.testTarget(moduleRel, selectors.stream().map(RunSelector::from).toList());
-  }
-
-  private static RunConfigFile readOrEmpty(final Path file) throws IOException {
-    if (!Files.exists(file)) {
-      return RunConfigFile.empty();
-    }
-
-    final RunConfigFile parsed = Json.read(file, RunConfigFile.class);
-    return parsed != null ? parsed : RunConfigFile.empty();
   }
 
   private static String resolveName(

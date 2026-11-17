@@ -94,14 +94,17 @@ the server when the build ends:
   into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. A build that registers
   Lathe builds as it is.
 - The first build is a clean one that records your tests without running them (Maven
-  `clean test -Dlathe.capture.only=true`, Gradle `latheSync -Plathe.capture.only=true`), so the
+  `-Dlathe.capture.only=true clean test`, Gradle `-Plathe.capture.only=true latheSync`), so the
   server knows every module and tests run at once. Code that does not compile still sets up: compile
   errors don't stop it, and the server shows them.
 - An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).
 - It runs the project's `mvnw`/`gradlew`, else `mvn`/`gradle` from `PATH`, and sets up this client's
   Lathe version; a development checkout of the client needs `LATHE_VERSION` set.
 
+- The prompt says "found from the current file" when the root came from the file in the window, not from `:pwd`.
+
 Afterwards `:LatheSync` refreshes the workspace; `:LatheInit` again moves it to this client's version.
+On a project already set up at this version, or one whose build registers Lathe, `:LatheInit` builds nothing and says `:LatheSync` refreshes it; `:LatheInit!` builds it again anyway.
 
 ### Updating
 
@@ -151,7 +154,7 @@ freely.
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` / convert to `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
-| Set Lathe up for the build around the current file ([below](#set-up-a-project)) | `:LatheInit [maven\|gradle\|openjdk]` | — | — |
+| Set Lathe up for the build around the current file ([below](#set-up-a-project)) | `:LatheInit[!] [maven\|gradle\|openjdk]` | — | — |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
@@ -328,6 +331,8 @@ Anywhere else (a Gradle build, Maven without Spotless) the project declares its 
 `lathe-style.json`, and the sync resolves it the same way; there is no formatter option in `setup()`.
 It runs on demand via `require('lathe').format()` or `:LatheFormat` (whole buffer); to format just a
 selection, call `require('lathe').format()` from a visual-mode mapping (as below).
+In a workspace with no formatter it formats nothing and says why: the project declares none, its pinned formatter is not resolved yet (run the sync script, `.lathe/lathe-sync.sh` or `.lathe\lathe-sync.cmd` on Windows), or `lathe-style.json` turns formatting off.
+A selection with a formatter that formats whole files only (a `command` engine) says so instead.
 Add `format_on_save = true` to also format on write (wired whenever the server advertises a formatter).
 To declare it, turn it off, or run another tool, see
 [installation](../installation.md#declaring-it), which also lists what Lathe does not apply compared
@@ -680,8 +685,9 @@ tail -f ~/.local/state/nvim/lsp.log
 
 ## Troubleshooting (Neovim)
 
-If the server exits unexpectedly, Lathe notifies you (`language server exited unexpectedly`); check the
-LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging.
+If the server exits unexpectedly or is killed (the system's out-of-memory killer, say), Lathe notifies you (`language server exited unexpectedly (code N)` or `language server was killed (signal N)`; Neovim adds its own `Client lathe quit…` line).
+After a kill, `:LatheStart` starts the server again for the current buffer without touching unsaved changes; each other Java buffer reattaches when you enter it.
+Check the LSP log above, with `LATHE_DEBUG=1` for verbose compiler logging.
 A server that fails before it starts (a bad JDK, a module missing from the server's module path) also
 reports there: the JVM's startup errors appear as `stderr` lines in the LSP log. If it does not attach at all,
 confirm the launcher exists (`:LatheStart` reports when it is missing) and run the first build, `mvn clean test -Dlathe.capture.only=true` on Maven or

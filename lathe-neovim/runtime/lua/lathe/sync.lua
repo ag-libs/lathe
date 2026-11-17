@@ -200,7 +200,7 @@ end
 
 -- The notification names what the client ran; the script prints the build command it resolves
 -- (`lathe-sync: mvnd …`) as its first stderr line, so that shows in the output console.
-local SCRIPT = ".lathe/lathe-sync.sh"
+local SCRIPT = require("lathe.workspace").SYNC_SCRIPT
 
 --- Runs `.lathe/lathe-sync.sh [--tests] [module ...]` at `root` as a background job, notifying on
 --- start and completion. `modules` (reactor-relative paths) scope it; empty/nil syncs everything.
@@ -258,12 +258,15 @@ function M.run(root, capture_tests, modules, opts)
   pretouch_lock(root)
   vim.system(cmd, { cwd = root, text = true }, function(res)
     release_lock(root)
-    running[root] = nil
     state.done = true
     timer:stop()
     timer:close()
     local secs = elapsed_s(state.started)
     vim.schedule(function()
+      -- Cleared on the main loop, not in this fast callback: an on_done that starts the next run
+      -- (:LatheInit's download, then its build) then marks the root again before any command can
+      -- see it free.
+      running[root] = nil
       local output = (res.stdout or "") .. (res.stderr or "")
       local warning = res.code == 0 and opts.success_warning and opts.success_warning(res)
       if warning then
@@ -311,18 +314,33 @@ local function real(path)
   return dir ~= path and vim.fs.joinpath(real(dir), vim.fs.basename(path)) or path
 end
 
---- Whether :LatheInit is setting up the build that holds path (its download or first build): its
---- `.lathe/` is incomplete until the run ends and starts the server.
-function M.setting_up(path)
+-- Whether a run that `counts` (given its action) is going at a root holding path, path included.
+local function running_over(path, counts)
   local wanted = real(path)
   for root, action in pairs(running) do
     local at = real(root)
-    if action ~= "sync" and (wanted == at or vim.startswith(wanted, at .. "/")) then
+    if counts(action) and (wanted == at or vim.startswith(wanted, at .. "/")) then
       return true
     end
   end
 
   return false
+end
+
+--- Whether :LatheInit is setting up the build that holds path (its download or first build): its
+--- `.lathe/` is incomplete until the run ends and starts the server.
+function M.setting_up(path)
+  return running_over(path, function(action)
+    return action ~= "sync"
+  end)
+end
+
+--- Whether a run (a sync, or :LatheInit's download or first build) is going at root or a root
+--- holding it.
+function M.busy(root)
+  return running_over(root, function()
+    return true
+  end)
 end
 
 local function sync_current(capture_tests)

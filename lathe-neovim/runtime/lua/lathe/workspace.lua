@@ -25,8 +25,17 @@ function M.launcher_path(root)
   if override then
     return vim.fs.normalize(override) .. "/lathe-launcher.sh"
   end
+  return M.workspace_launcher_path(root)
+end
+
+--- The launcher the build's sync wrote under root, whatever LATHE_SERVER_DIR says: whether the
+--- workspace itself is set up.
+function M.workspace_launcher_path(root)
   return vim.fs.normalize(root) .. "/" .. M.ROOT_MARKER .. "/lathe-launcher.sh"
 end
+
+--- The sync script the build wrote under root, relative to it: what `:LatheSync` runs.
+M.SYNC_SCRIPT = M.ROOT_MARKER .. "/lathe-sync.sh"
 
 --- The workspace manifest the build's sync writes under root.
 function M.manifest_path(root)

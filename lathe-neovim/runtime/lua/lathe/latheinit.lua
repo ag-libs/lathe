@@ -3,7 +3,8 @@
 -- gets Lathe from outside, so the project is not changed: Maven through -Dmaven.ext.class.path,
 -- Gradle through an init script. Either way the first build is the documented first run, with
 -- compile errors kept from stopping it. An OpenJDK checkout runs Lathe's OpenJDK goal. It never
--- syncs: :LatheSync refreshes a workspace set up.
+-- syncs: :LatheSync refreshes a workspace set up, so a root that a build would leave as it is gets
+-- a message naming it instead; :LatheInit! builds it anyway.
 -- Design: docs/potential/lathe-init.md.
 local M = {}
 
@@ -27,15 +28,16 @@ local OPENJDK_SYNC = "io.github.ag-libs:lathe-openjdk-maven-plugin:%s:sync"
 local KINDS = { maven = "Maven", gradle = "Gradle", openjdk = "OpenJDK" }
 -- The first build: clean, as Maven compiles nothing it finds up to date and Lathe captures a module
 -- only as it compiles it; the tests captured without running; compile errors kept from stopping
--- it. Gradle reruns a compile whose inputs changed, so it needs no clean.
+-- it. Gradle reruns a compile whose inputs changed, so it needs no clean. Capture only comes first,
+-- so the command shows at a glance that the tests do not run.
 local MAVEN_FIRST_BUILD = {
-  "clean",
-  "test",
   "-Dlathe.capture.only=true",
   "-DfailIfNoTests=false",
   "-Dmaven.compiler.failOnError=false",
+  "clean",
+  "test",
 }
-local GRADLE_FIRST_BUILD = { "latheSync", "-Plathe.capture.only=true", "--continue" }
+local GRADLE_FIRST_BUILD = { "-Plathe.capture.only=true", "--continue", "latheSync" }
 
 local function exists(path)
   return vim.uv.fs_stat(path) ~= nil
@@ -281,10 +283,17 @@ local function java_buffers_under(root)
   end, vim.api.nvim_list_bufs())
 end
 
--- The Lathe version the build set up, which the workspace records.
+-- The Lathe version the build set up, which the workspace records; nil when it records none (a
+-- JSON null decodes to vim.NIL, which is truthy).
 local function server_version(root)
   local manifest = workspace.manifest_path(root)
-  return exists(manifest) and vim.json.decode(read(manifest)).serverVersion or nil
+  if not exists(manifest) then
+    return nil
+  end
+
+  local ok, decoded = pcall(vim.json.decode, read(manifest))
+  local version = ok and type(decoded) == "table" and decoded.serverVersion
+  return type(version) == "string" and version or nil
 end
 
 -- Names the version set up, and says when the build pinned another than the one asked for.
@@ -441,7 +450,7 @@ local function maven_personal(build_, tool, version)
         { tool, "-B", "-Dmaven.ext.class.path=" .. table.concat(jars, ":") },
         MAVEN_FIRST_BUILD
       ),
-      ("%s clean test (Lathe %s)"):format(vim.fs.basename(tool), version),
+      ("%s clean test (capture only, Lathe %s)"):format(vim.fs.basename(tool), version),
       version
     )
   end
@@ -546,7 +555,7 @@ local function set_up(found)
     notify(("building %s, which registers Lathe…"):format(found.root))
     if found.kind == "maven" then
       local cmd = vim.list_extend({ tool, "-B" }, MAVEN_FIRST_BUILD)
-      build(found.root, cmd, ("%s clean test"):format(vim.fs.basename(tool)))
+      build(found.root, cmd, ("%s clean test (capture only)"):format(vim.fs.basename(tool)))
       return
     end
 
@@ -606,16 +615,111 @@ local function start_dir()
   return vim.fs.dirname(vim.fs.normalize(name))
 end
 
--- What :LatheInit is about to do at the root it found, and the version it moves from.
-local function prompt_for(found)
+-- Whether the current file, not :pwd, picked found's root: from :pwd another root, or none, would
+-- have been offered.
+local function found_from_file(start, found, kind)
+  local cwd = vim.fn.getcwd()
+  if real(start) == real(cwd) then
+    return false
+  end
+
+  local from_pwd = M.find_build(cwd, kind)
+  return not from_pwd or real(from_pwd.root) ~= real(found.root)
+end
+
+-- The file the build's sync script names to bring Lathe `version` in from outside: the activation
+-- jars' folder on Maven, the init script on Gradle.
+local function activation(kind, version)
+  local dir = bootstrap_dir(version)
+  return kind == "gradle" and vim.fs.joinpath(dir, INIT_SCRIPT) or vim.fs.joinpath(dir, "lib")
+end
+
+-- A sync script that brings Lathe in from outside, as only a personal setup's does.
+local function replays_activation(script)
+  return script:find("maven.ext.class.path", 1, true) ~= nil
+    or script:find(INIT_SCRIPT, 1, true) ~= nil
+end
+
+-- Why building found's root would change nothing (a message naming :LatheSync), else nil. A root is
+-- set up when its build's sync wrote the manifest, the launcher and the sync script, the last two
+-- executable as the server start and :LatheSync need them. Then a build that registers
+-- Lathe picks the version itself, unless its script still replays a personal setup's activation,
+-- which would override that registration until a build renders a new script. An OpenJDK checkout
+-- is set up at this version; a personal build when its script brings this version in for this kind
+-- and that file is still there (the script refuses to sync without it). Any other personal script
+-- builds: another version, one rendered while the build registered Lathe, the other kind's.
+local function set_up_already(found, version)
+  local root = found.root
+  local script_path = vim.fs.joinpath(root, workspace.SYNC_SCRIPT)
+  if
+    not exists(workspace.manifest_path(root))
+    or vim.fn.executable(workspace.workspace_launcher_path(root)) ~= 1
+    or vim.fn.executable(script_path) ~= 1
+  then
+    return nil
+  end
+
+  local installed = server_version(root)
+  local script = read(script_path)
+  local hint = ("`:LatheSync` refreshes it, and `:LatheInit!` %s."):format(
+    found.kind == "maven" and "rebuilds it from clean" or "sets it up again"
+  )
   if found.registered then
-    return ("Lathe: build the %s project, which registers Lathe, in: "):format(KINDS[found.kind])
+    if replays_activation(script) then
+      return nil
+    end
+
+    return ("Lathe: %s at %s by the project's build, which registers Lathe: %s"):format(
+      installed and ("server %s is set up"):format(installed) or "Lathe is set up",
+      root,
+      hint
+    )
+  end
+
+  if not version then
+    return nil
+  end
+
+  local activated = activation(found.kind, version)
+  local current = found.kind == "openjdk" and installed == version
+    or found.kind ~= "openjdk" and script:find(activated, 1, true) ~= nil and exists(activated)
+  return current and ("Lathe: Lathe %s is set up at %s already: %s"):format(version, root, hint)
+    or nil
+end
+
+-- Whether a run (a sync, or this command's download or build) is going at root: then say so.
+local function busy(root)
+  if not require("lathe.sync").busy(root) then
+    return false
+  end
+
+  notify(("a sync or setup is already running at %s."):format(root))
+  return true
+end
+
+-- What :LatheInit is about to do at the root it found, the version it moves from, and whether the
+-- root came from the current file rather than :pwd.
+local function prompt_for(found, from_file, again)
+  local origin = from_file and " (found from the current file)" or ""
+  local repeated = again and " again" or ""
+  if found.registered then
+    return ("Lathe: build the %s project%s%s, which registers Lathe, in: "):format(
+      KINDS[found.kind],
+      repeated,
+      origin
+    )
   end
 
   local version = M.version()
   local installed = server_version(found.root)
   local from = installed and installed ~= version and (" (now %s)"):format(installed) or ""
-  return ("Lathe: set up Lathe %s%s for the %s build in: "):format(version, from, KINDS[found.kind])
+  return ("Lathe: set up Lathe %s%s%s for the %s build%s in: "):format(
+    version,
+    from,
+    repeated,
+    KINDS[found.kind],
+    origin
+  )
 end
 
 -- A root typed below the one found is most often a module, which Lathe does not set up alone.
@@ -648,8 +752,8 @@ end
 
 --- Sets Lathe up for the build around the current file (else `:pwd`), of `kind` if given, after
 --- the user confirms or edits its root; an edited root is taken as typed, a relative one from the
---- root offered.
-function M.run(kind)
+--- root offered. A root set up already gets a message naming `:LatheSync` instead, unless `force`.
+function M.run(kind, force)
   if kind and not KINDS[kind] then
     notify(
       ("unknown build kind %s: use maven, gradle or openjdk."):format(kind),
@@ -665,12 +769,24 @@ function M.run(kind)
     return
   end
 
+  -- A build that registers Lathe picks its own version: a development client builds it too.
+  local version = M.version()
   if not found.registered and not version_to_set_up() then
     return
   end
 
+  if busy(found.root) then
+    return
+  end
+
+  local already = set_up_already(found, version)
+  if already and not force then
+    vim.notify(already, vim.log.levels.INFO, { title = "Lathe" })
+    return
+  end
+
   vim.ui.input({
-    prompt = prompt_for(found),
+    prompt = prompt_for(found, found_from_file(start, found, kind), already ~= nil),
     default = found.root,
     completion = "dir",
   }, function(answer)
@@ -694,6 +810,16 @@ function M.run(kind)
       return
     end
 
+    if busy(chosen.root) then
+      return
+    end
+
+    local chosen_already = chosen ~= found and not force and set_up_already(chosen, version)
+    if chosen_already then
+      vim.notify(chosen_already, vim.log.levels.INFO, { title = "Lathe" })
+      return
+    end
+
     warn_if_module(chosen, found)
     set_up(chosen)
   end)
@@ -701,15 +827,16 @@ end
 
 function M.setup()
   vim.api.nvim_create_user_command("LatheInit", function(cmd)
-    M.run(cmd.args ~= "" and cmd.args or nil)
+    M.run(cmd.args ~= "" and cmd.args or nil, cmd.bang)
   end, {
     nargs = "?",
+    bang = true,
     complete = function()
       local kinds = vim.tbl_keys(KINDS)
       table.sort(kinds)
       return kinds
     end,
-    desc = "Lathe: set Lathe up for the build around the current file",
+    desc = "Lathe: set Lathe up for the build around the current file (! even one set up already)",
   })
 end
 

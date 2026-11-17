@@ -46,16 +46,21 @@ record SourceMtimes(Map<String, Long> byPath) {
 
   // The mtimes recorded before the compile, and the file gone. The snapshot task runs before every
   // compile task, up to date or not: no file means it did not run (left out with -x), so nothing
-  // tells which sources javac read, and none is stamped.
+  // tells which sources javac read, and none is stamped. A file a crash damaged tells as little,
+  // and must not fail the capture, which is best-effort.
   static Map<Path, Long> take(final Path file) throws IOException {
     if (!Files.isRegularFile(file)) {
       return Map.of();
     }
 
-    final SourceMtimes recorded = Json.read(file, SourceMtimes.class);
-    Files.delete(file);
-    return recorded.byPath().entrySet().stream()
-        .collect(
-            Collectors.toUnmodifiableMap(entry -> Path.of(entry.getKey()), Map.Entry::getValue));
+    try {
+      return Json.read(file, SourceMtimes.class).byPath().entrySet().stream()
+          .collect(
+              Collectors.toUnmodifiableMap(entry -> Path.of(entry.getKey()), Map.Entry::getValue));
+    } catch (final IOException e) {
+      return Map.of();
+    } finally {
+      Files.delete(file);
+    }
   }
 }
