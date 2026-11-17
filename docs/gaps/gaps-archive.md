@@ -7,6 +7,31 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-111 — Signatures drop type-parameter bounds and `throws` clauses — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: hover, signature help, and the rendered signature of `describe_symbol` and `analyze_change` (MCP).**
+
+Found by the MCP exploratory round on jdbi (2026-11-17): `Jdbi.withHandle`, declared `public <R, X extends Exception> R withHandle(HandleCallback<R, X> callback) throws X`, rendered as `public <R, X> R withHandle(HandleCallback<R, X> callback)`, and `DriverManager.getConnection` lost its `throws SQLException`.
+An agent writing the call could not see the checked exception it must handle.
+
+### Resolution
+
+Fixed in #362.
+Hover renders each type parameter's bounds as declared, intersections included, and a method's or constructor's thrown types, capped like `permits` and `implements`; signature help shares the same helpers.
+A type parameter is rendered by `MethodStubRenderer`, which override stubs already used, so the two cannot drift.
+Both now leave out only a lone `Object` bound: `Collections.max` declares `<T extends Object & Comparable<? super T>>`, where the `Object` fixes the erasure.
+A type variable's own hover is its declaration (`T extends Number`), no longer `T T`.
+
+### Regression targets
+
+`HoverTest.hover_methodWithBoundAndThrows_rendersBothAsDeclared`, `hover_jdkMethodDeclaringThrows_rendersThrowsClause`, `hover_constructorDeclaringThrows_rendersThrowsClause`, `hover_explicitObjectBound_keptBesideAnotherBound`, `hover_typeWithIntersectionBound_rendersTheBound`, `hover_typeVariable_rendersItsDeclaration`; `SignatureHelpTest.signatureHelp_boundAndThrows_inLabelWithParameterRangeShifted`, `signatureHelp_plainMethod_labelHasNoTypeParametersOrThrows`.
+
+---
+
 ## EG-083 — The outline of `module-info.java` shows only the module line — done
 
 **Status: done** (2026-11-16)
@@ -4039,6 +4064,31 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 ---
 
 # Completion (CQ) — resolved
+
+## CQ-0063 — The first completion in a module not analysed yet answers empty and complete — not a Lathe bug
+
+**Status: non-goal (not a Lathe bug)** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: nothing in Lathe; a test driver calling `client:request_sync(…, 0)` in Neovim.**
+
+Found by the editor exploratory round on jdbi (2026-11-17): the first completion after opening `TestJdbi.java` and typing `h.create` answered no items, `isIncomplete=false`, logging `[completion] parsed valid=false sentinelCtx=null receiver=|null|`.
+
+### Resolution
+
+Reproduced with the round's own driver (`comp4.lua`) on jdbi.
+Neovim's debug LSP log shows the client sent `textDocument/completion` before the `didChange` holding the typed line, so the server completed the text before the edit (`[sentinel-parse] sentinel moved`) and answered correctly for it.
+The driver's helper passed buffer `0` to `request_sync`; Neovim 0.12's `Client:request` flushes pending changes for the buffer number it is given before resolving `0` to the current buffer, so it flushed none, and the edit went out when the 150 ms debounce fired.
+Passing the real buffer number, the same driver's first completion answers 9 items while the module's first analysis is still running (about 1.8 s).
+blink.cmp and `vim.lsp.completion` pass a real buffer number, and Lathe's Neovim client requests with none (flushing every buffer) or a real one.
+On Dropwizard, completion right after opening, whole-text or keystroke by keystroke, answers from the first request.
+
+### Regression targets
+
+None: no Lathe change.
+
+---
 
 ## CQ-0061 — While typing, a `switch` case label offers no enum constants — done
 
@@ -10185,6 +10235,29 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-38 — An empty dependency-source marker fails every later sync — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: every sync (Maven, Gradle, OpenJDK), and every reader of a JSON file Lathe writes, after a crash leaves the file empty or cut off.**
+
+Found while running `mvn clean install` after a machine crash (2026-11-16): a 0-byte `.lathe-source.json` in the Gradle fixtures' Lathe cache made every later sync fail with a `NullPointerException` (`[lathe] workspace files not refreshed`), writing no `workspace.json`, until the cache was deleted by hand.
+Gson reads an empty file as `null`, and a cut-off or zero-filled one throws an unchecked `JsonParseException`; most `Json.read` callers handled neither.
+
+### Resolution
+
+Fixed in #352.
+`Json.read` never returns `null`: an empty file or a parse error is an `IOException` naming the file, which every caller already handles, so the marker is taken as stale and the sources extracted again, and an empty type-index shard is skipped.
+`TestDiscoveryStore` takes a damaged stored discovery as none; an empty run-config layer still holds no entries.
+
+### Regression targets
+
+`JsonTest.read_emptyCutOffOrZeroFilledFile_throwsIOExceptionNamingTheFile`, `DependencySourceSyncTest.extract_emptyMarker_reextractsAndRewritesMarker`, `WorkspaceTypeIndexTest.build_emptyShard_skippedAndOtherShardsLoaded`, `TestDiscoveryStoreTest.read_damagedFile_empty`, `RunConfigWriterTest.save_emptyLocalFile_writesTheConfig`.
+
+---
+
 ## WS-39 — A dependency's sources jar that is not a zip fails the whole sync — done
 
 **Status: done** (2026-11-17)
@@ -10208,7 +10281,7 @@ Replacing that one file with an empty zip lets the same setup succeed.
 `DependencySourceSync.extract` handles each sources jar on its own: one that is not a readable zip (`ZipException`) is skipped with a warning naming the dependency and the jar, and `prepare` records that dependency as one without sources (`MISSING`), as for a dependency that publishes none.
 No marker is written, so a later sync tries the jar again.
 Any other failure, writing the cache say, still fails the sync, now naming the dependency and the jar.
-Related: [WS-38](gaps.md#ws-38--an-empty-dependency-source-marker-fails-every-later-sync), another unreadable dependency-source file that fails every sync.
+Related: [WS-38](#ws-38--an-empty-dependency-source-marker-fails-every-later-sync--done), another unreadable dependency-source file that fails every sync.
 
 ### Regression targets
 
