@@ -2521,6 +2521,177 @@ None yet.
 
 ---
 
+## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
+
+The temporary compile copy comes from `lathe-server` (`CompileTempDirs`), so the editor's definition and rename probably fail the same way; the editor was not checked.
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
+Lathe answers, for that file:
+
+- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
+- `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
+- `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
+
+A file with no `package` line behaves the same, including the silent rename.
+A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
+`find_references` maps every case back to the real file.
+An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
+
+### Fix direction
+
+Map the compile copy back to the source file whatever package javac reads, as `find_references` already does; compile a file whose package differs from its directory as the build does, or say plainly that Lathe needs them to match.
+A rename that finds the symbol must never answer "no references".
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-91 — Tool columns are UTF-16 code units, and nothing says so
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On `\tString label = "😀😀"; int after = count;`, `count` is at character column 35.
+`get_definition` at column 35 answers `Line 9 has no symbol at column 35`; column 37 (UTF-16, two units per emoji) works.
+`outline` lists `after` at `9:29` (character 27) and `find_references` reports `count` at `9:37`.
+The tool descriptions say only "1-based column".
+The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, `McpText.toWire`).
+`symbol` avoids the problem, and edits on such a line are exact.
+
+### Fix direction
+
+Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
+Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-92 — `run_test` runs a test whose dependency no longer compiles
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
+`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
+When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
+Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
+
+### Fix direction
+
+Block the run with the same "does not compile" answer when the classes the test needs do not compile, not only the test's own file.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-93 — `find_references` with `access` on a method answers "No references found"
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `find_references` with `access` set, on a method, type or other symbol that is neither a field nor a variable.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`find_references` on the method `total` with `access="write"` answers `No references found.`, although the method has a use.
+The schema says `access` filters reads and writes of a field or variable.
+
+### Fix direction
+
+Refuse `access` for a symbol it does not apply to, or ignore it and say so; never answer an empty list for a used symbol.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-94 — A `file://` URI as a tool's `file` is read as a relative path
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: every file tool given a `file://` URI instead of a path.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`outline` with `file="file:///…/Edge.java"` answers `/<workspace>/file:/…/Edge.java does not exist`.
+Agents that also drive an LSP carry URIs and may pass one.
+
+### Fix direction
+
+Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
+`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
+`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
+The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
+
+### Fix direction
+
+Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## MC-96 — `verify_change` fails whenever a dependent module has Kotlin sources in a Maven source root
 
 **Status: documented**
