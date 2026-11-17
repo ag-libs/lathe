@@ -481,16 +481,20 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(1, false, uses(use)), McpText.NO_NOTES)))
+                    new LatheReferences(1, false, uses(use), 0), McpText.NO_NOTES)))
         .endsWith("no need to re-verify with grep.")
         .doesNotContain("Kotlin");
-    assertThat(text(McpText.referencesResult(new LatheReferences(1, false, uses(use)), withKotlin)))
+    assertThat(
+            text(McpText.referencesResult(new LatheReferences(1, false, uses(use), 0), withKotlin)))
         .endsWith(kotlinLine)
         .doesNotContain("no need to re-verify");
-    assertThat(text(McpText.referencesResult(new LatheReferences(0, false, List.of()), withKotlin)))
+    assertThat(
+            text(McpText.referencesResult(new LatheReferences(0, false, List.of(), 0), withKotlin)))
         .isEqualTo("No references found.%n%n%s".formatted(kotlinLine));
     assertThat(
-            text(McpText.referencesResult(new LatheReferences(1, false, uses(use)), withGroovyToo)))
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(1, false, uses(use), 0), withGroovyToo)))
         .endsWith(
             "Kotlin sources in app-kotlin and Groovy sources in specs, app-kotlin are not searched; check them with grep.")
         .doesNotContain("no need to re-verify");
@@ -554,7 +558,7 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(2, false, uses(first, second)), McpText.NO_NOTES)))
+                    new LatheReferences(2, false, uses(first, second), 0), McpText.NO_NOTES)))
         .startsWith(
             lines(
                 "2 reference(s):",
@@ -582,7 +586,8 @@ class McpTextTest {
                             new LatheReference(call, LatheReference.Access.OTHER),
                             new LatheReference(dependency, LatheReference.Access.OTHER),
                             new LatheReference(written, LatheReference.Access.WRITE),
-                            new LatheReference(read, LatheReference.Access.READ))),
+                            new LatheReference(read, LatheReference.Access.READ)),
+                        0),
                     McpText.NO_NOTES)))
         .startsWith(
             lines(
@@ -606,8 +611,20 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(0, false, List.of()), McpText.NO_NOTES)))
+                    new LatheReferences(0, false, List.of(), 0), McpText.NO_NOTES)))
         .isEqualTo("No references found.");
+  }
+
+  // MC-93: an access filter that left out every use (a method's calls are neither reads nor
+  // writes) says the symbol has uses, never "No references found."
+  @Test
+  void referencesResult_accessFilterLeftOutEveryUse_saysHowManyUsesThereAre() {
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(0, false, List.of(), 3), McpText.NO_NOTES)))
+        .startsWith("No references with that access found. 3 other use(s) are listed when")
+        .doesNotContain("No references found.");
   }
 
   // The places where the old name is still text are listed for the agent to decide, never edited,
