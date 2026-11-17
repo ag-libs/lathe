@@ -75,16 +75,24 @@ spec.check("format(): pom.xml skips the fold path", fold_called, nil)
 
 -- A Java buffer formats when an attached server formats it (Lathe, or another formatter beside it);
 -- otherwise the user is told why, in Lathe's words when it gives them. The get_clients stub honours
--- the name and method filters, so a check that looked at the wrong client would fail here.
+-- the id, name and method filters, so a check that looked at the wrong client would fail here.
 local attached = {}
 local real_get_clients = vim.lsp.get_clients
+local provider_of = {
+  ["textDocument/formatting"] = "documentFormattingProvider",
+  ["textDocument/rangeFormatting"] = "documentRangeFormattingProvider",
+}
 vim.lsp.get_clients = function(filter)
   return vim.tbl_filter(function(client)
+    if filter.id and client.id ~= filter.id then
+      return false
+    end
+
     if filter.name and client.name ~= filter.name then
       return false
     end
 
-    return not filter.method or client.server_capabilities.documentFormattingProvider == true
+    return not filter.method or client.server_capabilities[provider_of[filter.method]] ~= nil
   end, attached)
 end
 local notes = {}
@@ -114,6 +122,40 @@ lathe.format(java_buf)
 spec.check("format(): another formatting server still formats", fold_called, java_buf)
 spec.check("format(): another formatting server is not explained", #notes, 0)
 
+-- A format asked of Lathe alone is not approved by the other formatter that vim.lsp.buf.format
+-- would then leave out.
+fold_called = nil
+lathe.format(java_buf, { name = "lathe" })
+spec.check("format(): a name filter leaves the other formatter out", fold_called, nil)
+lathe.format(java_buf, {
+  filter = function(client)
+    return client.name == "lathe"
+  end,
+})
+spec.check("format(): a filter leaves the other formatter out", fold_called, nil)
+spec.check("format(): a filtered-out formatter is explained", #notes, 2)
+
+-- A selection needs a server that formats ranges: a whole-file formatter says so.
+notes = {}
+attached = { lathe_client({ documentFormattingProvider = true }) }
+local selection = { start = { 1, 0 }, ["end"] = { 1, 0 } }
+lathe.format(java_buf, { range = selection })
+spec.check("format(): a range with a whole-file formatter skips the fold path", fold_called, nil)
+spec.check(
+  "format(): a range with a whole-file formatter says it formats whole files",
+  notes[1] ~= nil and notes[1]:find("whole files only", 1, true) ~= nil,
+  true
+)
+
+notes = {}
+attached = {
+  lathe_client({ documentFormattingProvider = true, documentRangeFormattingProvider = {} }),
+}
+lathe.format(java_buf, { range = selection })
+spec.check("format(): a range with a range formatter formats", fold_called, java_buf)
+spec.check("format(): a range with a range formatter is not explained", #notes, 0)
+
+notes = {}
 fold_called = nil
 attached = {
   lathe_client({
@@ -133,9 +175,9 @@ attached = { lathe_client({}) }
 lathe.format(java_buf)
 spec.check("format(): an older server's missing reason skips the fold path", fold_called, nil)
 spec.check(
-  "format(): an older server's missing reason points at lathe-style.json",
-  notes[1] ~= nil and notes[1]:find("lathe-style.json", 1, true) ~= nil,
-  true
+  "format(): an older server's missing reason says the server does not format",
+  notes[1],
+  "Lathe: the server does not format this workspace."
 )
 
 notes = {}

@@ -119,7 +119,7 @@ class LatheLanguageServerTest {
     assertThat(capabilities.getExperimental())
         .asInstanceOf(map(String.class, Object.class))
         .hasEntrySatisfying(
-            LatheFlags.FORMATTER_UNAVAILABLE_CAPABILITY,
+            LatheLanguageServer.FORMATTER_UNAVAILABLE_CAPABILITY,
             reason ->
                 assertThat((String) reason)
                     .startsWith("No formatter for this workspace")
@@ -133,7 +133,7 @@ class LatheLanguageServerTest {
 
     assertThat(capabilities.getExperimental())
         .asInstanceOf(map(String.class, Object.class))
-        .doesNotContainKey(LatheFlags.FORMATTER_UNAVAILABLE_CAPABILITY);
+        .doesNotContainKey(LatheLanguageServer.FORMATTER_UNAVAILABLE_CAPABILITY);
   }
 
   @Test
@@ -143,7 +143,7 @@ class LatheLanguageServerTest {
     assertThat(initializeWithRoot(null).getExperimental())
         .asInstanceOf(map(String.class, Object.class))
         .containsEntry(
-            LatheFlags.FORMATTER_UNAVAILABLE_CAPABILITY,
+            LatheLanguageServer.FORMATTER_UNAVAILABLE_CAPABILITY,
             "The project's formatter is not resolved: run `%s` (its output says why when it cannot resolve it)."
                 .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }

@@ -44,6 +44,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   static final String SERVER_NAME = "lathe";
 
+  // Key under capabilities.experimental saying why the server does not format, present only when it
+  // advertises no formatting provider: the editor shows it when the user asks to format. An older
+  // server leaves it out, so it needs no protocol bump.
+  static final String FORMATTER_UNAVAILABLE_CAPABILITY = "latheFormatterUnavailable";
+
   private final SessionHost host = new SessionHost();
   private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService(host);
 
@@ -145,23 +150,17 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
     capabilities.setExecuteCommandProvider(new ExecuteCommandOptions(LatheCommands.ALL));
-    capabilities.setExperimental(experimental(formatEngine, formatSpec));
+    // An editor without a formatting provider cannot ask why: the reason travels with the
+    // handshake, fixed for the session as the provider itself is.
+    capabilities.setExperimental(
+        formatEngine != null
+            ? Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL)
+            : Map.of(
+                LatheFlags.PROTOCOL_CAPABILITY,
+                LatheFlags.LATHE_PROTOCOL,
+                FORMATTER_UNAVAILABLE_CAPABILITY,
+                FormatService.unavailable(formatSpec)));
     return capabilities;
-  }
-
-  // An editor without a formatting provider cannot ask why: the reason travels with the handshake,
-  // fixed for the session as the provider itself is.
-  private static Map<String, Object> experimental(
-      final FormatEngine formatEngine, final FormatterSpec formatSpec) {
-    if (formatEngine != null) {
-      return Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL);
-    }
-
-    return Map.of(
-        LatheFlags.PROTOCOL_CAPABILITY,
-        LatheFlags.LATHE_PROTOCOL,
-        LatheFlags.FORMATTER_UNAVAILABLE_CAPABILITY,
-        FormatService.unavailable(formatSpec));
   }
 
   @Override

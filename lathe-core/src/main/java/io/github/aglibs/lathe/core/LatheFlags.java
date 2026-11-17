@@ -103,11 +103,6 @@ public final class LatheFlags {
   // Key under InitializeResult capabilities.experimental that carries LATHE_PROTOCOL to the client.
   public static final String PROTOCOL_CAPABILITY = "latheProtocol";
 
-  // Key under capabilities.experimental saying why the server does not format, present only when it
-  // advertises no formatting provider: the editor shows it when the user asks to format. An older
-  // server leaves it out, so it needs no protocol bump.
-  public static final String FORMATTER_UNAVAILABLE_CAPABILITY = "latheFormatterUnavailable";
-
   private LatheFlags() {}
 
   public static boolean isDisabled() {

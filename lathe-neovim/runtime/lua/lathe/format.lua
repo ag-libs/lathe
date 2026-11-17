@@ -1,21 +1,31 @@
 -- Formatting a Java buffer without reopening its imports fold: on demand (:LatheFormat) and, when
 -- asked for, on every save.
+local util = require("lathe.util")
+
 local M = {}
 
--- What a server that formats nothing says why with (capabilities.experimental), and what an older
--- server that does not say is answered with.
+-- Where a server that formats nothing says why (capabilities.experimental); an older server does
+-- not.
 local UNAVAILABLE_CAPABILITY = "latheFormatterUnavailable"
-local NO_FORMATTER = "No formatter for this workspace: declare one in lathe-style.json to format here."
 
--- Why `bufnr` cannot be formatted, nil when an attached server formats it: Lathe, or another
--- formatter the user runs beside it, which vim.lsp.buf.format uses too. Neovim's own answer, "no
--- matching language servers", reads as if Lathe were not running.
-local function cannot_format(bufnr)
-  if #vim.lsp.get_clients({ bufnr = bufnr, method = "textDocument/formatting" }) > 0 then
+-- Why `bufnr` cannot be formatted with `opts`, nil when an attached server would format it: Lathe,
+-- or another formatter the user runs beside it. The clients are picked as vim.lsp.buf.format picks
+-- them, so a check that passes is a format that runs. Neovim's own answer, "no matching language
+-- servers", reads as if Lathe were not running.
+local function cannot_format(bufnr, opts)
+  opts = opts or {}
+  local method = opts.range and "textDocument/rangeFormatting" or "textDocument/formatting"
+  local clients =
+    vim.lsp.get_clients({ bufnr = bufnr, id = opts.id, name = opts.name, method = method })
+  if opts.filter then
+    clients = vim.tbl_filter(opts.filter, clients)
+  end
+
+  if #clients > 0 then
     return nil
   end
 
-  local client = vim.lsp.get_clients({ bufnr = bufnr, name = "lathe" })[1]
+  local client = util.client(bufnr)
   if not client then
     return "server not attached — formatting needs the language server."
   end
@@ -25,8 +35,12 @@ local function cannot_format(bufnr)
     return "the language server is still starting; format again once it is ready."
   end
 
+  if opts.range and client.server_capabilities.documentFormattingProvider then
+    return "the project's formatter formats whole files only; format the whole buffer instead."
+  end
+
   return vim.tbl_get(client.server_capabilities, "experimental", UNAVAILABLE_CAPABILITY)
-    or NO_FORMATTER
+    or "the server does not format this workspace."
 end
 
 -- On-demand formatting that keeps a closed imports fold from springing open (NV-3). Map a format
@@ -40,9 +54,9 @@ function M.format(bufnr, opts)
     return
   end
 
-  local reason = cannot_format(bufnr)
+  local reason = cannot_format(bufnr, opts)
   if reason then
-    vim.notify("Lathe: " .. reason, vim.log.levels.WARN, { title = "Lathe" })
+    util.notify(reason, vim.log.levels.WARN)
     return
   end
 
