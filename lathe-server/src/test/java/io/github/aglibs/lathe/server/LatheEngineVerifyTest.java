@@ -13,8 +13,11 @@ import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.github.aglibs.lathe.server.engine.Noted;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -769,6 +772,152 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(verify.perModule())
         .flatMap(LatheModuleDiagnostics::diagnostics)
         .anyMatch(d -> d.path().equals(usePath));
+  }
+
+  // A Kotlin caller, as kotlinc writes jdbi's kotlin-sqlobject tests into the module's classes, is
+  // found by its compiled class, whose SourceFile names a .kt file. javac cannot read it, so it is
+  // named as not checked instead of failing the check; its module is still one to build, and the
+  // Java callers are checked.
+  @Test
+  void verifyChange_callerCompiledFromKotlin_namesItAsNotCheckedAndChecksTheRest()
+      throws Exception {
+    final Path span =
+        TestCompiler.writeMirroredModule(tmp, "api", spanApi(), List.of(), 1_000L).get(0);
+    final var user = new LinkedHashMap<String, String>();
+    user.put(
+        "com/example/user/Use.java",
+        """
+        package com.example.user;
+        class Use {
+          int u(com.example.api.Holder h) { return h.span().seconds(); }
+        }
+        """);
+    user.put(
+        "com/example/user/KtUse.java",
+        """
+        package com.example.user;
+        class KtUse {
+          int k(com.example.api.Holder h) { return h.span().seconds(); }
+        }
+        """);
+    final List<Path> users =
+        TestCompiler.writeMirroredModule(tmp, "user", user, List.of("api"), 1_000L);
+    final Path kotlin = compiledFromKotlin("user", users.get(1));
+    engine = new LatheEngine(tmp);
+
+    writeNewer(span, SPAN_RENAMED);
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    final String usePath = FileUtil.slashed(tmp.relativize(users.get(0)));
+    assertThat(verify.perModule())
+        .flatMap(LatheModuleDiagnostics::diagnostics)
+        .anyMatch(d -> d.path().equals(usePath) && d.message().contains("seconds"))
+        .noneMatch(d -> d.path().endsWith(".kt"));
+    assertThat(verify.uncheckedCallers()).containsExactly(FileUtil.slashed(tmp.relativize(kotlin)));
+    assertThat(verify.affectedModules()).contains("user");
+  }
+
+  // A Kotlin caller in the changed module itself is never a module to build, so only the unchecked
+  // list keeps it from passing as compiling.
+  @Test
+  void verifyChange_kotlinCallerInTheChangedModule_namesItAsNotChecked() throws Exception {
+    final var api = new LinkedHashMap<>(spanApi());
+    api.put(
+        "com/example/api/KtSame.java",
+        """
+        package com.example.api;
+        class KtSame {
+          int k(Holder h) { return h.span().seconds(); }
+        }
+        """);
+    final List<Path> sources = TestCompiler.writeMirroredModule(tmp, "api", api, List.of(), 1_000L);
+    final Path kotlin = compiledFromKotlin("api", sources.get(2));
+    engine = new LatheEngine(tmp);
+
+    writeNewer(sources.get(0), SPAN_RENAMED);
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.uncheckedCallers()).containsExactly(FileUtil.slashed(tmp.relativize(kotlin)));
+    assertThat(verify.perModule())
+        .flatMap(LatheModuleDiagnostics::diagnostics)
+        .noneMatch(d -> d.path().endsWith(".kt"));
+  }
+
+  private static final String SPAN_RENAMED =
+      """
+      package com.example.api;
+      public class Span {
+        public int secs() { return 1; }
+      }
+      """;
+
+  // Span first, reached by callers only through Holder's chain.
+  private static Map<String, String> spanApi() {
+    final var api = new LinkedHashMap<String, String>();
+    api.put(
+        "com/example/api/Span.java",
+        """
+        package com.example.api;
+        public class Span {
+          public int seconds() { return 1; }
+        }
+        """);
+    api.put(
+        "com/example/api/Holder.java",
+        """
+        package com.example.api;
+        public class Holder {
+          public Span span() { return new Span(); }
+        }
+        """);
+    return api;
+  }
+
+  // Makes a compiled caller look as kotlinc leaves one: a .kt source beside it, which its class's
+  // SourceFile names. The .java stays, so the build's stamps still match the sources.
+  private Path compiledFromKotlin(final String module, final Path javaSource) throws Exception {
+    final Path sourceRoot = tmp.resolve(module).resolve("src/main/java");
+    final String name = javaSource.getFileName().toString();
+    final String kotlinName = name.replace(".java", ".kt");
+    final Path kotlin = Files.writeString(javaSource.resolveSibling(kotlinName), "// kotlinc\n");
+    final String classRel =
+        FileUtil.slashed(sourceRoot.relativize(javaSource)).replace(".java", ".class");
+    renameSourceFile(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(module).resolve("classes").resolve(classRel),
+        name,
+        kotlinName);
+    return kotlin;
+  }
+
+  // Rewrites a class's SourceFile name, as kotlinc writes one for a .kt file. The name is a
+  // length-prefixed constant-pool entry that no offset points at, so it may change length.
+  private static void renameSourceFile(final Path classFile, final String from, final String to)
+      throws Exception {
+    final byte[] bytes = Files.readAllBytes(classFile);
+    final byte[] entry = utf8Constant(from);
+    int at = -1;
+    for (int i = 0; i + entry.length <= bytes.length && at < 0; i++) {
+      if (Arrays.equals(bytes, i, i + entry.length, entry, 0, entry.length)) {
+        at = i;
+      }
+    }
+
+    assertThat(at).as("SourceFile constant %s in %s", from, classFile).isNotNegative();
+    final var out = new ByteArrayOutputStream();
+    out.write(bytes, 0, at);
+    out.write(utf8Constant(to));
+    out.write(bytes, at + entry.length, bytes.length - at - entry.length);
+    Files.write(classFile, out.toByteArray());
+  }
+
+  private static byte[] utf8Constant(final String value) {
+    final byte[] text = value.getBytes(StandardCharsets.UTF_8);
+    final var constant = new byte[text.length + 3];
+    constant[0] = 1;
+    constant[1] = (byte) (text.length >> 8);
+    constant[2] = (byte) text.length;
+    System.arraycopy(text, 0, constant, 3, text.length);
+    return constant;
   }
 
   @Test
