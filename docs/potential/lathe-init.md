@@ -103,7 +103,8 @@ Lathe: set up Lathe 0.3.1 (now 0.3.0) for the Maven build in: ~/work/app█
 - **No argument:** the kind and the root are detected ([below](#finding-the-builds-root)); a kind given looks only for that kind's root.
 - **The root is confirmed in a prompt**, pre-filled and editable, with folder completion: Enter accepts it, an edited root is taken as typed (no walking up), a relative one from the root offered, its kind read from its own files. Arguments mixing a kind and a folder were set aside as awkward to type and read.
 - **The prompt says what will happen:** the version brought in and the one set up now, or that the build registers Lathe and just builds. A root typed inside the one found gets a warning that a module is not set up alone; the build still runs, as the guess may be the wrong one.
-- **The prompt says where the root came from** when it was found from the current file outside `:pwd` ("found from the current file"): the file in the window, not the folder Neovim was started in, picked the project.
+- **The prompt says where the root came from** ("found from the current file") when the current file picked a root that `:pwd` would not have: walking up from `:pwd` finds another root, or none.
+  A file outside `:pwd` whose walk ends at the same root as `:pwd`'s gets no note, as the folder Neovim was started in picks the same project.
 - **A development client** without `LATHE_VERSION` is told so before the prompt, unless the build registers Lathe.
 - **It never syncs:** with no build found but a `.lathe/` present, it says `:LatheSync` refreshes it, and a root set up already gets the same message instead of a build ([below](#a-root-set-up-already)).
 - **A root with a run going** (a sync, or `:LatheInit`'s own download or build) asks nothing and says so.
@@ -128,7 +129,7 @@ When the build ends with a launcher, the client starts the server for the open J
 
 **Agreed 2026-11-16.** `:LatheInit` on a project its build had set up ran the whole first build again, a `clean test` that changed nothing `:LatheSync` would not.
 Running it again is still right when it changes how Lathe gets into the build, so the client builds only then.
-A root is set up when its build's sync wrote `workspace.json` and the launcher; one that is not (no `.lathe/`, a first build that stopped, a workspace without a server) always builds.
+A root is set up when its build's sync wrote `workspace.json`, the launcher and the sync script, the last two executable, as `:LatheSync` and the server start need them; one that is not (no `.lathe/`, a first build that stopped, a workspace without a server) always builds.
 On a root set up, the build at that root decides:
 
 | The build | Set up already when | So these still build |

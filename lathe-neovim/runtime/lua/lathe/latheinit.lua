@@ -283,7 +283,8 @@ local function java_buffers_under(root)
   end, vim.api.nvim_list_bufs())
 end
 
--- The Lathe version the build set up, which the workspace records.
+-- The Lathe version the build set up, which the workspace records; nil when it records none (a
+-- JSON null decodes to vim.NIL, which is truthy).
 local function server_version(root)
   local manifest = workspace.manifest_path(root)
   if not exists(manifest) then
@@ -291,7 +292,8 @@ local function server_version(root)
   end
 
   local ok, decoded = pcall(vim.json.decode, read(manifest))
-  return ok and type(decoded) == "table" and decoded.serverVersion or nil
+  local version = ok and type(decoded) == "table" and decoded.serverVersion
+  return type(version) == "string" and version or nil
 end
 
 -- Names the version set up, and says when the build pinned another than the one asked for.
@@ -639,7 +641,8 @@ local function replays_activation(script)
 end
 
 -- Why building found's root would change nothing (a message naming :LatheSync), else nil. A root is
--- set up when its build's sync wrote the manifest and the launcher. Then a build that registers
+-- set up when its build's sync wrote the manifest, the launcher and the sync script, the last two
+-- executable as the server start and :LatheSync need them. Then a build that registers
 -- Lathe picks the version itself, unless its script still replays a personal setup's activation,
 -- which would override that registration until a build renders a new script. An OpenJDK checkout
 -- is set up at this version; a personal build when its script brings this version in for this kind
@@ -647,15 +650,17 @@ end
 -- builds: another version, one rendered while the build registered Lathe, the other kind's.
 local function set_up_already(found, version)
   local root = found.root
+  local script_path = vim.fs.joinpath(root, workspace.SYNC_SCRIPT)
   if
     not exists(workspace.manifest_path(root))
-    or not exists(workspace.workspace_launcher_path(root))
+    or vim.fn.executable(workspace.workspace_launcher_path(root)) ~= 1
+    or vim.fn.executable(script_path) ~= 1
   then
     return nil
   end
 
   local installed = server_version(root)
-  local script = read(vim.fs.joinpath(root, workspace.SYNC_SCRIPT))
+  local script = read(script_path)
   local hint = ("`:LatheSync` refreshes it, and `:LatheInit!` %s."):format(
     found.kind == "maven" and "rebuilds it from clean" or "sets it up again"
   )
@@ -675,10 +680,9 @@ local function set_up_already(found, version)
     return nil
   end
 
+  local activated = activation(found.kind, version)
   local current = found.kind == "openjdk" and installed == version
-    or found.kind ~= "openjdk"
-      and script:find(activation(found.kind, version), 1, true) ~= nil
-      and exists(activation(found.kind, version))
+    or found.kind ~= "openjdk" and script:find(activated, 1, true) ~= nil and exists(activated)
   return current and ("Lathe: Lathe %s is set up at %s already: %s"):format(version, root, hint)
     or nil
 end

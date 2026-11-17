@@ -613,9 +613,8 @@ spec.check("and says to reinstall", last_note_has("reinstall the plugin"), true)
 local function set_up(dir, version, script)
   executable(work .. dir .. "/.lathe/lathe-launcher.sh")
   write(work .. dir .. "/.lathe/workspace.json", ('{"serverVersion": "%s"}'):format(version))
-  if script then
-    write(work .. dir .. "/.lathe/lathe-sync.sh", script)
-  end
+  write(work .. dir .. "/.lathe/lathe-sync.sh", script or "#!/bin/sh")
+  vim.fn.setfperm(work .. dir .. "/.lathe/lathe-sync.sh", "rwxr-xr-x")
 end
 write(work .. "/ready-team/.mvn/extensions.xml", "<artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/ready-team/pom.xml")
@@ -641,6 +640,29 @@ spec.check(
 )
 spec.check("and builds", #calls, before + 1)
 finish_build(0)
+
+-- :LatheSync needs the sync script and the server start an executable launcher: without either,
+-- the root is not set up.
+vim.fn.delete(work .. "/ready-team/.lathe/lathe-sync.sh")
+before = #calls
+run_from("/ready-team")
+spec.check("a registered build without a sync script builds again", #calls, before + 1)
+finish_build(0)
+set_up("/ready-team", "7.0.0")
+vim.fn.setfperm(work .. "/ready-team/.lathe/lathe-launcher.sh", "rw-r--r--")
+before = #calls
+run_from("/ready-team")
+spec.check("a launcher that is not executable builds again", #calls, before + 1)
+finish_build(0)
+set_up("/ready-team", "7.0.0")
+write(work .. "/ready-team/.lathe/workspace.json", '{"serverVersion": null}')
+run_from("/ready-team")
+spec.check(
+  "a workspace that records no version names none",
+  last_note_has("Lathe: Lathe is set up at " .. work .. "/ready-team by the project's build"),
+  true
+)
+set_up("/ready-team", "7.0.0")
 
 write(work .. "/no-launcher/pom.xml", "<artifactId>lathe-maven-extension</artifactId>")
 write(work .. "/no-launcher/.lathe/workspace.json", '{"serverVersion": "7.0.0"}')
@@ -753,6 +775,9 @@ spec.check(
   last_note_has("already running at " .. work .. "/multi"),
   true
 )
+next_answer = work .. "/multi/core"
+run_from("/ready-maven")
+spec.check("a typed root inside one with a run going runs nothing", #calls, before)
 finish_build(0)
 
 -- A root found from the current file outside :pwd says so in the prompt.
