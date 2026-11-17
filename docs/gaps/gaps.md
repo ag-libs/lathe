@@ -745,6 +745,59 @@ None yet.
 
 ---
 
+## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: go to definition on a parameter type inside a Javadoc member reference (`@see #m(Type)`, `{@link #m(Type)}`).**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+In jdbi's `Jdbi.java`, line 362 reads `@see #withHandle(HandleCallback)`.
+Definition with the cursor on `HandleCallback` lands on `Jdbi.java:410`, the `withHandle` method, as it does on `withHandle` itself.
+The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `HandleCallback.java:22`.
+
+### Fix direction
+
+Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-111 — Signatures drop type-parameter bounds and `throws` clauses
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: the rendered signature of `describe_symbol` and `analyze_change` (MCP), and probably hover, which renders the same way (unverified).**
+
+Found by the MCP exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+jdbi's `Jdbi.withHandle` is declared `public <R, X extends Exception> R withHandle(HandleCallback<R, X> callback) throws X`.
+`describe_symbol` and `analyze_change` render it as `public <R, X> R withHandle(HandleCallback<R, X> callback)`: the bound `extends Exception` and `throws X` are gone.
+The JDK's `DriverManager.getConnection(String url)`, declared `throws SQLException`, renders without it too.
+An agent reading the signature to write a call cannot see the checked exception it must handle.
+
+### Fix direction
+
+Render each type parameter's bounds and the method's thrown types, as javac's own signature does.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1169,6 +1222,34 @@ None yet.
 
 ---
 
+## CQ-0063 — The first completion in a module not analysed yet answers empty and complete
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion right after opening a file in a module of a large workspace, before the module's first analysis; Neovim with blink.cmp or `vim.lsp.completion`.**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+Open `core/src/test/java/org/jdbi/v3/core/TestJdbi.java`, type `h.create` inside `try (Handle h = db.open()) { … }`, and ask for completion about three seconds after opening.
+The answer takes about 1.7 s and is `items=0 incomplete=false`; the FINE log reads `[completion] parsed valid=false sentinelCtx=null receiver=|null| class=null method=null role=ORDINARY`.
+A second later the same request goes through `[completion] inject prefix=|create| receiver=|h|` and answers 9 items (`createBatch` first).
+Six requests in a row right after opening all answered 0 items; the small two-module fixture never does.
+Because the empty answer says it is complete, the client does not ask again: the user sees no completion on the first keystrokes.
+
+### Fix direction
+
+Find why the sentinel recovery is skipped before the module's first analysis (the incomplete-text path needs it); until it can run, wait for it or answer `isIncomplete=true` so the client asks again.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
@@ -1465,6 +1546,35 @@ None yet.
 
 ---
 
+## WS-39 — A dependency's sources jar that is not a zip fails the whole sync
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: every sync (Maven, Gradle, OpenJDK) of a project with a dependency whose published `-sources.jar` is not a valid zip — `com.ibm.db2:jcc:12.1.4.0` on Maven Central, so any project using the DB2 JDBC driver.**
+
+Found by the editor exploratory round on jdbi (2026-11-17), whose `testcontainers` module depends on the DB2 driver.
+
+### Observed behaviour
+
+`jcc-12.1.4.0-sources.jar` on Central is a 189-byte text file (an IBM copyright notice), published that way with a matching checksum.
+`:LatheInit` on jdbi fails after the build compiles nothing:
+`Failed to execute goal io.github.ag-libs:lathe-maven-plugin:0.1.0-SNAPSHOT:sync (lathe-sync) on project jdbi3-parent: Lathe sync failed to extract source artifacts: java.util.zip.ZipException: zip END header not found`.
+`DependencySourceSync.extract` turns the first unreadable jar into a `SyncException`; the message does not name the jar, and no other module is set up.
+Replacing that one file with an empty zip lets the same setup succeed.
+
+### Fix direction
+
+Skip a sources jar that cannot be read, with one warning naming its coordinates, and set up the rest; dependency sources only serve navigation.
+Related: [WS-38](#ws-38--an-empty-dependency-source-marker-fails-every-later-sync), another unreadable dependency-source file that fails every sync.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1618,6 +1728,36 @@ None yet.
 
 ---
 
+
+## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: Maven modules whose capture-only test run reports `Tests run: 0` (seen on jdbi: `core`, `sqlobject`, `postgres`, `spring` and others); `run_test`, neotest and `:LatheRun` on their tests.**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+`:LatheInit` on jdbi succeeds and captures 21 modules' test launches, but not `core`, `sqlobject` and other modules with tests; nothing in the output says so.
+Running `TestJdbi` then answers `blocked: no captured test launch for core; run .lathe/lathe-sync.sh --tests core`, and that command again reports `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0` and writes no `.lathe/core/test-launch.json`.
+`lathe-junit` is on the fork's test classpath (`-X`), Surefire uses the JUnit Platform provider with `forkCount=4`, and no fork reports a test class.
+`vavr`, with the same Surefire settings, captures (its dry run reports 3 skipped tests).
+`-Dtest=TestJdbi -Dlathe.capture.only=true` on `core` captures the launch (8 skipped).
+`CaptureLauncherSessionListener` swallows every `Throwable`, so a failed capture leaves no trace.
+[EG-067](#eg-067--the-first-build-floods-the-log-with-warnings) saw `Tests run: 0, Skipped: 0` on EqualsVerifier's `equalsverifier-core` and `equalsverifier-test`; whether those were captured is not recorded.
+
+### Fix direction
+
+Find why the whole-module dry run starts no test class in these modules; whatever the cause, have the sync say which modules ran tests but captured no launch, and have the listener print why a capture failed instead of nothing.
+
+### Regression targets
+
+None yet.
+
+---
 
 # Debug & Evaluation Gaps (DB)
 
@@ -2395,3 +2535,58 @@ Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-wo
 ### Regression targets
 
 None yet.
+
+---
+
+## MC-96 — `verify_change` fails whenever a dependent module has Kotlin sources in a Maven source root
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `verify_change` on a Maven reactor where a module that depends on the change registers a Kotlin source root (jdbi's `kotlin-sqlobject`, `src/test/kotlin`).**
+
+Found by the MCP exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+After any edit in jdbi's `core` (a new method nobody calls, or a 54-file rename), `verify_change` answers only `the request failed; see the server log`.
+The log: `IllegalArgumentException: Compilation unit is not of SOURCE kind: "/tmp/lathe-compile-…/org/jdbi/v3/sqlobject/kotlin/TestIssue2961.kt"`, from `JavacRunner.createTask` under `JavacRunner.attributeBatch` while checking the dependents.
+The `.kt` file is `kotlin-sqlobject/src/test/kotlin/…/TestIssue2961.kt`.
+With nothing changed, or after a deletion, `verify_change` answers normally; on resilience4j (Gradle, Kotlin module `resilience4j-kotlin`) it works.
+On jdbi an agent cannot check any change to `core`.
+
+### Fix direction
+
+Never hand a non-`.java` file to javac when collecting a dependent module's sources; check the rest and name the Kotlin sources as not checked, as the other tools already do (`Kotlin sources in … are not searched`).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: `verify_change` while the project's own `.lathe/lathe-sync.sh` (or any build Lathe sees writing `.lathe/`) runs.**
+
+Found by the MCP exploratory round on resilience4j (2026-11-17).
+
+### Observed behaviour
+
+During a `latheSync`, every `verify_change` answers at once ``Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.``; the first call after the build ends checks normally.
+Not stalling is right, but the advice is to start a second build while the first runs; an agent following it doubles the wait.
+`McpText.verifyChangeResult` names the suggested sync whenever there is one, whatever the deferral.
+
+### Fix direction
+
+For a build in progress, say to wait for it to finish and re-check; name the sync only when what is missing is one.
+
+### Regression targets
+
+None yet.
+
