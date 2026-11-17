@@ -450,6 +450,8 @@ reused):
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
   live-watch/gitignore/Neovim analysis) the successor builds on.
 - [Shared Workspace Server](potential/lathe-shared-workspace-server.md) — no active milestone commitment.
+- [Test Capture and Running on Java 8](potential/lathe-java8-test-capture.md) — **potential; Java 8 the priority.**
+  Capture, run and debug tests the build runs on a JDK older than 17: everything that loads in the test JVM (`lathe-junit`, `lathe-test-runner`, one small `lathe-core` class; shading kept) compiles with `--release 8`, `test-launch.json` keeps its format, and a classpath jar replaces the argfile on Java 8.
 - [External Content Directory](potential/lathe-external-content-dir.md) — opt-in redirection of the
   bulky generated `.lathe/` mirror to a Lathe-generated `~/.cache/lathe/projects/<id>` dir via a boolean
   `lathe.content.cached` (default in-tree, no behavior change), keeping `.lathe/` as a tiny marker.
