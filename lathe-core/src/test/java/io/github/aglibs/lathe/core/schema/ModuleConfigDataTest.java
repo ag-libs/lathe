@@ -28,6 +28,7 @@ class ModuleConfigDataTest {
             List.of("--enable-preview"),
             AnalysisMode.MODULE_SYSTEM,
             true,
+            null,
             null);
     assertThat(data.sourceTree()).isEqualTo("classes");
     assertThat(data.compilerArgs()).containsExactly("--enable-preview");
@@ -49,7 +50,7 @@ class ModuleConfigDataTest {
   private static ModuleConfigData config(final String tree, final Boolean testCode) {
     return new ModuleConfigData(
         tree, "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false, false,
-        null, null, null, false, testCode);
+        null, null, null, false, testCode, null);
   }
 
   @Test
@@ -57,7 +58,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, null, null, false, null);
+            false, null, null, null, false, null, null);
     assertThat(data.analysisMode()).isEqualTo(AnalysisMode.CLASSPATH);
   }
 
@@ -67,7 +68,7 @@ class ModuleConfigDataTest {
             () ->
                 new ModuleConfigData(
                     null, "/out", null, List.of(), List.of(), List.of(), List.of(), null, null,
-                    false, false, null, null, null, false, null))
+                    false, false, null, null, null, false, null, null))
         .hasMessageContaining("sourceTree");
   }
 
@@ -76,7 +77,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, null, null, false, null);
+            false, null, null, null, false, null, null);
     assertThat(data.compilerArgs()).isEmpty();
     assertThat(data.encoding()).isEqualTo("UTF-8");
   }
@@ -88,7 +89,7 @@ class ModuleConfigDataTest {
     final var data =
         new ModuleConfigData(
             "classes", "/out", null, List.of(), List.of(), List.of(), List.of(), null, null, false,
-            false, null, mutable, null, false, null);
+            false, null, mutable, null, false, null, null);
     mutable.add("-Abar");
     assertThat(data.compilerArgs()).containsExactly("-Afoo");
   }

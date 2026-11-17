@@ -69,7 +69,7 @@ final class LatheModelInjector {
   }
 
   // The shim names a .lathe/ tree by scope, not by the output directory's leaf: tell it which
-  // scope each of this project's output directories compiles.
+  // scope each of this project's output directories compiles, and the build directory it is in.
   void injectTreeScopes(final MavenProject project) {
     System.setProperty(
         LatheLayout.Maven.treeProperty(project.getBuild().getOutputDirectory()),
@@ -77,6 +77,15 @@ final class LatheModelInjector {
     System.setProperty(
         LatheLayout.Maven.treeProperty(project.getBuild().getTestOutputDirectory()),
         LatheLayout.TEST_CLASSES_DIR);
+    final String buildDir = project.getBuild().getDirectory();
+    if (buildDir == null) {
+      return;
+    }
+
+    System.setProperty(
+        LatheLayout.Maven.buildDirProperty(project.getBuild().getOutputDirectory()), buildDir);
+    System.setProperty(
+        LatheLayout.Maven.buildDirProperty(project.getBuild().getTestOutputDirectory()), buildDir);
   }
 
   void injectCaptureDependency(final MavenProject project) {

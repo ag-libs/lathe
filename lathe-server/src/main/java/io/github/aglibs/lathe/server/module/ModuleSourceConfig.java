@@ -38,7 +38,9 @@ public record ModuleSourceConfig(
     // test-classes tree is.
     Boolean testCode,
     // Maps sibling modules' build outputs on the paths above to their .lathe/ mirrors.
-    ReactorRewrite reactorRewrite) {
+    ReactorRewrite reactorRewrite,
+    // The build tool's output directory, when the capture recorded it.
+    Path buildDir) {
 
   public ModuleSourceConfig {
     // Older maven-compiler-plugin versions list their processor output among the source locations;
@@ -159,7 +161,8 @@ public record ModuleSourceConfig(
         config.analysisMode(),
         config.externalOutput(),
         config.testCode(),
-        reactorRewrite);
+        reactorRewrite,
+        config.buildDir() != null ? Path.of(config.buildDir()) : null);
   }
 
   private static List<Path> toPaths(final List<String> strings) {

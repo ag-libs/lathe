@@ -76,6 +76,7 @@ class LatheCaptureTaskFunctionalTest {
     final var main = params("", LatheLayout.CLASSES_DIR);
     assertThat(main.sourceRoots()).containsExactly(fixture.path("src/main/java"));
     assertThat(main.outputDir()).isEqualTo(fixture.path("build/classes/java/main"));
+    assertThat(main.buildDir()).isEqualTo(fixture.path("build"));
     // No --release: Gradle compiled with -source/-target against its toolchain's JDK, as nothing
     // set options.release, and the args carry all three, so the server compiles alike on a newer
     // JDK too.

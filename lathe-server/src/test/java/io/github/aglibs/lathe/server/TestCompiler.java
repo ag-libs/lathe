@@ -95,7 +95,8 @@ public final class TestCompiler {
         config.analysisMode(),
         config.externalOutput(),
         testCode,
-        config.reactorRewrite());
+        config.reactorRewrite(),
+        config.buildDir());
   }
 
   public static ModuleSourceConfig moduleConfig(
@@ -136,7 +137,8 @@ public final class TestCompiler {
         null,
         false,
         null,
-        ReactorRewrite.none());
+        ReactorRewrite.none(),
+        null);
   }
 
   // MODULE_SYSTEM analysis: blank release (so patching a system module is not rejected), no
@@ -162,7 +164,8 @@ public final class TestCompiler {
         AnalysisMode.MODULE_SYSTEM,
         true,
         null,
-        ReactorRewrite.none());
+        ReactorRewrite.none(),
+        null);
   }
 
   // Compiles, under root, a processor that warns "noted by processor" on every root element but one
@@ -492,7 +495,8 @@ public final class TestCompiler {
             compilerArgs,
             null,
             externalOutput,
-            testCode);
+            testCode,
+            null);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree));
     Json.write(config, paramsFile);
   }

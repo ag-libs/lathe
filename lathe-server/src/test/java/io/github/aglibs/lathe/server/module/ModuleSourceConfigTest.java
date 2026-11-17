@@ -108,7 +108,8 @@ class ModuleSourceConfigTest {
             config.analysisMode(),
             config.externalOutput(),
             config.testCode(),
-            config.reactorRewrite());
+            config.reactorRewrite(),
+            config.buildDir());
 
     assertThat(config(null, src)).isEqualTo(config).hasSameHashCodeAs(config);
     assertThat(otherClasspath).isNotEqualTo(config).hasSameHashCodeAs(config);
@@ -146,7 +147,8 @@ class ModuleSourceConfigTest {
             null,
             false,
             null,
-            rewrite);
+            rewrite,
+            null);
 
     assertThat(config.remappedClasspath())
         .containsExactly(LATHE_DIR.resolve("platform/core/classes"), external, inRepoJar);
