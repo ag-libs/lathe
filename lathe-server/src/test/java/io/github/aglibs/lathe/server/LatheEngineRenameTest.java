@@ -244,6 +244,53 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
     assertThat(Files.readString(generated)).isEqualTo(generatedSource);
   }
 
+  // A code-generation task's output root under the build directory, compiled as any source: the
+  // next build writes it again, so an edit there would be lost and the rename is refused whole.
+  @Test
+  void rename_methodCalledFromBuildTaskOutput_refusesNamingTheFileAndEditsNothing()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    final Path buildDir = tmp.resolve("module/build");
+    final Path codegen = buildDir.resolve("generated/sources/codegen");
+    final String generatedSource =
+        "package com.example; class GreetPolicy { void run(Callee c) { c.greet(); } }";
+    final Path generated =
+        TestCompiler.writeAt(
+            codegen.resolve("com/example/GreetPolicy.java"), generatedSource, 1_000L);
+    TestCompiler.writeBuildOutputParams(
+        tmp, "module", tmp.resolve("module/src/main/java"), codegen, buildDir);
+    compileIntoMirror(fx.callee(), fx.caller(), generated);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome"))
+        .hasMessageContaining(
+            "`greet` cannot be renamed: GreetPolicy.java, which a build task generates, uses it");
+    assertThat(Files.readString(generated)).isEqualTo(generatedSource);
+    assertThat(Files.readString(fx.callee())).isEqualTo(fx.calleeSource());
+    assertThat(Files.readString(fx.caller())).isEqualTo(fx.callerSource());
+  }
+
+  // The same root holding no use of the symbol leaves the rename as it is.
+  @Test
+  void rename_methodUnusedInBuildTaskOutput_renamesTheHandWrittenSources() throws Exception {
+    final GreetFixture fx = greetFixture();
+    final Path buildDir = tmp.resolve("module/build");
+    final Path codegen = buildDir.resolve("generated/sources/codegen");
+    final Path generated =
+        TestCompiler.writeAt(
+            codegen.resolve("com/example/GreetPolicy.java"),
+            "package com.example; class GreetPolicy { void run(Callee c) {} }",
+            1_000L);
+    TestCompiler.writeBuildOutputParams(
+        tmp, "module", tmp.resolve("module/src/main/java"), codegen, buildDir);
+    compileIntoMirror(fx.callee(), fx.caller(), generated);
+    engine = new LatheEngine(tmp);
+
+    renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+
+    assertThat(Files.readString(fx.caller())).contains("c.welcome()");
+  }
+
   @Test
   void rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing()
       throws Exception {

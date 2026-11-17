@@ -94,6 +94,10 @@ Validate the position and return the identifier range, or fail with a clear mess
      Renaming only its uses would break every one of them, so `prepareRename` and `rename` both fail
      with a `RequestFailed` error that says why; the MCP `rename_symbol` tool shares the check.
    - the element does not resolve, or is a non-renameable / synthetic-only kind.
+   - after the search, any occurrence lies in a source root under the module's build directory
+     (`buildDir`), which a build task writes (`RenameService.requireNoBuildOutputEdits`): the next
+     build would overwrite the edit, so the whole rename is refused. Annotation-processor output is
+     not edited either, but the rename goes ahead: the processors regenerate it.
    - the element is an unsupported kind for M2 (see Non-goals — e.g. a package, an enum constant).
    - the element is a **public top-level type** whose file would have to move — deferred (see
      Deferred). Nested and non-public top-level types are fine.

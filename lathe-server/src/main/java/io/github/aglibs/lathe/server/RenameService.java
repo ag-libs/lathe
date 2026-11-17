@@ -179,6 +179,27 @@ final class RenameService {
     return Optional.empty();
   }
 
+  // A source a build task writes (a code generator's output root) is written again by the next
+  // build, so an edit there is lost and its callers break: the whole rename is refused, never
+  // applied without it. Processor output is not: the processors regenerate it from the renamed
+  // sources, and the rename leaves it alone.
+  private void requireNoBuildOutputEdits(
+      final ReferenceTarget target, final List<ReferenceMatch> matches) {
+    eventLoop.checkOnLoop();
+    final List<ModuleSourceConfig> configs = state.registry().allConfigs();
+    refuseIfPresent(
+        matches.stream()
+            .map(ReferenceMatch::uri)
+            .distinct()
+            .map(LatheUri::toPath)
+            .filter(file -> configs.stream().anyMatch(config -> config.isBuildOutput(file)))
+            .findFirst()
+            .map(
+                file ->
+                    "`%s` cannot be renamed: %s, which a build task generates, uses it, and the next build would overwrite the edit there; change the generator, then rebuild and rename"
+                        .formatted(target.simpleName(), file.getFileName())));
+  }
+
   // A subtype implementing the method through a superclass outside the override family keeps that
   // superclass's method, which then implements nothing; the rename cannot change it. Only an
   // interface method can be implemented that way: a class method is what its subtypes inherit.
@@ -504,6 +525,7 @@ final class RenameService {
                                                     searchTarget.simpleName(),
                                                     matches.size()));
                                     requireNothingLeftBehind(searchTarget, matches);
+                                    requireNoBuildOutputEdits(searchTarget, matches);
                                     return matches;
                                   })
                               .thenCompose(

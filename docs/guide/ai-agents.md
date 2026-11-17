@@ -190,6 +190,9 @@ It refuses a Lombok field or a member Lombok generates, whose accessors' calls t
 and one member of a statically imported name the import also brings in other members of.
 It refuses a new name the owner already declares or inherits, a sibling type already has, or a variable in scope already uses.
 It refuses an interface method a project class implements through a superclass outside the project, which keeps its method.
+It refuses a symbol a build task's output uses (a source root under the build directory, such as a code generator's), since the next build would overwrite the edit there;
+change the generator, rebuild, then rename.
+Annotation-processor output is left alone: the processors regenerate it from the renamed sources.
 It refuses a rename that would change what a name means, in any module that sees the symbol:
 a use the new name would capture (a field a renamed parameter would shadow, another call that would pick the renamed overload,
 a subclass method that would override it) or a renamed use that would then refer to something else (another overload, an inherited method);

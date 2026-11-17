@@ -65,6 +65,52 @@ class ModuleSourceConfigTest {
     assertThat(config.isGenerated(src.resolve("com/example/User.java"))).isFalse();
   }
 
+  @Test
+  void isBuildOutput_rootUnderBuildDir_true_handWrittenOrAdjacentRoot_false() {
+    final Path src = WORKSPACE.resolve("module/src/main/java");
+    final Path generated = WORKSPACE.resolve("module/build/generated/sources/codegen");
+    final Path adjacent = WORKSPACE.resolve("module/build-tools/src");
+    final var config =
+        buildOutputConfig(WORKSPACE.resolve("module/build"), List.of(src, generated, adjacent));
+
+    assertThat(config.isBuildOutput(generated.resolve("com/example/Policy.java"))).isTrue();
+    assertThat(config.isBuildOutput(src.resolve("com/example/Policy.java"))).isFalse();
+    assertThat(config.isBuildOutput(adjacent.resolve("com/example/Tool.java"))).isFalse();
+    assertThat(config.isGenerated(generated.resolve("com/example/Policy.java"))).isFalse();
+  }
+
+  @Test
+  void isBuildOutput_noBuildDirRecorded_false() {
+    final Path generated = WORKSPACE.resolve("module/build/generated/sources/codegen");
+    final var config = buildOutputConfig(null, List.of(generated));
+
+    assertThat(config.isBuildOutput(generated.resolve("com/example/Policy.java"))).isFalse();
+  }
+
+  private static ModuleSourceConfig buildOutputConfig(
+      final Path buildDir, final List<Path> sourceRoots) {
+    return new ModuleSourceConfig(
+        LATHE_DIR.resolve("module"),
+        LatheLayout.CLASSES_DIR,
+        WORKSPACE.resolve("module/build/classes/java/main"),
+        null,
+        sourceRoots,
+        List.of(),
+        List.of(),
+        List.of(),
+        TestCompiler.RELEASE,
+        "UTF-8",
+        false,
+        false,
+        null,
+        List.of(),
+        null,
+        false,
+        null,
+        ReactorRewrite.none(),
+        buildDir);
+  }
+
   private static ModuleSourceConfig config(
       final Path originalGenSourcesDir, final Path sourceRoot) {
     final Path moduleDir = LATHE_DIR.resolve("module");

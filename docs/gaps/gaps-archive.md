@@ -7,6 +7,37 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-020 — Renaming edits sources a build task generates, which the next build overwrites — done
+
+**Status: done** (2026-11-17)
+
+**Kind: bug**
+
+**Affects: MCP `rename_symbol` and the editor's rename.**
+
+Found by the pre-release Gradle round (2026-11-15) on Caffeine.
+Its `codeGen` source set compiles `build/generated/sources/local-cache`, written by its own JavaPoet task, which Lathe took for hand-written code:
+`rename_symbol` on `FrequencySketch.ensureCapacity` edited 16 of its `*EvictionPolicy.java` files, which the next build overwrites and `git checkout` cannot undo.
+
+Maven (through the extension) and Gradle now record the build directory in each tree's params (`buildDir`).
+A source root under it is build-task output (`ModuleSourceConfig.isBuildOutput`), kept apart from annotation-processor output (`isGenerated`), so the write pass, the reference index and `verify_change` still treat it as any source.
+A rename with an occurrence there is refused whole, naming the file, before any edit is written.
+Processor output is still left unedited while the rename goes ahead.
+
+The Helidon blueprint case first filed here, a processor deriving a separate member from the renamed one, is FR-034.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_methodCalledFromBuildTaskOutput_refusesNamingTheFileAndEditsNothing`
+- `LatheEngineRenameTest.rename_methodUnusedInBuildTaskOutput_renamesTheHandWrittenSources`
+- `ModuleSourceConfigTest.isBuildOutput_rootUnderBuildDir_true_handWrittenOrAdjacentRoot_false`
+- `ModuleSourceConfigTest.isBuildOutput_noBuildDirRecorded_false`
+- `MavenModuleConfigTest.write_buildDirDeclaredByExtension_recordsIt`
+- `LatheModelInjectorTest.injectTreeScopes_buildDirectory_declaredForBothOutputDirs`
+- `LatheCaptureTaskFunctionalTest.capture_javaProject_capturesFromCacheRefillsAWipedLatheAndKeepsTheLastGoodOne` (its `buildDir`)
+
+---
+
 ## EG-083 — The outline of `module-info.java` shows only the module line — done
 
 **Status: done** (2026-11-16)
