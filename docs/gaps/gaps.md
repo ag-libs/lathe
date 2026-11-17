@@ -2556,7 +2556,9 @@ None yet.
 
 **Kind: bug**
 
-**Affects: every MCP tool on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
+**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
+
+The temporary compile copy comes from `lathe-server` (`CompileTempDirs`), so the editor's definition and rename probably fail the same way; the editor was not checked.
 
 Found by the MCP exploratory round (2026-11-16).
 
@@ -2565,11 +2567,11 @@ Found by the MCP exploratory round (2026-11-16).
 javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
 Lathe answers, for that file:
 
-- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code`, naming nothing to fix.
+- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
 - `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
 - `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
 
-A file with no `package` line behaves the same, except that rename works.
+A file with no `package` line behaves the same, including the silent rename.
 A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
 `find_references` maps every case back to the real file.
 An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
@@ -2607,6 +2609,7 @@ The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, 
 ### Fix direction
 
 Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
+Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
 
 ### Regression targets
 
@@ -2683,7 +2686,8 @@ Agents that also drive an LSP carry URIs and may pass one.
 
 ### Fix direction
 
-Accept a `file://` URI through `LatheUri.canonical`, or refuse it saying a path is expected.
+Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
+`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
 
 ### Regression targets
 
@@ -2691,24 +2695,25 @@ None yet.
 
 ---
 
-## MC-95 — `analyze_change` on a local variable prints the old `override family` line
+## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden
 
 **Status: documented**
 
 **Kind: bug**
 
-**Affects: `analyze_change` on a local variable or parameter.**
+**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
 
 Found by the MCP exploratory round (2026-11-16).
 
 ### Observed behaviour
 
 On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
-The old heading is meaningless for a variable, and an agent parsing the answer sees two formats.
+`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
+The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
 
 ### Fix direction
 
-Leave the override lines out for a symbol that cannot be overridden.
+Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
 
 ### Regression targets
 
