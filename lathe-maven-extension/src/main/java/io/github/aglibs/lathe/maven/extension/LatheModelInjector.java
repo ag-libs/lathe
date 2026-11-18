@@ -14,6 +14,8 @@ import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Mutates a resolved {@link MavenProject} model in memory to add the Lathe build wiring the user
@@ -22,6 +24,7 @@ import org.apache.maven.project.MavenProject;
  */
 final class LatheModelInjector {
 
+  private static final Logger LOG = LoggerFactory.getLogger(LatheModelInjector.class);
   private static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
   private static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
   private static final String JUNIT_ARTIFACT_ID = "lathe-junit";
@@ -44,6 +47,8 @@ final class LatheModelInjector {
   private static final String SYNC_EXECUTION_ID = "lathe-sync";
 
   private final String version;
+  // One injector serves a build: a build declaring the extension in every module says so once.
+  private boolean extensionsTurnedOff;
 
   LatheModelInjector(final String version) {
     this.version = version;
@@ -71,6 +76,21 @@ final class LatheModelInjector {
   }
 
   void injectCompilerShim(final MavenProject project, final Plugin compiler) {
+    // A plugin loaded as a build extension gets its class realm while Maven reads the projects,
+    // before this adds lathe-compiler, so the build would fail with "No such compiler 'lathe'"
+    // (WS-41). The compiler plugin contributes nothing as an extension: load it as a plain plugin,
+    // whose realm Maven builds when it first runs, with lathe-compiler in it.
+    if (compiler.isExtensions()) {
+      compiler.setExtensions(false);
+      if (!extensionsTurnedOff) {
+        extensionsTurnedOff = true;
+        LOG.info(
+            "[setup] maven-compiler-plugin extensions turned off so the lathe compiler loads,"
+                + " first in {}",
+            project.getArtifactId());
+      }
+    }
+
     putLatheDependency(compiler.getDependencies(), COMPILER_ARTIFACT_ID, null);
     // The compiler is selected via the property, not a <compilerId> config node: a node added in
     // afterProjectsRead does not reach the default compile executions (lathe-maven-extension.md
