@@ -1713,6 +1713,35 @@ None yet.
 
 ---
 
+## TE-26 — A run that only some of its code fails to compile still runs on the old classes
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: the editor's runs (`:LatheRun`, neotest, debug), `run_test` with `scope: package`, and a test that still compiles while code it calls no longer does.**
+
+Split from MC-92 (2026-11-18), whose fix covers `run_test` on the test file itself.
+
+### Observed behaviour
+
+`run_test` now refuses a test file whose own compile has an error ("code it runs does not compile"), as when a class it uses was deleted or changed under it.
+What still runs on the last good classes, and fails with `NoClassDefFoundError` or a changed signature at run time, found from the code:
+
+- the editor's runs, through `RunCoordinator.failingUnder`, which checks failed build compiles only;
+- the other test files of a `scope: package` run, as only the file asked about is compiled first;
+- a test that compiles while an unchanged helper it calls uses a deleted class: the helper keeps its old class, and nothing recompiles it.
+
+### Fix direction
+
+Mark the unchanged dependents of a deleted or changed source as failing where the write pass handles the change (`WritePass.reconcileDeletedSourcesIn` and the write levels), so the existing check (`ChangeVerifier.failingInModule`) refuses every run path at once; or compile each file a run selects before it runs.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).

@@ -13706,14 +13706,15 @@ Refuse the run with the same "does not compile" answer when the test file would 
 ### Resolution
 
 `run_test` already compiled the test file as it is on disk before running it, and now refuses when that compile has an error, with the same "code it runs does not compile" answer, naming the error: a class the test uses may be gone or changed while the test is not, which no build compile failed.
-It covers the test file itself, by its earliest error; not the other test classes a package run runs, nor a helper the test calls that no longer compiles.
-The editor's runs (`:LatheRun`, neotest) go through `RunCoordinator`, which still checks failed build compiles only: marking the dependents of a deleted or changed class as failing in the write pass would cover them all, a larger change.
+It covers the test file itself, by its earliest error, and skips Lathe's own package-directory error (MC-90), which the build does not have.
+The other test classes a package run runs, a helper the test calls that no longer compiles, and the editor's runs (`:LatheRun`, neotest), which go through `RunCoordinator`, are [TE-26](gaps.md#te-26--a-run-that-only-some-of-its-code-fails-to-compile-still-runs-on-the-old-classes).
 Checked on javaparser: with `ExtractingVisitors.java` deleted, main ran `ExpectedTokensTest` and failed with `NoClassDefFoundError`; the fix answers `ExpectedTokensTest.java was not run: code it runs does not compile: …ExpectedTokensTest.java:30: cannot find symbol`.
 
 ### Regression targets
 
 - `LatheEngineRunTest.runTest_classItUsesDeleted_notRunNamingItsError`
 - `LatheEngineRunTest.runTest_classItUsesChangedUnderIt_notRunNamingItsError`
+- `LatheEngineRunTest.runTest_packageNotItsDirectory_notRefused`
 
 ---
 
