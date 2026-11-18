@@ -1796,6 +1796,65 @@ None yet.
 
 ---
 
+## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: the editor's runnables of a test file (run and debug entries, neotest) and MCP `run_test` on a file, for tests a project marks with its own annotation: Apache Kafka's `@ClusterTest`, `@ClusterTests` and `@ClusterTemplate` (about 150 files).**
+
+Found evaluating Lathe on Apache Kafka (2026-11-18), from the code; not run live, as Kafka's `@ClusterTest` files are in `clients-integration-tests`, which needs the Scala `core` built.
+
+### Observed behaviour
+
+Kafka's `@ClusterTest` is annotated `@TestTemplate`, `@Tag("integration")` and `@Timeout(60)`; JUnit runs each such method as a test template.
+`RunnableScanner.isTestAnnotation` takes a method as a test only by its annotation's simple name (`Test`, `ParameterizedTest`, `TestFactory`, `RepeatedTest`), so these methods get no run entry, and a file holding only them has no test to run.
+A module run, through JUnit's own discovery of the captured launch, should still run them; not checked.
+
+### Fix direction
+
+Take a method as a test when one of its annotations is, or is itself annotated with, JUnit Platform's `org.junit.platform.commons.annotation.Testable`, which `@Test`, `@TestTemplate` and `@TestFactory` carry, keeping the names for JUnit 4's `org.junit.Test`, which does not.
+That covers any custom test annotation built on JUnit's own; ArchUnit's `@ArchTest` (TE-18), on fields, likely carries `@Testable` too (to check).
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-25 — A module that publishes a shaded jar at its jar's path runs its tests on the last build's classes
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP `run_test` and editor test runs of a Gradle module whose jar task is replaced by a Shadow jar at the jar's path (Apache Kafka's `clients`), after an edit to the module's main code.**
+
+Found evaluating Lathe on Apache Kafka (2026-11-18), with the WS-43 branch: the first module checked end to end.
+
+### Observed behaviour
+
+Kafka's `clients` disables its `jar` task and publishes `shadowJar` at the jar's path, relocating `protobuf`, `opentelemetry-proto` and `commons-net`.
+Its captured test launch holds no `build/classes/java/main`: its own classes reach its tests only in `kafka-clients-4.5.0-SNAPSHOT.jar`, which Lathe records as `shaded: true`, and replay keeps.
+`run_test` on `BytesTest` passes (9 tests) with the note `clients/build/libs/kafka-clients-4.5.0-SNAPSHOT.jar runs as the last build left it, not from .lathe: it may not hold your latest edits`.
+An edit to `clients`' main code reaches its tests only at the next Gradle build.
+
+### Cause
+
+By design (WS-31, and `LatheSyncTaskFunctionalTest.sync_jarTaskDisabled_marksTheJarAtItsPathShaded`): the mirror lacks the relocated classes, and its own classes name the original packages, which the shaded build leaves off the runtime classpath, so the mirror cannot stand in for the jar.
+
+### Fix direction
+
+Needs a design: the mirror ahead of the shaded jar would make the module's own classes fresh while the jar still supplies the relocated ones, but a fresh class that uses a relocated package by its original name would then fail to load.
+Until then, the note says what runs.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
