@@ -68,12 +68,13 @@ final class LatheMcpTools {
   private LatheMcpTools() {}
 
   // The symbol-at-a-position input every position tool takes: a column, or the symbol's name on
-  // the line, which agents give more reliably than a counted column.
+  // the line, which agents give more reliably than a counted column. Columns are LSP's, UTF-16 code
+  // units, both ways: converting to characters needs each line's text, for every column printed.
   private static final String POSITION_PROPERTIES =
       """
       "file":{"type":"string","description":"Absolute path to a .java file."},
       "line":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based line of the symbol."},
-      "column":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based column of the symbol; optional with 'symbol'."},
+      "column":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based column of the symbol, in UTF-16 code units as every column the tools report: a character outside the Basic Multilingual Plane (an emoji) counts as two. Optional with 'symbol', which needs no counting."},
       "symbol":{"type":"string","description":"The symbol's name as written on that line (a method, field, type or variable name); finds its column, so 'column' may be left out."}\
       """;
 

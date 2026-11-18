@@ -132,6 +132,7 @@ Positions are 1-based and must be on a name: a position on a keyword, on whitesp
 a line answers with an error that shows the line, rather than with the enclosing method or class.
 Instead of counting the column, give the symbol's name on that line as `symbol`; with both, the
 occurrence nearest the column wins. `outline` gives each declaration's `line:column`.
+Columns, given and reported, count UTF-16 code units, as LSP does: a character outside the Basic Multilingual Plane (an emoji) before the position counts as two.
 `find_references`, `find_implementations`, `call_hierarchy`, and
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
 (`class` — default — / `method` / `package`).

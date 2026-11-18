@@ -91,6 +91,26 @@ class LatheMcpToolsTest {
     assertThat(tool("outline").tool().inputSchema().toString()).contains("file", "type");
   }
 
+  // A column is LSP's, in UTF-16 code units, which an agent counting characters gets wrong past an
+  // emoji: every tool that takes one says so.
+  @Test
+  void all_positionTools_nameTheColumnUnit_othersTakeNoColumn() {
+    final List<String> positionTools =
+        List.of(
+            "get_definition",
+            "find_references",
+            "find_implementations",
+            "call_hierarchy",
+            "describe_symbol",
+            "rename_symbol",
+            "analyze_change");
+    for (final String name : positionTools) {
+      assertThat(tool(name).tool().inputSchema().toString()).as(name).contains("UTF-16 code units");
+    }
+
+    assertThat(tool("search_symbols").tool().inputSchema().toString()).doesNotContain("column");
+  }
+
   @Test
   void all_everyTool_declaresWhetherItWrites() {
     assertThat(specs)
