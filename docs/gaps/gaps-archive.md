@@ -10365,6 +10365,47 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-43 — Lathe's Gradle plugin breaks a build that reads every configuration's dependencies while configuring — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+
+**Affects: Gradle setup (`:LatheInit`, `latheSync`) and every build of the project with Lathe's plugin applied.**
+
+Found by the exploratory round on Apache Kafka (2026-11-18), on 0.3.1 and on main `cdf57f1`.
+
+### Observed behaviour
+
+Kafka's `build.gradle` (line 536), in `afterEvaluate`, walks every resolvable configuration's `incoming.dependencies` to look for Mockito.
+That runs the `withDependencies` callback of Lathe's sources configuration (`LatheProjectPlugin.registerLibraries`, line 510), which resolves the test compile classpath at once, while other projects are still being configured.
+Kafka then fails to configure: `Could not resolve all dependencies for configuration ':coordinator-common:compileClasspath'` … `Value for :server-common project components has not been calculated yet`.
+Without Lathe's init script, `./gradlew :clients:dependencies` succeeds.
+
+### Fix direction
+
+Do not resolve anything when the sources configuration's dependencies are only listed: add the source dependencies when the facts task resolves them (a detached configuration in the task, or a provider the task forces), not in `withDependencies`.
+A TestKit fixture whose build reads every configuration's `incoming.dependencies` in `afterEvaluate`.
+
+### Cause (found 2026-11-18)
+
+Reading `incoming.dependencies` runs a configuration's `withDependencies` actions, and Lathe's sources configuration was in each project's container, so Kafka's walk ran its action, which resolves the test classpath.
+Under Kafka's consistent resolution (`useCompileClasspathVersions()`), that first resolves `coordinator-common`'s compile classpath, which configures `server-common` on demand.
+`server-common`'s own walk then resolves its test classpath, which holds its own test fixtures, while its components are still being calculated.
+
+### Resolution
+
+The sources configuration is detached (`detachedConfiguration()`), outside the project's configurations: no build script reaches it, and the facts task resolves it when it needs the sources, after every project is configured.
+A detached configuration does not get rules a build adds through `configurations.all`; its `-sources` coordinates come from the already resolved compile classpath, where they applied.
+Checked on Kafka with the branch's plugin: `:clients:dependencies` succeeds, and a `latheSync` dry run configures every project and stores its configuration cache entry, which resolves every facts task's inputs.
+
+### Regression targets
+
+- `LatheSyncTaskFunctionalTest.sync_buildReadsEveryConfigurationsDependenciesInAfterEvaluate_configuresAndFindsSources` (fails on the code before the fix with Kafka's error)
+
+---
+
 ## WS-35 — Lombok in the analysis compile reads a `lombok.config` up to 2 seconds old — non-goal
 
 **Status: non-goal** (2026-11-17: documented in the [troubleshooting guide](../guide/troubleshooting.md); reopen if Lombok users ask)
