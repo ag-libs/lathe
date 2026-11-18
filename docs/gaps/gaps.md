@@ -1713,6 +1713,35 @@ None yet.
 
 ---
 
+## TE-26 — A run that only some of its code fails to compile still runs on the old classes
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: the editor's runs (`:LatheRun`, neotest, debug), `run_test` with `scope: package`, and a test that still compiles while code it calls no longer does.**
+
+Split from MC-92 (2026-11-18), whose fix covers `run_test` on the test file itself.
+
+### Observed behaviour
+
+`run_test` now refuses a test file whose own compile has an error ("code it runs does not compile"), as when a class it uses was deleted or changed under it.
+What still runs on the last good classes, and fails with `NoClassDefFoundError` or a changed signature at run time, found from the code:
+
+- the editor's runs, through `RunCoordinator.failingUnder`, which checks failed build compiles only;
+- the other test files of a `scope: package` run, as only the file asked about is compiled first;
+- a test that compiles while an unchanged helper it calls uses a deleted class: the helper keeps its old class, and nothing recompiles it.
+
+### Fix direction
+
+Mark the unchanged dependents of a deleted or changed source as failing where the write pass handles the change (`WritePass.reconcileDeletedSourcesIn` and the write levels), so the existing check (`ChangeVerifier.failingInModule`) refuses every run path at once; or compile each file a run selects before it runs.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
@@ -2404,37 +2433,6 @@ An agent working across worktrees needs one Lathe MCP server per worktree, each 
 ### Fix direction
 
 Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-workspace-server.md), which keeps one process per client until measurements show a need.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-92 — `run_test` runs a test whose dependency no longer compiles
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S–M**
-
-**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
-`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
-When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
-A dependency whose own compile fails is already caught: it is a failed compile of the test's module or one upstream, and the run is refused (`ChangeVerifier.failingInModule`).
-What gets through, verified against the code (2026-11-17): a deleted dependency, which only removes class outputs (`WritePass.reconcileDeletedSourcesIn`), and a dependency change that still compiles but breaks the unchanged test, as nothing recompiles an unchanged dependent.
-Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
-
-### Fix direction
-
-Refuse the run with the same "does not compile" answer when the test file would no longer compile against the current classes, not only when its own text changed.
 
 ### Regression targets
 

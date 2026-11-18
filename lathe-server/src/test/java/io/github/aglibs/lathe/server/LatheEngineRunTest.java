@@ -90,6 +90,84 @@ class LatheEngineRunTest extends LatheEngineTestBase {
         .hasMessageContaining("cannot find symbol");
   }
 
+  // A class the test uses deleted, the test unchanged: no build compile failed, but the test no
+  // longer compiles, so it is not run on the old classes, where it would only fail at runtime.
+  @Test
+  void runTest_classItUsesDeleted_notRunNamingItsError() throws Exception {
+    final List<Path> sources =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of(
+                "com/example/Edge.java", "package com.example; class Edge {}",
+                "com/example/EdgeTest.java", "package com.example;\nclass EdgeTest { Edge e; }\n"),
+            List.of(),
+            1_000L);
+    engine = new LatheEngine(tmp);
+    final Path test = sourceNamed(sources, "EdgeTest");
+    assertThatThrownBy(() -> engine.runTest(test, TestScope.CLASS, null).value())
+        .as("compiling, it is looked at for tests")
+        .hasMessage("no test in EdgeTest.java");
+
+    Files.delete(sourceNamed(sources, "Edge"));
+
+    assertThatThrownBy(() -> engine.runTest(test, TestScope.CLASS, null).value())
+        .hasMessageStartingWith(
+            "EdgeTest.java was not run: code it runs does not compile: "
+                + "module/src/main/java/com/example/EdgeTest.java:2: ")
+        .hasMessageContaining("cannot find symbol");
+  }
+
+  // A class the test uses changed so it still compiles but the unchanged test does not: refused
+  // too, by the test's own error.
+  @Test
+  void runTest_classItUsesChangedUnderIt_notRunNamingItsError() throws Exception {
+    final List<Path> sources =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of(
+                "com/example/Edge.java",
+                    "package com.example; class Edge { int weight() { return 1; } }",
+                "com/example/EdgeTest.java",
+                    "package com.example;\nclass EdgeTest { int w = new Edge().weight(); }\n"),
+            List.of(),
+            1_000L);
+    engine = new LatheEngine(tmp);
+    final Path test = sourceNamed(sources, "EdgeTest");
+
+    writeNewer(
+        sourceNamed(sources, "Edge"),
+        "package com.example; class Edge { int cost() { return 1; } }");
+
+    assertThatThrownBy(() -> engine.runTest(test, TestScope.CLASS, null).value())
+        .hasMessageStartingWith(
+            "EdgeTest.java was not run: code it runs does not compile: "
+                + "module/src/main/java/com/example/EdgeTest.java:2: ")
+        .hasMessageContaining("cannot find symbol");
+  }
+
+  // Lathe's error for a package that is not its directory is not javac's: the build compiles and
+  // runs such a test, so run_test does not refuse it.
+  @Test
+  void runTest_packageNotItsDirectory_notRefused() throws Exception {
+    final List<Path> sources =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of("com/example/MisplacedTest.java", "package com.other; class MisplacedTest {}"),
+            List.of(),
+            1_000L);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(
+            () ->
+                engine
+                    .runTest(sourceNamed(sources, "MisplacedTest"), TestScope.CLASS, null)
+                    .value())
+        .hasMessage("no test in MisplacedTest.java");
+  }
+
   private static Path sourceNamed(final List<Path> sources, final String type) {
     return sources.stream()
         .filter(source -> FileUtil.javaTypeName(source).equals(type))

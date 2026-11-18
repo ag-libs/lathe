@@ -626,7 +626,7 @@ final class WritePass {
     return diagnostic.getCode() != null && WERROR_CODE.equals(diagnostic.getCode().getLeft());
   }
 
-  private static String errorLine(final Diagnostic diagnostic) {
+  static String errorLine(final Diagnostic diagnostic) {
     return "%d: %s"
         .formatted(
             diagnostic.getRange().getStart().getLine() + 1,

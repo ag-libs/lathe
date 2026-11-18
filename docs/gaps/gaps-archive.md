@@ -13680,6 +13680,44 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-92 — `run_test` runs a test whose dependency no longer compiles — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
+`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
+When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
+A dependency whose own compile fails is already caught: it is a failed compile of the test's module or one upstream, and the run is refused (`ChangeVerifier.failingInModule`).
+What gets through, verified against the code (2026-11-17): a deleted dependency, which only removes class outputs (`WritePass.reconcileDeletedSourcesIn`), and a dependency change that still compiles but breaks the unchanged test, as nothing recompiles an unchanged dependent.
+Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
+
+### Fix direction
+
+Refuse the run with the same "does not compile" answer when the test file would no longer compile against the current classes, not only when its own text changed.
+
+### Resolution
+
+`run_test` already compiled the test file as it is on disk before running it, and now refuses when that compile has an error, with the same "code it runs does not compile" answer, naming the error: a class the test uses may be gone or changed while the test is not, which no build compile failed.
+It covers the test file itself, by its earliest error, and skips Lathe's own package-directory error (MC-90), which the build does not have.
+The other test classes a package run runs, a helper the test calls that no longer compiles, and the editor's runs (`:LatheRun`, neotest), which go through `RunCoordinator`, are [TE-26](gaps.md#te-26--a-run-that-only-some-of-its-code-fails-to-compile-still-runs-on-the-old-classes).
+Checked on javaparser: with `ExtractingVisitors.java` deleted, main ran `ExpectedTokensTest` and failed with `NoClassDefFoundError`; the fix answers `ExpectedTokensTest.java was not run: code it runs does not compile: …ExpectedTokensTest.java:30: cannot find symbol`.
+
+### Regression targets
+
+- `LatheEngineRunTest.runTest_classItUsesDeleted_notRunNamingItsError`
+- `LatheEngineRunTest.runTest_classItUsesChangedUnderIt_notRunNamingItsError`
+- `LatheEngineRunTest.runTest_packageNotItsDirectory_notRefused`
+
+---
+
 ## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running — done
 
 **Status: done** (2026-11-18)
