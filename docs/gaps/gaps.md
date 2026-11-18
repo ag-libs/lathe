@@ -751,6 +751,32 @@ None yet.
 
 ---
 
+## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
+
+**Status: deferred** (triaged 2026-11-18: a feature, and the feature freeze holds)
+
+**Kind: feature**
+
+**Affects: `format_file`, `:LatheFormat` and the editor's formatting on Maven builds.**
+
+Found by the exploratory round on Spring Petclinic and Quarkus (2026-11-17).
+
+### Observed behaviour
+
+Petclinic formats with `spring-javaformat-maven-plugin`, Quarkus with `formatter-maven-plugin` (net.revelc) and `impsort-maven-plugin`.
+On both, `format_file` answers "No formatter for this workspace: the project pins none (no Spotless Java step)": `MavenStyle` reads only `spotless-maven-plugin`.
+Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
+
+### Fix direction
+
+Read those plugins' configuration as a Spotless step is read: spring-javaformat as its own engine, formatter-maven-plugin's Eclipse configuration through the existing Eclipse engine.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1016,7 +1042,7 @@ None yet.
 
 ## FR-037 — Without a workspace manifest, cross-module answers stay in one module and claim to be complete
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; an answer that claims to be complete is wrong for an agent)
 
 **Kind: bug**
 
@@ -1049,11 +1075,10 @@ None yet.
 
 ## FR-036 — Renaming a getter leaves its property name in templates and message files unreported
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-18: still on main `cdf57f1`; the review list is advisory, and listing property names needs a rule for which accessors count)
 
 **Kind: bug**
 
-**Value: medium — Size: M**
 
 **Affects: MCP `rename_symbol` and `verify_change`, and the editor's rename.**
 
@@ -1443,7 +1468,7 @@ None yet.
 
 ## WS-41 — Setup fails when the project declares `maven-compiler-plugin` with `<extensions>true</extensions>`
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-18: still fails on main `cdf57f1`; it blocks setup of any such build)
 
 **Kind: bug**
 
@@ -1662,7 +1687,7 @@ A module run covering several source sets needs one launch per source set.
 
 ## TE-21 — A JUnit 6 build's tests replay on the JUnit 5 runner and fail before any test runs
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; every test run of a JUnit 6 build fails)
 
 **Kind: bug**
 
@@ -2585,7 +2610,7 @@ None yet.
 
 ## MC-99 — `run_test` with a `method` but no `scope` runs the whole class
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; small, and the answer misleads)
 
 **Kind: bug**
 
