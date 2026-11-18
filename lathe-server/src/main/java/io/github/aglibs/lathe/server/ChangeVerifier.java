@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.PackageDirectory;
 import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CompiledStamps;
@@ -13,12 +14,14 @@ import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.UnreadSources;
 import io.github.aglibs.lathe.server.files.ServerFiles;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
 import io.github.aglibs.lathe.server.workspace.UnreadLanguage;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -37,6 +40,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 // What an agent's verify_change and the notes on every MCP answer are built from: which sources
@@ -546,15 +550,112 @@ final class ChangeVerifier {
 
   // The same for a module, by its directory under .lathe.
   Optional<String> failingInModule(final Path moduleDir) {
-    final Set<Path> reach =
-        Stream.concat(
-                Stream.of(moduleDir), state.moduleGraph().upstreamModuleDirs(moduleDir).stream())
-            .collect(Collectors.toUnmodifiableSet());
+    final Set<Path> reach = moduleReach(moduleDir);
     return stillFailing()
         .filter(entry -> moduleDirOf(entry.getKey()).filter(reach::contains).isPresent())
         .map(this::failedLine)
         .sorted()
         .findFirst();
+  }
+
+  // A module and every module it depends on: the code a run of it runs.
+  private Set<Path> moduleReach(final Path moduleDir) {
+    return Stream.concat(
+            Stream.of(moduleDir), state.moduleGraph().upstreamModuleDirs(moduleDir).stream())
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // Before a run launches: the first error in code it runs, in its module or one it depends on. A
+  // failed build compile first; then, as verify_change checks them, every change since the build
+  // and the files that use it, compiled now, as a class deleted or changed under an unchanged file
+  // (a test, its helper, another test of the package) fails no build compile; and the generated
+  // callers a rename left. Only the run's modules: a change outside them cannot reach the code it
+  // runs. It reads verify_change's record of what was written, and leaves it for verify_change.
+  // Nothing changed: nothing compiled.
+  CompletableFuture<Optional<String>> failingForRun(final Path moduleDir) {
+    final Optional<String> failed = failingInModule(moduleDir);
+    if (failed.isPresent()) {
+      return CompletableFuture.completedFuture(failed);
+    }
+
+    final Set<Path> reach = moduleReach(moduleDir);
+    final List<Path> changed =
+        differingFromBuild(
+            Stream.concat(
+                    writePass.writtenSinceVerify().stream(),
+                    state.registry().allConfigs().stream()
+                        .filter(config -> reach.contains(config.moduleDir()))
+                        .flatMap(config -> unbuiltSources(config).stream()))
+                .filter(file -> moduleDirOf(file).filter(reach::contains).isPresent())
+                .distinct()
+                .toList());
+    final List<Path> leftCallers = stillLeftByRename();
+    if (changed.isEmpty() && leftCallers.isEmpty()) {
+      return CompletableFuture.completedFuture(Optional.empty());
+    }
+
+    final Map<Path, List<Path>> referrers = referrersOf(changed);
+    final List<Path> targets =
+        Stream.of(
+                changed.stream(),
+                changed.stream().flatMap(file -> seenBy(file, referrers).stream()),
+                leftCallers.stream())
+            .flatMap(files -> files)
+            .distinct()
+            .filter(file -> Files.exists(file) && FileUtil.isJavaFile(file))
+            .filter(file -> moduleDirOf(file).filter(reach::contains).isPresent())
+            .toList();
+    if (targets.isEmpty()) {
+      return CompletableFuture.completedFuture(Optional.empty());
+    }
+
+    final Map<String, String> contents =
+        targets.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    LatheUri::fromPath, ChangeVerifier::read, (first, sameFile) -> first));
+    final Set<String> changedUris =
+        changed.stream().map(LatheUri::fromPath).collect(Collectors.toUnmodifiableSet());
+    return check(contents, changedUris, List.of(), CompilationWorker.NOT_CANCELLED)
+        .thenApply(analyses -> firstErrorIn(targets, analyses));
+  }
+
+  // The earliest error by path then line, so the same change answers the same way every run.
+  private Optional<String> firstErrorIn(
+      final List<Path> targets, final Map<String, List<Diagnostic>> analyses) {
+    return targets.stream()
+        .flatMap(
+            file ->
+                firstBuildError(analyses.getOrDefault(LatheUri.fromPath(file), List.of()))
+                    .map(
+                        diagnostic ->
+                            "%s:%s"
+                                .formatted(
+                                    FileUtil.slashed(state.root().relativize(file)),
+                                    WritePass.errorLine(diagnostic)))
+                    .stream())
+        .sorted()
+        .findFirst();
+  }
+
+  // The earliest compile error in a file's diagnostics that the build would report too: -Werror's
+  // error belongs to no file, and Lathe's own package-directory error is not javac's (the build
+  // compiles and runs such a file).
+  static Optional<Diagnostic> firstBuildError(final List<Diagnostic> diagnostics) {
+    return WritePass.ownDiagnostics(diagnostics).stream()
+        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+        .filter(diagnostic -> !isPackageDirectoryError(diagnostic))
+        .min(Comparator.comparingInt(diagnostic -> diagnostic.getRange().getStart().getLine()));
+  }
+
+  private static boolean isPackageDirectoryError(final Diagnostic diagnostic) {
+    return diagnostic.getCode() != null
+        && PackageDirectory.CODE.equals(diagnostic.getCode().getLeft());
+  }
+
+  // A source's text, for a check that compiles it as it is on disk.
+  static String read(final Path file) {
+    return IOUtil.unchecked(() -> Files.readString(file, StandardCharsets.UTF_8));
   }
 
   private Stream<Map.Entry<Path, WritePass.FailedWrite>> stillFailing() {

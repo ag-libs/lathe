@@ -4,7 +4,6 @@ import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
-import io.github.aglibs.lathe.analysis.PackageDirectory;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceRole;
@@ -398,7 +397,7 @@ public final class LatheEngine {
   // compile the file as it is on disk, then the tool's work, chained.
   private <T> SessionHost.LoopWork<T> fileWork(final Path file, final FileWork<T> work) {
     final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
+    final String content = ChangeVerifier.read(file);
     return (session, cancel, progress) ->
         session
             .reconcileForVerify()
@@ -640,7 +639,7 @@ public final class LatheEngine {
    */
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
-    final String original = read(file);
+    final String original = ChangeVerifier.read(file);
     final Optional<List<Location>> localMentions =
         request(
             positionWork(
@@ -1125,7 +1124,7 @@ public final class LatheEngine {
             .distinct()
             .collect(
                 Collectors.toUnmodifiableMap(
-                    LatheUri::fromPath, LatheEngine::read, (first, sameFile) -> first));
+                    LatheUri::fromPath, ChangeVerifier::read, (first, sameFile) -> first));
     // Every check starts before any is awaited, so the modules compile side by side, each on its
     // own worker; one at a time, a change with callers across a large reactor took seconds. A check
     // keeps no analysis: opened, each file would hold one until the cache evicted it, and on a
@@ -1384,18 +1383,10 @@ public final class LatheEngine {
   // error is not javac's: the build compiles and runs such a file.
   private Optional<String> firstError(
       final Path file, final String uri, final List<Diagnostic> diagnostics) {
-    return WritePass.ownDiagnostics(diagnostics).stream()
-        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
-        .filter(diagnostic -> !isPackageDirectoryError(diagnostic))
-        .min(Comparator.comparingInt(diagnostic -> diagnostic.getRange().getStart().getLine()))
+    return ChangeVerifier.firstBuildError(diagnostics)
         .map(
             diagnostic ->
                 "%s:%s".formatted(displayPath(file, uri), WritePass.errorLine(diagnostic)));
-  }
-
-  private static boolean isPackageDirectoryError(final Diagnostic diagnostic) {
-    return diagnostic.getCode() != null
-        && PackageDirectory.CODE.equals(diagnostic.getCode().getLeft());
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,
@@ -1410,10 +1401,6 @@ public final class LatheEngine {
     Optional<String> failing() {
       return Optional.ofNullable(failure);
     }
-  }
-
-  private static String read(final Path file) {
-    return IOUtil.unchecked(() -> Files.readString(file));
   }
 
   public void close() {

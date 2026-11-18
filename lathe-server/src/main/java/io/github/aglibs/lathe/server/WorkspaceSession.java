@@ -146,7 +146,9 @@ final class WorkspaceSession {
             resourceMirror);
     this.queries = new WorkspaceQueries(state, writePass);
     this.verifier = new ChangeVerifier(state, router, writePass, features);
-    this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex, verifier);
+    this.runs =
+        new RunCoordinator(
+            client, eventLoop, state, reactorIndex, verifier, this::reconcileForVerify);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
 
