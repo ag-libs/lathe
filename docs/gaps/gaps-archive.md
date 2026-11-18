@@ -12070,16 +12070,19 @@ The listener was not at fault: it never ran.
 
 ### Resolution
 
-A capture-only run selects up to five test sources, the names Surefire's default includes match first, then the rest, each in name order: one runnable class among them starts the JVM, and a module's own includes (a `@Suite`) keep their classes in the selection.
-A capture that fails in the test JVM now prints `[lathe] test launch not captured: <cause>` to the build's test output.
-Checked on jdbi with the branch's extension: `core`, `sqlobject`, `json` and `guice` now capture; the `capture-only-suite` invoker fixture still discovers its suite.
+A capture-only run selects up to five test sources: the names Surefire's default includes match, then abstract bases by name (`Abstract*`), then the rest, each in name order. One runnable class among them starts the JVM, and a module's own includes (a `@Suite`) keep their classes in the selection.
+A module with Kotlin, Groovy or Scala test sources, in a test root or beside a `src/<set>/java` one (jdbi's `src/test/kotlin`, a root only later in the build), is not narrowed: its Java sources may be only helpers.
+A capture that fails in the test JVM now prints `[lathe] test launch not captured: <cause> at <frame>` to the build's test output; the report itself cannot fail the tests.
+Checked on jdbi with the branch's extension: all ten modules left uncaptured now capture (`core`, `sqlobject`, `json`, `guice`, `kotlin`, `kotlin-sqlobject`, `postgres`, `spring`, `spring5`, `opentelemetry`); the `capture-only-suite` invoker fixture still discovers its suite.
 The sync still cannot list the modules that captured nothing: it runs at the root's `process-test-classes`, before any module's tests.
 
 ### Regression targets
 
-- `LatheModelInjectorTest.injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsTheFirstFiveTestNames`
+- `LatheModelInjectorTest.injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsRunnableTestNamesFirst`
 - `LatheModelInjectorTest.injectCaptureClass_otherNamesInSeveralRoots_selectedAfterTheTestNames`
-- `CaptureLauncherSessionListenerTest.notCaptured_failure_printsOneLineNamingTheCause`
+- `LatheModelInjectorTest.injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection`
+- `CaptureLauncherSessionListenerTest.notCaptured_failure_printsOneLineNamingTheCauseAndWhere`
+- `CaptureLauncherSessionListenerTest.notCaptured_causeWhoseToStringThrows_returnsQuietly`
 - invoker fixture `capture-only-suite`
 
 ---
