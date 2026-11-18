@@ -85,9 +85,8 @@ final class LatheModelInjector {
       if (!extensionsTurnedOff) {
         extensionsTurnedOff = true;
         LOG.info(
-            "[setup] maven-compiler-plugin extensions turned off so the lathe compiler loads,"
-                + " first in {}",
-            project.getArtifactId());
+            "[setup] maven-compiler-plugin loaded as a plain plugin, not a build extension,"
+                + " so its realm holds the lathe compiler");
       }
     }
 
