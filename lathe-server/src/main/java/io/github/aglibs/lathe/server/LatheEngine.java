@@ -1145,7 +1145,7 @@ public final class LatheEngine {
         withFailedWrites(
             request(
                 (session, cancel, progress) ->
-                    checkAll(session, contents, changedUris, failedSources, cancel)),
+                    session.verifier().check(contents, changedUris, failedSources, cancel)),
             plan.failedWrites());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
@@ -1187,53 +1187,6 @@ public final class LatheEngine {
     failedWrites.forEach(
         (file, causes) -> merged.merge(LatheUri.fromPath(file), causes, WritePass::withWriteOnly));
     return Map.copyOf(merged);
-  }
-
-  // A changed file is checked alone, against the classes its write produced, as the build sees it:
-  // in a batch its source would be analyzed again instead, and Lombok there reads a lombok.config
-  // that may be up to 2 s old. Its callers, unchanged, share a batch per source tree.
-  private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
-      final WorkspaceSession session,
-      final Map<String, String> contents,
-      final Set<String> changed,
-      final List<TransientSource> context,
-      final CancelChecker cancel) {
-    final Map<Boolean, Map<String, String>> byChanged =
-        contents.entrySet().stream()
-            .collect(
-                Collectors.partitioningBy(
-                    file -> changed.contains(file.getKey()),
-                    Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
-    return FeatureAnswers.concatAll(
-            byChanged.get(true).entrySet().stream()
-                .map(file -> checkedAlone(session, file, context, cancel)))
-        .thenCombine(
-            session.features().diagnosticsTransientFuture(byChanged.get(false), context, cancel),
-            (alone, batched) ->
-                Stream.concat(alone.stream(), batched.entrySet().stream())
-                    .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
-  }
-
-  // A changed file another changed file's failing write leaves stale classes for is checked with
-  // that file's edited source; the failing file itself, and any other file, alone.
-  private static CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>> checkedAlone(
-      final WorkspaceSession session,
-      final Map.Entry<String, String> file,
-      final List<TransientSource> context,
-      final CancelChecker cancel) {
-    final List<TransientSource> others =
-        context.stream().filter(source -> !source.uri().equals(file.getKey())).toList();
-    if (others.isEmpty()) {
-      return session
-          .features()
-          .diagnosticsTransientFuture(file.getKey(), file.getValue())
-          .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
-    }
-
-    return session
-        .features()
-        .diagnosticsTransientFuture(Map.of(file.getKey(), file.getValue()), others, cancel)
-        .thenApply(checked -> List.copyOf(checked.entrySet()));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones

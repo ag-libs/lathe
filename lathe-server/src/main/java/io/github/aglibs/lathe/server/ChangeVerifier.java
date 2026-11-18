@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.TextMentions;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
@@ -32,9 +33,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 // What an agent's verify_change and the notes on every MCP answer are built from: which sources
 // differ from what the build compiled, which modules their callers are in, which files still fail
@@ -45,16 +48,66 @@ final class ChangeVerifier {
   private final WorkspaceState state;
   private final FeatureRouter router;
   private final WritePass writePass;
+  // The compiles verify_change, and a run before it launches, check the changed files and their
+  // callers with.
+  private final DocumentFeatures features;
   // Generated files a rename left calling the old name, with their content then: verify_change
   // checks them as callers until their generator rewrites them. The referrer search cannot reach
   // every one (JMH's names only a generated subclass of the renamed member's class).
   private final Map<Path, ContentFingerprint> leftByRename = new HashMap<>();
 
   ChangeVerifier(
-      final WorkspaceState state, final FeatureRouter router, final WritePass writePass) {
+      final WorkspaceState state,
+      final FeatureRouter router,
+      final WritePass writePass,
+      final DocumentFeatures features) {
     this.state = state;
     this.router = router;
     this.writePass = writePass;
+    this.features = features;
+  }
+
+  // A changed file is checked alone, against the classes its write produced, as the build sees it:
+  // in a batch its source would be analyzed again instead, and Lombok there reads a lombok.config
+  // that may be up to 2 s old. Its callers, unchanged, share a batch per source tree.
+  CompletableFuture<Map<String, List<Diagnostic>>> check(
+      final Map<String, String> contents,
+      final Set<String> changed,
+      final List<TransientSource> context,
+      final CancelChecker cancel) {
+    final Map<Boolean, Map<String, String>> byChanged =
+        contents.entrySet().stream()
+            .collect(
+                Collectors.partitioningBy(
+                    file -> changed.contains(file.getKey()),
+                    Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
+    return FeatureAnswers.concatAll(
+            byChanged.get(true).entrySet().stream()
+                .map(file -> checkedAlone(file, context, cancel)))
+        .thenCombine(
+            features.diagnosticsTransientFuture(byChanged.get(false), context, cancel),
+            (alone, batched) ->
+                Stream.concat(alone.stream(), batched.entrySet().stream())
+                    .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
+  }
+
+  // A changed file another changed file's failing write leaves stale classes for is checked with
+  // that file's edited source; the failing file itself, and any other file, alone.
+  private CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>> checkedAlone(
+      final Map.Entry<String, String> file,
+      final List<TransientSource> context,
+      final CancelChecker cancel) {
+    final List<TransientSource> others =
+        context.stream().filter(source -> !source.uri().equals(file.getKey())).toList();
+    if (others.isEmpty()) {
+      return features
+          .diagnosticsTransientFuture(file.getKey(), file.getValue())
+          .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
+    }
+
+    return features
+        .diagnosticsTransientFuture(Map.of(file.getKey(), file.getValue()), others, cancel)
+        .thenApply(checked -> List.copyOf(checked.entrySet()));
   }
 
   // Where a name may survive as text: the sources whose tokens include it, and the resource roots.

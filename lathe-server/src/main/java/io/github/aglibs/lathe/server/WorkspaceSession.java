@@ -145,7 +145,7 @@ final class WorkspaceSession {
                 () -> renameTransaction.memberPaths()),
             resourceMirror);
     this.queries = new WorkspaceQueries(state, writePass);
-    this.verifier = new ChangeVerifier(state, router, writePass);
+    this.verifier = new ChangeVerifier(state, router, writePass, features);
     this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex, verifier);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
