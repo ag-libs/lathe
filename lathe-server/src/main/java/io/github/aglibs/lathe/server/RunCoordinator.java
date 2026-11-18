@@ -60,6 +60,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -82,6 +83,8 @@ final class RunCoordinator {
   private final WorkspaceState state;
   private final ReactorTypeIndex reactorIndex;
   private final ChangeVerifier verifier;
+  // The write pass catching up before a launch's compile check, as before verify_change's.
+  private final Supplier<CompletableFuture<ReconcileOutcome>> reconcile;
   // In-flight replays keyed by run token, from the moment a launch leaves the loop, so a cancel
   // reaches the right one. Loop-only: launch threads hand their JVM back through a rejoin.
   private final Map<String, RunSlot> activeRuns = new HashMap<>();
@@ -96,12 +99,14 @@ final class RunCoordinator {
       final ServerEventLoop eventLoop,
       final WorkspaceState state,
       final ReactorTypeIndex reactorIndex,
-      final ChangeVerifier verifier) {
+      final ChangeVerifier verifier,
+      final Supplier<CompletableFuture<ReconcileOutcome>> reconcile) {
     this.client = client;
     this.eventLoop = eventLoop;
     this.state = state;
     this.reactorIndex = reactorIndex;
     this.verifier = verifier;
+    this.reconcile = reconcile;
   }
 
   CompletableFuture<LaunchOutcome> runFuture(final LaunchTarget target, final String token) {
@@ -140,40 +145,50 @@ final class RunCoordinator {
 
   private CompletableFuture<LaunchOutcome> startRun(
       final LaunchTarget target, final String token, final RunItem overlay) {
+    requireFreeToken(token);
     final LaunchInputs inputs = launchInputs();
-    final Optional<String> failing = failingUnder(target);
     return run(
         target.module(),
         target.label(),
         token,
         overlay,
-        () ->
-            failing.isPresent()
-                ? notCompiling(failing.get())
-                : prepare(inputs, target, overlay, JdwpOptions.NONE));
+        failingUnder(target),
+        () -> prepare(inputs, target, overlay, JdwpOptions.NONE));
   }
 
   private CompletableFuture<DebugStartResult> startDebug(
       final LaunchTarget target, final String token, final RunItem overlay) {
+    requireFreeToken(token);
     final LaunchInputs inputs = launchInputs();
     final var jdwp = new JdwpOptions(IOUtil.unchecked(PortUtil::free));
-    final Optional<String> failing = failingUnder(target);
     return debug(
         target.module(),
         target.label(),
         token,
         overlay,
         jdwp,
-        () ->
-            failing.isPresent()
-                ? notCompiling(failing.get())
-                : prepare(inputs, target, overlay, jdwp));
+        failingUnder(target),
+        () -> prepare(inputs, target, overlay, jdwp));
   }
 
-  // A source of the target's module, or of one it depends on, that failed to compile: the launch
-  // would replay the last good classes, not the code on disk.
-  private Optional<String> failingUnder(final LaunchTarget target) {
-    return verifier.failingInModule(SourceLayout.moduleLatheDir(state.root(), target.module()));
+  // Code the target runs, in its module or one it depends on, that does not compile now: the launch
+  // would replay the last good classes, not the code on disk. After the write pass has caught up,
+  // as for verify_change, so a source saved just before the run is checked against its own write;
+  // a deferral (a build running) checks the classes as they are. A check that fails, even before
+  // it compiles, lets the run go ahead, as before it.
+  private CompletableFuture<Optional<String>> failingUnder(final LaunchTarget target) {
+    final Path moduleDir = SourceLayout.moduleLatheDir(state.root(), target.module());
+    return CompletableFuture.completedFuture(moduleDir)
+        .thenCompose(dir -> reconcile.get())
+        .thenCompose(outcome -> verifier.failingForRun(moduleDir))
+        .exceptionally(
+            error -> {
+              LOG.log(
+                  Level.WARNING,
+                  error,
+                  () -> "[launch] %s compile check failed".formatted(target.module()));
+              return Optional.empty();
+            });
   }
 
   private static Replay notCompiling(final String failing) {
@@ -214,10 +229,11 @@ final class RunCoordinator {
       final String label,
       final String token,
       final RunItem overlay,
+      final CompletableFuture<Optional<String>> failing,
       final IOUtil.IOSupplier<Replay> prepare) {
     requireFreeToken(token);
     final var t = Stopwatch.start();
-    return spawn(moduleRel, label, token, overlay, streamConsumer(token), prepare)
+    return spawn(moduleRel, label, token, overlay, streamConsumer(token), failing, prepare)
         .thenCompose(this::outcome)
         .whenComplete(
             (outcome, error) ->
@@ -276,6 +292,7 @@ final class RunCoordinator {
       final String token,
       final RunItem overlay,
       final JdwpOptions jdwp,
+      final CompletableFuture<Optional<String>> failing,
       final IOUtil.IOSupplier<Replay> prepare) {
     requireFreeToken(token);
     final var jdwpReady = new CompletableFuture<Void>();
@@ -285,6 +302,7 @@ final class RunCoordinator {
             token,
             overlay,
             jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
+            failing,
             prepare)
         .thenCompose(
             spawned -> attachDebugHost(moduleRel, label, token, spawned, jdwp.port(), jdwpReady));
@@ -301,20 +319,32 @@ final class RunCoordinator {
       final String token,
       final RunItem overlay,
       final Consumer<TranscriptLine> onLine,
+      final CompletableFuture<Optional<String>> failing,
       final IOUtil.IOSupplier<Replay> prepare) {
     if (!token.isBlank()) {
       activeRuns.put(token, RunSlot.PENDING);
     }
 
     final Consumer<TestResult> onResult = resultConsumer(token);
+    // After the compile check, which the token's slot already spans: a cancel meanwhile is kept.
     final CompletableFuture<Spawned> spawned =
-        CompletableFuture.supplyAsync(
-            () ->
-                IOUtil.unchecked(
-                    () ->
-                        spawnPrepared(
-                            moduleRel, label, overlay.configLabel(), onLine, onResult, prepare)),
-            task -> launchThread(moduleRel, task).start());
+        failing.thenCompose(
+            found -> {
+              final IOUtil.IOSupplier<Replay> replay =
+                  found.isPresent() ? () -> notCompiling(found.get()) : prepare;
+              return CompletableFuture.supplyAsync(
+                  () ->
+                      IOUtil.unchecked(
+                          () ->
+                              spawnPrepared(
+                                  moduleRel,
+                                  label,
+                                  overlay.configLabel(),
+                                  onLine,
+                                  onResult,
+                                  replay)),
+                  task -> launchThread(moduleRel, task).start());
+            });
     return eventLoop
         .rejoin(spawned)
         .whenComplete((result, error) -> register(token, result, error));

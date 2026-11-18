@@ -4,7 +4,6 @@ import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
-import io.github.aglibs.lathe.analysis.PackageDirectory;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceRole;
@@ -398,7 +397,7 @@ public final class LatheEngine {
   // compile the file as it is on disk, then the tool's work, chained.
   private <T> SessionHost.LoopWork<T> fileWork(final Path file, final FileWork<T> work) {
     final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
+    final String content = ChangeVerifier.read(file);
     return (session, cancel, progress) ->
         session
             .reconcileForVerify()
@@ -640,7 +639,7 @@ public final class LatheEngine {
    */
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
-    final String original = read(file);
+    final String original = ChangeVerifier.read(file);
     final Optional<List<Location>> localMentions =
         request(
             positionWork(
@@ -1125,7 +1124,7 @@ public final class LatheEngine {
             .distinct()
             .collect(
                 Collectors.toUnmodifiableMap(
-                    LatheUri::fromPath, LatheEngine::read, (first, sameFile) -> first));
+                    LatheUri::fromPath, ChangeVerifier::read, (first, sameFile) -> first));
     // Every check starts before any is awaited, so the modules compile side by side, each on its
     // own worker; one at a time, a change with callers across a large reactor took seconds. A check
     // keeps no analysis: opened, each file would hold one until the cache evicted it, and on a
@@ -1145,7 +1144,7 @@ public final class LatheEngine {
         withFailedWrites(
             request(
                 (session, cancel, progress) ->
-                    checkAll(session, contents, changedUris, failedSources, cancel)),
+                    session.verifier().check(contents, changedUris, failedSources, cancel)),
             plan.failedWrites());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
@@ -1187,53 +1186,6 @@ public final class LatheEngine {
     failedWrites.forEach(
         (file, causes) -> merged.merge(LatheUri.fromPath(file), causes, WritePass::withWriteOnly));
     return Map.copyOf(merged);
-  }
-
-  // A changed file is checked alone, against the classes its write produced, as the build sees it:
-  // in a batch its source would be analyzed again instead, and Lombok there reads a lombok.config
-  // that may be up to 2 s old. Its callers, unchanged, share a batch per source tree.
-  private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
-      final WorkspaceSession session,
-      final Map<String, String> contents,
-      final Set<String> changed,
-      final List<TransientSource> context,
-      final CancelChecker cancel) {
-    final Map<Boolean, Map<String, String>> byChanged =
-        contents.entrySet().stream()
-            .collect(
-                Collectors.partitioningBy(
-                    file -> changed.contains(file.getKey()),
-                    Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
-    return FeatureAnswers.concatAll(
-            byChanged.get(true).entrySet().stream()
-                .map(file -> checkedAlone(session, file, context, cancel)))
-        .thenCombine(
-            session.features().diagnosticsTransientFuture(byChanged.get(false), context, cancel),
-            (alone, batched) ->
-                Stream.concat(alone.stream(), batched.entrySet().stream())
-                    .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
-  }
-
-  // A changed file another changed file's failing write leaves stale classes for is checked with
-  // that file's edited source; the failing file itself, and any other file, alone.
-  private static CompletableFuture<List<Map.Entry<String, List<Diagnostic>>>> checkedAlone(
-      final WorkspaceSession session,
-      final Map.Entry<String, String> file,
-      final List<TransientSource> context,
-      final CancelChecker cancel) {
-    final List<TransientSource> others =
-        context.stream().filter(source -> !source.uri().equals(file.getKey())).toList();
-    if (others.isEmpty()) {
-      return session
-          .features()
-          .diagnosticsTransientFuture(file.getKey(), file.getValue())
-          .thenApply(diagnostics -> List.of(Map.entry(file.getKey(), diagnostics)));
-    }
-
-    return session
-        .features()
-        .diagnosticsTransientFuture(Map.of(file.getKey(), file.getValue()), others, cancel)
-        .thenApply(checked -> List.copyOf(checked.entrySet()));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
@@ -1431,18 +1383,10 @@ public final class LatheEngine {
   // error is not javac's: the build compiles and runs such a file.
   private Optional<String> firstError(
       final Path file, final String uri, final List<Diagnostic> diagnostics) {
-    return WritePass.ownDiagnostics(diagnostics).stream()
-        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
-        .filter(diagnostic -> !isPackageDirectoryError(diagnostic))
-        .min(Comparator.comparingInt(diagnostic -> diagnostic.getRange().getStart().getLine()))
+    return ChangeVerifier.firstBuildError(diagnostics)
         .map(
             diagnostic ->
                 "%s:%s".formatted(displayPath(file, uri), WritePass.errorLine(diagnostic)));
-  }
-
-  private static boolean isPackageDirectoryError(final Diagnostic diagnostic) {
-    return diagnostic.getCode() != null
-        && PackageDirectory.CODE.equals(diagnostic.getCode().getLeft());
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,
@@ -1457,10 +1401,6 @@ public final class LatheEngine {
     Optional<String> failing() {
       return Optional.ofNullable(failure);
     }
-  }
-
-  private static String read(final Path file) {
-    return IOUtil.unchecked(() -> Files.readString(file));
   }
 
   public void close() {

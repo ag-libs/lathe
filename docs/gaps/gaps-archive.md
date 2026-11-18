@@ -12304,6 +12304,46 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-26 — A run that only some of its code fails to compile still runs on the old classes — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: the editor's runs (`:LatheRun`, neotest, debug), `run_test` with `scope: package`, and a test that still compiles while code it calls no longer does.**
+
+Split from MC-92 (2026-11-18), whose fix covers `run_test` on the test file itself.
+
+### Observed behaviour
+
+`run_test` now refuses a test file whose own compile has an error ("code it runs does not compile"), as when a class it uses was deleted or changed under it.
+What still runs on the last good classes, and fails with `NoClassDefFoundError` or a changed signature at run time, found from the code:
+
+- the editor's runs, through `RunCoordinator.failingUnder`, which checks failed build compiles only;
+- the other test files of a `scope: package` run, as only the file asked about is compiled first;
+- a test that compiles while an unchanged helper it calls uses a deleted class: the helper keeps its old class, and nothing recompiles it.
+
+### Fix direction
+
+Mark the unchanged dependents of a deleted or changed source as failing where the write pass handles the change (`WritePass.reconcileDeletedSourcesIn` and the write levels), so the existing check (`ChangeVerifier.failingInModule`) refuses every run path at once; or compile each file a run selects before it runs.
+
+### Resolution
+
+Every launch, the editor's runs and debugs and `run_test` alike, is checked first, as `verify_change` checks a change (`ChangeVerifier.failingForRun`): after the write pass has caught up, the changes since the build in the run's module and the modules it depends on, the files that use them, and the generated callers a rename left are compiled, and a launch whose code has an error is blocked, `code it runs does not compile: <file>:<line>: <error>`.
+Nothing changed since the build: nothing is compiled.
+`verify_change`'s compile step moved from `LatheEngine` into `ChangeVerifier` for it, and `verify_change` answers as before.
+Checked on javaparser: with the helper `ExtractingVisitors.java` deleted, a package run through `JavaTokenTest.java` ran 3,070 tests on old classes on main; it is now blocked naming `ExpectedTokensTest.java:30: cannot find symbol`.
+
+Left as they are: no cache between runs, so a large unbuilt change is compiled again before each run; a cancel during the check still starts the JVM, then kills it, as a cancel before the JVM exists does; a debug run's port is taken before the check.
+
+### Regression targets
+
+- `LatheWorkspaceServiceTest.executeCommand_runWhileAHelperUsesADeletedClass_blockedNamingTheHelper`
+- `LatheWorkspaceServiceTest.executeCommand_runWhileModuleDoesNotCompile_blockedNamingTheFailure`
+- `LatheEngineRunTest.runTest_classItUsesDeleted_notRunNamingItsError`
+
+---
+
 ## TE-21 — A JUnit 6 build's tests replay on the JUnit 5 runner and fail before any test runs — done
 
 **Status: done** (2026-11-18, PR #385)
