@@ -12032,6 +12032,58 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+
+**Affects: Maven modules whose capture-only test run reports `Tests run: 0` (seen on jdbi: `core`, `sqlobject`, `postgres`, `spring` and others); `run_test`, neotest and `:LatheRun` on their tests.**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+`:LatheInit` on jdbi succeeds and captures 21 modules' test launches, but not `core`, `sqlobject` and other modules with tests; nothing in the output says so.
+Running `TestJdbi` then answers `blocked: no captured test launch for core; run .lathe/lathe-sync.sh --tests core`, and that command again reports `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0` and writes no `.lathe/core/test-launch.json`.
+`lathe-junit` is on the fork's test classpath (`-X`), Surefire uses the JUnit Platform provider with `forkCount=4`, and no fork reports a test class.
+`vavr`, with the same Surefire settings, captures (its dry run reports 3 skipped tests).
+`-Dtest=TestJdbi -Dlathe.capture.only=true` on `core` captures the launch (8 skipped).
+`CaptureLauncherSessionListener` swallows every `Throwable`, so a failed capture leaves no trace.
+[EG-067](#eg-067--the-first-build-floods-the-log-with-warnings--non-goal) saw `Tests run: 0, Skipped: 0` on EqualsVerifier's `equalsverifier-core` and `equalsverifier-test`; whether those were captured is not recorded.
+
+Probe: on jdbi `core`, `mvn -pl core test -Dlathe.capture.only=true -X` with a stack trace printed from the listener's catch, and a log of whether `launcherSessionOpened` runs and in which working directory.
+The warning in the fix direction does not wait on it.
+
+### Fix direction
+
+Find why the whole-module dry run starts no test class in these modules; whatever the cause, have the sync say which modules ran tests but captured no launch, and have the listener print why a capture failed instead of nothing.
+
+### Cause (found 2026-11-18)
+
+The Maven extension narrows a capture-only run to one class, the first test source in name order (`LatheModelInjector.injectCaptureClass`), to start the test JVM without discovering every class.
+When that class is one Surefire does not run, Surefire starts no test JVM at all: nothing is captured, and the build passes with `Tests run: 0`.
+Every jdbi module left uncaptured started from an abstract base or a helper (`core`: `AbstractJavaTimeArrayTests`, `json`: `AbstractIssue2395Test`, `guice`: `GuiceTestSupport`, `postgres`: `FooBarPGType`, `spring`: `Callback`), and every captured one from a test class.
+`mysql` and `postgis` exclude every test in their default profile, so they have nothing to capture.
+The listener was not at fault: it never ran.
+
+### Resolution
+
+A capture-only run selects up to five test sources, the names Surefire's default includes match first, then the rest, each in name order: one runnable class among them starts the JVM, and a module's own includes (a `@Suite`) keep their classes in the selection.
+A capture that fails in the test JVM now prints `[lathe] test launch not captured: <cause>` to the build's test output.
+Checked on jdbi with the branch's extension: `core`, `sqlobject`, `json` and `guice` now capture; the `capture-only-suite` invoker fixture still discovers its suite.
+The sync still cannot list the modules that captured nothing: it runs at the root's `process-test-classes`, before any module's tests.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsTheFirstFiveTestNames`
+- `LatheModelInjectorTest.injectCaptureClass_otherNamesInSeveralRoots_selectedAfterTheTestNames`
+- `CaptureLauncherSessionListenerTest.notCaptured_failure_printsOneLineNamingTheCause`
+- invoker fixture `capture-only-suite`
+
+---
+
 ## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first — done
 
 **Status: done.**

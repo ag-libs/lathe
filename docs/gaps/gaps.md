@@ -1491,41 +1491,6 @@ None yet.
 
 ---
 
-## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word
-
-**Status: accepted** (triaged 2026-11-17: the cause is not known; the first step is the sync naming the modules it captured nothing for, and the listener saying why)
-
-**Kind: bug**
-
-**Value: high — Size: M**
-
-**Affects: Maven modules whose capture-only test run reports `Tests run: 0` (seen on jdbi: `core`, `sqlobject`, `postgres`, `spring` and others); `run_test`, neotest and `:LatheRun` on their tests.**
-
-Found by the editor exploratory round on jdbi (2026-11-17).
-
-### Observed behaviour
-
-`:LatheInit` on jdbi succeeds and captures 21 modules' test launches, but not `core`, `sqlobject` and other modules with tests; nothing in the output says so.
-Running `TestJdbi` then answers `blocked: no captured test launch for core; run .lathe/lathe-sync.sh --tests core`, and that command again reports `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0` and writes no `.lathe/core/test-launch.json`.
-`lathe-junit` is on the fork's test classpath (`-X`), Surefire uses the JUnit Platform provider with `forkCount=4`, and no fork reports a test class.
-`vavr`, with the same Surefire settings, captures (its dry run reports 3 skipped tests).
-`-Dtest=TestJdbi -Dlathe.capture.only=true` on `core` captures the launch (8 skipped).
-`CaptureLauncherSessionListener` swallows every `Throwable`, so a failed capture leaves no trace.
-[EG-067](gaps-archive.md#eg-067--the-first-build-floods-the-log-with-warnings--non-goal) saw `Tests run: 0, Skipped: 0` on EqualsVerifier's `equalsverifier-core` and `equalsverifier-test`; whether those were captured is not recorded.
-
-Probe: on jdbi `core`, `mvn -pl core test -Dlathe.capture.only=true -X` with a stack trace printed from the listener's catch, and a log of whether `launcherSessionOpened` runs and in which working directory.
-The warning in the fix direction does not wait on it.
-
-### Fix direction
-
-Find why the whole-module dry run starts no test class in these modules; whatever the cause, have the sync say which modules ran tests but captured no launch, and have the listener print why a capture failed instead of nothing.
-
-### Regression targets
-
-None yet.
-
----
-
 ## TE-20 — A Gradle source set beyond `test` has no package, folder or module runs
 
 **Status: deferred** (2026-11-15: feature freeze)
