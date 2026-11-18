@@ -344,7 +344,7 @@ None yet.
 
 ## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow
 
-**Status: accepted** (triaged 2026-11-17: it ends the server, and the fix is a stack size on the worker threads)
+**Status: deferred** (2026-11-18: deferred by decision; such code is rare outside generated sources)
 
 **Kind: bug**
 
