@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.CompilationUnitTree;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -40,7 +41,7 @@ public final class PackageDirectory {
     }
 
     final String expected = expectedPackage(root.get().relativize(file).getParent());
-    final var cu = analysis.tree();
+    final CompilationUnitTree cu = analysis.tree();
     final String declared = cu.getPackageName() == null ? "" : cu.getPackageName().toString();
     if (declared.equals(expected)) {
       return Optional.empty();

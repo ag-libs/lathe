@@ -581,6 +581,28 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .hasMessageContaining("outside the project");
   }
 
+  // MC-90: in a file whose package is not its directory, a parameter is still renamed from the
+  // file's own code, while a field, which a rename finds by its package, is refused with the
+  // reason.
+  @Test
+  void prepareRename_fileWhosePackageIsNotItsDirectory_parameterAcceptedFieldRefused()
+      throws Exception {
+    final Path source = writeWorkspaceSource();
+    final var content = "package com.other; class Foo { int field; void set(int value) {} }";
+    Files.writeString(source, content);
+    host.initialize(tmp);
+    openDoc(source, content);
+
+    assertThat(prepareRename(source, content, "value").get(TIMEOUT_S, TimeUnit.SECONDS))
+        .isNotNull();
+    assertThatThrownBy(
+            () -> prepareRename(source, content, "field").get(TIMEOUT_S, TimeUnit.SECONDS))
+        .cause()
+        .isInstanceOf(ResponseErrorException.class)
+        .hasMessageContaining("`field` cannot be renamed")
+        .hasMessageContaining("com.other");
+  }
+
   private CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
       prepareRename(final Path source, final String content, final String symbol) {
     return service.prepareRename(

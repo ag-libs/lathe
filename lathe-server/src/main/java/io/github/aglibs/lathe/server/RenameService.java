@@ -1,13 +1,13 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
-import io.github.aglibs.lathe.analysis.PackageDirectory;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceRole;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -28,6 +28,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
+import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
@@ -87,18 +88,10 @@ final class RenameService {
     }
 
     final var request = router.featureRequest(openFile, pos);
-    final ModuleSourceConfig config = module.config();
     final var t = Stopwatch.start();
     return module
         .worker()
-        .submit(session -> packageMismatch(session, uri, config))
-        .thenCompose(
-            mismatch -> {
-              refuseIfPresent(mismatch);
-              return module
-                  .worker()
-                  .submit(session -> session.references().resolveRenameTarget(request));
-            })
+        .submit(session -> renameTarget(session, request))
         .thenApply(
             target -> {
               if (target == null) {
@@ -411,19 +404,25 @@ final class RenameService {
     return isGeneratedSource(file) ? Optional.empty() : state.registry().moduleSourceFor(file);
   }
 
-  // On the module's worker. A file whose package is not its directory: Lathe finds declarations by
-  // their package, so a rename there would miss them and answer nothing to rename.
-  private static Optional<String> packageMismatch(
-      final SourceAnalysisSession session, final String uri, final ModuleSourceConfig config) {
-    return session
-        .cachedAnalysis(uri)
-        .flatMap(
-            analysis ->
-                PackageDirectory.mismatch(analysis, LatheUri.toPath(uri), config.sourceRoots()))
-        .map(
-            mismatch ->
-                "Nothing in this file can be renamed. %s"
-                    .formatted(mismatch.getMessage().getLeft()));
+  // On the module's worker: the symbol a rename at the request would rename. In a file whose
+  // package is not its directory, one searched beyond the file is refused: Lathe finds its
+  // declaration by its package, so the rename would miss it. One searched only in the file (a
+  // local, a parameter, a type parameter, a private member) needs no such lookup.
+  private static ReferenceTarget renameTarget(
+      final SourceAnalysisSession session, final SourceFeatureRequest request) {
+    final ReferenceTarget target = session.references().resolveRenameTarget(request);
+    if (target == null || target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+      return target;
+    }
+
+    final Optional<Diagnostic> mismatch = session.packageMismatch(request);
+    if (mismatch.isPresent()) {
+      throw FeatureAnswers.refused(
+          "`%s` cannot be renamed: %s"
+              .formatted(target.simpleName(), mismatch.get().getMessage().getLeft()));
+    }
+
+    return target;
   }
 
   private static void refuseIfPresent(final Optional<String> reason) {
@@ -529,15 +528,11 @@ final class RenameService {
     final var request = router.featureRequest(openFile, pos);
     final ModuleSourceConfig cursorConfig = module.config();
     return cursorWorker
-        .submit(
-            session ->
-                packageMismatch(session, uri, cursorConfig)
-                    .or(() -> session.references().renameConflict(request, newName)))
+        .submit(session -> session.references().renameConflict(request, newName))
         .thenCompose(
             conflict -> {
               refuseIfPresent(conflict);
-              return cursorWorker.submit(
-                  session -> session.references().resolveRenameTarget(request));
+              return cursorWorker.submit(session -> renameTarget(session, request));
             })
         .thenCompose(
             target -> {
