@@ -1,17 +1,13 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.analysis.PackageDirectory;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -47,9 +43,6 @@ public final class CompilationWorker {
   private final Executor delivery;
   private final Supplier<SourceAnalysisSession> contextFactory;
   private final IntConsumer processTerminator;
-  // The module's source roots, against which a file's package is checked; none for a worker of no
-  // module's sources.
-  private final List<Path> sourceRoots;
   private SourceAnalysisSession context;
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
@@ -67,10 +60,10 @@ public final class CompilationWorker {
       final Executor delivery) {
     return new CompilationWorker(
         "lathe-module-%s-%s".formatted(config.moduleDir().getFileName(), config.sourceTree()),
-        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config, compilationAdmission)),
-        delivery,
-        status -> Runtime.getRuntime().halt(status),
-        config.sourceRoots());
+        () ->
+            new SourceAnalysisSession(
+                new ModuleSourceCompiler(config, compilationAdmission), config.sourceRoots()),
+        delivery);
   }
 
   static CompilationWorker external(
@@ -97,19 +90,9 @@ public final class CompilationWorker {
       final Supplier<SourceAnalysisSession> contextFactory,
       final Executor delivery,
       final IntConsumer processTerminator) {
-    this(name, contextFactory, delivery, processTerminator, List.of());
-  }
-
-  private CompilationWorker(
-      final String name,
-      final Supplier<SourceAnalysisSession> contextFactory,
-      final Executor delivery,
-      final IntConsumer processTerminator,
-      final List<Path> sourceRoots) {
     this.contextFactory = contextFactory;
     this.delivery = delivery;
     this.processTerminator = processTerminator;
-    this.sourceRoots = List.copyOf(sourceRoots);
     this.executor =
         Executors.newSingleThreadExecutor(
             r -> {
@@ -212,14 +195,13 @@ public final class CompilationWorker {
                   .toList();
           if (joining.isEmpty()) {
             return response(
-                ctx,
                 request,
                 ctx.compile(request.uri(), request.content(), request.version(), request.mode()));
           }
 
           final Map<String, List<Diagnostic>> diagnostics =
               analyzeTogether(ctx, Stream.concat(Stream.of(request), joining.stream()).toList());
-          return response(ctx, request, diagnostics.get(request.uri()));
+          return response(request, diagnostics.get(request.uri()));
         });
   }
 
@@ -230,33 +212,14 @@ public final class CompilationWorker {
         ctx -> {
           final Map<String, List<Diagnostic>> diagnostics = analyzeTogether(ctx, requests);
           return requests.stream()
-              .map(request -> response(ctx, request, diagnostics.get(request.uri())))
+              .map(request -> response(request, diagnostics.get(request.uri())))
               .toList();
         });
   }
 
-  // Every compile's diagnostics leave the module here, so a file whose package is not its
-  // directory is flagged once, for the editor and the agent alike.
-  private CompileResponse response(
-      final SourceAnalysisSession ctx,
-      final CompileRequest request,
-      final List<Diagnostic> diagnostics) {
-    final Optional<Diagnostic> packageMismatch =
-        ctx.cachedAnalysis(request.uri())
-            .flatMap(
-                analysis ->
-                    PackageDirectory.mismatch(
-                        analysis, LatheUri.toPath(request.uri()), sourceRoots));
-    final List<Diagnostic> all =
-        packageMismatch
-            .map(
-                mismatch ->
-                    Stream.concat(
-                            diagnostics == null ? Stream.empty() : diagnostics.stream(),
-                            Stream.of(mismatch))
-                        .toList())
-            .orElse(diagnostics);
-    return new CompileResponse(request.uri(), request.generation(), all);
+  private static CompileResponse response(
+      final CompileRequest request, final List<Diagnostic> diagnostics) {
+    return new CompileResponse(request.uri(), request.generation(), diagnostics);
   }
 
   private static Map<String, List<Diagnostic>> analyzeTogether(

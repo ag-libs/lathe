@@ -3,14 +3,17 @@ package io.github.aglibs.lathe.analysis;
 import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.analysis.completion.CompletionRequest;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionContext;
@@ -37,9 +40,17 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final ReferenceFeatures references;
   private final HierarchyFeatures hierarchy;
   private final FileFeatures files;
+  // The source roots of the module this session compiles, against which a file's package is
+  // checked; none for a session of no module's sources.
+  private final List<Path> sourceRoots;
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
+    this(compiler, List.of());
+  }
+
+  public SourceAnalysisSession(final JavaSourceCompiler compiler, final List<Path> sourceRoots) {
     this.compiler = compiler;
+    this.sourceRoots = List.copyOf(sourceRoots);
     this.parser = new SourceParser();
     this.completionEngine = new CompletionEngine(parser, compiler);
     this.definitionLocator = new DefinitionLocator(parser);
@@ -121,7 +132,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
         compiler.analyzeOpenBatchDetached(sources, context, cancelChecker);
     final var diagnostics = new HashMap<String, List<Diagnostic>>();
     for (int i = 0; i < sources.size(); i++) {
-      diagnostics.put(sources.get(i).uri(), mapDiagnostics(runs.get(i), sources.get(i).content()));
+      final TransientSource source = sources.get(i);
+      diagnostics.put(source.uri(), mapDiagnostics(source.uri(), runs.get(i), source.content()));
     }
 
     LOG.fine(
@@ -141,7 +153,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String content,
       final CompilerResult run,
       final Stopwatch t) {
-    final List<Diagnostic> diags = mapDiagnostics(run, content);
+    final List<Diagnostic> diags = mapDiagnostics(uri, run, content);
     LOG.info(
         () -> "[compile:%s] %s %dms diags=%d".formatted(tag, uri, t.elapsedMs(), diags.size()));
     return diags;
@@ -165,7 +177,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
           new CachedFileAnalysis(
               source.content(), versionByUri.get(source.uri()), run.fileAnalysis()));
       recordParse(source.uri(), source.content(), run);
-      diagnostics.put(source.uri(), mapDiagnostics(run, source.content()));
+      diagnostics.put(source.uri(), mapDiagnostics(source.uri(), run, source.content()));
     }
 
     LOG.info(
@@ -180,7 +192,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return sources.isEmpty() ? "nothing" : sources.get(0).uri();
   }
 
-  private static List<Diagnostic> mapDiagnostics(final CompilerResult run, final String content) {
+  // Every compile's diagnostics are mapped here, the transient checks verify_change runs included,
+  // so a file whose package is not its directory is flagged on each path.
+  private List<Diagnostic> mapDiagnostics(
+      final String uri, final CompilerResult run, final String content) {
     final List<Diagnostic> compiled =
         JavacDiagnosticMapper.filterAndMap(run.diagnostics(), content);
     JavacDiagnosticMapper.enrich(compiled, run.fileAnalysis());
@@ -188,9 +203,21 @@ public final class SourceAnalysisSession implements AutoCloseable {
         compiled.stream().anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
     final List<Diagnostic> unusedDiags =
         compileFailed ? List.of() : UnusedDeclarationScanner.scan(run.fileAnalysis(), content);
-    return unusedDiags.isEmpty()
-        ? compiled
-        : Stream.concat(compiled.stream(), unusedDiags.stream()).toList();
+    final Optional<Diagnostic> packageMismatch =
+        PackageDirectory.mismatch(run.fileAnalysis(), LatheUri.toPath(uri), sourceRoots);
+    return Stream.of(compiled.stream(), unusedDiags.stream(), packageMismatch.stream())
+        .flatMap(Function.identity())
+        .toList();
+  }
+
+  // The error the file of the request gets when its package is not its directory, from the
+  // analysis of the request's text; none for a file outside this session's source roots.
+  public Optional<Diagnostic> packageMismatch(final SourceFeatureRequest request) {
+    return cursor(request)
+        .flatMap(
+            cur ->
+                PackageDirectory.mismatch(
+                    cur.analysis(), LatheUri.toPath(request.uri()), sourceRoots));
   }
 
   public CompletionOutcome complete(
