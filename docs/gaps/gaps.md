@@ -1421,6 +1421,9 @@ The build stops before `lathe:sync`, so no `.lathe/workspace.json` or sync scrip
 `:LatheInit` does not read it, so a project that sets it still gets a `test` build, which fails before any sync script exists to use it.
 The build's warning to set it covers only shaded modules (`SyncCoordinator`), so a build like Quarkus' is not told about it.
 
+The same first build run to `package` instead (`clean package -Dlathe.sync.phase=package`, capture only, `-DskipITs` as the sync script adds past `test`) gets past `arc-cdi-tck-runner`: stopped by hand after 58 of the reactor's 1,435 modules (it was still fetching dependencies), it had met no failure and captured 62 test launches.
+Whether the whole setup then completes and writes the workspace files was not checked.
+
 ### Fix direction
 
 Have `:LatheInit` build a Maven project to the phase `lathe.sync.phase` names, read from `.mvn/maven.config` or the root POM as `MavenSyncScript.phase` reads it, with the capture-only flags the sync script adds past `test` (`-DskipITs`), and `test` when it names none.
