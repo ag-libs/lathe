@@ -2405,34 +2405,6 @@ None yet.
 
 ---
 
-## MC-94 — A `file://` URI as a tool's `file` is read as a relative path
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: every file tool given a `file://` URI instead of a path.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-`outline` with `file="file:///…/Edge.java"` answers `/<workspace>/file:/…/Edge.java does not exist`.
-Agents that also drive an LSP carry URIs and may pass one.
-
-### Fix direction
-
-Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
-`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden
 
 **Status: accepted** (triaged 2026-11-17)

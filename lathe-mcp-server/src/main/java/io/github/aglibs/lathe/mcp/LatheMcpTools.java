@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
@@ -884,7 +885,23 @@ final class LatheMcpTools {
 
   private static Path filePath(final CallToolRequest request) {
     final String file = stringArg(request, "file");
-    return file == null ? null : FileUtil.absolute(file);
+    return file == null ? null : toPath(file);
+  }
+
+  // A path as given, or a file: URI, which an agent that also drives an LSP may pass, as the path
+  // it
+  // names. A URI no path stands for (one naming a host) is taken as given, so it is reported as a
+  // file that does not exist.
+  private static Path toPath(final String file) {
+    if (!LatheUri.isFileUri(file)) {
+      return FileUtil.absolute(file);
+    }
+
+    try {
+      return LatheUri.toPath(file).normalize();
+    } catch (final IllegalArgumentException e) {
+      return FileUtil.absolute(file);
+    }
   }
 
   private static String stringArg(final CallToolRequest request, final String name) {
@@ -912,6 +929,6 @@ final class LatheMcpTools {
       return List.of();
     }
 
-    return files.stream().map(String::valueOf).map(FileUtil::absolute).toList();
+    return files.stream().map(String::valueOf).map(LatheMcpTools::toPath).toList();
   }
 }
