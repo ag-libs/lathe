@@ -95,6 +95,21 @@ class LatheModelInjectorTest {
     assertThat(project.getDependencies()).isEmpty();
   }
 
+  // WS-41: Maven builds an extensions plugin's realm before lathe-compiler is added to it, so the
+  // flag is turned off and the plugin loads as a plain one, with lathe-compiler.
+  @Test
+  void injectProject_compilerAsBuildExtension_loadedAsPlainPluginWithTheShim() {
+    final MavenProject project = project();
+    addCompiler(project, "3.14.0").setExtensions(true);
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(compilerPlugin(project).isExtensions()).isFalse();
+    assertThat(compilerPlugin(project).getDependencies())
+        .extracting(Dependency::getArtifactId)
+        .containsExactly("lathe-compiler");
+  }
+
   @Test
   void injectProject_staleCompilerDependency_overwritesVersionWithoutDuplicate() {
     final MavenProject project = project();
