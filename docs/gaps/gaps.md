@@ -1496,6 +1496,66 @@ None yet.
 
 ---
 
+## WS-42 — A Gradle module path passed as a compiler argument gives no module dependencies
+
+**Status: accepted** (triaged 2026-11-18: on main `cdf57f1`, by code; answers are wrong across modules and still claim to be complete)
+
+**Kind: bug**
+
+**Value: high — Size: M**
+
+**Affects: references, callers, rename and `verify_change` across modules, on Gradle builds that set the module path themselves.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1).
+
+### Observed behaviour
+
+Lucene's build plugin compiles each module with `--module-path` as a compiler argument, naming the dependency's packaged jar (`lucene/core/build/libs/lucene-core-12.0.0-SNAPSHOT.jar`), and leaves the task's classpath empty.
+The capture keeps the argument as it is: `lucene/analysis/common`'s params have an empty `classpath` and `modulepath`, and `workspace_summary` lists no dependency for most modules.
+Files there still compile (the argument reaches javac), but the module graph lacks the edges, so `find_references` on `TermQuery.getTerm` answers 10 references, all in `lucene/core`, while `highlighter` (`FieldQuery.java`, four calls) and `queries` use it too; the answer still says "no need to re-verify with grep".
+Analysis of a dependent module also reads the dependency's jar from the last build, not its sources.
+On main the Gradle capture still takes the module path only from the classpath (`ModulePathSplit.split(classpath)`).
+
+### Fix direction
+
+Read `--module-path`/`-p` (and `--class-path`/`-cp`) out of the captured compiler arguments into `modulepath`/`classpath`, removing them from the arguments, so a reactor module's jar is rewritten to its `.lathe/` mirror and becomes a graph edge, as a classpath entry does.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-43 — Lathe's Gradle plugin breaks a build that reads every configuration's dependencies while configuring
+
+**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; Kafka cannot be set up)
+
+**Kind: bug**
+
+**Value: high — Size: S–M**
+
+**Affects: Gradle setup (`:LatheInit`, `latheSync`) and every build of the project with Lathe's plugin applied.**
+
+Found by the exploratory round on Apache Kafka (2026-11-18), on 0.3.1 and on main `cdf57f1`.
+
+### Observed behaviour
+
+Kafka's `build.gradle` (line 536), in `afterEvaluate`, walks every resolvable configuration's `incoming.dependencies` to look for Mockito.
+That runs the `withDependencies` callback of Lathe's sources configuration (`LatheProjectPlugin.registerLibraries`, line 510), which resolves the test compile classpath at once, while other projects are still being configured.
+Kafka then fails to configure: `Could not resolve all dependencies for configuration ':coordinator-common:compileClasspath'` … `Value for :server-common project components has not been calculated yet`.
+Without Lathe's init script, `./gradlew :clients:dependencies` succeeds.
+
+### Fix direction
+
+Do not resolve anything when the sources configuration's dependencies are only listed: add the source dependencies when the facts task resolves them (a detached configuration in the task, or a provider the task forces), not in `withDependencies`.
+A TestKit fixture whose build reads every configuration's `incoming.dependencies` in `afterEvaluate`.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1708,6 +1768,62 @@ The manifest came from a whole-reactor sync stopped after the root project's syn
 
 Likely cause, unconfirmed: the runner's versions are read from the reactor's external artifacts when the root project syncs, and those do not include the modules' test-scoped JUnit.
 Take the platform and Jupiter versions from the captured test class paths, per module if they differ, and never pair a launcher and engine of another major version with the project's platform.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-22 — The capture-only sync fails on a module whose POM sets `<failIfNoTests>true</failIfNoTests>`
+
+**Status: accepted** (triaged 2026-11-18: on main `cdf57f1`; setup fails, and the guide's workaround does not apply)
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: Maven setup (`:LatheInit`) and `.lathe/lathe-sync.sh --tests`.**
+
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
+
+### Observed behaviour
+
+A capture-only build narrows Surefire to the first type of the module's test sources in name order (`LatheModelInjector.injectCaptureClass`).
+In `javaparser-core-testing` that type has no tests, so Surefire runs none ("Tests run: 0"), and the module's own `<failIfNoTests>true</failIfNoTests>` fails the build: "No tests were executed!".
+The `-DfailIfNoTests=false` the setup passes loses to the POM's explicit value, so 2 of 10 trees are captured and the rest of the reactor is skipped.
+The Maven guide says the setting matters only on JUnit older than 5.10; javaparser is on JUnit 5.14.
+
+### Fix direction
+
+Pick a type that holds a test (a name Surefire's default includes match, `*Test`/`Test*`/`*Tests`/`*TestCase`), or keep the narrowing off for a module whose Surefire configuration sets `failIfNoTests`.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-23 — Lucene's tests are not captured: their test JVMs do not load lathe-junit
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on Apache Lucene; the setup build runs every test in full.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1).
+
+### Observed behaviour
+
+The capture-only setup runs all 31 test tasks; each test JVM picks up Lathe's agent (`Picked up JDK_JAVA_OPTIONS: -javaagent:…`), but Lathe reports `:lucene:core:test captured no test launch: its test JVM did not load lathe-junit, so its tests ran in full`, and blames plugins like Develocity's test selection, which Lucene does not use.
+Lucene runs JUnit 4 (`RandomizedRunner`) through the vintage engine on the JUnit Platform, with tests on the module path.
+`run_test` then answers "no test in TestTermQuery.java".
+Cause not found: lathe-junit on the module path, where its listener is not found, or Lucene's own test task setup.
+
+### Fix direction
+
+Find why the listener does not load in Lucene's test JVM, then capture there or say why instead of naming Develocity.
 
 ### Regression targets
 
@@ -2628,6 +2744,31 @@ The schema says `method` is required when `scope` is `method`, but an agent that
 ### Fix direction
 
 A `method` with no `scope` means `scope=method`; a `method` with another scope is refused, naming the conflict.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results
+
+**Status: deferred** (triaged 2026-11-18: low; the count is right, only the first lines are)
+
+**Kind: bug**
+
+**Affects: MCP `find_implementations` and the other capped lists.**
+
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
+
+### Observed behaviour
+
+`find_implementations` of `GenericVisitor` with `maxResults: 5` answers "33 implementations (showing first 5)", all anonymous classes in tests of `javaparser-core-testing` and `javaparser-core-testing-bdd`; `GenericVisitorAdapter` itself is not among them.
+The list is in path order, and `javaparser-core-testing/…` sorts before `javaparser-core/…` because `-` sorts before `/`.
+
+### Fix direction
+
+Order a capped list by module and source tree (main before test, the declaring module first), then by path.
 
 ### Regression targets
 
