@@ -1,16 +1,18 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -19,6 +21,7 @@ import java.util.stream.Stream;
 final class WorkspaceWatcher {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceWatcher.class.getName());
+  private static final long NO_FAILED_READ = Long.MIN_VALUE;
 
   enum PollResult {
     NO_CHANGE,
@@ -41,8 +44,14 @@ final class WorkspaceWatcher {
   private final Path manifestPath;
   // Watched even when the last sync saw none: declaring a formatter there needs a sync too.
   private final Path styleFile;
+  // The manifest as last read: a read that fails changes neither.
   private long lastManifestMtime;
   private String lastManifestContent;
+  // A failed read of an existing manifest: the mtime it failed at, or NO_FAILED_READ, and whether
+  // its content failed (not UTF-8), which only a rewrite fixes, or the access to it did (a
+  // permission, a lock while a sync replaces it), which is tried again on every poll.
+  private long failedReadMtime = NO_FAILED_READ;
+  private boolean failedOnContent;
   // Each build file's mtime and size at the last poll: what moved since is looked at again.
   private Map<Path, FileStat> buildFileStats = Map.of();
   // The content the last sync saw, for build files watched by content; the rest are watched by
@@ -57,7 +66,7 @@ final class WorkspaceWatcher {
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     this.styleFile = workspaceRoot.resolve(LatheLayout.STYLE_SHARED_FILE);
     this.lastManifestMtime = mtime(manifestPath);
-    this.lastManifestContent = readManifest();
+    this.lastManifestContent = readManifest(lastManifestMtime).orElse("");
   }
 
   PollResult poll() {
@@ -142,28 +151,50 @@ final class WorkspaceWatcher {
 
   private ManifestChange detectManifestChange() {
     final long current = mtime(manifestPath);
-    if (current == lastManifestMtime) {
+    final boolean retry =
+        failedReadMtime != NO_FAILED_READ && !(failedOnContent && current == failedReadMtime);
+    if (current == lastManifestMtime && !retry) {
       return ManifestChange.NONE;
     }
 
-    lastManifestMtime = current;
-    final String content = readManifest();
-    if (content.equals(lastManifestContent)) {
-      return ManifestChange.REACTOR_ONLY;
+    final Optional<String> read = readManifest(current);
+    if (read.isEmpty()) {
+      return ManifestChange.NONE;
     }
 
-    lastManifestContent = content;
+    final boolean touched = current != lastManifestMtime;
+    lastManifestMtime = current;
+    if (read.get().equals(lastManifestContent)) {
+      return touched ? ManifestChange.REACTOR_ONLY : ManifestChange.NONE;
+    }
+
+    lastManifestContent = read.get();
     return ManifestChange.STRUCTURAL;
   }
 
-  private String readManifest() {
-    // Missing manifest (not configured yet) is a legitimate empty state; a read failure on an
-    // existing one is a real error, not empty content.
+  // A missing manifest (not configured yet, or removed meanwhile) is a legitimate empty state. One
+  // that exists but cannot be read is not a change: the last content stands (at startup, none, and
+  // the manifest's own load reports the problem to the editor), and the read is tried again.
+  private Optional<String> readManifest(final long mtime) {
     if (!Files.exists(manifestPath)) {
-      return "";
+      return Optional.of("");
     }
 
-    return IOUtil.unchecked(() -> Files.readString(manifestPath, StandardCharsets.UTF_8));
+    try {
+      final String content = Files.readString(manifestPath, StandardCharsets.UTF_8);
+      failedReadMtime = NO_FAILED_READ;
+      return Optional.of(content);
+    } catch (final NoSuchFileException e) {
+      return Optional.of("");
+    } catch (final IOException e) {
+      if (failedReadMtime == NO_FAILED_READ) {
+        LOG.fine(() -> "[watcher] %s unreadable %s".formatted(manifestPath, e));
+      }
+
+      failedReadMtime = mtime;
+      failedOnContent = e instanceof CharacterCodingException;
+      return Optional.empty();
+    }
   }
 
   private static FileStat stat(final Path path) {

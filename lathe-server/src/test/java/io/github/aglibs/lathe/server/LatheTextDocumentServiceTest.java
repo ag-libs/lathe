@@ -932,6 +932,29 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                             .startsWith("Lathe: .lathe/ was written by another Lathe version")));
   }
 
+  // A workspace.json that cannot be read (here not UTF-8) is reported with its remedy, rather than
+  // failing the load before the editor is told anything.
+  @Test
+  void initialize_unreadableWorkspaceJson_warnsWithTheRemedy() throws Exception {
+    Files.write(
+        Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR))
+            .resolve(LatheLayout.WORKSPACE_JSON),
+        new byte[] {(byte) 0xC3, (byte) 0x28});
+
+    host.initialize(tmp);
+
+    verify(client, timeout(5_000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage()
+                            .startsWith(
+                                "Lathe: %s/%s could not be read"
+                                    .formatted(LatheLayout.LATHE_DIR, LatheLayout.WORKSPACE_JSON))
+                        && m.getMessage().contains(LatheLayout.SYNC_SCRIPT_COMMAND)));
+  }
+
   // A build that found every module up to date compiled none through Lathe: each file would only
   // say it is outside every module, so the load says why instead of "ready".
   @Test
