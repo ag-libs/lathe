@@ -1,34 +1,28 @@
 # Installing Lathe
 
-Lathe has two parts, set up independently and in either order.
+Install a client for your editor once.
+In each project, enable Lathe in the build and build once to install the server.
+The client starts the server that belongs to the project you open.
 
-1. **The build.** Lathe works through your project's own build, which writes what the language server
-   reads to `.lathe/` and installs the server. Set it up once per project, for your build:
+| Your build | First setup |
+|---|---|
+| Maven 3.6.3+ | [Register the extension](maven.md#method-1--maven-extension-recommended), then [run the first build](maven.md#initialize). |
+| Gradle 8.8+ | [Apply the settings plugin or use a personal init script](gradle.md#setup), then run `latheSync`. |
+| OpenJDK | [Build the JDK and sync the checkout](openjdk.md#setup). |
 
-   | Build | Guide |
-   |---|---|
-   | Maven 3.6.3+ | [Lathe for Maven](maven.md) |
-   | Gradle 8.8+ | [Lathe for Gradle](gradle.md) |
-   | The OpenJDK `make` build | [Lathe for OpenJDK](openjdk.md) |
+Choose your [Neovim](editors/neovim.md#install), [VS Code or Cursor](editors/vscode.md), [Emacs](editors/emacs.md), or [Zed](editors/zed.md) client.
+An AI agent can use the same workspace through [MCP](ai-agents.md).
 
-   From Neovim, [`:LatheInit`](editors/neovim.md#set-up-a-project) does this without changing the
-   project's files: it passes Lathe to the build from outside and runs the first build.
-   A project set up that way is refreshed by `:LatheSync`, not by the builds you run yourself;
-   registering Lathe in the build makes every build refresh it.
-
-2. **The editor client**, for [Neovim](editors/neovim.md#install), [VS Code](editors/vscode.md),
-   [Emacs](editors/emacs.md) or [Zed](editors/zed.md); an AI agent uses the [MCP server](ai-agents.md).
-   A client that finds no `.lathe/` yet asks you to run the build.
-
-The rest of this page applies to every build.
+Once your editor is running, use the sections below to [choose its JDK](#choosing-the-server-jdk-lathe_java_home), [set JVM options](#tuning-the-server-jvm-lathe_jvm_opts), or [configure formatting](#choosing-overriding-or-opting-out-of-the-formatter).
 
 ## What and where Lathe writes
 
-Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe/` on the machine.
+Lathe keeps project-specific data under `.lathe/` at the root of the build.
+Keep that directory out of version control.
+Several projects can share downloaded sources and installed server versions under `~/.cache/lathe/`.
 
-**In the project — `.lathe/`** (per-build, out of git through the `.gitignore` Lathe writes inside it), written by the build as it compiles and
-tests; each build's guide says when ([Maven](maven.md#what-the-build-writes-to-lathe),
-[Gradle](gradle.md#what-the-build-keeps-current)):
+**Project files.** The build writes the following as it compiles and tests.
+The build guides describe which tasks refresh them. [Maven phases](maven.md#what-the-build-writes-to-lathe) · [Gradle tasks](gradle.md#what-the-build-keeps-current)
 
 - per module, the `javac` inputs the language server replays (`lsp-params-*.json`), per-source compile
   stamps (`lsp-stamps-*.json`), the compiled classes and resources, and the launch templates for

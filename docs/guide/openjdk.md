@@ -1,12 +1,8 @@
 # Lathe for OpenJDK
 
-Lathe provides code intelligence — go-to-definition, find-references, completion, diagnostics, hover,
-and workspace symbol search — for the OpenJDK source, in any LSP editor. It is built on the JDK's own
-`javac`, so analysis matches what the compiler sees.
-
-This front-end reads the **`make` build** instead of Maven: the per-module `javac` invocation the build
-ran, and the exploded JDK you built. The editor uses the build's own configuration — the same module
-graph, the same `--add-exports` / `--patch-module` flags, the same language level (preview included).
+Open the JDK sources in your editor and follow a call across module boundaries, including into internal packages and generated code.
+Lathe reads each module's compiler invocation from your OpenJDK `make` build.
+That gives it the same module graph, language level, preview settings, and `--patch-module` and `--add-exports` flags.
 
 ![Lathe on the OpenJDK source — whole-JDK symbol search, completion, live diagnostics, and cross-module go-to-definition](../openjdk-demo-ecd74b0f.gif)
 
@@ -17,21 +13,27 @@ graph, the same `--add-exports` / `--patch-module` flags, the same language leve
 
 ## Setup
 
-Prerequisites: a buildable JDK checkout, and Maven 3.6.3+ on `PATH`, running on JDK 17 or later.
+Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or newer.
 
-```sh
-bash configure --with-boot-jdk=/path/to/jdk-N   # if not already configured
-make jdk                                         # build the exploded image
-echo '.lathe/' >> .git/info/exclude              # local state, keep out of git
-mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
-```
+1. Configure the checkout if needed and build the JDK you want to edit.
 
-`sync` reads the build, writes `.lathe/` in the checkout, and installs the server into
-`~/.cache/lathe/`. It finds the build automatically when exactly one configured `build/<conf>` exists; with several,
-pass `-Dlathe.buildDir=build/<conf>` to pick one. Then open any source — e.g. `src/java.base/share/classes/java/util/ArrayList.java` — in your
-editor's Lathe client; the server runs on the JDK you built via `.lathe/java-home`.
+   ```sh
+   bash configure --with-boot-jdk=/path/to/jdk-N
+   make jdk
+   ```
 
-File edits are analysed live; re-run `sync` only on build-shape changes (below).
+2. Add `.lathe/` to `.git/info/exclude` and run the sync from the checkout root.
+
+   ```sh
+   mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
+   ```
+
+   If you have several configured builds, add `-Dlathe.buildDir=build/<conf>` to select one.
+   Sync writes the workspace under `.lathe/`, installs the server under `~/.cache/lathe/`, and records the JDK you built in `.lathe/java-home`.
+
+3. Open `src/java.base/share/classes/java/util/ArrayList.java` in your editor's Lathe client.
+   Follow `AbstractList` to its declaration to start exploring.
+   Ordinary Java source edits are analyzed live. [When to sync again](#re-syncing)
 
 ## What you get
 

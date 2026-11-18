@@ -1,31 +1,19 @@
 # Lathe in Neovim
 
-The Neovim client: how to install it and a suggested keymap for every action, so you can wire your own
-config. For *what* each feature does (editor-agnostic), see the
-[feature reference](../features.md).
-Requires **Neovim 0.12+** and the Java Treesitter parser for indentation (`:TSInstall java`), on Linux
-or macOS; on Windows, use [VS Code or Cursor](vscode.md) or [Zed](zed.md). The
-default `editorconfig` indent profile follows `.editorconfig` via Neovim's native EditorConfig support.
-
-Lathe adds **no key mappings of its own** — it provides LSP endpoints, the `:Lathe*` commands, and a
-few Lua entry points; you bind the ones you want. Each section below is a table of what's available:
-the action, the command or API that implements it, its Neovim default (if any), and a suggested
-mapping. The suggested keymaps are a coherent starting set, not defaults.
-
-> For a complete, working example that assembles these pieces — the single-file config used to record
-> the demo — see [`examples/nvim/`](../../../examples/nvim/).
+Open a Java source file in a Lathe-enabled project and Neovim starts the server.
+Use **Go to Definition** to follow a method call or **Find References** to see where the method is used across modules.
+The tables below give Neovim's default keys and suggested mappings for commands you can bind yourself.
 
 ## Install
 
-Installing the client and setting up the project are **two independent steps**.
-The **server** is resolved and installed by your build — not by the plugin manager — so the project
-needs one Lathe build first: run [`:LatheInit`](#set-up-a-project) from any of its files, or wire the
-build yourself (see the [installation guide](../installation.md)); until then the client nudges you to.
-The **client** is the standalone [`ag-libs/lathe.nvim`](https://github.com/ag-libs/lathe.nvim)
-repository, installed like any other plugin — either way below (don't combine them; Lathe warns if it
-finds the client loaded from more than one place).
+Use Neovim 0.12 or later on Linux or macOS.
+Install the client once, then follow the [first build](../../../README.md#first-build) instructions for each project.
+The build installs the server and records the classpath it will use.
+On Windows, use [VS Code or Cursor](vscode.md) or [Zed](zed.md).
 
 ### Built-in package manager (Neovim 0.12+)
+
+Add these lines to your `init.lua` and restart Neovim.
 
 ```lua
 vim.pack.add({ "https://github.com/ag-libs/lathe.nvim" })
@@ -34,32 +22,26 @@ require("lathe").setup()
 
 ### lazy.nvim
 
+If your config imports `lua/plugins/`, save this as `~/.config/nvim/lua/plugins/lathe.lua`.
+
 ```lua
-{
+return {
   "ag-libs/lathe.nvim",
   ft = "java",
-  cmd = { "LatheStart", "LatheInit" },
-  event = { "BufReadPre pom.xml", "BufNewFile pom.xml" },
-  config = function()
-    require("lathe").setup()
-  end,
+  cmd = "LatheStart",
+  main = "lathe",
+  opts = {},
 }
 ```
 
-> **The `config` function (`require("lathe").setup()`) is required, on every path.** Without it, only
-> the `ftplugin` (indentation) loads; the LSP server is never registered.
+Restart Neovim and run `:Lazy install`.
+Here `opts` tells lazy.nvim to call `require("lathe").setup()`, which registers the language server.
+The plugin loads on a Java file or when you run `:LatheStart`.
+Choose one plugin manager so Neovim loads a single copy of the client.
 
-> **`cmd = { "LatheStart", "LatheInit" }` loads the plugin on those commands too**, not only on a
-> `.java` file — so `:LatheStart` brings the server up for workspace navigation before you open any
-> Java file, and `:LatheInit` sets a project up from a `build.gradle.kts`, a dashboard or an empty
-> buffer. Without it, both commands exist only after a Java buffer or a `pom.xml` has loaded the
-> plugin. (`vim.pack` has no lazy-loading, so the plugin is always available there.)
-
-> **`event = { "BufReadPre pom.xml", … }` loads the plugin for `pom.xml` too.** A `pom.xml` is
-> `filetype=xml`, so `ft = "java"` alone never loads Lathe for it — and the client-side pom
-> validation/formatting (see [pom.xml validation & formatting](#pomxml-validation--formatting)) is
-> armed inside `setup()`. `BufReadPre` fires before `BufReadPost`, so validation runs on first open.
-> (`vim.pack` is eager, so it needs nothing extra.)
+For indentation, install the Java Tree-sitter parser (`:TSInstall java` with nvim-treesitter).
+Lathe follows the project's `.editorconfig` by default.
+For completion menus, keymaps and test results like the ones in the demo, see the [example config](../../../examples/nvim/).
 
 `setup()` options:
 
@@ -81,30 +63,27 @@ See [Formatting & indentation](#formatting--indentation) below.
 
 ### Set up a project
 
-`:LatheInit [maven|gradle|openjdk]` sets Lathe up for the build around the current file and attaches
-the server when the build ends:
+For the published v0.3.1 client, start with the [first build](../../../README.md#first-build).
+Open a Java file in the project.
+Use `:LatheSync` after changing the build configuration.
 
-- It walks up from the current file (or `:pwd`) to the build's root, an OpenJDK checkout, the nearest
-  `settings.gradle(.kts)`, or a Maven root (a `pom.xml` with `.mvn/` or `mvnw` beside it, else the
-  topmost of the folders holding one), and asks you to confirm it: Enter accepts, or edit the path
-  (a relative one is taken from the root shown). The prompt names the Lathe version it sets up.
-  A kind given looks only for that kind's root.
-- A Maven or Gradle build that does not register Lathe gets it from outside, so **your project files
-  are not changed**: Maven through `-Dmaven.ext.class.path` (the jars fetched once per Lathe version
-  into `~/.cache/lathe/bootstrap/`), Gradle through an init script there. A build that registers
-  Lathe builds as it is.
-- The first build is a clean one that records your tests without running them (Maven
-  `-Dlathe.capture.only=true clean test`, Gradle `-Plathe.capture.only=true latheSync`), so the
-  server knows every module and tests run at once. Code that does not compile still sets up: compile
-  errors don't stop it, and the server shows them.
-- An OpenJDK checkout runs Lathe's OpenJDK goal once the JDK is configured and built (`make jdk`).
-- It runs the project's `mvnw`/`gradlew`, else `mvn`/`gradle` from `PATH`, and sets up this client's
-  Lathe version; a development checkout of the client needs `LATHE_VERSION` set.
+**Development client.** On `main`, `:LatheInit` can do the first build for you.
+Run it from a project file, check the build root and Lathe version in the prompt, and press Enter.
+You can edit the path or specify a build type with `:LatheInit maven`, `:LatheInit gradle` or `:LatheInit openjdk`.
+With lazy.nvim, include `"LatheInit"` alongside `"LatheStart"` in `cmd` to use it before opening a Java buffer.
 
-- The prompt says "found from the current file" when the root came from the file in the window, not from `:pwd`.
+- **Maven and Gradle.** Lathe finds the root from the current file or working directory and runs the project's wrapper, falling back to Maven or Gradle on `PATH`.
+  It runs a clean, capture-only build, then attaches the server even when sources have compile errors.
+  For a project that already registers Lathe, the build uses its own configuration.
+  Otherwise the command supplies the Maven extension or Gradle init script from the local cache and leaves the build files alone.
+- **OpenJDK.** Configure the checkout and run `make jdk` first.
+  The command then syncs the build you made. [OpenJDK setup](../openjdk.md#setup)
+- **Later builds.** For a project set up only through the editor, use `:LatheSync` to refresh its workspace.
+  Running `:LatheInit` again picks up a new client version.
+  If the workspace is already set up at that version or already registers Lathe, the command points you to `:LatheSync`.
+  Use `:LatheInit!` to repeat the initial build.
 
-Afterwards `:LatheSync` refreshes the workspace; `:LatheInit` again moves it to this client's version.
-On a project already set up at this version, or one whose build registers Lathe, `:LatheInit` builds nothing and says `:LatheSync` refreshes it; `:LatheInit!` builds it again anyway.
+A development checkout of the plugin needs `LATHE_VERSION` set to the version to install.
 
 ### Updating
 
@@ -154,7 +133,7 @@ freely.
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` / convert to `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
-| Set Lathe up for the build around the current file ([below](#set-up-a-project)) | `:LatheInit[!] [maven\|gradle\|openjdk]` | — | — |
+| Set up a project from the development client ([setup](#set-up-a-project)) | `:LatheInit[!] [maven\|gradle\|openjdk]` | — | — |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
@@ -405,10 +384,9 @@ Pass `pom = { validate = false }` to turn validation off. Both features need `xm
 (`libxml2`; preinstalled on most Linux/macOS systems, `apt install libxml2-utils` / `brew install
 libxml2` otherwise). If it is missing, Lathe notifies once and does nothing further.
 
-> **Lazy-loading gotcha:** if your plugin manager lazy-loads Lathe on `ft = "java"`, add
-> `event = { "BufReadPre pom.xml", "BufNewFile pom.xml" }` to the spec (as the [Install](#install)
-> examples do). A `pom.xml` is `filetype=xml`, so without it the plugin never loads for a pom and this
-> feature silently stays off. `vim.pack` (eager) needs nothing.
+To validate a POM when it is the first file you open, add `event = { "BufReadPre pom.xml", "BufNewFile pom.xml" }` to your lazy.nvim spec.
+These events load Lathe for a Maven XML buffer.
+The built-in package manager loads the plugin at startup.
 
 ## Create a new type
 

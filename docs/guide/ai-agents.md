@@ -1,279 +1,70 @@
-# Lathe for AI agents (MCP)
+# Use Lathe with your coding agent
 
-Lathe exposes its analysis to AI coding agents through an **MCP server** (`lathe-mcp-server`).
-It is the same build-derived engine that powers the editor, offered as a curated set of tools over
-the [Model Context Protocol](https://modelcontextprotocol.io) — so an agent gets javac-accurate,
-cross-module code intelligence instead of guessing from `grep`.
+Lathe lets your agent follow Java code across modules and check edits with the same compiler settings your build uses.
+Once connected through the Model Context Protocol (MCP), the agent discovers the tools automatically.
 
-The wedge is the operations text search gets wrong on a real multi-module build: compiler-truth diagnostics on
-the exact build classpath, navigation that follows into dependencies and generated sources, finding
-every real use (and every implementer/override) of a symbol, safe build-wide rename, and replaying
-a test without a build.
+## Connect Claude Code
 
-## Prerequisite: a populated `.lathe/`
+1. If your project is new to Lathe, start with the [first build](../../README.md#first-build).
+   If you already use Lathe in your editor, your project has the MCP launcher in `.lathe/`.
+2. From the project root, register the launcher for your platform.
 
-The server reads from Lathe's build capture, exactly like the editor.
-Without it the server still starts, but every tool answers with where it looked and how to set the project up.
-For Maven, register the Lathe extension and run the first build once at the root of the build; it records the
-project's setup without running the tests:
+   **Linux or macOS**
 
-```bash
-mvn clean test -Dlathe.capture.only=true
+   ```sh
+   claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
+   ```
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   claude mcp add --transport stdio lathe -- cmd.exe /d /s /c .lathe\lathe-mcp-launcher.cmd
+   ```
+
+3. Start Claude Code at the project root so the relative launcher path resolves.
+   Ask **“Use Lathe to list the Java modules in this project.”**
+   The answer lists the modules the build captured.
+
+<details>
+<summary>Share a registration with teammates or reuse one across projects</summary>
+
+Add `--scope project` to the registration command to save it in `.mcp.json` for teammates on the same platform.
+For one personal registration across projects on Linux or macOS, this command uses the most recently installed server.
+
+```sh
+claude mcp add --scope user --transport stdio lathe -- ~/.cache/lathe/latest/lathe-mcp-launcher.sh
 ```
 
-For Gradle, apply the Lathe settings plugin and build once (`./gradlew latheSync -Plathe.capture.only=true --continue`); see the
-[Gradle guide](gradle.md).
-That build does two things at once: it writes `.lathe/`, and its sync step installs the MCP
-launcher (below). If the server reports a missing `.lathe/`, this is the fix.
-A project set up from Neovim with [`:LatheInit`](editors/neovim.md#set-up-a-project) already has both,
-as its first build is this one with Lathe passed in from outside.
-For `run_test`, the module's test launch must also be captured once:
-`.lathe/lathe-sync.sh --tests <module>` does that without running the tests (see
-[test capture](test-capture.md)); `run_test` names this command when the capture is missing.
+</details>
 
-## The launcher
+## Connect another MCP client
 
-There is no separate install. The build's sync step generates the launcher during the build above and exposes
-it two ways:
+Add a server named `lathe`, choose the **stdio** transport, and set its working directory to your project root.
 
-- **Per-project** (recommended) — a launcher pinned to the server version *this* project uses:
+| Platform | Command | Arguments (in order) |
+| --- | --- | --- |
+| Linux or macOS | `.lathe/lathe-mcp-launcher.sh` | None |
+| Windows | `cmd.exe` | `/d`, `/s`, `/c`, `.lathe\lathe-mcp-launcher.cmd` |
 
-  ```
-  .lathe/lathe-mcp-launcher.sh
-  ```
+## Try it on your code
 
-  On Windows it is `.lathe\lathe-mcp-launcher.cmd`, started through `cmd /d /s /c`.
-  Re-created by every build, so it always matches the project's pinned server and carries no absolute,
-  per-machine path (a committed registration stays portable across machines of the same OS family).
+- **Before an edit**, name a method and ask “Which classes override it, and which tests use it?”
+- **After an edit**, ask “Check my Java changes and tell me which callers no longer compile.”
+  Lathe checks saved files and their callers across modules and reports errors with file names and line numbers.
+- **For a failing test**, name a JUnit class or method and ask the agent to run it.
+  Lathe reuses the launch recorded by your build. [Test capture and supported tests](test-capture.md#requirements-and-current-limits)
 
-- **User-global** — a machine-wide copy of the newest installed server version's launcher:
-
-  ```
-  ~/.cache/lathe/latest/lathe-mcp-launcher.sh
-  ```
-
-  (`lathe-mcp-launcher.cmd` on Windows.) Use this for a single, user-scoped registration that works across all your projects (a relative
-  per-project path does not resolve reliably at user scope). It runs whatever server version you most
-  recently installed — fine when your repos track one version; prefer the per-project launcher when
-  they are pinned to different Lathe versions.
-
-Both locate the project the same way — by walking up from the server's working directory to the
-nearest `.lathe/` — so either one must be launched with your project as its cwd.
-
-## Register with Claude Code
-
-From inside your project, point Claude Code at the launcher:
-
-```bash
-cd your-project
-claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
-```
-
-- **Run it from the project root.** The server finds its project by walking up from its working
-  directory to the nearest `.lathe/`, so the client must launch it with the project as its cwd — which
-  is also what resolves the relative launcher path.
-- **Scope.** The default scope is this project, for you only. Add `--scope project` to write a shared
-  `.mcp.json` you can commit so teammates get the same setup — the relative path keeps it portable.
-- **One registration for every project** — register the user-global launcher once at user scope:
-
-  ```bash
-  claude mcp add --scope user --transport stdio lathe -- ~/.cache/lathe/latest/lathe-mcp-launcher.sh
-  ```
-
-  It resolves in whatever project you launch `claude` from (the server still finds that project's
-  build via its cwd). It runs the newest installed server rather than each project's pinned version —
-  see the launcher note above.
-- **Verify** with `claude mcp list`, or run `/mcp` inside a session — you should see `lathe` and its
-  tools.
-
-## Other MCP clients
-
-Lathe speaks standard stdio MCP, so any MCP-capable agent (for example OpenAI Codex CLI or Gemini
-CLI) can use it. Two facts are all a client needs:
-
-- the command is `.lathe/lathe-mcp-launcher.sh` (relative to the project root), or
-  `~/.cache/lathe/latest/lathe-mcp-launcher.sh` for one config shared across projects, and
-- it must run with your project as its working directory (that is how Lathe locates the project, and
-  what resolves the relative launcher path).
-
-Consult that client's own MCP-server configuration docs for the exact config file and syntax; only
-the Claude Code setup above has been validated.
-
-## The tools
-
-Every located result is one line, `path:line:column: code`, as `grep -n --column` prints it: the path is relative to the
-workspace, and a result outside the project is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
-its absolute path, which the tools take back as it is; a dependency's lies under `deps/<group>/<artifact>/<version>/`
-in Lathe's cache, which names the version the module resolved) or `[GENERATED]`.
-Answers are text only, with any notes after the result, so every MCP client shows the agent the same thing.
-
-| Tool | Input | Use it for |
-|------|-------|-----------|
-| `workspace_summary` | — | every module, the project's modules it depends on (all on its classpath, transitive ones included with Maven), and whether its test launch is captured (or that it has no tests), plus the sync command; call it first in an unfamiliar project |
-| `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build; says so when no module compiles the file |
-| `get_definition` | `file, line, symbol or column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources; a type from a dependency without sources answers with the dependency that declares it |
-| `find_references` | `file, line, symbol or column`, optional `access` (`read`, `write`) | every real use of a symbol across the project — resolves overloads/inheritance, unlike `grep`; a field's or variable's uses are tagged `[read]` or `[write]`, and `access` keeps one kind |
-| `find_implementations` | `file, line, symbol or column` | the implementers of an interface, or the overrides of a method |
-| `call_hierarchy` | `file, line, symbol or column`, `direction` and `scope` (optional) | callers (`incoming`, the default) or callees (`outgoing`, at each call site in source order) of a method, across modules; `scope: all` adds calls into the JDK and dependencies |
-| `search_symbols` | `query`, `scope` (optional) | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the project, dependencies, and JDK, the project's types first and JDK-internal (non-exported) types last, non-public JDK and dependency types included; `scope: reactor` keeps only the project's; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`); a leading or trailing `*` is ignored; a type from a dependency without sources is listed with its dependency in place of a file; types only |
-| `outline` | `file, type` (optional) | a file's types, fields, constructors and methods in source order, indented by nesting, each with its name's line:column and declaration — the structure without reading the file, also for a file no module compiles; a file of more than 200 declarations answers its types with their member counts, and `type` outlines one of them |
-| `describe_symbol` | `file, line, symbol or column` | a symbol's rendered signature, type, and javadoc, without opening the file |
-| `rename_symbol` | `file, line, symbol or column, newName` | rename a symbol across the whole project and **apply the edits to disk**, including its Javadoc `@param` name; then lists, without editing, where the old name is still text (for locals, literals in the declaring scope; for members and types, literals and qualified resource mentions across the reactor), and the Java files outside every synced source root that name it |
-| `run_test` | `file, scope` (optional), `method` (with `scope=method`) | replay a test method / class / package from captured bytecode — no build; each failure comes with the last 40 lines the test printed, and a test file that does not compile is not run |
-| `analyze_change` | `file, line, symbol or column`, optional `maxResults` | before an edit: the methods a symbol overrides and those that override or redeclare it (the first `maxResults` of each listed, all counted), production vs test reference counts, the modules that use or implement it, and the relevant tests |
-| `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step on Maven, or its `lathe-style.json`), so edits pass the build's formatting check; answers with the lines it rewrote |
-| `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match, plus static imports the file's scope already uses elsewhere; the ambiguous ones are listed with their candidates for you to pick, and names with no match are listed too, with any nested type of that name (`Map.Entry`) to write qualified, since a nested type is never imported |
-| `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, one line each (callers: errors only) |
-
-The file tools take an existing `.java` file; any other path answers with an error.
-`format_file` answers with an error, not "already formatted", when the project pins no formatter or
-its jars are not resolved yet.
-Positions are 1-based and must be on a name: a position on a keyword, on whitespace or past the end of
-a line answers with an error that shows the line, rather than with the enclosing method or class.
-Instead of counting the column, give the symbol's name on that line as `symbol`; with both, the
-occurrence nearest the column wins. `outline` gives each declaration's `line:column`.
-`find_references`, `find_implementations`, `call_hierarchy`, and
-`search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
-(`class` — default — / `method` / `package`).
-
-Each tool declares the MCP annotations that say whether it writes:
-the query tools (`outline` and `workspace_summary` included) and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
-`run_test` is neither (it runs code but writes no source), and `format_file` and `fix_imports` are
-neither but `idempotentHint` (running them twice changes nothing more).
-What a client does with them is up to the client.
-
-The server also sends routing guidance at connection time (which tool fits which task), so a client
-that reads server instructions steers itself.
-
-## Freshness — what the results reflect
-
-Because the protocol is stateless, every tool reads the target file **from disk** at call time and
-compiles it against the captured `.lathe/` classpath. So `get_diagnostics` is accurate for *this*
-file after your edit, with no build run:
-
-- **Single-file** correctness (the file you just edited) is live — in-process `javac`, no build.
-- **Other files** you change out of band (any module) are reconciled **in-process, automatically**:
-  every tool call first runs a write pass that recompiles externally changed sources into the mirror in
-  dependency order, so cross-module results — references and renames included — see them without
-  a build. Deletions are cleaned up too.
-  Because every call catches up first, a server with no tool call for 5 minutes stops looking for changes
-  between calls and gives its unused memory back to the system; the next call wakes it.
-- **A build is still needed** only for build-file / dependency / module-structure changes and for
-  build-bound code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
-
-Every tool first compiles the files you changed, however many, so its answer reflects your edits.
-What it still cannot vouch for comes as a note at the end of the result:
-
-- **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
-  `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
-  Fix the code; no sync helps. Until then, other modules see the file's last good classes. The note clears on the next query after the fix.
-- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, or a `.lathe/` written by another Lathe version.
-- **`Not checked:`** names a file no module compiles, so nothing about it was checked.
-  For a file of a module the last build compiled but did not sync, it gives the sync that adds it; for a file
-  outside every source root of a synced module (`docs/`, `src/it/java`) it says the file is in no source root
-  of that module, so a sync does not add it; for one outside every module (a module the build's profiles or JDK
-  leave out) it says Lathe cannot check it, since no sync would.
-  `get_diagnostics` then answers "Foo.java was not checked." rather than reporting no errors.
-- **`A build is running`** means the answer reflects Lathe's classes from before that build; re-query once it ends.
-
-An edited or deleted `lombok.config` counts as a change to every source below it, so `verify_change` checks them again.
-A `lombok.config` added after the server loaded counts only from the next reload, and Lombok rereads a config at most every 2 seconds.
-
-Three tools write to disk: `rename_symbol`, `format_file` and `fix_imports`.
-All three **refuse to touch a file outside the project**.
-`rename_symbol` applies javac-computed edits.
-It also refuses a symbol declared outside the project (JDK or a dependency) or in generated source,
-and a method overriding one, since renaming only its uses would break them; the error says which.
-It refuses a method one of whose overrides also overrides an unrelated method, which the rename would
-leave behind.
-It refuses a Lombok field or a member Lombok generates, whose accessors' calls the rename would leave behind,
-and one member of a statically imported name the import also brings in other members of.
-It refuses a new name the owner already declares or inherits, a sibling type already has, or a variable in scope already uses.
-It refuses an interface method a project class implements through a superclass outside the project, which keeps its method.
-It refuses a symbol a build task's output uses (a source root under the build directory, such as a code generator's), since the next build would overwrite the edit there;
-change the generator, rebuild, then rename.
-Annotation-processor output is left alone: the processors regenerate it from the renamed sources.
-The answer lists the uses it left there under "Left to the generator", as they keep the old name until then.
-Only the compile's own processor output counts as that: a processor run outside the compile (`maven-processor-plugin` into `target/generated-sources/apt`, Kotlin's kapt) writes a source root under the build directory, so a rename its output uses is refused as for a build task.
-It refuses a rename that would change what a name means, in any module that sees the symbol:
-a use the new name would capture (a field a renamed parameter would shadow, another call that would pick the renamed overload,
-a subclass method that would override it) or a renamed use that would then refer to something else (another overload, an inherited method);
-the error names the file and line.
-Uses that only reflection, strings or configuration make are not checked.
-Renaming a public top-level type also renames its file.
-The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
-
-### Verifying a change
-
-`verify_change` with no arguments checks what changed since the last check: the files changed on disk
-plus the files Lathe's own tools wrote (a rename), each with its callers in its own and in dependent
-modules.
-Pass `files` to check exactly those instead.
-It leads with the error count ("No errors — …" or "N error(s)") and lists each diagnostic on one
-grep-style line, errors first: `path:line:column: severity: message`.
-It reports errors and warnings of the changed files, but only errors of their callers, whose warnings
-were there before the change.
-The generated files a rename left still using the old name count as callers until their generator rewrites them, even those the caller search cannot reach (JMH's benchmark classes call through a generated subclass).
-Unused-code hints are left out (`get_diagnostics` on one file still shows them).
-When the change reaches other modules, it names them (the first ten, then a count) and gives the sync command that builds them, e.g.
-`.lathe/lathe-sync.sh core`.
-With no errors their callers have already compiled, so it says that build is optional.
-If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
-it says so and gives that command instead.
-Locks left by an exited build are ignored immediately when their recorded PID and process start time identify the departed owner.
-Empty markers, malformed ownership metadata, and unavailable process information retain the two-minute expiry fallback.
-
-To make an agent run it before reporting done, add [this snippet](../../examples/agents/lathe-mcp.md) to the project's `AGENTS.md` or `CLAUDE.md`.
-In Claude Code, the [verify-before-stop hook](../../examples/agents/verify-before-stop.py) enforces it:
-a `Stop` hook that, when the session edited Java files after its last `verify_change`, sends the agent
-back to run it (once per stop; a hook cannot call the tool itself). Copy it into your project (for example to
-`.claude/hooks/verify-before-stop.py`) and register that path in `.claude/settings.json`:
-
-```json
-{"hooks": {"Stop": [{"hooks": [{"type": "command",
-  "command": "python3 .claude/hooks/verify-before-stop.py"}]}]}}
-```
-
-## Usage logging
-
-Every tool call emits one line to the server's stderr and to a per-session log file,
-`~/.cache/lathe/logs/mcp-<yyyyMMdd-HHmmss>-<pid>.log`:
-
-```
-[tool] find_references file=/…/Foo.java line=88 column=20 142ms ok
-[tool] search_symbols query=ServerFactory maxResults=50 12ms ok
-```
-
-This records which tool ran, on what, how long it took, and whether it succeeded — enough to tally
-tool usage over a session. It is always on (no `LATHE_DEBUG` needed). Read the log file: a client
-such as Claude Code keeps only the server's startup stderr, whose `[startup] … log=<path>` line names
-the file. Each line starts with an ISO-8601 timestamp and its zone offset
-(`2026-10-24T16:21:40.134+0200`), so it lines up with a client's UTC logs.
-When the agent names its session to the server (Claude Code's `CLAUDE_CODE_SESSION_ID`, Copilot's
-`COPILOT_AGENT_SESSION_ID`), the name ends with the agent and the session's first characters, as in
-`mcp-20261101-190327-772762-claude-3f2a9c1e.log`, and the `[startup]` line carries the full session ID,
-so `ls ~/.cache/lathe/logs/*3f2a9c1e*` finds every server a session started.
-A starting server keeps the newest 100 session logs and deletes older ones, with the lock files that
-sessions killed outright leave behind.
-Set `LATHE_DEBUG=1` for finer detail.
+Asking the agent to rename a symbol, fix imports, or format a file changes project files on disk.
+To have the agent check Java edits before finishing, copy the [example project instructions](../../examples/agents/lathe-mcp.md) into your `AGENTS.md` or `CLAUDE.md`.
+Claude Code also supports a [verification hook](../../examples/agents/verify-before-stop.py).
 
 ## Troubleshooting
 
-- **Every tool answers "Lathe found no `.lathe/`"** — the agent was started outside a Lathe-enabled
-  build: start it at the root of the build, or run the first build there (`mvn clean test -Dlathe.capture.only=true`, or
-  `./gradlew latheSync -Plathe.capture.only=true` for Gradle); see
-  the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
-  failed to connect; once the build has created `.lathe/`, the next tool call uses it, with no restart.
-- **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
-  or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the
-  build.
-- **Launcher not found** — the build's sync writes the launcher, so it appears only after a build;
-  confirm Lathe is set up in the build (see [Maven](maven.md) or [Gradle](gradle.md)).
-- **Tools resolve nothing / results look stale** — check the result's notes: fix the code for
-  `Not compiled:`, run the command a `Sync required:` or `Not checked:` note names; a cold index also needs a moment to
-  warm on the first query.
-- **The server uses a lot of memory** — each agent session runs its own server, and with no heap limit
-  each may grow toward a quarter of the machine's memory on a large build; cap it with
-  `LATHE_JVM_OPTS` (see [tuning the server JVM](installation.md#tuning-the-server-jvm-lathe_jvm_opts)).
-- **Maven: sync fails after upgrading Lathe, or a "build is running" note never clears** — an mvnd daemon
-  keeps the Lathe extension it first loaded; run `mvnd --stop` after installing a new version.
+- **Claude Code can’t find the launcher.** Start it from the directory containing `.lathe/`.
+  If the launcher is missing there, run the first build.
+- **Lathe reports `Sync required`.** Run the command in the result to pick up changed dependencies or build settings.
+  Lathe picks up saved Java edits automatically.
+- **Lathe reports `Not compiled`.** Fix the compiler error it reports and ask again.
+  Until then, callers may still see the last version that compiled.
+
+[Full list of Lathe’s agent tools](../status.md#ai-agent-integration-mcp)

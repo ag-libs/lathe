@@ -1,17 +1,11 @@
 # Lathe for Maven
 
-Lathe reads a Maven build through the build itself: you activate it per build in one of two ways, and
-every build after that keeps `.lathe/` current.
+Register Lathe at the root of your Maven build so each module records its own compiler settings.
+The first build installs the server, writes the workspace under `.lathe/`, and captures how Surefire launches tests.
+Later builds refresh the parts they compile or test.
 
-1. **The Maven extension** (recommended) — register `lathe-maven-extension` once, either as a core
-   extension in `.mvn/extensions.xml` or as a build extension in the reactor-root `pom.xml`. No other
-   POM edits.
-2. **Manual POM configuration** — declare the same wiring by hand. More verbose, but explicit and
-   versioned in the POM.
-
-Both produce the identical effective build.
-
-> The editor client is a separate step: see [Installing Lathe](installation.md).
+Use the [Maven extension](#method-1--maven-extension-recommended) even if your project already configures `maven-compiler-plugin`, then run the [first build](#initialize).
+Choose the [manual POM setup](#method-2--manual-pom-configuration) if you want to declare Lathe’s compiler, sync goals, and test dependency yourself.
 
 ## Requirements
 
@@ -26,19 +20,6 @@ Both produce the identical effective build.
 Lathe stays out of CI builds: when the `CI` environment variable is set, it injects nothing, unless
 you pass `-Dlathe.disabled=false`.
 `-Dlathe.disabled=true` turns it off anywhere (see [jdtls](#coexisting-with-jdtls-keep-lathe-out-of-its-maven-import)).
-
-## What Lathe needs in the build
-
-Both methods add the same three pieces, for the whole reactor:
-
-- the **`lathe-compiler` shim** on `maven-compiler-plugin`, selected by `compilerId=lathe`, for every
-  module that compiles Java (`pom` modules are left alone) — it records the exact `javac` inputs the language server reads;
-- the **`lathe-maven-plugin` goals** `init` (bound to `initialize`) and `sync` (bound to
-  `process-test-classes`), once at the reactor root;
-- the **`lathe-junit` test-scoped dependency**, for every module that compiles Java — it enables run/test capture.
-
-Coordinates: groupId `io.github.ag-libs`; artifacts `lathe-compiler`, `lathe-maven-plugin`,
-`lathe-junit`; use one Lathe version throughout.
 
 ## Method 1 — Maven extension (recommended)
 
@@ -79,6 +60,47 @@ you register, and a stale Lathe version already in a POM is overwritten.
 
 Upgrading a project from 0.1.15 or earlier also needs a one-time editor-side step; see
 [Upgrading from Lathe 0.1.15 or earlier](editors/neovim.md#upgrading-from-lathe-0115-or-earlier).
+
+## Initialize
+
+Run this command at the root of the build after registering Lathe.
+
+```bash
+mvn clean test -Dlathe.capture.only=true
+```
+
+The clean build compiles every module so Lathe can record its settings.
+Surefire starts its test JVM and writes the launch that the editor will use to run a test.
+On JUnit 5.10 and later, tests appear as skipped.
+With older JUnit, capture filters out the tests.
+If the build then fails because `failIfNoTests` is enabled, add `-DfailIfNoTests=false`. [Test capture](test-capture.md#capture-without-running-tests)
+
+Open a source file in your [editor](../../README.md#editors).
+Subsequent builds refresh the workspace according to the last phase they reach.
+
+| Command | What it refreshes |
+|---|---|
+| `mvn process-test-classes` | Compiler settings, the module list, and the launch configuration for main methods |
+| `mvn test`, `verify`, or `install` | The items above and each module's test launch when its test JVM starts |
+| `mvn test -Dlathe.capture.only=true` | The same information, skipping test execution |
+
+Keep `.lathe/` out of version control and exclude it from checks that scan the entire project tree. [Troubleshooting](troubleshooting.md)
+You can use the Maven Daemon (`mvnd`) in place of `mvn`.
+If your build uses the Maven build cache extension, pass `-Dmaven.build.cache.enabled=false` for capture.
+Modules restored from that cache skip the compilation Lathe needs to observe.
+
+## What Lathe needs in the build
+
+Both methods add the same three pieces, for the whole reactor:
+
+- the **`lathe-compiler` shim** on `maven-compiler-plugin`, selected by `compilerId=lathe`, for every
+  module that compiles Java (`pom` modules are left alone) — it records the exact `javac` inputs the language server reads;
+- the **`lathe-maven-plugin` goals** `init` (bound to `initialize`) and `sync` (bound to
+  `process-test-classes`), once at the reactor root;
+- the **`lathe-junit` test-scoped dependency**, for every module that compiles Java — it enables run/test capture.
+
+Coordinates: groupId `io.github.ag-libs`; artifacts `lathe-compiler`, `lathe-maven-plugin`,
+`lathe-junit`; use one Lathe version throughout.
 
 ## Method 2 — Manual POM configuration
 
@@ -147,37 +169,6 @@ Each block is easy to get subtly wrong — a wrong phase, a missing `inherited`,
 a module that overrides `maven-compiler-plugin` and drops the `compilerId` — which is exactly the
 class of mistake the extension removes. If a module declares its own compiler configuration, preserve `<compilerId>lathe</compilerId>`
 there too.
-
-## Initialize
-
-With either method, generate the Lathe metadata. What gets written depends on how far the build runs:
-
-| Command | Writes | Enables |
-|---|---|---|
-| `mvn process-test-classes` | compiler params, `workspace.json`, `main-launch.json` | LSP intelligence + `main` run/debug |
-| `mvn test` (or `verify` / `install`) | the above **plus** each module's `test-launch.json` | + test run/debug |
-| `mvn test -Dlathe.capture.only=true` | the same, **without executing the tests** | + test run/debug, fast |
-
-**Recommended first run** — generate everything, without paying for a test run:
-
-```bash
-mvn clean test -Dlathe.capture.only=true
-```
-
-`-Dlathe.capture.only=true` keeps the tests from running while the fork still writes its launch template:
-on JUnit 5.10 or newer through JUnit's dry-run mode, on older JUnit through a filter that excludes every test
-(see [test-capture.md](test-capture.md#capture-without-running-tests)).
-`clean` is required on the first run so Maven compiles through the Lathe shim rather than skipping up-to-date output.
-On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
-
-After that, any normal build (`mvn test` / `verify` / `install`) refreshes the templates automatically.
-`.lathe/` keeps itself out of git: Lathe writes a `.gitignore` inside it.
-Exclude it from any check that scans the whole project directory ([troubleshooting](troubleshooting.md)).
-
-The [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) makes these builds noticeably faster; use it in place of `mvn` where you can.
-
-If your build uses the Maven build cache extension, turn it off for Lathe builds with `-Dmaven.build.cache.enabled=false`.
-A cache hit skips compilation, so Lathe would not see the real build and its captured configuration would go stale.
 
 ## What the build writes to `.lathe/`
 

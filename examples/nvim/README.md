@@ -1,24 +1,17 @@
 # Sample Neovim config (Lathe demo)
 
-The single-file Neovim configuration used to record Lathe's demo, kept here as a reference you can
-read and borrow from. It is a **demonstration** — a small, working setup showing how Lathe fits into
-a Java IDE config (completion, cross-module go-to-definition, running tests) — not a drop-in meant to
-replace your own `~/.config/nvim` wholesale.
-
-Everything lives in [`init.lua`](init.lua).
-
-For the editor-agnostic feature reference see [features](../../docs/guide/features.md); for a
-per-action keymap guide see [docs/guide/editors/neovim.md](../../docs/guide/editors/neovim.md).
+The [example init.lua](init.lua) sets up completion with blink.cmp, navigation with Telescope, and JUnit test results with neotest.
+Copy the pieces you want into your config, or try the whole example in an isolated Neovim session.
+For a minimal installation, use the [Neovim quick start](../../README.md#neovim).
 
 ## Try it
 
-Requires **Neovim 0.12+**, `git`, the `tree-sitter` CLI and a C compiler (nvim-treesitter builds its
-parsers with them), and a Maven or Gradle project Lathe has built (so its `.lathe/lathe-launcher.sh`
-exists). The config installs the client from the standalone `ag-libs/lathe.nvim` repo; set
-`LATHE_NVIM_DIR` to a checkout's `lathe-neovim/runtime` to load that instead.
+Use Neovim 0.12 or later on Linux or macOS.
+Install Git, the `tree-sitter` CLI, and a C compiler so nvim-treesitter can build its parsers.
+Complete the [first build](../../README.md#first-build) in the Java project you want to open.
 
-To try it in isolation, give it its own config, data and state directories, so its plugins never mix
-with your own (`/path/to/lathe` is this repository's checkout):
+From that project, replace `/path/to/lathe` with your Lathe checkout and `SomeFile.java` with a source file in the project.
+The following command keeps the example's plugins and settings separate from your usual ones.
 
 ```sh
 XDG_CONFIG_HOME=/path/to/lathe/examples \
@@ -27,8 +20,10 @@ XDG_STATE_HOME=/tmp/lathe-demo/state \
   nvim SomeFile.java
 ```
 
-On first launch Neovim bootstraps `lazy.nvim` and downloads the plugins, including `lathe.nvim`. The
-server still comes from your build; until a project is built, Lathe nudges you to run it.
+The first launch downloads lazy.nvim and the plugins listed in `init.lua`.
+Lathe starts the server installed by the project's build.
+If you are developing the client itself, set `LATHE_NVIM_DIR` to your checkout's `lathe-neovim/runtime` directory.
+To add breakpoints to this example, load nvim-dap before Lathe. [Debugger setup](../../docs/guide/editors/neovim.md#debug-nvim-dap)
 
 ## Keymaps
 

@@ -1,13 +1,13 @@
 # Lathe in Zed
 
-Zed runs language servers that an extension registers for a language.
-Lathe plugs into the slot Zed's official **Java** extension registers for Java (`jdtls`):
-a project settings file points that slot at Lathe's launcher.
-No Lathe plugin, no extra config beyond one file.
+Use Zed's Java extension with Lathe to jump across modules, rename symbols, and see errors from the compiler your build uses.
+A project setting tells Zed to start the Lathe launcher for Java files.
 
 ![Lathe in Zed — hover, cross-module nav, go to implementation, extract, rename, completion, live diagnostics](../../zed-tour-6d296f3f.gif)
 
 ## Setup
+
+Complete the [first build](../../../README.md#first-build) so the project has a `.lathe/` launcher.
 
 1. Install the **Java** extension (`zed: extensions` → search "Java").
    It provides the Java grammar and the `jdtls` server slot Lathe runs in.
@@ -43,17 +43,11 @@ No Lathe plugin, no extra config beyond one file.
    Zed opens unrecognized projects in Restricted Mode, which ignores `.zed/settings.json` and starts no
    language servers until the project is trusted.
 
-The launcher is the script the build's sync writes at `<root>/.lathe/`, pinned to the server version this
-project uses; a Lathe-enabled build (the first build: `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle) writes it.
-Zed starts language servers with the worktree root as their working directory, so the relative path
-resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` in the nearest `.lathe/` at or above it).
-Setting `binary.path` replaces the Java extension's own launch command, so Eclipse JDT LS is never
-downloaded or started.
-Zed's UI and logs still label the server `jdtls`.
+Open a Java file and choose **Go to Definition** on a method call.
+Zed launches the server from the worktree root, so open the folder that contains `.lathe/`.
+The UI and logs display `jdtls`, the name registered by the Java extension, even though the configured launcher runs Lathe.
 
 ## What works
-
-All through Zed's built-in editor features, resolved from your real build:
 
 | Feature                          | Zed command                                   |
 |----------------------------------|-----------------------------------------------|

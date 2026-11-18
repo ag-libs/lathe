@@ -1,42 +1,22 @@
 # Lathe in VS Code and Cursor
 
-Lathe ships a VS Code extension — **Lathe for Java** — a thin client that launches Lathe's
-build-derived language server from your project. The same extension runs in Cursor. You get the standard LSP surface (navigation,
-completion, diagnostics, hover, symbols, rename). It installs from a GitHub release asset for now; a
-Marketplace listing is planned.
-
-The server itself is **not** bundled in the extension — it comes from your build, exactly as for
-the other editors. The extension just finds and launches it.
+Use **Lathe for Java** to follow a method into another module, rename it across the project, and see compiler errors in the Problems panel.
+The preview extension works in VS Code 1.84 or later and in Cursor versions based on it.
+Lathe's run, test, and debug controls are available in Neovim.
 
 ## Install
 
-The extension needs VS Code 1.84 or later (or a Cursor release built on it).
-It activates when the workspace contains a `.lathe/` directory or a Java file opens.
-
-1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (the first build: `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle) populates
-   `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
-   `.lathe/lathe-launcher.sh` (`.lathe\lathe-launcher.cmd` on Windows).
-
-2. **Download** the latest `lathe-<version>.vsix` from the
-   [Releases page](https://github.com/ag-libs/lathe/releases).
-
-3. **Install it:**
-   ```bash
-   code --install-extension lathe-<version>.vsix
-   ```
-   (or *Extensions → ⋯ → Install from VSIX…* in the UI).
-
-4. **Open the root of the build** (the folder containing `.lathe/`) as the VS Code workspace and open a Java
-   file. The extension launches the server automatically, resolving the project's JDK from
-   `.lathe/java-home`. A module folder opened on its own works too: the extension starts the launcher of
-   the nearest `.lathe/` above it.
-
-If VS Code's built-in Java support (the Red Hat "Language Support for Java" extension) is installed,
-disable it for this workspace — two servers attaching to `.java` files will conflict.
+1. Run the [first build](../../../README.md#first-build) at the root of your project.
+   This installs the language server and writes its launcher under `.lathe/`.
+2. Download the `lathe-<version>.vsix` file from [Lathe releases](https://github.com/ag-libs/lathe/releases).
+3. In the Extensions view, choose **⋯ → Install from VSIX…** and select the downloaded file.
+   From the terminal, you can also run `code --install-extension` followed by the path to the file.
+4. Open the project folder.
+   If **Language Support for Java by Red Hat** is installed, disable it for this workspace so only one server handles Java files.
+5. Open a Java source file and choose **Go to Definition** on a method call.
+   Opening a module folder also works when the extension can find the project's `.lathe/` in a parent directory.
 
 ## What works
-
-Resolved from your real build, through VS Code's standard LSP UI:
 
 | Feature                          | VS Code                                   |
 |----------------------------------|-------------------------------------------|

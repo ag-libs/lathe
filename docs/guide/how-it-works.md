@@ -1,31 +1,21 @@
 # How Lathe works
 
-Lathe derives everything from your build rather than reconstructing a project model of its own.
-This document covers the mechanism.
-For installation see [installation.md](installation.md);
-for exactly what each build writes, see
-[what and where Lathe writes](installation.md#what-and-where-lathe-writes).
+When you follow a call from one module into another, Lathe asks the JDK compiler which method the call resolves to.
+To answer, the compiler needs the dependencies, generated sources, and flags for the module that contains the call.
+Your build supplies those inputs.
 
 ## Built on the JDK compiler
 
-The language server is the JDK's own Java compiler.
-It runs `javac` in-process and reads the compiler's abstract syntax trees through the Compiler Tree
-API (the `com.sun.source` packages exported by the JDK's `jdk.compiler` module), so every feature —
-diagnostics, go-to-definition, hover, completion, the type and call hierarchies — is computed from the
-compiler's own attributed syntax tree rather than a re-implementation of Java's rules.
-The [MCP server](ai-agents.md) for AI agents runs the same engine in-process, so an agent's answers
-match the editor's.
-There is no second Java front-end to drift out of step: what Lathe reports is what `javac` sees,
-resolved against the exact classpath and options your build captured — which is what the rest of this
-document describes.
+Lathe runs `javac` inside the language server.
+Through the JDK's Compiler Tree API (`com.sun.source`), it can read the types and declarations the compiler assigned to the code.
+Diagnostics, completion, navigation, and type and call hierarchies all use that information.
+The [MCP server](ai-agents.md) runs the same analysis for coding agents.
 
 ## Build capture
 
-Lathe hooks into your build, through the [Maven extension](maven.md) or the [Gradle plugin](gradle.md):
-as each module compiles, it records the exact `javac` parameters and classpath into `.lathe/`, and it
-writes the workspace manifest (`workspace.json`) describing the modules. The language server reads these files, so diagnostics, completion, and
-navigation reflect the same inputs your build compiled with. Every build refreshes them, so the model
-tracks your project as it changes.
+As Maven or Gradle compiles a module, the Lathe extension or plugin records the compiler arguments and paths under `.lathe/`.
+Sync writes the module list to `workspace.json` and installs the launcher that your editor starts.
+Subsequent builds refresh the modules they compile. [Workspace files](installation.md#what-and-where-lathe-writes)
 
 The overhead above normal `javac` is small — a directory walk, a parameter-file write, and a bulk copy
 of the module's compiled classes (typically tens to a couple hundred milliseconds of I/O for a small
@@ -38,41 +28,32 @@ The server never runs the build itself; it only reads what a front-end wrote.
 
 ## Dependency & JDK sources
 
-The build resolves your dependencies' `-sources` JARs through its own repositories and extracts them, along
-with the JDK's own sources, under `~/.cache/lathe/`. That is what lets go-to-definition step into library and JDK
-code. A dependency with no published `-sources` JAR is skipped — navigation to it is unavailable, with
-no error.
+Go to definition can open the Java source for a library method or JDK class.
+The build resolves available `-sources` JARs through your configured repositories and extracts them, along with the JDK sources, under `~/.cache/lathe/`.
+If a dependency has no usable sources JAR, Lathe can still show the declaration from its class file on hover. [Troubleshooting navigation](troubleshooting.md#navigation)
 
 ## Test capture and replay
 
-Lathe captures the exact JVM launch of your build's tests (Maven's Surefire fork, or the JVM of each Gradle
-project's `test` task) from inside that JVM, by live introspection, then replays a fresh JVM from that template against `.lathe/`, with no recompilation.
-Requirements, and the limits of what can be captured, are in [test-capture.md](test-capture.md).
+When a test JVM starts, Lathe records the JDK, classpath, module flags, and arguments it actually received.
+When you run a test from the editor, Lathe launches a fresh JVM with that configuration and the compiled classes under `.lathe/`.
+You can rerun one test without invoking Maven or Gradle again. [Test capture](test-capture.md)
 
 ## Running and debugging
 
-Runs and debug sessions replay from the captured `.lathe/` bytecode — no per-run recompilation —
-launching a fresh JVM (for debugging, suspended under a JDWP agent with Microsoft's `java-debug` hosted
-in-process) that reproduces the exact launch the build captured. The same model serves any LSP client.
+A main method uses the module's recorded paths.
+For debugging, Lathe starts the JVM suspended with a JDWP agent and hosts Microsoft's `java-debug` adapter in the server.
+Neovim connects to that adapter through nvim-dap. [Debugger setup](editors/neovim.md#debug-nvim-dap)
 
-Runs use generated defaults. You can customize JVM flags, program args, environment, working directory,
-or extra class-/module-path entries with an optional overlay (`lathe-run.json` / `.lathe/run.json`),
-applied by the server and unable to change launch-correctness fields. Schema and selection rules are in
-[run-configuration.md](run-configuration.md).
+To pass application arguments, change the working directory, add JVM options, or adjust the environment or paths, use `lathe-run.json` or `.lathe/run.json`.
+The build still supplies the underlying launch configuration. [Run configuration](run-configuration.md)
 
 ## Diagnostics: live vs. on save
 
-While you edit, Lathe runs a fast `javac` pass that reports parser and type-checker diagnostics for the
-file you are in — immediately, on every change.
-Annotation processors and classpath javac plugins — Error Prone and its `-Xep` checks, and anything
-that generates sources — are **not** run on this fast pass; they run only when you **save**, as part of
-the full compile that mirrors your build.
-So a file can look clean when you open it and surface more diagnostics after the first save — including
-Error Prone findings and, where the build sets `-Werror`, warnings promoted to errors.
-This is intentional: processor runs are too expensive to repeat on every keystroke, so Lathe keeps live
-editing responsive and reserves the full, build-faithful pass for save.
-Lombok is the exception; see [Lombok](#lombok).
-The findings of that save stay on the file until you edit it again.
+As you type, `javac` checks syntax and types in the current file.
+When you save, it also runs the module's annotation processors and compiler plugins.
+A check such as Error Prone can therefore report a warning on save, and `-Werror` can turn it into an error.
+Those findings stay visible until you edit the file again.
+Lombok also runs during live editing so completion can see its generated members. [Lombok](#lombok)
 
 The live pass also sees your **unsaved** edits in other open files of the same module.
 Change a method's parameters in one buffer and use the new signature in another, and neither shows a false error before you save.

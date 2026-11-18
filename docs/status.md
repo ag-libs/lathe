@@ -1,14 +1,16 @@
 # Lathe — Current Status
 
-This document records the implemented baseline and known user-visible gaps.
-The [roadmap](roadmap.md) defines milestone scope; the [design index](design-index.md) links detailed designs.
+This page tracks the features implemented on `main`.
+For the setup that works with the published plugins, start with the [README](../README.md).
+For planned work, see the [roadmap](roadmap.md) and [design index](design-index.md).
 
 ## Release State
 
 Lathe is published to Maven Central.
-It installs via the `lathe-maven-extension` build extension, the Gradle settings plugin, or the OpenJDK front-end; the supported clients are Neovim, VS Code and Cursor (preview), Emacs and Zed through their setup notes, and AI agents through MCP.
-An MCP server (`lathe-mcp-server`) additionally exposes the same engine to AI coding agents; see [AI Agent Integration](#ai-agent-integration-mcp) below.
-The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](../RELEASING.md)) is in use.
+Maven and Gradle install the server through a build plugin, and the OpenJDK integration reads the output of a JDK build.
+The [editor support table](#editor-support) lists the available clients.
+Coding agents use the same analysis through the [MCP tools](#ai-agent-integration-mcp).
+Maintainers publish signed artifacts from release tags. [Release procedure](../RELEASING.md)
 
 ## Build and Workspace Lifecycle
 
@@ -26,7 +28,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | Platforms and build floors | Implemented | JDK 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+; an older build stops at once, saying why and how to fix it. Linux, macOS and Windows 10/11, with CI on all three (Windows: VS Code/Cursor and Zed; Neovim and Emacs are Linux/macOS only); on Windows the launchers and sync script are `.cmd` files. See [Multi-OS](done/lathe-multi-os.md). |
 | Server launcher installation | Implemented | The build front-end (Maven, Gradle or OpenJDK) installs versioned launchers under `servers/<version>/` and copies them into each workspace's `.lathe/` (plain files, no symlinks) at the pinned version; `latest/` holds copies of the newest for user-global MCP. |
 | Sync launcher | Implemented (Maven, OpenJDK, Gradle, Neovim, server/MCP texts) | `lathe:sync` (and the OpenJDK `sync`, and Gradle's `latheWorkspace`) writes `.lathe/lathe-sync.sh [--tests] [module ...]` (`.cmd` on Windows), which re-runs the build with the tool and JDK that ran the last one with the build cache off and prints the full command first; on Maven it builds to the project's `lathe.sync.phase` (`process-test-classes` by default, `package` for a module compiling against a sibling's shaded jar). The Neovim client runs it for the `lathe/sync` prompt and `:LatheSync` / `:LatheSyncCaptureTest`; server and MCP texts name it (`Sync required:` notes, `verify_change`'s `suggestedSync`), keeping `mvn clean test -Dlathe.capture.only=true` only for the first build. See `lathe-sync-launcher.md`. |
-| Project setup (`:LatheInit`) | Implemented (Neovim) | `:LatheInit [maven\|gradle\|openjdk]` finds the build's root from the current file, confirms it in a prompt, and runs the first Lathe build: Maven and Gradle builds that do not register Lathe get it from outside (`-Dmaven.ext.class.path` with the extension's jars fetched through a bootstrap POM; a Gradle init script), with compile errors kept from stopping it, so the project's files are not changed; a build that registers Lathe just builds; an OpenJDK checkout runs the OpenJDK goal once the JDK is built. The server attaches when the build ends. A root set up already (registered, or at this version) builds nothing and names `:LatheSync`; `:LatheInit!` builds anyway. Plain Java folders and team modes are not yet covered. See `potential/lathe-init.md`. |
+| Project setup (`:LatheInit`) | Implemented on `main` after v0.3.1 (Neovim) | `:LatheInit [maven\|gradle\|openjdk]` finds the build's root from the current file, confirms it in a prompt, and runs the first Lathe build: Maven and Gradle builds that do not register Lathe get it from outside (`-Dmaven.ext.class.path` with the extension's jars fetched through a bootstrap POM; a Gradle init script), with compile errors kept from stopping it, so the project's files are not changed; a build that registers Lathe just builds; an OpenJDK checkout runs the OpenJDK goal once the JDK is built. The server attaches when the build ends. A root set up already (registered, or at this version) builds nothing and names `:LatheSync`; `:LatheInit!` builds anyway. Plain Java folders and team modes are not yet covered. See `potential/lathe-init.md`. |
 | Build-file staleness detection | Implemented | Clients receive a sync prompt after a build-file / project-structure change (POMs on Maven; build scripts, version catalogs and build logic on Gradle) (only Neovim acts on it by running `.lathe/lathe-sync.sh`; in other editors run it yourself); source changes of any size, a branch switch included, are compiled in-process instead. |
 | In-process workspace sync | Implemented | One write pass serves saves, outside changes (a git pull, branch switch, or agent), rename commits, startup, and MCP queries: changed files are compiled into the `.lathe/` mirror one source tree per javac task, a dependency level at a time, deletions remove their mirrored classes, and the affected open files are re-analyzed once — any number of files, no Maven round trip. A file that fails keeps its last good classes and is retried with its tree's next write. See [the design](done/lathe-recompile-simplification.md). |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); the launcher routes JVM startup errors to stderr so they reach that log; `:LatheStart` starts the server for a directory with no Java file open. |
@@ -71,16 +73,22 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 
 ## Editor Support
 
-| Editor | Status |
+| Editor | What you can use |
 |---|---|
-| Neovim | Current and supported target; the client lives in `lathe-neovim/` and is published as the standalone `ag-libs/lathe.nvim` plugin. |
-| VS Code | Preview: a thin `vscode-languageclient` passthrough extension (`lathe-vscode/`, `.vsix` attached to each GitHub release, not on the Marketplace), also for Cursor; on Windows it starts the `.cmd` launcher (checked by hand on Windows, 2026-10-23); parity with the Neovim custom commands is backlog; `lathe.tests.modules` (the modules that have tests) was built ahead for it and has no Neovim caller. Known gaps (found 2026-10-24, fixes designed in `lathe-vscode-run-test.md` §4): in a window with two Lathe folders each server may receive the other folder's Java files (documents are not scoped per folder), and the whole-file "Add missing imports…" action does nothing (single-type import quick fixes work). See [the guide](guide/editors/vscode.md). |
-| Emacs (Eglot) and Zed | Supported through their setup notes under `guide/editors/` (the standard LSP surface; no run/test/debug or other custom commands); Zed's include Windows. |
-| Other LSP clients | May work, but are not qualified or supported. |
+| [Neovim](guide/editors/neovim.md) | The standalone `ag-libs/lathe.nvim` plugin supports navigation, refactoring, running and debugging code, and type scaffolding on Linux and macOS. |
+| [VS Code and Cursor](guide/editors/vscode.md) | The preview extension installs from a release `.vsix` on Linux, macOS, or Windows. It provides completion, diagnostics, navigation, code actions, and rename. |
+| [Emacs](guide/editors/emacs.md) | Eglot provides standard Java language features on Linux and macOS. |
+| [Zed](guide/editors/zed.md) | The Java extension can start Lathe on Linux, macOS, or Windows. |
+
+Other LSP clients may work but have not been qualified.
+In VS Code and Cursor, use one Lathe project per window.
+The whole-file missing-imports action is a known gap there. [VS Code limitations](guide/editors/vscode.md#known-issues)
 
 ## AI Agent Integration (MCP)
 
-`lathe-mcp-server` exposes the same build-derived engine to AI coding agents over the Model Context Protocol (stdio), calling the engine in-process through the `LatheEngine` facade — no second JVM, behaviour identical to the LSP path by construction. One process per agent session; the reactor is resolved from the working directory; without a populated `.lathe/` the server still starts, and every tool answers where it looked and how to set the project up. The launcher (`lathe-mcp-launcher.sh`, `.cmd` on Windows) is installed by `lathe:sync` alongside the editor launcher. See [ai-agents.md](guide/ai-agents.md).
+Each agent session starts one process through the MCP launcher installed in `.lathe/`.
+It runs the same analysis engine as the editor and finds the project from its working directory.
+If the workspace has yet to be built, the tools report where they looked and how to set it up. [Connect an agent](guide/ai-agents.md)
 
 | Tool | Status | Notes |
 |---|---|---|

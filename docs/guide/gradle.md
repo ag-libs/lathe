@@ -1,10 +1,8 @@
 # Lathe for Gradle
 
-Lathe reads a Gradle build the way it reads a Maven one: it watches the build compile and run its tests,
-and writes what it saw to `.lathe/` in the workspace root.
-The language server, the editor clients, and the MCP server read only `.lathe/`, so everything in the
-[README](../../README.md) works the same on a Gradle build: completion, diagnostics, navigation, refactoring,
-and running and debugging tests and mains replayed from the build's own launch.
+Apply the Lathe settings plugin and Gradle records each Java source set as it compiles.
+Your editor uses the same toolchain, classpath, and generated sources.
+For a JUnit Platform test, Lathe also records the JVM arguments and working directory that Gradle uses to launch it.
 
 ## Requirements
 
@@ -20,10 +18,12 @@ and running and debugging tests and mains replayed from the build's own launch.
 
 ## Setup
 
-Register the plugin once, in either place.
+Choose who should get Lathe when they build this project.
 
-As a **settings plugin**, committed in `settings.gradle.kts` (or `settings.gradle`), for everyone who builds
-the repository:
+**For the whole project**, add the plugin to the root settings file and commit it.
+Use the settings file your project already has.
+The same declaration works in both `settings.gradle` (Groovy) and `settings.gradle.kts` (Kotlin).
+If it already has a `plugins` block, add just the `id` line to that block.
 
 ```kotlin
 plugins {
@@ -31,8 +31,8 @@ plugins {
 }
 ```
 
-Or as a **personal init script**, with no change to the build: save it as
-`~/.gradle/init.d/lathe.init.gradle.kts`, and every build on your machine gets Lathe.
+**For your own Gradle builds**, save the following as `~/.gradle/init.d/lathe.init.gradle.kts`.
+It applies to each build on your machine and respects the version in projects that register Lathe themselves.
 
 ```kotlin
 initscript {
@@ -47,27 +47,34 @@ settingsEvaluated {
 }
 ```
 
-A build that commits the plugin keeps its own version; the init script then steps aside.
+### Run the first build
 
-A build that turns `failOnError` off, so code that does not compile still syncs, must turn incremental
-compilation off with it, as the init script Neovim's `:LatheInit` writes does: with incremental compilation
-on, Gradle does not write the classes a failed compile left out once the code is fixed, and Lathe keeps the
-last good capture of that source set (the editor compiles it itself, more slowly).
+Run the command from the folder containing the settings file.
+It compiles the project and starts the test JVMs to record their launches, skipping test execution.
+The `--continue` option lets Gradle capture other projects if a task rejects skipped tests.
 
-Then build once; this records your project's setup without running the tests (`.lathe/` keeps itself out of
-version control, as Lathe writes a `.gitignore` inside it; keep it out of any check that scans the whole project
-directory too, see [troubleshooting](troubleshooting.md)):
+On Linux or macOS, use the project's Gradle wrapper.
 
 ```sh
 ./gradlew latheSync -Plathe.capture.only=true --continue
 ```
 
+On Windows, run the wrapper from PowerShell.
+
+```powershell
+.\gradlew.bat latheSync '-Plathe.capture.only=true' --continue
+```
+
+Open a Java file in your [editor](../../README.md#editors).
+Keep the generated `.lathe/` directory out of version control and exclude it from whole-project checks. [Troubleshooting](troubleshooting.md)
+
 A build that rejects skipped tests (a test listener that fails the task, as Caffeine's does) ends this run with
 failed test tasks, but `.lathe/` is complete and every test task's launch is captured; see [Syncing](#syncing).
 
-Open any Java source in your editor's Lathe client.
-After this, every normal build keeps Lathe up to date (see [What the build keeps current](#what-the-build-keeps-current)),
-and the editor's sync can re-run it for you (see [Syncing](#syncing)).
+Later builds refresh each source set they compile. [What the build keeps current](#what-the-build-keeps-current)
+
+If you configure `failOnError = false` so a failed compile can still sync, turn off incremental compilation for that task as well.
+Otherwise Gradle can omit class files even after you fix the error, and Lathe has to compile that source set itself against its last good capture.
 
 Lathe resolves its server from your build's repositories, and adds Maven Central to the root project only when
 the build declares no repository of its own.

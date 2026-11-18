@@ -1,73 +1,68 @@
 # lathe.nvim
 
-**A Java language server that works from your build — no project import, no classpath setup.**
+`lathe.nvim` connects Neovim to Lathe, a Java language server for Maven, Gradle, and the OpenJDK build.
+Lathe reads the classpath and compiler options from your build so Neovim can complete Java names, show compiler errors as you edit, and jump to declarations in other modules.
 
-[![Lathe demo — a zero-config Java IDE from your build](https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo-038eec79.gif)](https://github.com/ag-libs/lathe#readme)
+[![Java editing, running, and testing in Neovim](https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo-038eec79.gif)](https://github.com/ag-libs/lathe#readme)
 
-The Neovim client for [Lathe](https://github.com/ag-libs/lathe). This repository is a **generated,
-one-way mirror** of the client that lives in the Lathe monorepo
-(`lathe-neovim/runtime`). Bug reports are welcome here as issues, but **code changes are
-accepted only in the [monorepo](https://github.com/ag-libs/lathe)** — a pull request opened here can't
-be merged back into the source.
-
-Each commit here is a per-release snapshot. For the changelog and full development history, see the
-[Lathe releases](https://github.com/ag-libs/lathe/releases) and the
-[monorepo](https://github.com/ag-libs/lathe); every mirror commit records the source revision it was
-generated from.
-
-## Requirements
-
-- Neovim 0.12+, on Linux or macOS (on Windows, Lathe supports VS Code, Cursor, and Zed instead)
-- The Java Treesitter parser: `:TSInstall java`
-- A Maven or Gradle project whose build enables Lathe, built at least once with
-  `mvn clean test -Dlathe.capture.only=true` (Maven) or `./gradlew latheSync -Plathe.capture.only=true`
-  (Gradle) — this installs the language server and creates the `.lathe/` workspace, test runs included,
-  without running the tests.
-  See the [installation guide](https://github.com/ag-libs/lathe/blob/main/docs/guide/installation.md).
-
-The client is editor-side only; the **server is resolved and installed by your build**, so installing this
-plugin is not enough on its own — the build must run too.
+[Use the demo’s Neovim config](https://github.com/ag-libs/lathe/blob/main/examples/nvim/README.md)
 
 ## Install
 
-### Built-in package manager (Neovim 0.12+)
+Use Neovim 0.12 or later on Linux or macOS.
+Install the plugin once with either package manager below, then [set up each project](#set-up-your-first-project) through its build.
+
+### Built-in package manager
+
+Add these lines to `~/.config/nvim/init.lua`, restart Neovim, and accept the install prompt.
 
 ```lua
-vim.pack.add({ 'https://github.com/ag-libs/lathe.nvim' })
-require('lathe').setup()
+vim.pack.add({ "https://github.com/ag-libs/lathe.nvim" })
+require("lathe").setup()
 ```
 
 ### lazy.nvim
 
+If your config imports `lua/plugins/`, save this as `~/.config/nvim/lua/plugins/lathe.lua`.
+
 ```lua
-{
-  'ag-libs/lathe.nvim',
-  ft = 'java',
-  cmd = { 'LatheStart', 'LatheInit' },                  -- usable before a Java file is open
-  event = { 'BufReadPre pom.xml', 'BufNewFile pom.xml' }, -- load for pom.xml validation too
-  config = function()
-    require('lathe').setup()
-  end,
+return {
+  "ag-libs/lathe.nvim",
+  ft = "java",
+  cmd = "LatheStart",
+  main = "lathe",
+  opts = {},
 }
 ```
 
-`require('lathe').setup()` is required. Without it, only indentation loads and the language server is
-never registered.
+Restart Neovim and run `:Lazy install`.
+The `ft = "java"` setting loads the plugin when you open a Java file.
+
+## Set up your first project
+
+1. Run the first build from the project root using the instructions for [Maven](https://github.com/ag-libs/lathe/blob/main/docs/guide/maven.md), [Gradle](https://github.com/ag-libs/lathe/blob/main/docs/guide/gradle.md#setup), or an [OpenJDK checkout](https://github.com/ag-libs/lathe/blob/main/docs/guide/openjdk.md#setup).
+   This installs the language server and records how your project compiles.
+2. Open a Java source file in that project.
+   Neovim starts Lathe automatically.
+3. Once the workspace has loaded, use **Go to Definition** on a call to a method in your project.
+   Neovim opens the method’s declaration.
+
+For Java indentation, install the Java Tree-sitter parser (`:TSInstall java` with nvim-treesitter).
+For keymaps, test results, and debugging, see the [Neovim guide](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md).
 
 ## Updating
 
-Update this plugin through your plugin manager; the server updates when you bump the Lathe version in
-your build (the `lathe-maven-extension` on Maven, the `io.github.ag-libs.lathe` plugin on Gradle) and build
-again. See
-[Updating](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md#updating).
+Update the client through your plugin manager.
+To update a server registered in the build, bump the Lathe version in Maven or Gradle and build again. [Updating Lathe](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md#updating)
 
-## Configuration & keymaps
+## Feedback
 
-Lathe adds no key mappings of its own — it provides LSP endpoints, `:Lathe*` commands, and a few Lua
-entry points that you bind yourself. For `setup()` options, the full feature reference, and a suggested
-keymap set, see the
-[Neovim guide](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md).
+This repository is generated from the Neovim client in the main Lathe repository for each release.
+Each mirror commit identifies its source revision. [Lathe releases](https://github.com/ag-libs/lathe/releases)
+
+Please report bugs or suggest fixes in [Lathe issues](https://github.com/ag-libs/lathe/issues).
+External code contributions are currently closed. [Contributing policy](https://github.com/ag-libs/lathe/blob/main/CONTRIBUTING.md#pull-requests)
 
 ## License
 
-Apache-2.0. See [LICENSE](./LICENSE).
+[Apache License 2.0](https://github.com/ag-libs/lathe.nvim/blob/main/LICENSE)

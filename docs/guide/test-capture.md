@@ -1,15 +1,17 @@
 # Test capture
 
-Lathe runs and debugs tests by **replaying** them from the captured `.lathe/` bytecode with no
-recompilation.
-To know *how* to launch that replay JVM — the exact classpath, module path, and JVM arguments your build's
-test run used — Lathe captures the real launch from inside the test JVM.
-That capture is done by `lathe-junit`, which the build puts into every module's test JVM; there is no test
-configuration to add.
+To rerun one JUnit test from Neovim or an AI agent, Lathe needs to know how your build starts that test's JVM.
+A Lathe-enabled Maven or Gradle build records the launch once, so you can rerun the method with the same JDK and flags.
 
-On any build that actually runs tests, `lathe-junit` fires once per module, before the tests run, and writes
-`.lathe/<module>/test-launch.json`.
-It records — from live JVM introspection, not by parsing a command line:
+The [first build](../../README.md#first-build) captures supported JUnit Platform launches without executing the tests.
+If you skip the test task entirely, or the module has no tests to discover, there is no launch to replay.
+See the [requirements](#requirements-and-current-limits) for supported JDKs, test engines, and build tasks.
+
+## What Lathe records
+
+The build loads `lathe-junit` in the test JVM.
+Before tests run, it reads the effective settings and writes `.lathe/<module>/test-launch.json` for the module's default tests.
+The following settings are available for replay.
 
 - `java.home` (replay uses the same JDK),
 - the test classpath (with `lathe-junit`'s own jar removed, so replay never has to strip it),
@@ -17,18 +19,11 @@ It records — from live JVM introspection, not by parsing a command line:
   `--add-exports`, `--add-modules`),
 - and the remaining JVM arguments the build gave the test JVM.
 
-Because these are read *after* the JVM expanded its launch, the captured template is the **effective,
-interpreted** launch — the module graph the tests actually ran under — rather than a guess reconstructed
-from build files.
-
-That launch includes the options the test JVM took from `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and
-`_JAVA_OPTIONS`, so a replay does not inherit those variables from the editor's environment: each option
-applies once, as in the build.
-Main-class runs are built from the build's paths, not a captured JVM, so they still inherit them.
-When a variable carries an option the build's test JVM ran without (set for the editor only, or since the
-last build), the run's output starts with a note naming it, and so does MCP `run_test`'s answer.
-To give a replay such an option, set the variable in the
-[run configuration's `env`](run-configuration.md), or re-run the build.
+The JVM has already expanded argument files and environment options when Lathe reads these settings.
+A replay applies captured options once, including those originally supplied through `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, or `_JAVA_OPTIONS`.
+If your editor sets a new option through one of those variables, the run output names the variable, as does the agent's `run_test` result.
+To apply it, capture a new launch or set it in the [run configuration's environment](run-configuration.md).
+A main method inherits the editor's environment because its launch is built from the module's paths.
 
 ## On Maven
 
@@ -105,8 +100,9 @@ On every build:
 - **JUnit Platform (JUnit 5/6, or the JUnit 4 vintage engine).**
   Capture rides the JUnit Platform launcher; pure TestNG runs, and Gradle test tasks on `useJUnit()` or
   `useTestNG()`, are not captured.
-- A module whose tests are skipped or absent produces no `test-launch.json`, so its tests are not
-  runnable from the editor until a build actually runs them.
+- **A test JVM must start.**
+  Skipping the test task entirely leaves the module without a new launch.
+  Use [capture-only mode](#capture-without-running-tests) to record the launch without executing the tests.
 - **A test that finds files from where its class file lies fails when run from the editor**, as Lathe loads the
   classes from its own copy under `.lathe/`; see
   [Troubleshooting](troubleshooting.md) for running it with the build, and for the change that makes it work in

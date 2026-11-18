@@ -1,10 +1,14 @@
 # Lathe features
 
-Most capabilities are standard LSP, so any LSP client can use them.
-The rest (run, test, debug, and a few navigation and import commands) are Lathe commands over `workspace/executeCommand`, with DAP for debugging; the [Neovim client](editors/neovim.md) drives them all.
-See the [editor guides](../../README.md#editors) for each client.
+Use your editor's Java navigation, completion, rename, and code actions with the compiler settings from your build.
+Most features use the Language Server Protocol (LSP).
+Neovim also supports Lathe commands for running and debugging code, creating types, and finding resources. [Editor setup](../../README.md#editors)
 
 ## Code intelligence
+
+Use **Go to definition** on a method call to open the overload the compiler selected.
+Use **Go to declaration** on its implementation to find the interface or abstract method it implements.
+To change a name across modules, use **Rename** on the declaration or one of its references.
 
 | Feature                      | What it does                                                                                      | LSP method                                        |
 |------------------------------|---------------------------------------------------------------------------------------------------|---------------------------------------------------|
@@ -43,6 +47,10 @@ A `lathe-style.json` declares the formatter where Spotless can't be read (Gradle
 [choosing the formatter](installation.md#choosing-overriding-or-opting-out-of-the-formatter).
 
 ## Run, test & debug
+
+With the cursor in a `main` method, run `:LatheRun` to see its output in Neovim.
+To run one JUnit method, add Lathe's adapter to neotest and run the nearest test.
+To stop at a breakpoint, install nvim-dap before Lathe loads and use `:LatheDebug`. [Test setup](editors/neovim.md#tests-neotest) · [Debugger setup](editors/neovim.md#debug-nvim-dap)
 
 | Feature                                              | What it does                                                                                                                                                | LSP method                                                            |
 |------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
