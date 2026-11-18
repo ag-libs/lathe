@@ -1709,7 +1709,7 @@ None yet.
 
 ## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-18: custom test annotations built on `@Testable` are mostly in large projects like Kafka; the fix is small and clear when it is picked)
 
 **Kind: bug**
 
@@ -1736,7 +1736,7 @@ None yet.
 
 ## TE-25 — A module that publishes a shaded jar at its jar's path runs its tests on the last build's classes
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-18: a module that replaces its jar with a shaded one is rare, the answer already says what runs, and the fix needs a design)
 
 **Kind: bug**
 
