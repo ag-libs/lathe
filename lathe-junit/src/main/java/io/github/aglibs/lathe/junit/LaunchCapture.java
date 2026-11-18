@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.net.URISyntaxException;
@@ -35,25 +36,31 @@ final class LaunchCapture {
 
   private LaunchCapture() {}
 
-  // Writes this test JVM's launch to its module's test-launch.json, when the working directory is
-  // inside a Lathe workspace.
+  // Writes this test JVM's launch to its module's test-launch.json, when the module is inside a
+  // Lathe workspace.
   static void capture() throws Exception {
-    final var workingDir = Path.of("").toAbsolutePath().normalize();
-    final Optional<Path> workspaceRoot = LatheWorkspace.findRoot(workingDir);
-    if (workspaceRoot.isEmpty()) {
+    // What findRoot checks for a build: a build that turns Lathe off (lathe.disabled, or on CI)
+    // leaves .lathe/ as it is.
+    if (LatheFlags.isDisabled()) {
       return;
     }
 
-    final Path root = workspaceRoot.get();
-    final Path moduleRel = root.relativize(workingDir);
-    final Path moduleDir = root.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+    final Optional<CaptureSite> site =
+        site(
+            Path.of("").toAbsolutePath().normalize(), System.getenv(LatheFlags.CAPTURE_MODULE_ENV));
+    if (site.isEmpty()) {
+      return;
+    }
+
+    final Path moduleDir =
+        site.get().root().resolve(LatheLayout.LATHE_DIR).resolve(site.get().moduleRel());
     final TestLaunchData data =
         toLaunchData(
             System.getProperty(LatheLayout.JAVA_HOME_PROPERTY),
             System.getProperty("java.class.path", ""),
             ManagementFactory.getRuntimeMXBean().getInputArguments(),
             ownJarLocation().orElse(null),
-            FileUtil.slashed(moduleRel));
+            FileUtil.slashed(site.get().workingRel()));
     final Optional<String> launchFile =
         launchFile(moduleDir, System.getenv(LatheFlags.CAPTURE_TREE_ENV));
     if (launchFile.isEmpty()) {
@@ -63,6 +70,35 @@ final class LaunchCapture {
     Files.createDirectories(moduleDir);
     FileUtil.writeAtomically(
         moduleDir, moduleDir.resolve(launchFile.get()), Json.toJson(data), false);
+  }
+
+  // Where a capture goes: the workspace root, the module, and the working directory a replay starts
+  // in, relative to the root. The working directory stays the JVM's own, as the build ran the tests
+  // there and they may read files from it.
+  record CaptureSite(Path root, Path moduleRel, Path workingRel) {
+
+    CaptureSite {
+      ValidCheck.check()
+          .notNull(root, "root")
+          .notNull(moduleRel, "moduleRel")
+          .notNull(workingRel, "workingRel")
+          .validate();
+    }
+  }
+
+  // The module is the one the build names when the tests run inside it (Lucene's build/tests-cwd),
+  // else the working directory, as on Surefire. A name with the tests run outside the module is
+  // inherited: a nested build the tests start (a TestKit fixture in a temporary directory) gets the
+  // test JVM's environment, and must not write its launch over the module's.
+  static Optional<CaptureSite> site(final Path workingDir, final String namedModule) {
+    final Path named =
+        namedModule == null || namedModule.isBlank()
+            ? workingDir
+            : Path.of(namedModule).toAbsolutePath().normalize();
+    final Path moduleDir = workingDir.startsWith(named) ? named : workingDir;
+    return LatheWorkspace.nearestRoot(moduleDir, null)
+        .map(
+            root -> new CaptureSite(root, root.relativize(moduleDir), root.relativize(workingDir)));
   }
 
   // The launch of the tree the build names (a Gradle test task of a source set beyond test), else

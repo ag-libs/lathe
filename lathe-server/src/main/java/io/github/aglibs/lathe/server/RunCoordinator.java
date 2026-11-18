@@ -502,7 +502,7 @@ final class RunCoordinator {
     }
 
     final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
-    return Replay.ready(
+    final ResolvedLaunch launch =
         RunOverlay.applyToTest(
             captured.template(),
             inputs.root(),
@@ -511,9 +511,9 @@ final class RunCoordinator {
             withTestFilter(inputs.root(), moduleRel, selections),
             resultsSink,
             overlay,
-            jdwp),
-        resultsSink,
-        captured.gate().notes());
+            jdwp);
+    RunOverlay.makeCapturedWorkingDir(launch, overlay);
+    return Replay.ready(launch, resultsSink, captured.gate().notes());
   }
 
   /**

@@ -215,6 +215,11 @@ final class LatheTestCapture {
         JDK_JAVA_OPTIONS,
         new AgentOption(
             Objects.toString(task.getEnvironment().get(JDK_JAVA_OPTIONS), ""), agentJar));
+    // The capture's module, which the test JVM's working directory names only when the build leaves
+    // it at the project's (Lucene's runs in build/tests-cwd). An environment variable, not an
+    // input.
+    task.environment(
+        LatheFlags.CAPTURE_MODULE_ENV, task.getProject().getProjectDir().getAbsolutePath());
   }
 
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always

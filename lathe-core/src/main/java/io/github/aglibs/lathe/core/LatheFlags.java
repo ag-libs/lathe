@@ -13,6 +13,10 @@ public final class LatheFlags {
   // The tree whose launch a test JVM captures, when it is not the module's test tree: set by the
   // Gradle plugin on a test task of another source set, in its environment, which is no task input.
   public static final String CAPTURE_TREE_ENV = "LATHE_CAPTURE_TREE";
+  // The module directory a test JVM captures for, set by the Gradle plugin on every test task it
+  // captures: a build may run the tests elsewhere (Lucene's build/tests-cwd), and the working
+  // directory would then name no module.
+  public static final String CAPTURE_MODULE_ENV = "LATHE_CAPTURE_MODULE";
   // The Maven phase the sync script builds to, process-test-classes by default: a project whose
   // module compiles against a sibling's shaded jar, which only package makes, sets package.
   public static final String SYNC_PHASE = "lathe.sync.phase";

@@ -12263,6 +12263,39 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-23 — A test JVM run outside its module's directory writes its capture under the wrong module — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on a build whose test JVM runs in another directory than its module's (Apache Lucene; any Gradle `test { workingDir }`); the setup build ran every such test in full.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1); cause found on main `e2af3ade`.
+
+### Observed behaviour
+
+The capture-only setup ran every Lucene test task (31 in the first report, 37 on main `e2af3ade`), and the Gradle plugin reported for each `:lucene:core:test captured no test launch: its test JVM did not load lathe-junit, so its tests ran in full`, suggesting a plugin like Develocity's test selection, which Lucene does not use.
+lathe-junit did load, and every test JVM captured, but at `.lathe/lucene/core/build/tests-cwd/test-launch.json` and the like, where the plugin does not look.
+The capture took its module from the JVM's working directory, and Lucene runs each module's tests in `<module>/build/tests-cwd`.
+
+### Resolution
+
+The Gradle plugin names the module directory of every test task it captures in `LATHE_CAPTURE_MODULE` (`LatheFlags.CAPTURE_MODULE_ENV`), an environment variable, so no task input changes.
+The capture writes its launch for that module when the tests run inside it, and otherwise for the working directory, as on Maven, whose Surefire runs in the module: a nested build the tests start in a temporary directory inherits the variable, and must not write over the module's launch.
+A build that turns Lathe off (`lathe.disabled`, or on CI) still captures nothing.
+The launch keeps the JVM's own working directory, since the build ran the tests there and they may read files from it, and the server makes that directory before a test replay when a `clean` removed it, never a run configuration's own `cwd`.
+Re-checked on Lucene: all 37 captures are at their modules' paths with no "captured no test launch" message, and `run_test` on `TestDocValuesQueries` passes 41 tests after `build/tests-cwd` was deleted.
+
+### Regression targets
+
+- `LaunchCaptureTest.site_moduleNamedOrNot_capturesForTheNamedModuleKeepingTheWorkingDirectory`
+- `LaunchCaptureTest.site_workingOutsideTheNamedModule_theWorkingDirectoryDecides`
+- `RunOverlayTest.makeCapturedWorkingDir_capturedOrConfiguredCwd_onlyTheCapturedOneMade`
+- `LatheCaptureTaskFunctionalTest.capture_testsRunOutsideTheProjectDirectory_launchIsTheModulesAndKeepsTheDirectory`
+
+---
+
 ## TE-22 — The capture-only sync fails on a module whose POM sets `<failIfNoTests>true</failIfNoTests>` — done
 
 **Status: done** (2026-11-18, by TE-19's fix, PR #376)
