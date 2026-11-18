@@ -21,9 +21,11 @@ class PackageDirectoryEngineTest extends LatheEngineTestBase {
   private static final String WRONG =
       """
       package com.example.other;
-      public class Wrong {
+      public class Wrong<T> {
         int count;
-        int twice(int factor) { int local = count * factor; return local + count; }
+        private int hidden;
+        T item;
+        int twice(int factor) { int local = count * factor + hidden; return local + count; }
       }
       """;
   private static final String RIGHT =
@@ -70,16 +72,21 @@ class PackageDirectoryEngineTest extends LatheEngineTestBase {
             });
   }
 
-  // A local or a parameter is renamed from the file's own code, as it was before the check; a
-  // member, which a rename finds by its package, is refused with the reason.
+  // What a rename searches only in the file (a local, a parameter, a type parameter, a private
+  // member) is renamed there, as before the check; a member it finds by its package is refused
+  // with the reason.
   @Test
-  void rename_inFileWhosePackageIsNotItsDirectory_localsRenamedMemberRefused() throws Exception {
+  void rename_inFileWhosePackageIsNotItsDirectory_fileScopedRenamedMemberRefused()
+      throws Exception {
     final Path wrong = TestCompiler.writeModuleSource(tmp, "com/example/Wrong.java", WRONG);
     compileIntoMirror(wrong);
     engine = new LatheEngine(tmp);
 
     assertThat(renameAt(wrong, WRONG, "local =", "result").totalEdits()).isEqualTo(2);
     assertThat(renameAt(wrong, Files.readString(wrong), "factor)", "scale").totalEdits())
+        .isEqualTo(2);
+    assertThat(renameAt(wrong, Files.readString(wrong), "T>", "E").totalEdits()).isEqualTo(2);
+    assertThat(renameAt(wrong, Files.readString(wrong), "hidden;", "secret").totalEdits())
         .isEqualTo(2);
     assertThatThrownBy(() -> renameAt(wrong, Files.readString(wrong), "count;", "total"))
         .hasMessageContaining("`count` cannot be renamed")

@@ -45,14 +45,6 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 final class RenameService {
 
   private static final Logger LOG = Logger.getLogger(RenameService.class.getName());
-  // What a rename finds in the file's own code, never through a declaration's package.
-  private static final Set<ElementKind> LOCAL_KINDS =
-      Set.of(
-          ElementKind.LOCAL_VARIABLE,
-          ElementKind.PARAMETER,
-          ElementKind.EXCEPTION_PARAMETER,
-          ElementKind.RESOURCE_VARIABLE,
-          ElementKind.BINDING_VARIABLE);
 
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
@@ -413,14 +405,13 @@ final class RenameService {
   }
 
   // On the module's worker: the symbol a rename at the request would rename. In a file whose
-  // package
-  // is not its directory it is refused unless local to the file's code: Lathe finds a declaration
-  // by its package, so a rename of anything else there would miss it and edit nothing, while a
-  // local or a parameter needs no such lookup.
+  // package is not its directory, one searched beyond the file is refused: Lathe finds its
+  // declaration by its package, so the rename would miss it. One searched only in the file (a
+  // local, a parameter, a type parameter, a private member) needs no such lookup.
   private static ReferenceTarget renameTarget(
       final SourceAnalysisSession session, final SourceFeatureRequest request) {
     final ReferenceTarget target = session.references().resolveRenameTarget(request);
-    if (target == null || LOCAL_KINDS.contains(target.kind())) {
+    if (target == null || target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       return target;
     }
 

@@ -203,9 +203,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
         compiled.stream().anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
     final List<Diagnostic> unusedDiags =
         compileFailed ? List.of() : UnusedDeclarationScanner.scan(run.fileAnalysis(), content);
-    final Optional<Diagnostic> packageMismatch =
-        PackageDirectory.mismatch(run.fileAnalysis(), LatheUri.toPath(uri), sourceRoots);
-    return Stream.of(compiled.stream(), unusedDiags.stream(), packageMismatch.stream())
+    return Stream.of(
+            compiled.stream(),
+            unusedDiags.stream(),
+            packageMismatch(uri, run.fileAnalysis()).stream())
         .flatMap(Function.identity())
         .toList();
   }
@@ -213,11 +214,19 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // The error the file of the request gets when its package is not its directory, from the
   // analysis of the request's text; none for a file outside this session's source roots.
   public Optional<Diagnostic> packageMismatch(final SourceFeatureRequest request) {
-    return cursor(request)
-        .flatMap(
-            cur ->
-                PackageDirectory.mismatch(
-                    cur.analysis(), LatheUri.toPath(request.uri()), sourceRoots));
+    return packageMismatch(
+        request.uri(), analysis(request.uri(), request.content(), request.version(), () -> {}));
+  }
+
+  // Only a file of this session's module is checked: a session of no module's sources, or a
+  // source whose URI names no file, has no directory to compare.
+  private Optional<Diagnostic> packageMismatch(
+      final String uri, final AttributedFileAnalysis analysis) {
+    if (sourceRoots.isEmpty() || analysis == null || !LatheUri.isFileUri(uri)) {
+      return Optional.empty();
+    }
+
+    return PackageDirectory.mismatch(analysis, LatheUri.toPath(uri), sourceRoots);
   }
 
   public CompletionOutcome complete(
