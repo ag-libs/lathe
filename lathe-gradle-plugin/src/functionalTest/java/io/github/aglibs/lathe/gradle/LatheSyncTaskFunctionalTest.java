@@ -112,6 +112,52 @@ class LatheSyncTaskFunctionalTest {
     assertThat(Path.of(withSources.dir()).resolve("com/example/withsrc/Api.java")).exists();
   }
 
+  // A build that reads every resolvable configuration's dependencies while it is configured, as
+  // Apache Kafka's does to find Mockito, and resolves its classpaths consistently: Lathe resolves
+  // nothing then. Were it to resolve app's test classpath in app's afterEvaluate, the compile
+  // classpath it is made consistent with would configure lib, whose own walk would resolve lib's
+  // test classpath, which holds lib's own test fixtures, while lib's components are still being
+  // calculated (Kafka's coordinator-common and server-common). The library's sources are still
+  // found when the sync runs.
+  @Test
+  void sync_buildReadsEveryConfigurationsDependenciesInAfterEvaluate_configuresAndFindsSources()
+      throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "build.gradle",
+                """
+                subprojects {
+                  repositories { maven { url = uri("$rootDir/repo") } }
+                  plugins.withId('java') {
+                    java { consistentResolution { useCompileClasspathVersions() } }
+                  }
+                  afterEvaluate { project ->
+                    project.configurations.findAll { it.canBeResolved }.each { configuration ->
+                      configuration.incoming.dependencies.each { }
+                    }
+                  }
+                }
+                """)
+            .file("lib/build.gradle", "plugins { id 'java-library'; id 'java-test-fixtures' }\n")
+            .mavenLibrary("repo", "withsrc", true)
+            .file(
+                "app/build.gradle",
+                """
+                plugins { id 'java' }
+                dependencies {
+                  implementation project(':lib')
+                  implementation 'com.example:withsrc:1.0'
+                }
+                """);
+
+    fixture.runner("latheSync").build();
+
+    assertThat(workspace().dependencySources())
+        .extracting(DependencyData::gav, DependencyData::status)
+        .containsExactly(tuple("com.example:withsrc:1.0", SourceStatus.PRESENT));
+  }
+
   // A personal setup on a broken branch: the init script brings Lathe in and keeps a compile error
   // in core from stopping the build, so app, which depends on it, is captured too. A compile that
   // wrote no classes mirrors nothing and records nothing as built, so the server compiles those
