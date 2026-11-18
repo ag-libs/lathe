@@ -44,9 +44,12 @@ public final class WorkspaceManifest {
   private final List<Path> runnerClasspath;
   private final ResourceRootIndex resourceRoots;
   private final ReactorRewrite reactorRewrite;
-  // The user-facing remediation when workspace.json has another schema version or cannot be read;
-  // null when it loaded or is absent.
+  // The user-facing remediation when workspace.json is missing, has another schema version or
+  // cannot be read; null when it loaded, or before any load (empty()).
   private final String loadProblem;
+  // Whether workspace.json was absent, not merely unusable: a workspace with no module yet has none
+  // either, and its own message says more than this one.
+  private final boolean missing;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
   // The built modules with sources of each language Lathe does not read, mixed ones too: an answer
@@ -66,6 +69,7 @@ public final class WorkspaceManifest {
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
       final String loadProblem,
+      final boolean missing,
       final Path buildTool,
       final List<Path> builtModuleDirs,
       final String jdkSourcesNote) {
@@ -78,6 +82,7 @@ public final class WorkspaceManifest {
     this.resourceRoots = resourceRoots;
     this.reactorRewrite = reactorRewrite;
     this.loadProblem = loadProblem;
+    this.missing = missing;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
     this.unreadModuleDirs =
@@ -93,10 +98,10 @@ public final class WorkspaceManifest {
   }
 
   public static WorkspaceManifest empty() {
-    return emptyWith(null);
+    return emptyWith(null, false);
   }
 
-  private static WorkspaceManifest emptyWith(final String loadProblem) {
+  private static WorkspaceManifest emptyWith(final String loadProblem, final boolean missing) {
     return new WorkspaceManifest(
         LibrarySources.none(),
         List.of(),
@@ -107,6 +112,7 @@ public final class WorkspaceManifest {
         ResourceRootIndex.empty(),
         ReactorRewrite.none(),
         loadProblem,
+        missing,
         null,
         List.of(),
         null);
@@ -115,8 +121,10 @@ public final class WorkspaceManifest {
   public static WorkspaceManifest load(final Path workspaceRoot) {
     final var file =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    // Without it the server has no module graph: an answer about a symbol's uses would stay in its
+    // file's module, so the answers say so.
     if (!Files.exists(file)) {
-      return empty();
+      return emptyWith(LatheLayout.MANIFEST_MISSING_REMEDIATION, true);
     }
 
     try {
@@ -128,7 +136,8 @@ public final class WorkspaceManifest {
                     .formatted(data.schemaVersion()));
         return emptyWith(
             LatheLayout.SCHEMA_REMEDIATION.formatted(
-                data.schemaVersion(), LatheLayout.SCHEMA_VERSION));
+                data.schemaVersion(), LatheLayout.SCHEMA_VERSION),
+            false);
       }
 
       final List<DependencyData> entries =
@@ -187,6 +196,7 @@ public final class WorkspaceManifest {
           ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
           reactorRewrite,
           null,
+          false,
           data.buildTool() != null ? Path.of(data.buildTool()) : null,
           data.outputs().stream()
               .map(output -> workspaceRoot.resolve(output.module()).normalize())
@@ -198,7 +208,8 @@ public final class WorkspaceManifest {
       final Throwable cause = ExceptionUtil.rootCause(e);
       return emptyWith(
           LatheLayout.MANIFEST_UNREADABLE_REMEDIATION.formatted(
-              Objects.requireNonNullElse(cause.getMessage(), cause.getClass().getSimpleName())));
+              Objects.requireNonNullElse(cause.getMessage(), cause.getClass().getSimpleName())),
+          false);
     }
   }
 
@@ -236,6 +247,10 @@ public final class WorkspaceManifest {
 
   public Optional<String> loadProblem() {
     return Optional.ofNullable(loadProblem);
+  }
+
+  public boolean missing() {
+    return missing;
   }
 
   public Optional<Path> resourceDestination(final Path file) {

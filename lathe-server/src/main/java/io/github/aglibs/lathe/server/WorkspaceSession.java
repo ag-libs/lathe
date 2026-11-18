@@ -882,20 +882,19 @@ final class WorkspaceSession {
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
 
-  // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
+  // A workspace.json that is missing, from another schema, or unreadable loads as empty, so say why
   // instead of "ready". The problem text is shared with the agent's notes, which carry no prefix.
   // A workspace without a module most often comes from a build that found every module up to date
-  // and so compiled none through Lathe; each file would only say it is outside every module.
+  // and so compiled none through Lathe; each file would only say it is outside every module, and
+  // that, not the missing manifest, is what the user must fix.
   private void showWorkspaceStatus(final String okText) {
+    final boolean noModule = state.registry().allConfigs().isEmpty();
     final Optional<String> problem =
         state
             .manifest()
             .loadProblem()
-            .or(
-                () ->
-                    state.registry().allConfigs().isEmpty()
-                        ? Optional.of(NO_MODULE)
-                        : Optional.empty());
+            .filter(text -> !(noModule && state.manifest().missing()))
+            .or(() -> noModule ? Optional.of(NO_MODULE) : Optional.empty());
     client.showMessage(
         problem
             .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))

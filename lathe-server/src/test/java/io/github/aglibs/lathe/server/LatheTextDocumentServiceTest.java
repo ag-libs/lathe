@@ -755,7 +755,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(outcome.launched()).isFalse();
-    assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
+    assertThat(outcome.blockedReasons())
+        .anyMatch(reason -> reason.startsWith("no lathe-test-runner jar recorded"));
   }
 
   @Test

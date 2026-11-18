@@ -1040,39 +1040,6 @@ None yet.
 
 ---
 
-## FR-037 — Without a workspace manifest, cross-module answers stay in one module and claim to be complete
-
-**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; an answer that claims to be complete is wrong for an agent)
-
-**Kind: bug**
-
-**Value: high — Size: S**
-
-**Affects: MCP `find_references`, `call_hierarchy`, `rename_symbol`, `verify_change`, and the editor's references and rename.**
-
-Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
-
-### Observed behaviour
-
-Keycloak was set up with the first build Lathe runs, sliced with `-pl services -am` (16 modules, all captured).
-A sync under `-pl` writes no `workspace.json`, by design, so the server ran without the module graph.
-`find_references` on `RealmModel.getName` then answered 7 references, all in `server-spi`; `rename_symbol` of `RealmModel.getDisplayNameHtml` edited its declaration alone, though `analyze_change` had just listed three overrides in other modules; and `verify_change` said "No errors".
-Every answer still ended "All javac-resolved references to this exact declaration ... no need to re-verify with grep".
-With the manifest written by a whole-reactor sync, the same calls answer 430 references and a rename of 11 edits in 8 files, overrides included, and `verify_change` checks the dependent modules.
-`find_implementations` was right in both setups (718 implementers of `ProviderFactory`): it reads the type index.
-
-### Fix direction
-
-When the workspace has no manifest, or its module graph is missing, every answer that spans modules says it covers only the declaring module and names the sync that writes the manifest (`.lathe/lathe-sync.sh`), and `rename_symbol` refuses rather than editing one module.
-The "no need to re-verify with grep" line is printed only when the search covered the reactor.
-`run_test`'s "no lathe-test-runner jar recorded — run a build first" names the same cause.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-036 — Renaming a getter leaves its property name in templates and message files unreported
 
 **Status: deferred** (triaged 2026-11-18: still on main `cdf57f1`; the review list is advisory, and listing property names needs a rule for which accessors count)

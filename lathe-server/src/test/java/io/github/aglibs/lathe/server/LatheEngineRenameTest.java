@@ -492,6 +492,47 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
                     .doesNotContain("run"));
   }
 
+  // A sync of part of the build (Maven's -pl) writes no workspace.json, so the server has no module
+  // graph and the search would find the method's uses in its own module only: the rename refuses,
+  // naming the cause, and edits nothing.
+  @Test
+  void rename_withoutTheManifest_refusesNamingItAndEditsNothing() throws Exception {
+    final String formatter =
+        """
+        package com.example;
+        public class Formatter {
+          public String format(String s) { return s; }
+        }
+        """;
+    final Path declaration =
+        TestCompiler.writeMirroredModule(
+                tmp, "lib", Map.of("com/example/Formatter.java", formatter), List.of(), 1_000L)
+            .get(0);
+    final String caller =
+        """
+        package com.example;
+        class FormatterCheck {
+          String run() { return new Formatter().format("a"); }
+        }
+        """;
+    final Path callerFile =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "check",
+                Map.of("com/example/FormatterCheck.java", caller),
+                List.of("lib"),
+                1_000L)
+            .get(0);
+    Files.delete(tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(declaration, formatter, "format", "render"))
+        .hasMessageContaining("`format` cannot be renamed")
+        .hasMessageContaining(LatheLayout.MANIFEST_MISSING_REMEDIATION);
+    assertThat(Files.readString(declaration)).isEqualTo(formatter);
+    assertThat(Files.readString(callerFile)).isEqualTo(caller);
+  }
+
   // A package-private member is used wherever its package is, in another module too: a test module
   // that shares the package of the code it tests, as JUnit's does. A same-named member of another
   // type there is not it.

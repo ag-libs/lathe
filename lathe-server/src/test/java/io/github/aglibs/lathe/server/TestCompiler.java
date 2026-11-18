@@ -589,6 +589,11 @@ public final class TestCompiler {
             buildDir != null ? buildDir.toString() : null);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree));
     Json.write(config, paramsFile);
+    // A sync writes the manifest beside the params; without it the server has no module graph.
+    if (Files.notExists(
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON))) {
+      recordBuildFiles(workspaceRoot, List.of());
+    }
   }
 
   // The index entry of the public top-level class a source file declares, named after the file.

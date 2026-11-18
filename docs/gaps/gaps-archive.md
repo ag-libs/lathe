@@ -7,6 +7,43 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-037 — Without a workspace manifest, cross-module answers stay in one module and claim to be complete — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: MCP `find_references`, `call_hierarchy`, `rename_symbol`, `verify_change`, and the editor's references and rename.**
+
+Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Keycloak was set up with the first build Lathe runs, sliced with `-pl services -am` (16 modules, all captured).
+A sync under `-pl` writes no `workspace.json`, by design, so the server ran without the module graph.
+`find_references` on `RealmModel.getName` then answered 7 references, all in `server-spi`; `rename_symbol` of `RealmModel.getDisplayNameHtml` edited its declaration alone, though `analyze_change` had just listed three overrides in other modules; and `verify_change` said "No errors".
+Every answer still ended "All javac-resolved references to this exact declaration ... no need to re-verify with grep".
+With the manifest written by a whole-reactor sync, the same calls answer 430 references and a rename of 11 edits in 8 files, overrides included, and `verify_change` checks the dependent modules.
+`find_implementations` was right in both setups (718 implementers of `ProviderFactory`): it reads the type index.
+
+### Resolution
+
+A missing `workspace.json` is now a load problem, as one from another schema or one that cannot be read already was: `LatheLayout.MANIFEST_MISSING_REMEDIATION` says the answers cover each file's own module and names the sync that writes it.
+Every MCP answer carries it as "Sync required:", `verify_change`'s too, and while the manifest has a load problem (`LatheNotes.moduleGraphMissing`) an answer about uses or implementations no longer says "no need to re-verify with grep"; a build-file change, which leaves the search whole, keeps it.
+The editor shows it as a warning on load, unless the workspace has no module at all (`WorkspaceManifest.missing`), whose own message stays.
+`rename_symbol` and the editor's rename refuse while the manifest has a load problem, however few modules the server has (a `-pl` sync of one module leaves one), and `run_test` says the runner is missing and why.
+Re-checked on Keycloak sliced with `-pl`: references carry the note, the rename of `getDisplayNameHtml` is refused and edits nothing, and `run_test` names the missing manifest.
+
+### Regression targets
+
+- `LatheEngineNotesTest.notes_workspaceWithoutTheManifest_syncRequiredNamingIt_untilWritten`
+- `LatheEngineRenameTest.rename_withoutTheManifest_refusesNamingItAndEditsNothing`
+- `McpTextTest.referencesResult_moduleGraphMissingOrBuildFilesChanged_dropsTheGrepAdviceOnlyWithoutTheGraph`
+- `LatheTextDocumentServiceTest.runTestFuture_freshWorkspace_returnsBlockedOnMissingRunnerJar`
+- `LatheWorkspaceServiceTest.executeCommand_runTestFreshWorkspace_returnsBlockedOnMissingRunnerJar`
+
+---
+
 ## EG-112 — A type from a dependency without sources is reported as not existing — done
 
 **Status: done** (2026-11-18, PR #372)

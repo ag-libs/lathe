@@ -115,9 +115,24 @@ final class RenameService {
         .whenComplete((range, failure) -> logRefusal("prepareRename", uri, t, failure));
   }
 
+  // Without the manifest (missing, another schema, unreadable) the server has no module graph, so
+  // the search would find the uses in the symbol's own module only, and the edit would break the
+  // rest. However few modules the server has: a sync of one module under -pl leaves one, of many.
+  private void requireModuleGraph(final ReferenceTarget target) {
+    state
+        .manifest()
+        .loadProblem()
+        .ifPresent(
+            problem -> {
+              throw FeatureAnswers.refused(
+                  "`%s` cannot be renamed: %s".formatted(target.simpleName(), problem));
+            });
+  }
+
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
   // the reactor (JDK or a dependency), one a processor regenerates, or a method overriding either.
   private void requireRenameable(final ReferenceTarget target, final String uri) {
+    requireModuleGraph(target);
     final ModuleSourceConfig asking =
         state.registry().moduleSourceFor(LatheUri.toPath(uri)).orElseThrow();
     final List<Path> roots =

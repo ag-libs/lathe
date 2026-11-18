@@ -309,6 +309,7 @@ class McpTextTest {
                 new LatheNotes(
                     List.of("a/A.java:3: cannot find symbol", "b/B.java:1: ';' expected"),
                     List.of("build files changed — run `.lathe/lathe-sync.sh`"),
+                    false,
                     List.of("x/X.java is outside the modules the last build compiled"),
                     true,
                     List.of(new UnreadSources("Kotlin", List.of("app-kotlin"))))))
@@ -460,6 +461,43 @@ class McpTextTest {
                     LatheLocation.Origin.EXTERNAL,
                     "void connect() {")))
         .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412:9 [EXTERNAL]: void connect() {");
+  }
+
+  // Without the module graph (its manifest missing, say) a search saw one module: the answer drops
+  // the grep advice and says what the sync fixes. A build-file change needs a sync too, but leaves
+  // the search whole.
+  @Test
+  void
+      referencesResult_moduleGraphMissingOrBuildFilesChanged_dropsTheGrepAdviceOnlyWithoutTheGraph() {
+    final var use =
+        new LatheLocation(
+            "file:///w/app/App.java", "app/App.java", 3, 4, LatheLocation.Origin.REACTOR, "run();");
+    final var noGraph =
+        new LatheNotes(
+            List.of(),
+            List.of(".lathe/workspace.json is missing"),
+            true,
+            List.of(),
+            false,
+            List.of());
+    final var buildFilesChanged =
+        new LatheNotes(
+            List.of(),
+            List.of("build files changed — run `.lathe/lathe-sync.sh`"),
+            false,
+            List.of(),
+            false,
+            List.of());
+
+    assertThat(text(McpText.referencesResult(new LatheReferences(1, false, uses(use), 0), noGraph)))
+        .doesNotContain("no need to re-verify")
+        .endsWith("Sync required: .lathe/workspace.json is missing");
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(1, false, uses(use), 0), buildFilesChanged)))
+        .contains("no need to re-verify with grep.")
+        .endsWith("Sync required: build files changed — run `.lathe/lathe-sync.sh`");
   }
 
   // Lathe reads no Kotlin or Groovy: where there is some, an answer about uses no longer says grep
@@ -959,6 +997,6 @@ class McpTextTest {
   }
 
   private static LatheNotes withUnread(final UnreadSources... unread) {
-    return new LatheNotes(List.of(), List.of(), List.of(), false, List.of(unread));
+    return new LatheNotes(List.of(), List.of(), false, List.of(), false, List.of(unread));
   }
 }
