@@ -694,8 +694,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
   // The args Gradle lists, and what it passes javac apart from them: the -source and -target, and
   // the JDK of the compile's toolchain they are compiled against.
   private static List<String> compilerArgs(final JavaCompile javac) {
+    // A Groovy build's argument provider may return GStrings, which Gradle 8 hands javac as they
+    // are, typed String only by erasure; read as objects, a cast would fail.
+    final List<?> args = javac.getOptions().getAllCompilerArgs();
     return CompileCapture.withCompileJdk(
-        javac.getOptions().getAllCompilerArgs(),
+        args.stream().map(String::valueOf).toList(),
         javac.getJavaCompiler().get().getMetadata().getInstallationPath().getAsFile().toPath(),
         javac.getSourceCompatibility(),
         javac.getTargetCompatibility(),

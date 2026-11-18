@@ -1400,36 +1400,6 @@ None yet.
 
 ---
 
-## WS-42 — A Gradle module path passed as a compiler argument gives no module dependencies
-
-**Status: accepted** (triaged 2026-11-18: on main `cdf57f1`, by code; answers are wrong across modules and still claim to be complete)
-
-**Kind: bug**
-
-**Value: high — Size: M**
-
-**Affects: references, callers, rename and `verify_change` across modules, on Gradle builds that set the module path themselves.**
-
-Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1).
-
-### Observed behaviour
-
-Lucene's build plugin compiles each module with `--module-path` as a compiler argument, naming the dependency's packaged jar (`lucene/core/build/libs/lucene-core-12.0.0-SNAPSHOT.jar`), and leaves the task's classpath empty.
-The capture keeps the argument as it is: `lucene/analysis/common`'s params have an empty `classpath` and `modulepath`, and `workspace_summary` lists no dependency for most modules.
-Files there still compile (the argument reaches javac), but the module graph lacks the edges, so `find_references` on `TermQuery.getTerm` answers 10 references, all in `lucene/core`, while `highlighter` (`FieldQuery.java`, four calls) and `queries` use it too; the answer still says "no need to re-verify with grep".
-Analysis of a dependent module also reads the dependency's jar from the last build, not its sources.
-On main the Gradle capture still takes the module path only from the classpath (`ModulePathSplit.split(classpath)`).
-
-### Fix direction
-
-Read `--module-path`/`-p` (and `--class-path`/`-cp`) out of the captured compiler arguments into `modulepath`/`classpath`, removing them from the arguments, so a reactor module's jar is rewritten to its `.lathe/` mirror and becomes a graph edge, as a classpath entry does.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone

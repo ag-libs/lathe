@@ -10477,6 +10477,39 @@ The compiler plugin contributes nothing as an extension, and the POM is not touc
 
 ---
 
+## WS-42 — A Gradle module path passed as a compiler argument gives no module dependencies — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: references, callers, rename and `verify_change` across modules, on Gradle builds that set the module path themselves.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1).
+
+### Observed behaviour
+
+Lucene's build plugin compiles each module with `--module-path` as a compiler argument, naming the dependency's packaged jar (`lucene/core/build/libs/lucene-core-12.0.0-SNAPSHOT.jar`), and leaves the task's classpath empty.
+The capture keeps the argument as it is: `lucene/analysis/common`'s params have an empty `classpath` and `modulepath`, and `workspace_summary` lists no dependency for most modules.
+Files there still compile (the argument reaches javac), but the module graph lacks the edges, so `find_references` on `TermQuery.getTerm` answers 10 references, all in `lucene/core`, while `highlighter` (`FieldQuery.java`, four calls) and `queries` use it too; the answer still says "no need to re-verify with grep".
+Analysis of a dependent module also reads the dependency's jar from the last build, not its sources.
+On main the Gradle capture still takes the module path only from the classpath (`ModulePathSplit.split(classpath)`).
+
+### Resolution
+
+The capture takes `--module-path`/`-p` and `--class-path`/`-classpath`/`-cp` (also in their `=` forms) out of the compiler arguments it records and adds their entries to the params' module path and classpath (`CompilerPathArgs`), after the compile task's own.
+The server needed no change: Lucene's manifest already lists `lucene-core-12.0.0-SNAPSHOT.jar` as an output of `lucene/core`, so the entry maps to its mirror, which is the module-graph edge, and a dependent module reads the dependency's sources, not the last built jar.
+Re-checked on Lucene: `lucene/analysis/common` now depends on `lucene/core`, and `find_references` on `TermQuery.getTerm` reaches `highlighter`, `queries` and `facet` besides `core`.
+
+### Regression targets
+
+- `CompilerPathArgsTest.extract_eachPathOptionForm_movesItsEntriesAndKeepsTheRest`
+- `CompilerPathArgsTest.extract_noPathOptionOrNoValue_leavesTheArgumentsAsTheyAre`
+- `CompilerPathArgsTest.extract_entryThroughParentSegment_normalized`
+- `LatheCaptureTaskFunctionalTest.capture_modulePathAsCompilerArgument_movesItIntoTheModulePath`
+
+---
+
 ## WS-43 — Lathe's Gradle plugin breaks a build that reads every configuration's dependencies while configuring — done
 
 **Status: done** (2026-11-18)
