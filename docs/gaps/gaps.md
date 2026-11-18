@@ -1402,7 +1402,7 @@ None yet.
 
 ## WS-44 — `:LatheInit` builds a Maven project to `test`, though `lathe.sync.phase` asks for a later phase
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-18: it needs a build that cannot reach `test` without packaging, as Quarkus, and `lathe.sync.phase` set; the fix is clear when such builds come up)
 
 **Kind: bug**
 
@@ -1619,26 +1619,34 @@ None yet.
 
 ---
 
-## TE-23 — Lucene's tests are not captured: their test JVMs do not load lathe-junit
+## TE-23 — A test JVM run outside its module's directory writes its capture under the wrong module
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-18: still on main `e2af3ade`; no test of such a build is runnable, and the build's message blames the wrong cause)
 
 **Kind: bug**
 
-**Affects: editor test runs and MCP `run_test` on Apache Lucene; the setup build runs every test in full.**
+**Value: medium — Size: S–M**
 
-Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1).
+**Affects: editor test runs and MCP `run_test` on a build whose test JVM runs in another directory than its module's (Apache Lucene; any Gradle `test { workingDir }`, a Surefire `<workingDirectory>`); the setup build runs every such test in full.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1); cause found on main `e2af3ade`.
 
 ### Observed behaviour
 
-The capture-only setup runs all 31 test tasks; each test JVM picks up Lathe's agent (`Picked up JDK_JAVA_OPTIONS: -javaagent:…`), but Lathe reports `:lucene:core:test captured no test launch: its test JVM did not load lathe-junit, so its tests ran in full`, and blames plugins like Develocity's test selection, which Lucene does not use.
-Lucene runs JUnit 4 (`RandomizedRunner`) through the vintage engine on the JUnit Platform, with tests on the module path.
+The capture-only setup runs Lucene's 37 test tasks, and the Gradle plugin reports for each `:lucene:core:test captured no test launch: its test JVM did not load lathe-junit, so its tests ran in full`, suggesting a plugin like Develocity's test selection, which Lucene does not use.
 `run_test` then answers "no test in TestTermQuery.java".
-Cause not found: lathe-junit on the module path, where its listener is not found, or Lucene's own test task setup.
+lathe-junit did load, and every test JVM captured: the captures are at `.lathe/lucene/core/build/tests-cwd/test-launch.json` and the like, where the plugin does not look.
+
+### Cause
+
+The capture in the test JVM takes its module from the JVM's working directory (`LaunchCapture`: the root found above it, and the module relative to the root).
+Lucene runs each module's tests in `<module>/build/tests-cwd`, so the capture names the module `lucene/core/build/tests-cwd` and writes its launch there.
+Maven's Surefire runs in the module's directory unless `<workingDirectory>` moves it, so mostly Gradle builds are affected.
 
 ### Fix direction
 
-Find why the listener does not load in Lucene's test JVM, then capture there or say why instead of naming Develocity.
+The build tells the capture its module, as it already tells it the source tree (`LATHE_CAPTURE_TREE`): the Gradle plugin and the Maven extension pass the module's directory, and the capture uses it over the working directory, falling back to it when absent.
+The plugin's message then names a capture written for another module rather than an unloaded listener.
 
 ### Regression targets
 
