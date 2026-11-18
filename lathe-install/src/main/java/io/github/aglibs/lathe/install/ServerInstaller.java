@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,6 +25,13 @@ import org.slf4j.LoggerFactory;
 public final class ServerInstaller {
 
   private static final Logger LOG = LoggerFactory.getLogger(ServerInstaller.class);
+  private static final String PLATFORM_GROUP = "org.junit.platform";
+  private static final String JUPITER_GROUP = "org.junit.jupiter";
+  private static final String LAUNCHER_ARTIFACT = LatheLayout.JUNIT_PLATFORM_LAUNCHER;
+  private static final String ENGINE_ARTIFACT = "junit-jupiter-engine";
+  private static final String PLATFORM_COMMONS =
+      "%s:%s".formatted(PLATFORM_GROUP, LatheLayout.JUNIT_PLATFORM_COMMONS);
+  private static final String JUPITER_API = "%s:junit-jupiter-api".formatted(JUPITER_GROUP);
   // JUnit 5's Jupiter runs on platform 1.x; from JUnit 6 on, both share one version.
   private static final int JUNIT_5_PLATFORM_MAJOR = 1;
   private static final int JUNIT_SHARED_VERSION_MAJOR = 6;
@@ -224,18 +232,42 @@ public final class ServerInstaller {
     return List.copyOf(classpath);
   }
 
+  // A runner for each JUnit platform version among the coordinates, by that version: the launcher
+  // at it, and the engine of the newest Jupiter of its generation when there is one (a JUnit 4
+  // module's vintage engine is on its own test classpath). A module replays on the runner of the
+  // platform its own test classpath holds, so a reactor on JUnit 5 and 6 at once runs both.
+  public Map<String, List<Path>> resolveRunnerClasspaths(
+      final Collection<String> externalCoordinates) throws SyncException {
+    final Path runnerJar = resolveRunnerJar();
+    final List<String> jupiterVersions = versionsOf(externalCoordinates, JUPITER_API);
+    final var runners = new LinkedHashMap<String, List<Path>>();
+    for (final String platform :
+        versionsOf(externalCoordinates, PLATFORM_COMMONS).stream().distinct().toList()) {
+      final var classpath = new ArrayList<Path>();
+      classpath.add(runnerJar);
+      classpath.addAll(resolveTransitiveJars(PLATFORM_GROUP, LAUNCHER_ARTIFACT, platform));
+      final Optional<String> jupiter =
+          jupiterVersions.stream().filter(version -> sameGeneration(platform, version)).findFirst();
+      if (jupiter.isPresent()) {
+        classpath.addAll(resolveTransitiveJars(JUPITER_GROUP, ENGINE_ARTIFACT, jupiter.get()));
+      }
+
+      runners.put(platform, List.copyOf(classpath));
+    }
+
+    return Map.copyOf(runners);
+  }
+
   // A reactor may hold several JUnit versions (a module, or a dependency, on another): the newest
   // Jupiter, and the newest platform of its generation, so the launcher and engine go together.
   private List<Path> resolveJUnitSupportJars(final Collection<String> externalCoordinates)
       throws SyncException {
     final String jupiterVersion =
-        versionsOf(externalCoordinates, "org.junit.jupiter:junit-jupiter-api").stream()
-            .findFirst()
-            .orElse(null);
+        versionsOf(externalCoordinates, JUPITER_API).stream().findFirst().orElse(null);
     final String platformVersion =
         jupiterVersion == null
             ? null
-            : versionsOf(externalCoordinates, "org.junit.platform:junit-platform-commons").stream()
+            : versionsOf(externalCoordinates, PLATFORM_COMMONS).stream()
                 .filter(platform -> sameGeneration(platform, jupiterVersion))
                 .findFirst()
                 .orElse(null);
@@ -245,9 +277,8 @@ public final class ServerInstaller {
     }
 
     final var jars = new ArrayList<Path>();
-    jars.addAll(
-        resolveTransitiveJars("org.junit.platform", "junit-platform-launcher", platformVersion));
-    jars.addAll(resolveTransitiveJars("org.junit.jupiter", "junit-jupiter-engine", jupiterVersion));
+    jars.addAll(resolveTransitiveJars(PLATFORM_GROUP, LAUNCHER_ARTIFACT, platformVersion));
+    jars.addAll(resolveTransitiveJars(JUPITER_GROUP, ENGINE_ARTIFACT, jupiterVersion));
     return List.copyOf(jars);
   }
 

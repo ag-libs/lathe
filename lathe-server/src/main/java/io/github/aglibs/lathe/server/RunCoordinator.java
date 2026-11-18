@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -53,6 +54,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -198,6 +200,7 @@ final class RunCoordinator {
         state.root(),
         state.manifest().reactorRewrite(),
         state.manifest().runnerClasspath(),
+        state.manifest().runnerClasspaths(),
         state
             .manifest()
             .loadProblem()
@@ -389,7 +392,11 @@ final class RunCoordinator {
 
   // What a launch reads from the session: read on the loop, handed to the launch thread.
   private record LaunchInputs(
-      Path root, ReactorRewrite reactorRewrite, List<Path> runnerClasspath, String noRunnerReason) {
+      Path root,
+      ReactorRewrite reactorRewrite,
+      List<Path> runnerClasspath,
+      Map<String, List<Path>> runnerClasspaths,
+      String noRunnerReason) {
 
     LaunchInputs {
       ValidCheck.check()
@@ -397,7 +404,29 @@ final class RunCoordinator {
           .notBlank(noRunnerReason, "noRunnerReason")
           .validate();
       runnerClasspath = List.copyOf(runnerClasspath);
+      runnerClasspaths = Map.copyOf(runnerClasspaths);
     }
+
+    List<Path> runnerFor(final List<String> classPath) {
+      return RunCoordinator.runnerFor(classPath, runnerClasspaths, runnerClasspath);
+    }
+  }
+
+  // The runner of the JUnit platform a module's own test classpath holds, so a reactor on JUnit 5
+  // and 6 at once replays each module on its own; the workspace's runner when the sync resolved
+  // none for it.
+  static List<Path> runnerFor(
+      final List<String> classPath,
+      final Map<String, List<Path>> runners,
+      final List<Path> fallback) {
+    return classPath.stream()
+        .flatMap(
+            entry ->
+                FileUtil.jarVersion(Path.of(entry), LatheLayout.JUNIT_PLATFORM_COMMONS).stream())
+        .map(runners::get)
+        .filter(Objects::nonNull)
+        .findFirst()
+        .orElse(fallback);
   }
 
   // A resolved launch with the completeness gate's notes, or the reasons it is blocked. A main has
@@ -478,7 +507,7 @@ final class RunCoordinator {
             captured.template(),
             inputs.root(),
             inputs.reactorRewrite(),
-            inputs.runnerClasspath(),
+            inputs.runnerFor(captured.template().classPath()),
             withTestFilter(inputs.root(), moduleRel, selections),
             resultsSink,
             overlay,

@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 // The steps every build front-end's sync shares, in one order: the dependencies' sources and type
 // indexes, the JDK's sources and type index, then the workspace manifest and the sync script. A
@@ -39,6 +40,7 @@ public final class WorkspaceSync {
       Caches caches,
       String serverVersion,
       List<String> runnerClasspath,
+      Map<String, List<String>> runnerClasspaths,
       List<String> buildFiles,
       List<ResourceRootData> resourceRoots,
       List<OutputData> outputs,
@@ -52,6 +54,7 @@ public final class WorkspaceSync {
           .notNull(syncScript, "syncScript")
           .validate();
       runnerClasspath = List.copyOf(runnerClasspath);
+      runnerClasspaths = Map.copyOf(runnerClasspaths);
       buildFiles = List.copyOf(buildFiles);
       resourceRoots = List.copyOf(resourceRoots);
       outputs = List.copyOf(outputs);
@@ -79,7 +82,8 @@ public final class WorkspaceSync {
         inputs.buildFiles(),
         inputs.resourceRoots(),
         inputs.outputs(),
-        inputs.syncScript().tool());
+        inputs.syncScript().tool(),
+        inputs.runnerClasspaths());
     inputs.syncScript().write(inputs.workspaceRoot());
     writeGitignore(inputs.workspaceRoot());
   }

@@ -30,6 +30,34 @@ final class FileUtilTest {
 
   @TempDir private Path tempDir;
 
+  // A repository jar's version, from its name; none for another artifact's jar, a look-alike
+  // artifact (its name goes on with a word, not a version), or a file that is no jar.
+  @Test
+  void jarVersion_repositoryJarOrOther_versionOrNone() {
+    final Path dir = Path.of("m2", "org", "junit");
+
+    assertThat(
+            FileUtil.jarVersion(
+                dir.resolve("junit-platform-commons-6.1.3.jar"), "junit-platform-commons"))
+        .contains("6.1.3");
+    assertThat(
+            FileUtil.jarVersion(
+                dir.resolve("junit-platform-commons-1.14.4.jar"), "junit-platform-commons"))
+        .contains("1.14.4");
+    assertThat(
+            FileUtil.jarVersion(
+                dir.resolve("junit-platform-commons-extra-1.0.jar"), "junit-platform-commons"))
+        .isEmpty();
+    assertThat(
+            FileUtil.jarVersion(
+                dir.resolve("junit-jupiter-api-6.1.3.jar"), "junit-platform-commons"))
+        .isEmpty();
+    assertThat(
+            FileUtil.jarVersion(
+                dir.resolve("junit-platform-commons-6.1.3.pom"), "junit-platform-commons"))
+        .isEmpty();
+  }
+
   @Test
   void copyMissing_keptFilesDestLacks_copiedExistingAndFilteredLeftAlone() throws IOException {
     final Path src = tempDir.resolve("src");

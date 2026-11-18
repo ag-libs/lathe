@@ -40,6 +40,40 @@ class RunCoordinatorTest extends ServiceTestBase {
   // failure is not that wait running out.
   private static final long AT_ONCE_S = 10;
 
+  // TE-21: a module replays on the runner of the JUnit platform its own test classpath holds, so a
+  // reactor on JUnit 5 and 6 at once runs both; the workspace's runner when the sync resolved none
+  // for that platform, or the module holds no platform jar.
+  @Test
+  void runnerFor_moduleOnEitherPlatform_itsOwnRunnerElseTheWorkspaces() {
+    final List<Path> junit5 = List.of(Path.of("runner5.jar"));
+    final List<Path> junit6 = List.of(Path.of("runner6.jar"));
+    final List<Path> fallback = List.of(Path.of("fallback.jar"));
+    final Map<String, List<Path>> runners = Map.of("1.14.4", junit5, "6.1.3", junit6);
+    final String repo = Path.of("m2", "org", "junit").toString();
+
+    assertThat(
+            RunCoordinator.runnerFor(
+                List.of(
+                    Path.of(repo, "junit-jupiter-api-5.14.4.jar").toString(),
+                    Path.of(repo, "junit-platform-commons-1.14.4.jar").toString()),
+                runners,
+                fallback))
+        .isEqualTo(junit5);
+    assertThat(
+            RunCoordinator.runnerFor(
+                List.of(Path.of(repo, "junit-platform-commons-6.1.3.jar").toString()),
+                runners,
+                fallback))
+        .isEqualTo(junit6);
+    assertThat(
+            RunCoordinator.runnerFor(
+                List.of(Path.of(repo, "junit-platform-commons-1.9.0.jar").toString()),
+                runners,
+                fallback))
+        .isEqualTo(fallback);
+    assertThat(RunCoordinator.runnerFor(List.of("classes"), runners, fallback)).isEqualTo(fallback);
+  }
+
   // The debug readiness gate: attachDebugHost waits on the future jdwpReadyConsumer completes when
   // the JVM's JDWP "Listening for transport ..." banner is drained -- replacing the old TCP probe
   // that the agent misread as a failed handshake. Covered here at the consumer, so no suspended JVM
