@@ -101,10 +101,6 @@ public final class WorkspaceManifest {
     return emptyWith(null, false);
   }
 
-  private static WorkspaceManifest emptyWith(final String loadProblem) {
-    return emptyWith(loadProblem, false);
-  }
-
   private static WorkspaceManifest emptyWith(final String loadProblem, final boolean missing) {
     return new WorkspaceManifest(
         LibrarySources.none(),
@@ -140,7 +136,8 @@ public final class WorkspaceManifest {
                     .formatted(data.schemaVersion()));
         return emptyWith(
             LatheLayout.SCHEMA_REMEDIATION.formatted(
-                data.schemaVersion(), LatheLayout.SCHEMA_VERSION));
+                data.schemaVersion(), LatheLayout.SCHEMA_VERSION),
+            false);
       }
 
       final List<DependencyData> entries =
@@ -211,7 +208,8 @@ public final class WorkspaceManifest {
       final Throwable cause = ExceptionUtil.rootCause(e);
       return emptyWith(
           LatheLayout.MANIFEST_UNREADABLE_REMEDIATION.formatted(
-              Objects.requireNonNullElse(cause.getMessage(), cause.getClass().getSimpleName())));
+              Objects.requireNonNullElse(cause.getMessage(), cause.getClass().getSimpleName())),
+          false);
     }
   }
 
