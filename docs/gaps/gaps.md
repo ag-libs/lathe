@@ -1014,6 +1014,70 @@ None yet.
 
 ---
 
+## FR-037 — Without a workspace manifest, cross-module answers stay in one module and claim to be complete
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: MCP `find_references`, `call_hierarchy`, `rename_symbol`, `verify_change`, and the editor's references and rename.**
+
+Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Keycloak was set up with the first build Lathe runs, sliced with `-pl services -am` (16 modules, all captured).
+A sync under `-pl` writes no `workspace.json`, by design, so the server ran without the module graph.
+`find_references` on `RealmModel.getName` then answered 7 references, all in `server-spi`; `rename_symbol` of `RealmModel.getDisplayNameHtml` edited its declaration alone, though `analyze_change` had just listed three overrides in other modules; and `verify_change` said "No errors".
+Every answer still ended "All javac-resolved references to this exact declaration ... no need to re-verify with grep".
+With the manifest written by a whole-reactor sync, the same calls answer 430 references and a rename of 11 edits in 8 files, overrides included, and `verify_change` checks the dependent modules.
+`find_implementations` was right in both setups (718 implementers of `ProviderFactory`): it reads the type index.
+
+### Fix direction
+
+When the workspace has no manifest, or its module graph is missing, every answer that spans modules says it covers only the declaring module and names the sync that writes the manifest (`.lathe/lathe-sync.sh`), and `rename_symbol` refuses rather than editing one module.
+The "no need to re-verify with grep" line is printed only when the search covered the reactor.
+`run_test`'s "no lathe-test-runner jar recorded — run a build first" names the same cause.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-036 — Renaming a getter leaves its property name in templates and message files unreported
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `rename_symbol` and `verify_change`, and the editor's rename.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-17).
+
+### Observed behaviour
+
+`rename_symbol` on `Person.getFirstName` → `getGivenName` edits 4 places in 3 files and lists no place to review.
+Petclinic's Thymeleaf templates use the JavaBean property, not the method: `${owner.firstName}` in `ownersList.html`, `*{firstName + ' ' + lastName}` in `ownerDetails.html`, and two more; the message bundles key `firstName` too.
+"Not renamed — review" lists only the old method name as text, so none of them is named, and `verify_change` says clean.
+The application then fails at runtime, on the first page that renders an owner.
+The same holds for a property Jackson serializes or a JPQL query names: any framework that reads accessors as properties.
+
+### Fix direction
+
+When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
+A field renamed with its accessors is the same case.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -1377,6 +1441,36 @@ None yet.
 
 ---
 
+## WS-41 — Setup fails when the project declares `maven-compiler-plugin` with `<extensions>true</extensions>`
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: Maven setup (`:LatheInit`, the sync); every module of such a build.**
+
+Found by the exploratory round on Quarkus (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Quarkus' `independent-projects/parent/pom.xml`, the parent of its whole reactor, declares the compiler plugin with `<extensions>true</extensions>`.
+The first build Lathe runs fails at the first module that compiles (`quarkus-ide-config`): `Failed to execute goal maven-compiler-plugin:3.16.0:compile ... No such compiler 'lathe'` (`NoSuchCompilerException`).
+The extension selects the compiler with `maven.compiler.compilerId=lathe` and adds `lathe-compiler` to the plugin's dependencies in `afterProjectsRead`, but Maven builds the class realm of a plugin with extensions before that, so the added dependency never reaches it.
+With the flag removed from that one POM, the module builds and is captured.
+
+### Fix direction
+
+Reproduce with an invoker fixture whose compiler plugin has `<extensions>true</extensions>`.
+Either add `lathe-compiler` where Maven still reads it for an extensions plugin (the model, before the realm is built), or leave such a project's compiler alone and say why instead of failing the build.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1563,6 +1657,36 @@ A module run covering several source sets needs one launch per source set.
 ### Regression targets
 
 `LatheWorkspaceServiceTest.executeCommand_listRunnables_sourceSetFile_noPackageRun` (the package run is not offered).
+
+---
+
+## TE-21 — A JUnit 6 build's tests replay on the JUnit 5 runner and fail before any test runs
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: editor test runs and MCP `run_test` on a build that uses JUnit 6.**
+
+Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Keycloak's `services` tests run on JUnit 6.1.3 (its captured class path lists `junit-platform-commons-6.1.3.jar` and `junit-jupiter-api-6.1.3.jar`).
+The workspace's `runnerClasspath` names `junit-platform-launcher-1.10.3.jar` and `junit-jupiter-engine-5.10.3.jar`, the fallback versions.
+`run_test` on `VaultTranscriberTest` then fails in discovery, after 76 s: `NoSuchMethodError: 'boolean org.junit.platform.commons.util.ReflectionUtils.returnsVoid(java.lang.reflect.Method)'`, the 5.10 engine calling into the 6.1 platform commons.
+The manifest came from a whole-reactor sync stopped after the root project's sync, which is the step that writes it in a full build too.
+
+### Fix direction
+
+Likely cause, unconfirmed: the runner's versions are read from the reactor's external artifacts when the root project syncs, and those do not include the modules' test-scoped JUnit.
+Take the platform and Jupiter versions from the captured test class paths, per module if they differ, and never pair a launcher and engine of another major version with the project's platform.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -2457,3 +2581,29 @@ For a build in progress, say to wait for it to finish and re-check; name the syn
 
 None yet.
 
+---
+
+## MC-99 — `run_test` with a `method` but no `scope` runs the whole class
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `run_test`.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-17).
+
+### Observed behaviour
+
+`run_test` with `file` `OwnerTests.java` and `method` `addPetAddsPersistedPet`, without `scope`, answers "PASS — 2 passed": it ran the class.
+The schema says `method` is required when `scope` is `method`, but an agent that names a method means that method, and nothing says it was ignored.
+
+### Fix direction
+
+A `method` with no `scope` means `scope=method`; a `method` with another scope is refused, naming the conflict.
+
+### Regression targets
+
+None yet.
