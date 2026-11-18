@@ -298,8 +298,16 @@ decompiles too.
 
 ### Fix direction
 
-A decompiler fallback (for example an embedded Vineflower) writing a read-only source into the cache
-for a class with no source; mark such answers as decompiled.
+Write a stub source tree for each dependency without sources at sync time, and record it as that dependency's sources directory, so search, definition, hover and references reach it through the existing source paths.
+javac prints a type from its class file as Java-shaped source (`Elements.printElements`): the package, every member's signature with generics, `throws` and annotations, and nested types, without bodies or Javadoc (Guava's `Joiner`: 115 lines in 92 ms, checked 2026-11-18).
+Parameters are `arg0` unless the jar was compiled with `-parameters`.
+A decompiler (an embedded Vineflower) would add bodies, at the cost of a dependency.
+
+Each stub says in a header that it was generated from the class file of `g:a:v` and is not the source.
+The debugger must not take a stub for source: its lines do not match the class file's.
+The cost is a javac pass over each sourceless jar in the sync, and its disk in the cache.
+
+Since EG-112 (2026-11-18), `search_symbols` lists such a type with its dependency and definition names the dependency; stubs would replace the search part, and let the editor's workspace symbols list these types too.
 
 ### Regression targets
 
@@ -736,39 +744,6 @@ The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `Han
 ### Fix direction
 
 Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-112 — A type from a dependency without sources is reported as not existing
-
-**Status: accepted** (triaged 2026-11-17: an agent concludes the type does not exist)
-
-**Kind: bug**
-
-**Value: high — Size: S–M**
-
-**Affects: `search_symbols` and `get_definition` (MCP), and the editor's workspace symbols, which run the same search, on a type whose dependency publishes no sources jar or has an unreadable one ([WS-39](gaps-archive.md#ws-39--a-dependencys-sources-jar-that-is-not-a-zip-fails-the-whole-sync--done)).**
-
-Found while verifying WS-39 end to end (2026-11-17).
-
-### Observed behaviour
-
-In a project using the DB2 driver's `com.ibm.db2.jcc.DB2SimpleDataSource` (its dependency synced as one without sources):
-
-- `describe_symbol` answers the declaration from the class file, `source: com.ibm.db2:jcc:12.1.4.0`, and `find_references` finds the 3 uses.
-- `search_symbols DB2SimpleDataSource` answers `No symbols matching 'DB2SimpleDataSource'`, though the dependency's type index lists it.
-- `get_definition` on it answers `No definition found.`
-
-`WorkspaceSymbolResolver.toSymbolInformation` keeps only a type whose source file it can locate, and drops the rest without a word.
-An agent concludes the type does not exist and searches elsewhere.
-
-### Fix direction
-
-Short of a decompiler ([EG-063](#eg-063--a-dependency-without-a-sources-jar-has-no-source-to-navigate-to)), say what is known: list the type with its dependency instead of a file (`DB2SimpleDataSource (Class) — com.ibm.db2.jcc  com.ibm.db2:jcc:12.1.4.0, no sources`), and answer a definition with the dependency that declares it and a pointer to `describe_symbol`.
 
 ### Regression targets
 
