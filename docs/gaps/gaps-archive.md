@@ -10365,6 +10365,41 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-41 — Setup fails when the project declares `maven-compiler-plugin` with `<extensions>true</extensions>` — done
+
+**Status: done** (2026-11-18, PR #381)
+
+**Kind: bug**
+
+
+**Affects: Maven setup (`:LatheInit`, the sync); every module of such a build.**
+
+Found by the exploratory round on Quarkus (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Quarkus' `independent-projects/parent/pom.xml`, the parent of its whole reactor, declares the compiler plugin with `<extensions>true</extensions>`.
+The first build Lathe runs fails at the first module that compiles (`quarkus-ide-config`): `Failed to execute goal maven-compiler-plugin:3.16.0:compile ... No such compiler 'lathe'` (`NoSuchCompilerException`).
+The extension selects the compiler with `maven.compiler.compilerId=lathe` and adds `lathe-compiler` to the plugin's dependencies in `afterProjectsRead`, but Maven builds the class realm of a plugin with extensions before that, so the added dependency never reaches it.
+With the flag removed from that one POM, the module builds and is captured.
+
+### Fix direction
+
+Reproduce with an invoker fixture whose compiler plugin has `<extensions>true</extensions>`.
+Either add `lathe-compiler` where Maven still reads it for an extensions plugin (the model, before the realm is built), or leave such a project's compiler alone and say why instead of failing the build.
+
+### Resolution
+
+The Maven extension turns `<extensions>true</extensions>` off for `maven-compiler-plugin` in the in-memory model, and says so once per build: Maven then builds an ordinary plugin realm when the plugin first runs, with `lathe-compiler` in it, rather than an extension realm while it reads the projects, before the extension adds the compiler.
+The compiler plugin contributes nothing as an extension, and the POM is not touched.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectProject_compilerAsBuildExtension_loadedAsPlainPluginWithTheShim`
+- invoker fixture `compiler-extensions`
+
+---
+
 ## WS-43 — Lathe's Gradle plugin breaks a build that reads every configuration's dependencies while configuring — done
 
 **Status: done** (2026-11-18)
@@ -12118,6 +12153,41 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-22 — The capture-only sync fails on a module whose POM sets `<failIfNoTests>true</failIfNoTests>` — done
+
+**Status: done** (2026-11-18, by TE-19's fix, PR #376)
+
+**Kind: bug**
+
+
+**Affects: Maven setup (`:LatheInit`) and `.lathe/lathe-sync.sh --tests`.**
+
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
+
+### Observed behaviour
+
+A capture-only build narrows Surefire to the first type of the module's test sources in name order (`LatheModelInjector.injectCaptureClass`).
+In `javaparser-core-testing` that type has no tests, so Surefire runs none ("Tests run: 0"), and the module's own `<failIfNoTests>true</failIfNoTests>` fails the build: "No tests were executed!".
+The `-DfailIfNoTests=false` the setup passes loses to the POM's explicit value, so 2 of 10 trees are captured and the rest of the reactor is skipped.
+The Maven guide says the setting matters only on JUnit older than 5.10; javaparser is on JUnit 5.14.
+
+### Fix direction
+
+Pick a type that holds a test (a name Surefire's default includes match, `*Test`/`Test*`/`*Tests`/`*TestCase`), or keep the narrowing off for a module whose Surefire configuration sets `failIfNoTests`.
+
+### Resolution
+
+The cause is TE-19's: the capture-only run narrowed Surefire to the first test source in name order, here the abstract `AbstractLexicalPreservingTest`.
+TE-19's fix selects up to five sources, the names Surefire's default includes match first and abstract bases by name after them, so a runnable class starts the test JVM and its tests count as run (skipped by the dry run), which `failIfNoTests` accepts.
+Checked on javaparser with an extension built from main `d27bf8b`: `javaparser-core-testing` reports `Tests run: 38, Skipped: 38`, the build succeeds, and its test launch is captured.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsRunnableTestNamesFirst`
+- `LatheModelInjectorTest.injectCaptureClass_otherNamesInSeveralRoots_selectedAfterTheTestNames`
+
+---
+
 ## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word — done
 
 **Status: done** (2026-11-18)
@@ -13499,6 +13569,71 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op — done
+
+**Status: done** (2026-11-18, PRs #373 and #375)
+
+**Kind: bug**
+
+
+**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
+
+The lookups are in `lathe-analysis`, so the editor's definition and rename probably fail the same way; the editor was not checked.
+
+Not to be confused with commit `fa56ea2d` (`Refs: MC-90`), which fixed MC-98: that gap was numbered MC-90 before it was renumbered.
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
+Lathe answers, for that file:
+
+- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
+- `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
+- `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
+
+A file with no `package` line behaves the same, including the silent rename.
+A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
+`find_references` maps every case back to the real file.
+An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
+
+### Cause (verified against the code, 2026-11-17)
+
+`DefinitionLocator.findSourceFile`, and its twin `TypeSourceLocator.findSourceFile` that rename uses, build a source path from the declared package, so they miss a file whose directory names another package.
+`DefinitionLocator.locate` then falls back to the compile copy, which `ServerFiles.tempSourceFile` places by directory.
+"no class was written" is `WritePass.failedWrite`'s default when javac reported no error.
+
+### Fix direction
+
+Map the compile copy back to the source file whatever package javac reads, as `find_references` already does; compile a file whose package differs from its directory as the build does, or say plainly that Lathe needs them to match.
+A rename that finds the symbol must never answer "no references".
+
+### Resolution
+
+A file whose package names another directory is reported as an error on its package line, as Eclipse does, where every compile's diagnostics are mapped, so the editor, `get_diagnostics` and `verify_change` all show it.
+A rename that finds its target by its package (a type or a member searched beyond its declaring file) is refused there with the same reason; a local, a parameter, a type parameter or a private member is renamed in the file as before.
+Definition answers the file asked about before any file its package names.
+
+### Regression targets
+
+- `PackageDirectoryTest.mismatch_packageNamesTheDirectory_none`
+- `PackageDirectoryTest.mismatch_packageNamesAnotherDirectory_errorOnThePackageLine`
+- `PackageDirectoryTest.mismatch_noPackageInASubdirectory_errorNamingTheDirectorysPackage`
+- `PackageDirectoryTest.mismatch_defaultPackageAtTheSourceRoot_none`
+- `PackageDirectoryTest.mismatch_innermostRootHoldingTheFile_isTheOneChecked`
+- `PackageDirectoryTest.mismatch_fileInNoSourceRoot_none`
+- `DefinitionLocatorTest.locate_sameFileWhosePackageIsNotItsDirectory_returnsTheFileAskedAbout`
+- `PackageDirectoryEngineTest.diagnostics_packageNotItsDirectory_errorNamingBoth_matchingFileClean`
+- `PackageDirectoryEngineTest.rename_inFileWhosePackageIsNotItsDirectory_refusesSayingWhy`
+- `PackageDirectoryEngineTest.definition_inFileWhosePackageIsNotItsDirectory_answersTheFileItself`
+- `PackageDirectoryEngineTest.verifyChange_fileWhosePackageIsNotItsDirectory_reportsTheMismatch`
+- `PackageDirectoryEngineTest.rename_inFileWhosePackageIsNotItsDirectory_localsRenamedMemberRefused`
+- `PackageDirectoryEngineTest.rename_inFileWhosePackageIsNotItsDirectory_fileScopedRenamedMemberRefused`
+- `LatheTextDocumentServiceTest.prepareRename_fileWhosePackageIsNotItsDirectory_parameterAcceptedFieldRefused`
+
+---
 
 ## MC-93 — `find_references` with `access` on a method answers "No references found" — done
 

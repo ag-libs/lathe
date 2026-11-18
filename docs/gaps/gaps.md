@@ -1466,36 +1466,6 @@ None yet.
 
 ---
 
-## WS-41 — Setup fails when the project declares `maven-compiler-plugin` with `<extensions>true</extensions>`
-
-**Status: accepted** (triaged 2026-11-18: still fails on main `cdf57f1`; it blocks setup of any such build)
-
-**Kind: bug**
-
-**Value: high — Size: S**
-
-**Affects: Maven setup (`:LatheInit`, the sync); every module of such a build.**
-
-Found by the exploratory round on Quarkus (2026-11-17, Lathe 0.3.1).
-
-### Observed behaviour
-
-Quarkus' `independent-projects/parent/pom.xml`, the parent of its whole reactor, declares the compiler plugin with `<extensions>true</extensions>`.
-The first build Lathe runs fails at the first module that compiles (`quarkus-ide-config`): `Failed to execute goal maven-compiler-plugin:3.16.0:compile ... No such compiler 'lathe'` (`NoSuchCompilerException`).
-The extension selects the compiler with `maven.compiler.compilerId=lathe` and adds `lathe-compiler` to the plugin's dependencies in `afterProjectsRead`, but Maven builds the class realm of a plugin with extensions before that, so the added dependency never reaches it.
-With the flag removed from that one POM, the module builds and is captured.
-
-### Fix direction
-
-Reproduce with an invoker fixture whose compiler plugin has `<extensions>true</extensions>`.
-Either add `lathe-compiler` where Maven still reads it for an extensions plugin (the model, before the realm is built), or leave such a project's compiler alone and say why instead of failing the build.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-42 — A Gradle module path passed as a compiler argument gives no module dependencies
 
 **Status: accepted** (triaged 2026-11-18: on main `cdf57f1`, by code; answers are wrong across modules and still claim to be complete)
@@ -1703,35 +1673,6 @@ The manifest came from a whole-reactor sync stopped after the root project's syn
 
 Likely cause, unconfirmed: the runner's versions are read from the reactor's external artifacts when the root project syncs, and those do not include the modules' test-scoped JUnit.
 Take the platform and Jupiter versions from the captured test class paths, per module if they differ, and never pair a launcher and engine of another major version with the project's platform.
-
-### Regression targets
-
-None yet.
-
----
-
-## TE-22 — The capture-only sync fails on a module whose POM sets `<failIfNoTests>true</failIfNoTests>`
-
-**Status: accepted** (triaged 2026-11-18: on main `cdf57f1`; setup fails, and the guide's workaround does not apply)
-
-**Kind: bug**
-
-**Value: high — Size: S**
-
-**Affects: Maven setup (`:LatheInit`) and `.lathe/lathe-sync.sh --tests`.**
-
-Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
-
-### Observed behaviour
-
-A capture-only build narrows Surefire to the first type of the module's test sources in name order (`LatheModelInjector.injectCaptureClass`).
-In `javaparser-core-testing` that type has no tests, so Surefire runs none ("Tests run: 0"), and the module's own `<failIfNoTests>true</failIfNoTests>` fails the build: "No tests were executed!".
-The `-DfailIfNoTests=false` the setup passes loses to the POM's explicit value, so 2 of 10 trees are captured and the rest of the reactor is skipped.
-The Maven guide says the setting matters only on JUnit older than 5.10; javaparser is on JUnit 5.14.
-
-### Fix direction
-
-Pick a type that holds a test (a name Surefire's default includes match, `*Test`/`Test*`/`*Tests`/`*TestCase`), or keep the narrowing off for a module whose Surefire configuration sets `failIfNoTests`.
 
 ### Regression targets
 
@@ -2516,53 +2457,6 @@ An agent working across worktrees needs one Lathe MCP server per worktree, each 
 ### Fix direction
 
 Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-workspace-server.md), which keeps one process per client until measurements show a need.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op
-
-**Status: accepted** (triaged 2026-11-17: an agent is told a file that never compiled is clean, and a rename it believes was done; a live probe should confirm the silent rename comes from the same lookup)
-
-**Kind: bug**
-
-**Value: high — Size: M**
-
-**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
-
-The lookups are in `lathe-analysis`, so the editor's definition and rename probably fail the same way; the editor was not checked.
-
-Not to be confused with commit `fa56ea2d` (`Refs: MC-90`), which fixed MC-98: that gap was numbered MC-90 before it was renumbered.
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
-Lathe answers, for that file:
-
-- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
-- `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
-- `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
-
-A file with no `package` line behaves the same, including the silent rename.
-A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
-`find_references` maps every case back to the real file.
-An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
-
-### Cause (verified against the code, 2026-11-17)
-
-`DefinitionLocator.findSourceFile`, and its twin `TypeSourceLocator.findSourceFile` that rename uses, build a source path from the declared package, so they miss a file whose directory names another package.
-`DefinitionLocator.locate` then falls back to the compile copy, which `ServerFiles.tempSourceFile` places by directory.
-"no class was written" is `WritePass.failedWrite`'s default when javac reported no error.
-
-### Fix direction
-
-Map the compile copy back to the source file whatever package javac reads, as `find_references` already does; compile a file whose package differs from its directory as the build does, or say plainly that Lathe needs them to match.
-A rename that finds the symbol must never answer "no references".
 
 ### Regression targets
 
