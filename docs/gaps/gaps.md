@@ -2431,38 +2431,6 @@ None yet.
 
 ---
 
-## MC-91 — Tool columns are UTF-16 code units, and nothing says so
-
-**Status: accepted** (triaged 2026-11-17: state the unit in every position tool's description; converting to code points waits, as it needs every line's text)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-On `\tString label = "😀😀"; int after = count;`, `count` is at character column 35.
-`get_definition` at column 35 answers `Line 9 has no symbol at column 35`; column 37 (UTF-16, two units per emoji) works.
-`outline` lists `after` at `9:29` (character 27) and `find_references` reports `count` at `9:37`.
-The tool descriptions say only "1-based column".
-The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, `McpText.toWire`).
-`symbol` avoids the problem, and edits on such a line are exact.
-
-### Fix direction
-
-Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
-Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-92 — `run_test` runs a test whose dependency no longer compiles
 
 **Status: accepted** (triaged 2026-11-17)

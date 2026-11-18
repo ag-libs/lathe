@@ -13610,6 +13610,43 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-91 — Tool columns are UTF-16 code units, and nothing says so — done
+
+**Status: done** (2026-11-18: the unit is stated; converting to characters is not done)
+
+**Kind: bug**
+
+
+**Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On `\tString label = "😀😀"; int after = count;`, `count` is at character column 35.
+`get_definition` at column 35 answers `Line 9 has no symbol at column 35`; column 37 (UTF-16, two units per emoji) works.
+`outline` lists `after` at `9:29` (character 27) and `find_references` reports `count` at `9:37`.
+The tool descriptions say only "1-based column".
+The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, `McpText.toWire`).
+`symbol` avoids the problem, and edits on such a line are exact.
+
+### Fix direction
+
+Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
+Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
+
+### Resolution
+
+Every position tool's `column` input now says it counts UTF-16 code units, as every column the tools report does, and that a character outside the Basic Multilingual Plane counts as two; `symbol` needs no counting.
+The agent guide says the same.
+Converting to characters at the MCP boundary, as triaged on 2026-11-17, is not done: it needs each line's text for every column printed, files no client has open included; a request for it would be a feature.
+
+### Regression targets
+
+- `LatheMcpToolsTest.all_positionTools_nameTheColumnUnit_othersTakeNoColumn`
+
+---
+
 ## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op — done
 
 **Status: done** (2026-11-18, PRs #373 and #375)
