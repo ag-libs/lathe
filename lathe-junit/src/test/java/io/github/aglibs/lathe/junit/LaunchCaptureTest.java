@@ -30,6 +30,46 @@ final class LaunchCaptureTest {
     assertThat(LaunchCapture.launchFile(moduleDir, "classes-functionalTest")).isEmpty();
   }
 
+  // A build may run the tests outside the module (Lucene's build/tests-cwd): the module the build
+  // names decides where the capture goes, while the replay keeps the JVM's own working directory.
+  // Without a name, the working directory is the module, as Surefire's is.
+  @Test
+  void site_moduleNamedOrNot_capturesForTheNamedModuleKeepingTheWorkingDirectory(
+      @TempDir final Path root) throws IOException {
+    Files.createDirectories(root.resolve(".lathe"));
+    final Path module = Files.createDirectories(root.resolve("lucene/core"));
+    final Path testsCwd = Files.createDirectories(module.resolve("build/tests-cwd"));
+
+    assertThat(LaunchCapture.site(testsCwd, module.toString()))
+        .contains(
+            new LaunchCapture.CaptureSite(
+                root, Path.of("lucene/core"), Path.of("lucene/core/build/tests-cwd")));
+    assertThat(LaunchCapture.site(module, null))
+        .contains(
+            new LaunchCapture.CaptureSite(root, Path.of("lucene/core"), Path.of("lucene/core")));
+    assertThat(LaunchCapture.site(module, " "))
+        .contains(
+            new LaunchCapture.CaptureSite(root, Path.of("lucene/core"), Path.of("lucene/core")));
+  }
+
+  // A test JVM outside every Lathe workspace captures nothing, even with a module named: a nested
+  // build the tests start in a temporary directory inherits the name, and must not capture over the
+  // module. Run in another module of the workspace, the name is not the module's either.
+  @Test
+  void site_workingOutsideTheNamedModule_theWorkingDirectoryDecides(@TempDir final Path tmp)
+      throws IOException {
+    final Path root = Files.createDirectories(tmp.resolve("ws"));
+    Files.createDirectories(root.resolve(".lathe"));
+    final Path module = Files.createDirectories(root.resolve("app"));
+    final Path other = Files.createDirectories(root.resolve("lib"));
+    final Path elsewhere = Files.createDirectories(tmp.resolve("elsewhere"));
+
+    assertThat(LaunchCapture.site(elsewhere, null)).isEmpty();
+    assertThat(LaunchCapture.site(elsewhere, module.toString())).isEmpty();
+    assertThat(LaunchCapture.site(other, module.toString()))
+        .contains(new LaunchCapture.CaptureSite(root, Path.of("lib"), Path.of("lib")));
+  }
+
   @Test
   void toLaunchData_classpathFork_excludesOwnJar() {
     final Path ownJar = Path.of("/repo/lathe-junit.jar");

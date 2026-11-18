@@ -87,7 +87,7 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   `mvn -pl module test -Dtest=SomeTest`); everything else keeps running from the editor.
   To fix it in the project, find the files without the class file's location, which works for the build and the
   editor alike:
-  - relative to the working directory, which is the module's own folder for Gradle, Surefire and Lathe:
+  - relative to the working directory, which is the module's own folder for Gradle and Surefire unless the build moves it, and Lathe runs the test where the build did:
     `Path.of("src", "test", "java")`;
   - or from a system property the build sets, the most robust, since the build knows its layout. On Gradle,
     `test { systemProperty 'test.sourceDir', file('src/test/java').absolutePath }`; on Maven, in Surefire's

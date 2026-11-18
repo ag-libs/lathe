@@ -401,6 +401,45 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(app.compilerArgs()).doesNotContain("--module-path");
   }
 
+  // A build that runs its tests in another directory than the project's, as Lucene's runs them in
+  // build/tests-cwd: the launch is still the module's, and replays in that directory.
+  @Test
+  void capture_testsRunOutsideTheProjectDirectory_launchIsTheModulesAndKeepsTheDirectory()
+      throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file(
+                "settings.gradle",
+                "%sinclude(\"app\")\n%s".formatted(SETTINGS, GradleFixture.latheRepositories()))
+            .file(
+                "app/build.gradle",
+                """
+                plugins { id 'java' }
+                dependencies {
+                  testImplementation platform('org.junit:junit-bom:5.11.4')
+                  testImplementation 'org.junit.jupiter:junit-jupiter'
+                  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+                }
+                test {
+                  useJUnitPlatform()
+                  def testsCwd = layout.buildDirectory.dir('tests-cwd').get().asFile
+                  workingDir = testsCwd
+                  doFirst { testsCwd.mkdirs() }
+                }
+                """)
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                "package com.example.app; class AppTest { @org.junit.jupiter.api.Test void runs() {} }\n");
+
+    fixture.runner(":app:test").build();
+
+    final TestLaunchData tests =
+        Json.read(
+            dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE), TestLaunchData.class);
+    assertThat(tests.workingDir()).isEqualTo("app/build/tests-cwd");
+    assertThat(dir.resolve(".lathe/app/build")).doesNotExist();
+  }
+
   private ModuleConfigData params(final String module, final String sourceTree) throws IOException {
     return Json.read(
         dir.resolve(".lathe").resolve(module).resolve(LatheLayout.paramsFileName(sourceTree)),
