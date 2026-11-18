@@ -388,6 +388,20 @@ class LatheMcpToolsTest {
     assertThat(text(result)).doesNotContain("No type");
   }
 
+  // An agent that also drives an LSP may pass a file: URI: it is the file it names, not a path
+  // relative to the workspace. A URI naming a host stands for no local file.
+  @Test
+  void outline_fileUri_outlinesTheFileItNames_hostUriNotFound() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final CallToolResult byUri = call("outline", Map.of("file", file.toUri().toString()));
+    final CallToolResult byHost = call("outline", Map.of("file", "file://server/share/Loose.java"));
+
+    assertThat(byUri.isError()).isFalse();
+    assertThat(text(byUri)).contains("Loose");
+    assertThat(byHost.isError()).isTrue();
+  }
+
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
   // remedy.
   @Test
