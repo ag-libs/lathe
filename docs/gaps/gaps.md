@@ -845,41 +845,6 @@ None yet.
 
 ---
 
-## FR-035 — A rename started outside a file whose package is not its directory misses the declaration in it
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: the editor's rename and MCP `rename_symbol`, on a member declared in a file whose package names another directory.**
-
-Found reviewing the MC-90 fix (#373, follow-up #375, 2026-11-18); suspected from the code, not reproduced.
-
-### Suspected behaviour
-
-MC-90 refuses a rename started in such a file, for any target searched beyond it, since Lathe finds a declaration's file from its package.
-A rename started elsewhere is not refused.
-`Right.java`, correctly placed, uses `wrong.count`, declared in `com/example/Wrong.java` with `package com.example.other;`: renaming `count` from `Right.java` resolves the declaration to `com.example.other.Wrong`, whose file `TypeSourceLocator.findSourceFile` does not find at `com/example/other/Wrong.java`.
-The reactor index still knows the type, so `RenameService.requireRenameable` does not refuse, and the rename would edit the uses and leave the declaration, breaking the build.
-The obvious refusal, a reactor type with no file at its package's path, cannot tell this from a secondary top-level class, which has no file of its own name either.
-
-Related, from the same review: in a file whose package is not its directory, every compile-checked code action now finds an error after its edit (the mismatch), so it always compiles the original too to compare, doubling its resolve time there.
-
-### Probe
-
-The two files above, compiled into the mirror; `rename_symbol` on `count` at its use in `Right.java`: the answer should refuse, naming the misplaced file, and leave both files unchanged.
-
-### Fix direction
-
-Refuse when a declaration the rename must edit has no file at its package's path and is not a secondary top-level class.
-The type index records no file name, but the class file's `SourceFile` attribute (`ClassSourceFile`) tells the two apart: a secondary top-level class names the file it shares, while a misplaced class names a file of its own name, which is just not where its package says.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-029 — References to a widely used method take 12–27 s on a very large codebase
 
 **Status: deferred** (triaged 2026-11-16: what is left, parallel batches per module and cached answers, needs its own design)
@@ -1650,9 +1615,11 @@ None yet.
 
 ## TE-26 — A run that only some of its code fails to compile still runs on the old classes
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-18: the editor's runs, a package run and a test whose helper broke still run on old classes, MC-92's misleading answer; the fix is the write pass's, one change for every run path)
 
 **Kind: bug**
+
+**Value: medium — Size: M**
 
 **Affects: the editor's runs (`:LatheRun`, neotest, debug), `run_test` with `scope: package`, and a test that still compiles while code it calls no longer does.**
 
