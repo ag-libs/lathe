@@ -183,14 +183,64 @@ class LatheModelInjectorTest {
         .containsExactly(tuple("lathe-junit", VERSION));
   }
 
+  // Surefire starts no test JVM for a selection it does not run: an abstract base class or a
+  // helper sorting first would leave the module uncaptured (jdbi's core:
+  // AbstractJavaTimeArrayTests). Abstract bases by name go after the other test names.
   @Test
-  void injectCaptureClass_testSourcesInSeveralRoots_selectsTheFirstClassOnly(
+  void injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsRunnableTestNamesFirst(
+      @TempDir final Path dir) throws IOException {
+    final MavenProject project = project();
+    for (final String name :
+        List.of(
+            "AbstractArrayTests",
+            "AbstractBindTests",
+            "AbstractJdbiTest",
+            "AbstractQueryTests",
+            "AbstractTypeTests",
+            "Callback",
+            "FooBarType",
+            "BindTest",
+            "TestJdbi")) {
+      write(dir.resolve("com/example/%s.java".formatted(name)));
+    }
+
+    project.addTestCompileSourceRoot(dir.toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties())
+        .containsOnly(
+            entry(
+                "test", "BindTest,TestJdbi,AbstractArrayTests,AbstractBindTests,AbstractJdbiTest"),
+            entry("surefire.failIfNoSpecifiedTests", "false"));
+  }
+
+  // A module whose tests are partly Kotlin keeps running them all: its Java sources may be only
+  // helpers, and src/test/kotlin is not yet a test root when the extension looks.
+  @Test
+  void injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection(@TempDir final Path dir)
+      throws IOException {
+    final MavenProject project = project();
+    write(dir.resolve("src/test/java/com/example/TypeConversionHelper.java"));
+    write(dir.resolve("src/test/kotlin/com/example/ExtensionsTest.kt"));
+    project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties()).isEmpty();
+  }
+
+  // A module that names its own includes (a @Suite) keeps its classes in the selection, after the
+  // ones the default includes name; types only, from every test root.
+  @Test
+  void injectCaptureClass_otherNamesInSeveralRoots_selectedAfterTheTestNames(
       @TempDir final Path dir) throws IOException {
     final MavenProject project = project();
     write(dir.resolve("main/com/example/Gamma.java"));
     write(dir.resolve("main/com/example/package-info.java"));
+    write(dir.resolve("main/com/example/MemberTest.java"));
     write(dir.resolve("generated/module-info.java"));
-    write(dir.resolve("generated/com/example/Beta.java"));
+    write(dir.resolve("generated/com/example/AllSuite.java"));
     write(dir.resolve("generated/com/example/Notes.txt"));
     project.addTestCompileSourceRoot(dir.resolve("main").toString());
     project.addTestCompileSourceRoot(dir.resolve("generated").toString());
@@ -199,7 +249,9 @@ class LatheModelInjectorTest {
     new LatheModelInjector(VERSION).injectCaptureClass(project);
 
     assertThat(project.getProperties())
-        .containsOnly(entry("test", "Beta"), entry("surefire.failIfNoSpecifiedTests", "false"));
+        .containsOnly(
+            entry("test", "MemberTest,AllSuite,Gamma"),
+            entry("surefire.failIfNoSpecifiedTests", "false"));
   }
 
   // Without Java test sources the module keeps running every class; a selection the module makes
