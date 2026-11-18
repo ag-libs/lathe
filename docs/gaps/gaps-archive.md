@@ -10365,6 +10365,46 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+A `workspace.json` that is not UTF-8 or not readable (chmod 000) makes `WorkspaceWatcher.readManifest` throw; the editor gets no message, the watcher does not start, and a fixed file is never re-read, so outside changes go unnoticed until a restart.
+A missing file or one with no modules is silent.
+An empty file is fixed: `Json.read` turns it into a load problem the editor is shown (re-checked 2026-11-17).
+
+### Root cause
+
+`WorkspaceManifest.load` already turns a read error into a load problem that `showWorkspaceStatus` would show,
+but `loadWorkspace` constructs the `WorkspaceWatcher` first, and its `readManifest` throws, so the warning is never sent.
+
+### Fix direction
+
+Report a broken manifest to the client with the remedy (a sync), keep watching, and reload once it is readable.
+
+### Resolution
+
+`WorkspaceWatcher` no longer throws on a manifest that exists but cannot be read: a failed read is no change, and the last content stands (at startup, none), so the load continues and `showWorkspaceStatus` reports the manifest's load problem with its remedy.
+The read is tried again when the file is rewritten (not UTF-8), or on every poll after an access failure (a permission, a lock while a sync replaces it), as restoring a permission leaves the mtime as it was; a file that reads again is compared with the last content.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.initialize_unreadableWorkspaceJson_warnsWithTheRemedy`
+- `WorkspaceWatcherTest.poll_unreadableManifestRewritten_workspaceChanged`
+- `WorkspaceWatcherTest.poll_readableManifestTurnsUnreadable_noChangeUntilItReadsAgain`
+- `WorkspaceWatcherTest.poll_unreadableManifestPermissionRestored_workspaceChanged`
+
+---
+
 ## WS-41 — Setup fails when the project declares `maven-compiler-plugin` with `<extensions>true</extensions>` — done
 
 **Status: done** (2026-11-18, PR #381)

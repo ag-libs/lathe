@@ -1297,39 +1297,6 @@ None yet.
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-A `workspace.json` that is not UTF-8 or not readable (chmod 000) makes `WorkspaceWatcher.readManifest` throw; the editor gets no message, the watcher does not start, and a fixed file is never re-read, so outside changes go unnoticed until a restart.
-A missing file or one with no modules is silent.
-An empty file is fixed: `Json.read` turns it into a load problem the editor is shown (re-checked 2026-11-17).
-
-### Root cause
-
-`WorkspaceManifest.load` already turns a read error into a load problem that `showWorkspaceStatus` would show,
-but `loadWorkspace` constructs the `WorkspaceWatcher` first, and its `readManifest` throws, so the warning is never sent.
-
-### Fix direction
-
-Report a broken manifest to the client with the remedy (a sync), keep watching, and reload once it is readable.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-27 — On Gradle, included builds are not covered
 
 **Status: deferred** (2026-11-15: feature freeze)
