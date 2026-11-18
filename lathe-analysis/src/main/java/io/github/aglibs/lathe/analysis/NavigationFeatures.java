@@ -191,7 +191,11 @@ public final class NavigationFeatures {
       final SourceFeatureRequest request, final Cursor cur, final Element element) {
     Optional<Location> result =
         definitionLocator.locate(
-            element, cur.analysis().trees(), request.sourceRoots(), request.uri());
+            element,
+            cur.analysis().trees(),
+            request.sourceRoots(),
+            request.uri(),
+            cur.analysis().tree());
     if (result.isEmpty()) {
       result =
           request

@@ -462,7 +462,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
     final var location =
         new DefinitionLocator(parsed.parser())
-            .locate(getMethod, parsed.trees(), List.of(), sourceFile.toUri().toString());
+            .locate(getMethod, parsed.trees(), List.of(), sourceFile.toUri().toString(), null);
 
     assertThat(location).isPresent();
     // line 2 (0-based), col 18: "    public String get()"
@@ -493,12 +493,50 @@ class DefinitionLocatorTest extends SampleFixture {
 
       final var location =
           new DefinitionLocator(parsed.parser())
-              .locate(element, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString());
+              .locate(
+                  element, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString(), null);
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri())
           .isEqualTo(realFile.toUri().toString())
           .isNotEqualTo(overlayFile.toUri().toString());
+    }
+  }
+
+  // MC-90: a file whose package is not its directory names no file by its package, so a
+  // declaration in the file asked about resolves to that file, never its temp overlay copy; one in
+  // another compilation unit still falls back to that unit's own file.
+  @Test
+  void locate_sameFileWhosePackageIsNotItsDirectory_returnsTheFileAskedAbout(
+      @TempDir final Path tempDir) throws IOException {
+    final var realRoot = tempDir.resolve("real");
+    final var realFile = realRoot.resolve("com/example/core/Wrong.java");
+    final String source =
+        """
+        package com.example.other;
+        public class Wrong {
+          int field;
+        }
+        """;
+    Files.createDirectories(realFile.getParent());
+    Files.writeString(realFile, source);
+    final var overlayFile = tempDir.resolve("overlay/com/example/core/Wrong.java");
+    Files.createDirectories(overlayFile.getParent());
+    Files.writeString(overlayFile, source);
+
+    try (final var parsed = TestJavac.parse(overlayFile)) {
+      final var field =
+          memberNamed(
+              parsed.task().getElements().getTypeElement("com.example.other.Wrong"), "field");
+      final var locator = new DefinitionLocator(parsed.parser());
+      final String realUri = realFile.toUri().toString();
+
+      assertThat(locator.locate(field, parsed.trees(), List.of(realRoot), realUri, parsed.cu()))
+          .map(Location::getUri)
+          .contains(realUri);
+      assertThat(locator.locate(field, parsed.trees(), List.of(realRoot), realUri, null))
+          .map(Location::getUri)
+          .contains(overlayFile.toUri().toString());
     }
   }
 
@@ -627,7 +665,12 @@ class DefinitionLocatorTest extends SampleFixture {
 
       final var location =
           new DefinitionLocator(parsed.parser())
-              .locate(greeterElement, parsed.trees(), List.of(tempDir.resolve("src")), "file:///x");
+              .locate(
+                  greeterElement,
+                  parsed.trees(),
+                  List.of(tempDir.resolve("src")),
+                  "file:///x",
+                  null);
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Greeter.java");
@@ -679,7 +722,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
       final var location =
           new DefinitionLocator(parsed.parser())
-              .locate(greeterElement, parsed.trees(), List.of(srcDir), "file:///irrelevant");
+              .locate(greeterElement, parsed.trees(), List.of(srcDir), "file:///irrelevant", null);
 
       assertThat(location).isPresent();
       assertThat(location.get().getUri()).endsWith("Greeter.java");
@@ -779,7 +822,7 @@ class DefinitionLocatorTest extends SampleFixture {
       assertThat(parsed.trees().getPath(member)).isNull();
 
       return new DefinitionLocator(parsed.parser())
-          .locate(member, parsed.trees(), List.of(srcDir), "file:///irrelevant");
+          .locate(member, parsed.trees(), List.of(srcDir), "file:///irrelevant", null);
     }
   }
 
@@ -802,7 +845,7 @@ class DefinitionLocatorTest extends SampleFixture {
     final var parsed = TestJavac.parse(overlayFile);
     final var module = parsed.task().getElements().getModuleElement(targetModule);
     return new DefinitionLocator(parsed.parser())
-        .locate(module, parsed.trees(), List.of(sourceRoot), overlayFile.toUri().toString());
+        .locate(module, parsed.trees(), List.of(sourceRoot), overlayFile.toUri().toString(), null);
   }
 
   private static Element memberNamed(final TypeElement type, final String memberName) {
@@ -828,13 +871,22 @@ class DefinitionLocatorTest extends SampleFixture {
     final var element = CursorElements.elementAt(compiled.trees(), path);
     return new DefinitionLocator(compiled.parser())
         .locate(
-            element, compiled.trees(), List.of(), compiled.cu().getSourceFile().toUri().toString());
+            element,
+            compiled.trees(),
+            List.of(),
+            compiled.cu().getSourceFile().toUri().toString(),
+            null);
   }
 
   private static Optional<Location> definitionAt(
       final TestJavac.ParsedSource parsed, final TreePath path) {
     final var element = CursorElements.elementAt(parsed.trees(), path);
     return new DefinitionLocator(parsed.parser())
-        .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());
+        .locate(
+            element,
+            parsed.trees(),
+            List.of(),
+            parsed.cu().getSourceFile().toUri().toString(),
+            null);
   }
 }
