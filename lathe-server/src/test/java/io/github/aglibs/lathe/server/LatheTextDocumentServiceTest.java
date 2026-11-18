@@ -1193,6 +1193,30 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                             .contains(home.resolve(LatheLayout.JDK_SOURCE_ZIP).toString())));
   }
 
+  // An empty jump into a dependency without sources says where the type is declared, once per
+  // dependency rather than on every jump.
+  @Test
+  void definition_typeFromADependencyWithoutSources_saysWhereItIsDeclaredOnce() throws Exception {
+    final String use = "package com.example; class Use { com.lib.Lib first; com.lib.Lib second; }";
+    final Path useFile = TestCompiler.writeModuleSource(tmp, "com/example/Use.java", use);
+    TestCompiler.recordSourcelessDependency(
+        tmp, "com.lib:lib:1", Map.of("com/lib/Lib.java", "package com.lib; public class Lib {}"));
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(useFile, use);
+    awaitWorkerIdle();
+
+    assertThat(definitionAt(useFile, use, "Lib first")).isEmpty();
+    assertThat(definitionAt(useFile, use, "Lib second")).isEmpty();
+    verify(client, timeout(2000).times(1))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Info
+                        && m.getMessage()
+                            .equals("No source for com.lib.Lib: com.lib:lib:1 has no sources.")));
+  }
+
   private List<? extends Location> definitionAt(
       final Path file, final String content, final String token) throws Exception {
     return service

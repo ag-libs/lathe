@@ -218,12 +218,13 @@ public final class NavigationFeatures {
   }
 
   // The definition and, when it finds none, whether that is because it names a JDK element while
-  // the workspace has no JDK sources; one cursor and element lookup serves both.
+  // the workspace has no JDK sources, or a type from a dependency without sources; one cursor and
+  // element lookup serves all.
   public DefinitionResult definitionResult(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
     final Optional<Cursor> at = session.cursor(request);
     if (at.isEmpty()) {
-      return new DefinitionResult(List.of(), false);
+      return DefinitionResult.none();
     }
 
     final Cursor cur = at.get();
@@ -269,10 +270,19 @@ public final class NavigationFeatures {
                     result.isEmpty()
                         ? "not found"
                         : result.stream().map(NavigationFeatures::where).toList()));
+    if (!result.isEmpty()) {
+      return new DefinitionResult(result, false, null);
+    }
+
+    final LibrarySources libraries = request.libraries();
+    if (libraries.jdkElementWithoutSources(element, compiler.fileManager())) {
+      return new DefinitionResult(result, true, null);
+    }
+
     return new DefinitionResult(
         result,
-        result.isEmpty()
-            && request.libraries().jdkElementWithoutSources(element, compiler.fileManager()));
+        false,
+        libraries.sourcelessDeclaration(element, compiler.fileManager()).orElse(null));
   }
 
   // The call whose method name, or `new` type, the cursor is on.

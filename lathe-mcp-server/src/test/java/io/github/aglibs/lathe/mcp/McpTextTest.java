@@ -47,7 +47,7 @@ class McpTextTest {
   @TempDir private Path tmp;
 
   @Test
-  void definitionResult_emptyWithJdkSourcesNote_showsTheNote_otherwiseNoneFound() {
+  void definitionResult_emptyWithExplanation_showsIt_otherwiseNoneFound() {
     final var notes = LatheNotes.ofNotChecked(List.of());
 
     assertThat(
@@ -739,6 +739,17 @@ class McpTextTest {
                 "sell (method)  app/Shop.java:8:1"));
     assertThat(text(McpText.searchResult("Cart", List.of(), McpText.NO_NOTES)))
         .isEqualTo("No symbols matching 'Cart'.");
+  }
+
+  // A type from a dependency without sources names its dependency where a file would be.
+  @Test
+  void searchResult_typeFromADependencyWithoutSources_namesTheDependency() {
+    final var symbols =
+        List.of(new LatheSymbol("DataSource", "Class", "com.db", null, "com.db:driver:1.0"));
+
+    assertThat(text(McpText.searchResult("Data", symbols, McpText.NO_NOTES)))
+        .isEqualTo(
+            lines("1 symbol(s):", "DataSource (Class) — com.db  com.db:driver:1.0, no sources"));
   }
 
   // A run that reported no test says how the JVM ended instead of a PASS over nothing.

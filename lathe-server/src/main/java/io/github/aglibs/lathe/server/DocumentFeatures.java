@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.SourcelessSymbol;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
@@ -77,6 +78,8 @@ final class DocumentFeatures {
   private final ServerEventLoop eventLoop;
   // Whether this session has told the user that JDK sources are missing: once is enough.
   private boolean jdkSourcesNoteShown;
+  // The dependencies without sources this session has told the user about, each once.
+  private final Set<String> sourcelessNotesShown = new HashSet<>();
 
   DocumentFeatures(
       final WorkspaceState state,
@@ -264,13 +267,14 @@ final class DocumentFeatures {
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
     return explainedDefinitionFuture(uri, pos)
-        .thenApply(answer -> showJdkSourcesNoteOnce(uri, answer))
+        .thenApply(answer -> showEmptyAnswerNotes(uri, answer))
         .thenApply(FeatureAnswers::definitionResult);
   }
 
-  // A definition's locations, with the manifest's explanation when it found none because it named
-  // a JDK element while the workspace has no JDK sources. MCP shows the explanation with each
-  // empty answer; the editor shows it once.
+  // A definition's locations, with why it found none: the manifest's explanation when it named a
+  // JDK element while the workspace has no JDK sources, or the dependency without sources that
+  // declares the type it named. MCP shows the explanation with each empty answer; the editor shows
+  // the JDK one once, and each dependency's once.
   CompletableFuture<ExplainedDefinition> explainedDefinitionFuture(
       final String uri, final Position pos) {
     logPositionRequest("definition", uri, pos);
@@ -279,7 +283,7 @@ final class DocumentFeatures {
             "definition",
             uri,
             pos,
-            new DefinitionResult(List.of(), false),
+            DefinitionResult.none(),
             CompilationWorker.NOT_CANCELLED,
             (session, request) -> session.navigation().definitionResult(request))
         .thenApply(this::explain);
@@ -289,18 +293,29 @@ final class DocumentFeatures {
     eventLoop.checkOnLoop();
     return new ExplainedDefinition(
         result.locations(),
-        result.needsJdkSources() ? state.manifest().jdkSourcesNote().orElse(null) : null);
+        result.needsJdkSources() ? state.manifest().jdkSourcesNote().orElse(null) : null,
+        result.sourceless());
   }
 
-  // An empty jump into the JDK looks like a Lathe failure: a session's first one says why.
-  private List<Location> showJdkSourcesNoteOnce(
-      final String uri, final ExplainedDefinition answer) {
+  // An empty jump looks like a Lathe failure: the session's first one into the JDK, and its first
+  // into each dependency without sources, says why.
+  private List<Location> showEmptyAnswerNotes(final String uri, final ExplainedDefinition answer) {
     eventLoop.checkOnLoop();
     if (!jdkSourcesNoteShown && answer.jdkSourcesNote().isPresent()) {
       jdkSourcesNoteShown = true;
       LOG.info(() -> "[definition] %s jdk sources missing, told the user".formatted(uri));
       client.showMessage(
           new MessageParams(MessageType.Warning, answer.jdkSourcesNote().orElseThrow()));
+    }
+
+    if (answer.sourceless() != null && sourcelessNotesShown.add(answer.sourceless().dependency())) {
+      LOG.info(
+          () ->
+              "[definition] %s %s has no sources, told the user"
+                  .formatted(uri, answer.sourceless().dependency()));
+      client.showMessage(
+          new MessageParams(
+              MessageType.Info, "%s.".formatted(answer.sourcelessNote().orElseThrow())));
     }
 
     return answer.locations();
@@ -620,6 +635,12 @@ final class DocumentFeatures {
     LOG.info(
         () -> "[symbol] query=%s %dms hits=%d".formatted(query, t.elapsedMs(), results.size()));
     return results;
+  }
+
+  // The types the same search finds in dependencies without sources: MCP lists them by their
+  // dependency; an editor's symbol needs a file to open, so workspaceSymbol leaves them out.
+  List<SourcelessSymbol> sourcelessSymbols(final String query, final boolean reactorOnly) {
+    return reactorIndex.sourcelessSymbols(query, reactorOnly);
   }
 
   private static List<String> completionModuleNames(final CompilerRoute route, final String uri) {

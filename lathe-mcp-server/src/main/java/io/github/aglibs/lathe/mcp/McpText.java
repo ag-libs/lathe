@@ -593,10 +593,16 @@ final class McpText {
     return result(text, notes);
   }
 
+  // A type from a dependency without sources has no file: its dependency stands in its place, so
+  // the agent knows the type exists and where it comes from.
   static String symbolLine(final LatheSymbol symbol) {
     final String where = symbol.container().isBlank() ? "" : " — %s".formatted(symbol.container());
-    return "%s (%s)%s  %s"
-        .formatted(symbol.name(), symbol.kind(), where, position(symbol.location()));
+    final String at =
+        symbol
+            .sourcelessDependency()
+            .map("%s, no sources"::formatted)
+            .orElseGet(() -> position(symbol.location()));
+    return "%s (%s)%s  %s".formatted(symbol.name(), symbol.kind(), where, at);
   }
 
   static String callLine(final String arrow, final LatheCall call) {
@@ -845,11 +851,11 @@ final class McpText {
                 .collect(Collectors.joining(System.lineSeparator())));
   }
 
-  // An empty answer into the JDK says what to install, not just that nothing was found.
+  // An empty answer says why: what to install for the JDK, or the dependency without sources.
   static CallToolResult definitionResult(final LatheDefinition definition, final LatheNotes notes) {
     final String text =
         definition.targets().isEmpty()
-            ? definition.jdkSourcesNote().orElse("No definition found.")
+            ? definition.explanation().orElse("No definition found.")
             : locationLines(definition.targets());
     return result(text, notes);
   }
