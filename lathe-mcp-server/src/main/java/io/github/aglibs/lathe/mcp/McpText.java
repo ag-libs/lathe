@@ -117,8 +117,12 @@ final class McpText {
         vouched(IMPLEMENTATIONS_AUTHORITY, notes));
   }
 
+  // A search vouches for the whole reactor only when it read every source and had the module graph:
+  // without the manifest it searched its file's module only.
   static String vouched(final String authority, final LatheNotes notes) {
-    return notes.unreadSources().isEmpty() ? authority + NO_GREP_NEEDED : authority + ".";
+    return notes.unreadSources().isEmpty() && !notes.moduleGraphMissing()
+        ? authority + NO_GREP_NEEDED
+        : authority + ".";
   }
 
   // An answer about a symbol's uses: in a workspace with sources Lathe does not read (Kotlin,

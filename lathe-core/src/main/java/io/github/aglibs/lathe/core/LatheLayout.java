@@ -167,6 +167,12 @@ public final class LatheLayout {
       "%s/%s could not be read (%%s); dependency sources and cross-module features are off. Run `%s` to regenerate it, and report it with the server log if it persists."
           .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
 
+  // Every front-end writes the manifest, so a workspace with modules and no manifest comes from a
+  // sync of part of the build (Maven's -pl writes none), or one that stopped before writing it.
+  public static final String MANIFEST_MISSING_REMEDIATION =
+      "%s/%s is missing, as after a sync of part of the build (`-pl`): cross-module answers cover only each file's own module. Sync the whole build to write it: `%s`, or set Lathe up again where that script is missing."
+          .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
+
   private LatheLayout() {}
 
   // Names more than one Maven front-end module uses (lathe-compiler, lathe-maven-extension,

@@ -152,7 +152,8 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(result).isInstanceOf(LaunchOutcome.class);
     final var outcome = (LaunchOutcome) result;
     assertThat(outcome.launched()).isFalse();
-    assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
+    assertThat(outcome.blockedReasons())
+        .anyMatch(reason -> reason.startsWith("no lathe-test-runner jar recorded"));
   }
 
   // Replaying the last good classes would run code that is no longer on disk; once the source

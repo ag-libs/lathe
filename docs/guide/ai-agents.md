@@ -167,7 +167,9 @@ What it still cannot vouch for comes as a note at the end of the result:
 - **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
   `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
   Fix the code; no sync helps. Until then, other modules see the file's last good classes. The note clears on the next query after the fix.
-- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, or a `.lathe/` written by another Lathe version.
+- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, a `.lathe/` written by another Lathe version,
+  or a missing `.lathe/workspace.json` (after a sync of part of the build, such as Maven's `-pl`), when answers cover only each file's own module.
+  Then an answer about uses does not say grep is needless, `verify_change` names it too, and `rename_symbol` refuses.
 - **`Not checked:`** names a file no module compiles, so nothing about it was checked.
   For a file of a module the last build compiled but did not sync, it gives the sync that adds it; for a file
   outside every source root of a synced module (`docs/`, `src/it/java`) it says the file is in no source root

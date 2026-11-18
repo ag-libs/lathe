@@ -73,6 +73,8 @@ final class RunCoordinator {
 
   private static final long JDWP_READY_TIMEOUT_MS = 15_000;
 
+  private static final String NO_RUNNER = "no lathe-test-runner jar recorded";
+
   private final LatheLanguageClient client;
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
@@ -190,9 +192,17 @@ final class RunCoordinator {
     return prepareMain(inputs, main.module(), main.mainClass(), overlay, jdwp);
   }
 
+  // A workspace without a usable manifest records no runner either: its load problem says why.
   private LaunchInputs launchInputs() {
     return new LaunchInputs(
-        state.root(), state.manifest().reactorRewrite(), state.manifest().runnerClasspath());
+        state.root(),
+        state.manifest().reactorRewrite(),
+        state.manifest().runnerClasspath(),
+        state
+            .manifest()
+            .loadProblem()
+            .map(problem -> "%s: %s".formatted(NO_RUNNER, problem))
+            .orElse("%s — run a build first".formatted(NO_RUNNER)));
   }
 
   // A run's outcome, with the launch's notes, once its JVM exits.
@@ -379,10 +389,13 @@ final class RunCoordinator {
 
   // What a launch reads from the session: read on the loop, handed to the launch thread.
   private record LaunchInputs(
-      Path root, ReactorRewrite reactorRewrite, List<Path> runnerClasspath) {
+      Path root, ReactorRewrite reactorRewrite, List<Path> runnerClasspath, String noRunnerReason) {
 
     LaunchInputs {
-      ValidCheck.check().notNull(root, "root").validate();
+      ValidCheck.check()
+          .notNull(root, "root")
+          .notBlank(noRunnerReason, "noRunnerReason")
+          .validate();
       runnerClasspath = List.copyOf(runnerClasspath);
     }
   }
@@ -433,7 +446,7 @@ final class RunCoordinator {
       final JdwpOptions jdwp)
       throws IOException {
     if (inputs.runnerClasspath().isEmpty()) {
-      return Replay.blocked(List.of("no lathe-test-runner jar recorded — run a build first"));
+      return Replay.blocked(List.of(inputs.noRunnerReason()));
     }
 
     final List<String> trees = selectionTrees(inputs.root(), moduleRel, selections);

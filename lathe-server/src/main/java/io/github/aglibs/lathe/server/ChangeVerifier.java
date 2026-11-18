@@ -465,6 +465,7 @@ final class ChangeVerifier {
     return new LatheNotes(
         notCompiled,
         Stream.concat(pendingBuildFiles, state.manifest().loadProblem().stream()).toList(),
+        state.manifest().loadProblem().isPresent(),
         notChecked,
         writePass.reactorBuildInProgress(),
         Arrays.stream(UnreadLanguage.values())

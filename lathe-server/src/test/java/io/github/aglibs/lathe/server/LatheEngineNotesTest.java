@@ -44,6 +44,27 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
             new UnreadSources("Groovy", List.of("module")));
   }
 
+  // Without workspace.json (a sync of part of the build) the server has no module graph, so every
+  // answer says a sync of the whole build is needed; once the manifest is there, none does.
+  @Test
+  void notes_workspaceWithoutTheManifest_syncRequiredNamingIt_untilWritten() throws Exception {
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Sample.java", "package com.example; class Sample { int n = 1; }");
+    Files.delete(tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.diagnostics(source).notes().syncRequired())
+        .containsExactly(LatheLayout.MANIFEST_MISSING_REMEDIATION);
+    assertThat(engine.diagnostics(source).notes().moduleGraphMissing()).isTrue();
+
+    engine.close();
+    TestCompiler.recordBuildFiles(tmp, List.of());
+    engine = new LatheEngine(tmp);
+    assertThat(engine.diagnostics(source).notes().syncRequired()).isEmpty();
+    assertThat(engine.diagnostics(source).notes().moduleGraphMissing()).isFalse();
+  }
+
   @Test
   void notes_agentEditDoesNotCompile_notCompiledWithItsError_noSyncSuggested_untilFixed()
       throws Exception {
@@ -53,7 +74,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
     // Each answer carries the notes its own request read, after its compile.
     assertThat(engine.diagnostics(source).notes())
-        .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false, List.of()));
+        .isEqualTo(new LatheNotes(List.of(), List.of(), false, List.of(), false, List.of()));
 
     Files.writeString(source, "package com.example; class Sample { Missing m; }");
     final LatheNotes broken = engine.diagnostics(source).notes();
