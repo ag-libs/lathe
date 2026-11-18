@@ -168,9 +168,10 @@ public final class LatheLayout {
           .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
 
   // Every front-end writes the manifest, so a workspace with modules and no manifest comes from a
-  // sync of part of the build (Maven's -pl writes none), or one that stopped before writing it.
+  // sync of part of the build (Maven's -pl writes none; Gradle and OpenJDK always write it), or one
+  // that stopped before writing it, on any build tool.
   public static final String MANIFEST_MISSING_REMEDIATION =
-      "%s/%s is missing, as after a sync of part of the build (`-pl`): cross-module answers cover only each file's own module. Sync the whole build to write it: `%s`, or set Lathe up again where that script is missing."
+      "%s/%s is missing: the last sync covered only part of the build (Maven's `-pl`) or stopped before writing it, so cross-module answers cover only each file's own module. Sync the whole build to write it: `%s`, or set Lathe up again where that script is missing."
           .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}
