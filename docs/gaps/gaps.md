@@ -2411,37 +2411,6 @@ None yet.
 
 ---
 
-## MC-92 — `run_test` runs a test whose dependency no longer compiles
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S–M**
-
-**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
-`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
-When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
-A dependency whose own compile fails is already caught: it is a failed compile of the test's module or one upstream, and the run is refused (`ChangeVerifier.failingInModule`).
-What gets through, verified against the code (2026-11-17): a deleted dependency, which only removes class outputs (`WritePass.reconcileDeletedSourcesIn`), and a dependency change that still compiles but breaks the unchanged test, as nothing recompiles an unchanged dependent.
-Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
-
-### Fix direction
-
-Refuse the run with the same "does not compile" answer when the test file would no longer compile against the current classes, not only when its own text changed.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-94 — A `file://` URI as a tool's `file` is read as a relative path
 
 **Status: accepted** (triaged 2026-11-17)
