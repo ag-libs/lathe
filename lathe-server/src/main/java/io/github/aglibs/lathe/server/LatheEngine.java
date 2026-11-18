@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
+import io.github.aglibs.lathe.analysis.PackageDirectory;
 import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceRole;
@@ -907,7 +908,11 @@ public final class LatheEngine {
             fileWork(
                 file,
                 (session, uri, diagnostics, cancel, progress) -> {
-                  final Optional<String> failing = session.verifier().failingUnder(file);
+                  final Optional<String> failing =
+                      session
+                          .verifier()
+                          .failingUnder(file)
+                          .or(() -> firstError(file, uri, diagnostics));
                   return session
                       .features()
                       .runnablesFuture(uri)
@@ -1418,6 +1423,26 @@ public final class LatheEngine {
             .map(ImplementationHit::location)
             .toList(),
         maxResults);
+  }
+
+  // The file's own first compile error, by line, against the classes as they are now: a class it
+  // uses may be gone or changed while the file is not, which no build compile failed. -Werror's
+  // error belongs to no file, as for a failed build compile, and Lathe's own package-directory
+  // error is not javac's: the build compiles and runs such a file.
+  private Optional<String> firstError(
+      final Path file, final String uri, final List<Diagnostic> diagnostics) {
+    return WritePass.ownDiagnostics(diagnostics).stream()
+        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+        .filter(diagnostic -> !isPackageDirectoryError(diagnostic))
+        .min(Comparator.comparingInt(diagnostic -> diagnostic.getRange().getStart().getLine()))
+        .map(
+            diagnostic ->
+                "%s:%s".formatted(displayPath(file, uri), WritePass.errorLine(diagnostic)));
+  }
+
+  private static boolean isPackageDirectoryError(final Diagnostic diagnostic) {
+    return diagnostic.getCode() != null
+        && PackageDirectory.CODE.equals(diagnostic.getCode().getLeft());
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,
