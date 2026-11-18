@@ -91,6 +91,23 @@ class LatheMcpToolsTest {
     assertThat(tool("outline").tool().inputSchema().toString()).contains("file", "type");
   }
 
+  // A column is LSP's, in UTF-16 code units, which an agent counting characters gets wrong past an
+  // emoji: every tool that takes one, whatever its schema, says so.
+  @Test
+  void all_columnInputs_nameTheirUnit() {
+    final List<String> withColumn =
+        specs.stream()
+            .map(spec -> spec.tool())
+            .filter(tool -> tool.inputSchema().toString().contains("column"))
+            .map(tool -> tool.name())
+            .toList();
+
+    assertThat(withColumn).contains("get_definition", "rename_symbol", "call_hierarchy");
+    for (final String name : withColumn) {
+      assertThat(tool(name).tool().inputSchema().toString()).as(name).contains("UTF-16 code units");
+    }
+  }
+
   @Test
   void all_everyTool_declaresWhetherItWrites() {
     assertThat(specs)
@@ -278,6 +295,7 @@ class LatheMcpToolsTest {
             result -> {
               assertThat(result.isError()).isTrue();
               assertThat(text(result))
+                  .contains("(columns count UTF-16 code units)")
                   .contains("must be on a name. Line 2 reads: public void run() {}");
             });
     assertThat(text(describe(file, 9, 1))).isEqualTo("No symbol at line 9: the file is shorter.");
