@@ -85,6 +85,9 @@
          docs/planned/lathe-run-test-debug.md section 14 -->
     <surefire.version>3.5.4</surefire.version>
     <jar.version>3.5.1</jar.version>
+    <!-- Maven 3.9's default, pinned so the build fills ~/.m2 with it: the invoker fixtures pin it too,
+         or on Maven 3.6.3 each would fetch that version's default (2.6) from Central. -->
+    <resources.version>3.3.1</resources.version>
     <jacoco.version>0.8.16</jacoco.version>
     <!-- default empty so @{argLine} resolves when JaCoCo agent is not active -->
     <argLine/>
@@ -327,6 +330,11 @@
               <lathe.disabled>false</lathe.disabled>
             </systemPropertyVariables>
           </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-resources-plugin</artifactId>
+          <version>${resources.version}</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
