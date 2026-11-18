@@ -13680,6 +13680,37 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-94 — A `file://` URI as a tool's `file` is read as a relative path — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: every file tool given a `file://` URI instead of a path.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`outline` with `file="file:///…/Edge.java"` answers `/<workspace>/file:/…/Edge.java does not exist`.
+Agents that also drive an LSP carry URIs and may pass one.
+
+### Fix direction
+
+Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
+`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
+
+### Resolution
+
+Every file argument (`file`, and `verify_change`'s `files`) takes a `file:` URI as the path it names (`LatheUri.toPath`), and a path as before.
+A URI no local path stands for (one naming a host) is taken as given, and so answered as a file that does not exist.
+
+### Regression targets
+
+- `LatheMcpToolsTest.outline_fileUri_outlinesTheFileItNames_hostUriNotFound`
+
+---
+
 ## MC-92 — `run_test` runs a test whose dependency no longer compiles — done
 
 **Status: done** (2026-11-18)
