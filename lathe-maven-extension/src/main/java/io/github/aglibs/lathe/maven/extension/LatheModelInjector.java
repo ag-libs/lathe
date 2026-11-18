@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.stream.Stream;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -29,6 +30,9 @@ final class LatheModelInjector {
   static final String SUREFIRE_TEST_PROPERTY = "test";
   private static final String SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY =
       "surefire.failIfNoSpecifiedTests";
+  // How many classes a capture-only run selects: enough that a few it does not run (abstract
+  // bases sort first by name: AbstractFooTests) still leave one that starts the test JVM.
+  private static final int CAPTURE_CLASSES = 5;
   private static final String INIT_GOAL = "init";
   private static final String INIT_EXECUTION_ID = "lathe-init";
   private static final String SYNC_EXECUTION_ID = "lathe-sync";
@@ -93,10 +97,12 @@ final class LatheModelInjector {
   }
 
   // A capture-only run needs one test JVM to start, not every test class: the launch is the same
-  // whichever classes run, and one class starts the JVM, a class without tests too, while every
-  // class costs a discovery of each (minutes on a large module). Surefire reads its test selection
-  // from the module's properties when the build names none. Nothing is compiled yet, so the class
-  // comes from the test sources, the first in name order; a module whose tests are generated or not
+  // whichever classes run, while every class costs a discovery of each (minutes on a large module).
+  // Surefire reads its test selection from the module's properties when the build names none, and
+  // it replaces the module's includes. Nothing is compiled yet, so the classes come from the test
+  // sources, a few of them: Surefire starts no JVM for a selection it does not run (an abstract
+  // base class, a test helper), and one of several is enough. The names Surefire's default
+  // includes match come first, each part in name order; a module whose tests are generated or not
   // Java keeps running them all.
   void injectCaptureClass(final MavenProject project) {
     final Properties properties = project.getProperties();
@@ -104,20 +110,37 @@ final class LatheModelInjector {
       return;
     }
 
-    project.getTestCompileSourceRoots().stream()
-        .flatMap(
-            root ->
-                IOUtil.unchecked(
-                    () -> FileUtil.walkFiles(Path.of(root), LatheModelInjector::isTypeSource))
-                    .stream())
-        .map(FileUtil::javaTypeName)
-        .sorted()
-        .findFirst()
-        .ifPresent(
-            name -> {
-              properties.setProperty(SUREFIRE_TEST_PROPERTY, name);
-              properties.setProperty(SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY, "false");
-            });
+    final List<String> names =
+        project.getTestCompileSourceRoots().stream()
+            .flatMap(
+                root ->
+                    IOUtil.unchecked(
+                        () -> FileUtil.walkFiles(Path.of(root), LatheModelInjector::isTypeSource))
+                        .stream())
+            .map(FileUtil::javaTypeName)
+            .sorted()
+            .distinct()
+            .toList();
+    if (names.isEmpty()) {
+      return;
+    }
+
+    final List<String> selection =
+        Stream.concat(
+                names.stream().filter(LatheModelInjector::isSurefireTestName),
+                names.stream().filter(name -> !isSurefireTestName(name)))
+            .limit(CAPTURE_CLASSES)
+            .toList();
+    properties.setProperty(SUREFIRE_TEST_PROPERTY, String.join(",", selection));
+    properties.setProperty(SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY, "false");
+  }
+
+  // Surefire's default includes, by simple name: Test*, *Test, *Tests and *TestCase.
+  private static boolean isSurefireTestName(final String name) {
+    return name.startsWith("Test")
+        || name.endsWith("Test")
+        || name.endsWith("Tests")
+        || name.endsWith("TestCase");
   }
 
   private static boolean isTypeSource(final Path path) {

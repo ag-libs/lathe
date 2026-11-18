@@ -3,10 +3,14 @@ package io.github.aglibs.lathe.junit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import org.junit.jupiter.api.Test;
 
 final class CaptureLauncherSessionListenerTest {
@@ -23,6 +27,22 @@ final class CaptureLauncherSessionListenerTest {
     assertThat(CaptureLauncherSessionListener.featureVersion("17"))
         .isEqualTo(LatheLayout.MIN_JAVA_VERSION);
     assertThat(CaptureLauncherSessionListener.featureVersion("25")).isEqualTo(25);
+  }
+
+  // A failed capture leaves the tests running as usual, and one line in the build's test output
+  // that says why the editor cannot run them.
+  @Test
+  void notCaptured_failure_printsOneLineNamingTheCause() {
+    final var out = new ByteArrayOutputStream();
+    final var err = new PrintStream(out, true, StandardCharsets.UTF_8);
+
+    CaptureLauncherSessionListener.notCaptured(
+        err, new AccessDeniedException("/repo/.lathe/core/test-launch.json"));
+
+    assertThat(out.toString(StandardCharsets.UTF_8))
+        .isEqualTo(
+            "[lathe] test launch not captured: %s: /repo/.lathe/core/test-launch.json%s"
+                .formatted(AccessDeniedException.class.getName(), System.lineSeparator()));
   }
 
   // A test JVM older than Lathe's code loads the classes JUnit finds through their service files;

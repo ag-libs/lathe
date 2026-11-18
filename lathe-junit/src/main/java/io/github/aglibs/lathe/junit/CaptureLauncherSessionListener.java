@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.junit;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.io.PrintStream;
 import org.junit.platform.launcher.LauncherSession;
 import org.junit.platform.launcher.LauncherSessionListener;
 
@@ -29,9 +30,15 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
       }
 
       LaunchCapture.capture();
-    } catch (final Throwable ignored) {
-      // Capture must never change the user's test result.
+    } catch (final Throwable e) {
+      // Capture must never change the user's test result; it says why in the build's test output.
+      notCaptured(System.err, e);
     }
+  }
+
+  // The one line a failed capture leaves: what the editor's run of these tests will lack, and why.
+  static void notCaptured(final PrintStream err, final Throwable cause) {
+    err.printf("[lathe] test launch not captured: %s%n", cause);
   }
 
   // "1.8" up to Java 8, then "9", "11", "17".
