@@ -71,6 +71,62 @@ class ServerInstallerTest {
             "org.junit.jupiter:junit-jupiter-engine:5.11.4");
   }
 
+  // TE-21: a JUnit 6 reactor that also holds JUnit 5 (a module, or a dependency, on it) replays on
+  // the JUnit 6 runner. The coordinates come sorted by name, so 1.10.3 is listed before 6.1.3.
+  @Test
+  void resolveRunnerClasspath_severalJUnitVersions_resolvesTheHighest() {
+    final var resolved = new ArrayList<String>();
+
+    new ServerInstaller(recording(resolved))
+        .resolveRunnerClasspath(
+            List.of(
+                "org.junit.jupiter:junit-jupiter-api:5.10.3",
+                "org.junit.jupiter:junit-jupiter-api:6.1.3",
+                "org.junit.platform:junit-platform-commons:1.10.3",
+                "org.junit.platform:junit-platform-commons:6.1.3"));
+
+    assertThat(resolved)
+        .endsWith(
+            "org.junit.platform:junit-platform-launcher:6.1.3",
+            "org.junit.jupiter:junit-jupiter-engine:6.1.3");
+  }
+
+  // A platform 6 a dependency brings (a suite, say) does not run a JUnit 5 Jupiter: the launcher
+  // stays with the newest platform 1.x, the one that Jupiter runs on.
+  @Test
+  void resolveRunnerClasspath_newerPlatformThanJupiter_launcherOfJupitersGeneration() {
+    final var resolved = new ArrayList<String>();
+
+    new ServerInstaller(recording(resolved))
+        .resolveRunnerClasspath(
+            List.of(
+                "org.junit.jupiter:junit-jupiter-api:5.11.4",
+                "org.junit.platform:junit-platform-commons:1.11.4",
+                "org.junit.platform:junit-platform-commons:6.1.3"));
+
+    assertThat(resolved)
+        .endsWith(
+            "org.junit.platform:junit-platform-launcher:1.11.4",
+            "org.junit.jupiter:junit-jupiter-engine:5.11.4");
+  }
+
+  // A version that does not parse is still used when it is the only one.
+  @Test
+  void resolveRunnerClasspath_versionThatDoesNotParse_stillResolved() {
+    final var resolved = new ArrayList<String>();
+
+    new ServerInstaller(recording(resolved))
+        .resolveRunnerClasspath(
+            List.of(
+                "org.junit.jupiter:junit-jupiter-api:custom",
+                "org.junit.platform:junit-platform-commons:custom"));
+
+    assertThat(resolved)
+        .endsWith(
+            "org.junit.platform:junit-platform-launcher:custom",
+            "org.junit.jupiter:junit-jupiter-engine:custom");
+  }
+
   @Test
   void resolveRunnerClasspath_noJupiter_resolvesOnlyTheRunner() {
     final var resolved = new ArrayList<String>();
