@@ -13612,10 +13612,9 @@ nothing (WARN) when the list is empty.
 
 ## MC-91 — Tool columns are UTF-16 code units, and nothing says so — done
 
-**Status: done** (2026-11-18: the unit is stated; converting to characters is not done)
+**Status: done** (2026-11-18, PR #390: the unit is stated; converting to characters is not done)
 
 **Kind: bug**
-
 
 **Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
 
@@ -13643,7 +13642,8 @@ Converting to characters at the MCP boundary, as triaged on 2026-11-17, is not d
 
 ### Regression targets
 
-- `LatheMcpToolsTest.all_positionTools_nameTheColumnUnit_othersTakeNoColumn`
+- `LatheMcpToolsTest.all_columnInputs_nameTheirUnit`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound` (the error names the unit)
 
 ---
 

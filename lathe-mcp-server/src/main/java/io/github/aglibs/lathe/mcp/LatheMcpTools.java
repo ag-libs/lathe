@@ -819,7 +819,8 @@ final class LatheMcpTools {
     final String where =
         symbol != null
             ? "no symbol named '%s'".formatted(symbol)
-            : "no symbol at column %d: the position must be on a name".formatted(column);
+            : "no symbol at column %d (columns count UTF-16 code units): the position must be on a name"
+                .formatted(column);
     return "Line %d has %s. Line %d reads: %s".formatted(line, where, line, text.strip());
   }
 

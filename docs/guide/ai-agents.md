@@ -101,7 +101,7 @@ the Claude Code setup above has been validated.
 
 ## The tools
 
-Every located result is one line, `path:line:column: code`, as `grep -n --column` prints it: the path is relative to the
+Every located result is one line, `path:line:column: code`, in `grep -n --column`'s shape, its column counted in UTF-16 code units (grep's counts bytes): the path is relative to the
 workspace, and a result outside the project is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
 its absolute path, which the tools take back as it is; a dependency's lies under `deps/<group>/<artifact>/<version>/`
 in Lathe's cache, which names the version the module resolved) or `[GENERATED]`.
