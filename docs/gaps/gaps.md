@@ -1742,6 +1742,38 @@ None yet.
 
 ---
 
+## TE-27 — Tests a JUnit 4 runner selects by name (Lucene's `testXxx`) get no run entry
+
+**Status: deferred** (triaged 2026-11-18: it affects projects built on randomizedtesting (Lucene, Solr, Elasticsearch, OpenSearch), where a class with one `@Test` method still runs all its tests; the fix direction is clear when it is picked)
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on projects whose tests run under randomizedtesting's `RandomizedRunner` (Apache Lucene, Solr, Elasticsearch, OpenSearch), or another JUnit 4 runner that picks its own methods.**
+
+Found checking the TE-23 fix on Apache Lucene (2026-11-18, main `7e748f89` plus #398).
+
+### Observed behaviour
+
+`run_test` on `lucene/core/src/test/org/apache/lucene/search/TestTermQuery.java` answers "no test in TestTermQuery.java", and the editor shows no run entry on its methods.
+Lucene's tests are `public void testXxx()` methods without `@Test`, in classes extending `LuceneTestCase`, which declares `@RunWith(RandomizedRunner.class)` and `@TestMethodProviders({LuceneJUnit3MethodProvider.class, JUnit4MethodProvider.class})`: the runner takes a method as a test by its name, as JUnit 3 did, or by `@Test`.
+It is not JUnit 3 (`LuceneTestCase` extends `Assert`, not `junit.framework.TestCase`), and not the build tool: Gradle, as Surefire would, hands the class to the vintage engine, which runs the class's runner, and the runner picks the methods.
+Lathe's source scan (`RunnableScanner`) takes a method as a test by `@Test`/`@Testable`, or by its `test` prefix only in a `TestCase` subclass, so it finds none here.
+A class with at least one `@Test` method is found, and its replay then runs every test the runner picks (`TestDocValuesQueries`: 41 passed), so the run itself works.
+
+### Fix direction
+
+Ask the runner, rather than guess from the source: Lathe already has a discover-mode launch, a JVM on the module's captured test launch that asks the JUnit Platform for the tests a run would execute (`RunCoordinator.discoverTestsFuture`, `lathe.tests.discover`), where the vintage engine asks the runner for its description, which runs the method providers.
+Only the client's test tree uses it today; `run_test` and the editor's run entries use the source scan alone.
+Use a discovery's tests for a file the scan finds none in (and for the methods a class with some `@Test` methods also has), so whatever any runner selects becomes runnable, at the cost of one discovery JVM per module, run one at a time and kept until the module's test classes change.
+A source-only alternative, `test*` methods in a class whose hierarchy carries `@TestMethodProviders` with a JUnit 3-style provider, covers randomizedtesting alone.
+Related: TE-24, the same gap for custom annotations built on `@Testable`, which discovery would close too.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
