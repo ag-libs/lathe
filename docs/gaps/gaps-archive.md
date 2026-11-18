@@ -13680,6 +13680,39 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: `verify_change` while the project's own `.lathe/lathe-sync.sh` (or any build Lathe sees writing `.lathe/`) runs.**
+
+Found by the MCP exploratory round on resilience4j (2026-11-17).
+
+### Observed behaviour
+
+During a `latheSync`, every `verify_change` answers at once ``Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.``; the first call after the build ends checks normally.
+Not stalling is right, but the advice is to start a second build while the first runs; an agent following it doubles the wait.
+`LatheEngine.verifyChange` sets the sync command for every deferral but another server writing, a build in progress included, and `McpText` prints it.
+The `LatheVerifyChange` javadoc also tells a caller to run `suggestedSync` for a running build.
+
+### Fix direction
+
+For a build in progress, say to wait for it to finish and re-check; name the sync only when what is missing is one, and correct the javadoc.
+
+### Resolution
+
+`LatheEngine.verifyChange` names the sync only for pending build files, the one deferral a sync resolves; a running build and another server updating `.lathe/` end on their own.
+The answer then says ``Verification deferred: a build is in progress. Re-check once it ends.``, and the `LatheVerifyChange` javadoc says the same.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.verifyChange_buildInProgress_defersWithoutNamingTheSync`
+- `McpTextTest.verifyChangeResult_deferred_namesTheSyncOnlyWhenOneHelps`
+
+---
+
 ## MC-91 — Tool columns are UTF-16 code units, and nothing says so — done
 
 **Status: done** (2026-11-18, PR #390: the unit is stated; converting to characters is not done)
