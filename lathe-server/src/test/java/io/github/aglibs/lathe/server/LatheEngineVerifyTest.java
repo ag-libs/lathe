@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
@@ -153,6 +154,27 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(impact.relevantTests())
         .as("a test implementing it breaks too")
         .contains("FakeWiring");
+  }
+
+  // A build running (here this process holding the reactor's build lock) defers the check, and
+  // names no sync: a second build would only add one to wait for.
+  @Test
+  void verifyChange_buildInProgress_defersWithoutNamingTheSync() throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    engine = new LatheEngine(tmp);
+    final Path lock = LatheLayout.reactorLockFile(tmp.resolve(LatheLayout.LATHE_DIR));
+    LatheLock.acquire(lock);
+    try {
+      final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+      assertThat(verify.deferral()).isEqualTo(ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS);
+      assertThat(verify.suggestedSync()).isNull();
+    } finally {
+      LatheLock.release(lock);
+    }
+
+    assertThat(engine.verifyChange(List.of()).deferral()).as("once it ends").isNull();
   }
 
   @Test

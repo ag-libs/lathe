@@ -221,8 +221,7 @@ Unused-code hints are left out (`get_diagnostics` on one file still shows them).
 When the change reaches other modules, it names them (the first ten, then a count) and gives the sync command that builds them, e.g.
 `.lathe/lathe-sync.sh core`.
 With no errors their callers have already compiled, so it says that build is optional.
-If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
-it says so and gives that command instead.
+If an in-process check cannot be trusted, it says so instead: a build-file change waiting for a sync gives that command, and a running build, or another Lathe server updating `.lathe/`, says to re-check once it ends.
 Locks left by an exited build are ignored immediately when their recorded PID and process start time identify the departed owner.
 Empty markers, malformed ownership metadata, and unavailable process information retain the two-minute expiry fallback.
 

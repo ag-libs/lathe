@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.github.aglibs.lathe.server.engine.UnreadSources;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -284,8 +285,11 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
         .as("the agent's edits are still compiled while the sync is pending")
         .anyMatch(d -> d.message().contains("greet"));
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
-    assertThat(engine.verifyChange(List.of()).deferral())
-        .isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
+    final LatheVerifyChange deferred = engine.verifyChange(List.of());
+    assertThat(deferred.deferral()).isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
+    assertThat(deferred.suggestedSync())
+        .as("a sync is what the check waits for")
+        .isEqualTo(LatheLayout.SYNC_SCRIPT_COMMAND);
 
     Files.writeString(pom, "<project/>");
     engine.diagnostics(fx.caller()).value();

@@ -23,6 +23,15 @@ public record ReconcileOutcome(List<Path> reacted, DeferReason deferral) {
     NONE,
     BUILD_FILES_PENDING,
     BUILD_IN_PROGRESS,
-    OTHER_SERVER_WRITING
+    OTHER_SERVER_WRITING;
+
+    // Whether a sync is what the check waits for: only a pending build-file change. A running build
+    // and another server's update end on their own; a sync would only add a build to wait for.
+    public boolean resolvedBySync() {
+      return switch (this) {
+        case BUILD_FILES_PENDING -> true;
+        case NONE, BUILD_IN_PROGRESS, OTHER_SERVER_WRITING -> false;
+      };
+    }
   }
 }

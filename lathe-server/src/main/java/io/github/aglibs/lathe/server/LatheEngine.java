@@ -1091,7 +1091,8 @@ public final class LatheEngine {
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
   // sync that would. No files: every change not yet built, on disk or by the tools.
-  // A pending build-file sync or a running build defers the check to a full sync.
+  // A pending build-file change defers the check to the sync it names; a running build, or another
+  // server updating .lathe/, defers it until that ends.
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ChangeVerifier.VerifyPlan plan =
         request(
@@ -1101,11 +1102,8 @@ public final class LatheEngine {
                     .thenApply(outcome -> session.verifier().plan(outcome, files)));
     final ReconcileOutcome outcome = plan.outcome();
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
-      // Another server's pass ends on its own; a sync would only add a build to wait for.
       final String sync =
-          outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
-              ? null
-              : LatheLayout.SYNC_SCRIPT_COMMAND;
+          outcome.deferral().resolvedBySync() ? LatheLayout.SYNC_SCRIPT_COMMAND : null;
       return new LatheVerifyChange(
           outcome.deferral(), List.of(), List.of(), sync, List.of(), List.of());
     }
