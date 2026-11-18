@@ -1400,6 +1400,41 @@ None yet.
 
 ---
 
+## WS-44 — `:LatheInit` builds a Maven project to `test`, though `lathe.sync.phase` asks for a later phase
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: Maven setup with `:LatheInit` on a build that cannot reach `test` without packaging some of its modules (Quarkus, a shading build); the Neovim client.**
+
+Found testing the WS-41 fix on Quarkus (2026-11-18), with that fix applied (`main` `2c9804d` plus #381).
+
+### Observed behaviour
+
+`:LatheInit`'s first Maven build is fixed: `clean test`, capture only (`MAVEN_FIRST_BUILD` in `lathe-neovim/runtime/lua/lathe/latheinit.lua`).
+On Quarkus' whole reactor, that build passes WS-41's module and stops at the third: `maven-dependency-plugin:3.8.1:copy-dependencies (copy-porting-pkg) on project arc-cdi-tck-runner: Artifact 'io.quarkus.arc:arc-cdi-tck-porting-pkg:jar:999-SNAPSHOT:compile' has not been packaged`.
+The module copies another reactor module's jar, which only `package` makes; plain `mvn clean test` fails the same way.
+The build stops before `lathe:sync`, so no `.lathe/workspace.json` or sync script is written.
+
+`lathe.sync.phase` is the setting for such a build: in `.mvn/maven.config` (`-Dlathe.sync.phase=package`) or as a root POM property, it makes the sync script build to that phase, skipping the tests on the way.
+`:LatheInit` does not read it, so a project that sets it still gets a `test` build, which fails before any sync script exists to use it.
+The build's warning to set it covers only shaded modules (`SyncCoordinator`), so a build like Quarkus' is not told about it.
+
+The same first build run to `package` instead (`clean package -Dlathe.sync.phase=package`, capture only, `-DskipITs` as the sync script adds past `test`) gets past `arc-cdi-tck-runner`: stopped by hand after 58 of the reactor's 1,435 modules (it was still fetching dependencies), it had met no failure and captured 62 test launches.
+Whether the whole setup then completes and writes the workspace files was not checked.
+
+### Fix direction
+
+Have `:LatheInit` build a Maven project to the phase `lathe.sync.phase` names, read from `.mvn/maven.config` or the root POM as `MavenSyncScript.phase` reads it, with the capture-only flags the sync script adds past `test` (`-DskipITs`), and `test` when it names none.
+Then consider pointing at the setting when a build fails on an artifact that "has not been packaged", as the shading warning does for shading.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
