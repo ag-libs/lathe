@@ -270,13 +270,14 @@ class McpTextTest {
         .isEqualTo("No import added to a/Foo.java.");
   }
 
+  // A running build is not a sync to start: the agent re-checks once it ends.
   @Test
   void verifyChangeResult_deferred_namesTheSyncOnlyWhenOneHelps() {
     assertThat(
             text(
                 McpText.verifyChangeResult(
                     new LatheVerifyChange(
-                        ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS,
+                        ReconcileOutcome.DeferReason.BUILD_FILES_PENDING,
                         List.of(),
                         List.of(),
                         ".lathe/lathe-sync.sh",
@@ -284,7 +285,19 @@ class McpTextTest {
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
-            "Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.");
+            "Verification deferred: a pending build-file or dependency change needs a sync. Run `.lathe/lathe-sync.sh`, then re-check.");
+    assertThat(
+            text(
+                McpText.verifyChangeResult(
+                    new LatheVerifyChange(
+                        ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS,
+                        List.of(),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of()),
+                    McpText.NO_NOTES)))
+        .isEqualTo("Verification deferred: a build is in progress. Re-check once it ends.");
     assertThat(
             text(
                 McpText.verifyChangeResult(
@@ -297,7 +310,7 @@ class McpTextTest {
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
-            "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check in a moment.");
+            "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check once it ends.");
   }
 
   // The Kotlin modules are no note of their own: only an answer about uses names them.

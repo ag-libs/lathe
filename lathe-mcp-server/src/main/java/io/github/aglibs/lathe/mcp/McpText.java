@@ -698,10 +698,10 @@ final class McpText {
 
   static CallToolResult verifyChangeResult(final LatheVerifyChange verify, final LatheNotes notes) {
     if (verify.deferral() != null) {
-      // Another server writing .lathe/ ends on its own, so no sync is named then.
+      // A running build and another server writing .lathe/ end on their own: no sync is named.
       final String next =
           verify.suggestedSync() == null
-              ? "Re-check in a moment."
+              ? "Re-check once it ends."
               : "Run `%s`, then re-check.".formatted(verify.suggestedSync());
       return usesResult(
           "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next), notes);

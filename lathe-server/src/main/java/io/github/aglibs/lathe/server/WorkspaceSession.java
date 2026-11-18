@@ -612,7 +612,8 @@ final class WorkspaceSession {
   // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
   // a build file the agent just edited is seen now rather than on the next tick, then an eager
   // pass. If its result can't be trusted (a build-file sync pending, or a running build) it
-  // carries a DeferReason so verify_change falls back to the build. The outcome lists every stale
+  // carries a DeferReason so verify_change waits: for the sync it names, or for the build to end.
+  // The outcome lists every stale
   // source, including one that failed unchanged since and so was not recompiled. Runs on the
   // event loop.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {

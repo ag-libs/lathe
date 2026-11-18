@@ -2490,35 +2490,6 @@ None yet.
 
 ---
 
-## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: `verify_change` while the project's own `.lathe/lathe-sync.sh` (or any build Lathe sees writing `.lathe/`) runs.**
-
-Found by the MCP exploratory round on resilience4j (2026-11-17).
-
-### Observed behaviour
-
-During a `latheSync`, every `verify_change` answers at once ``Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.``; the first call after the build ends checks normally.
-Not stalling is right, but the advice is to start a second build while the first runs; an agent following it doubles the wait.
-`LatheEngine.verifyChange` sets the sync command for every deferral but another server writing, a build in progress included, and `McpText` prints it.
-The `LatheVerifyChange` javadoc also tells a caller to run `suggestedSync` for a running build.
-
-### Fix direction
-
-For a build in progress, say to wait for it to finish and re-check; name the sync only when what is missing is one, and correct the javadoc.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-99 — `run_test` with a `method` but no `scope` runs the whole class
 
 **Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; small, and the answer misleads)
