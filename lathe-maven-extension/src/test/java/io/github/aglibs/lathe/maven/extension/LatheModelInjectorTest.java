@@ -110,6 +110,20 @@ class LatheModelInjectorTest {
         .containsExactly("lathe-compiler");
   }
 
+  // A compiler plugin that does not ask to be an extension is left as declared.
+  @Test
+  void injectProject_compilerNotABuildExtension_extensionsLeftUnset() {
+    final MavenProject project = project();
+    addCompiler(project, "3.14.0");
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(compilerPlugin(project).getExtensions()).isNull();
+    assertThat(compilerPlugin(project).getDependencies())
+        .extracting(Dependency::getArtifactId)
+        .containsExactly("lathe-compiler");
+  }
+
   @Test
   void injectProject_staleCompilerDependency_overwritesVersionWithoutDuplicate() {
     final MavenProject project = project();
