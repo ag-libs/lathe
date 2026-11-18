@@ -21,11 +21,11 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
 
       final int javaVersion = featureVersion(System.getProperty("java.specification.version"));
       if (javaVersion < LatheLayout.MIN_JAVA_VERSION) {
-        // In the build's test output: the reason these tests can't be run from the editor.
-        System.err.printf(
-            "[lathe] test launch not captured: this test JVM runs Java %d; Lathe captures on Java"
-                + " %d or newer%n",
-            javaVersion, LatheLayout.MIN_JAVA_VERSION);
+        notCaptured(
+            System.err,
+            String.format(
+                "this test JVM runs Java %d; Lathe captures on Java %d or newer",
+                javaVersion, LatheLayout.MIN_JAVA_VERSION));
         return;
       }
 
@@ -36,9 +36,23 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
     }
   }
 
-  // The one line a failed capture leaves: what the editor's run of these tests will lack, and why.
+  // A failed capture, by the exception and where it was thrown. The report is guarded too: an
+  // exception whose toString() throws must not fail the tests either.
   static void notCaptured(final PrintStream err, final Throwable cause) {
-    err.printf("[lathe] test launch not captured: %s%n", cause);
+    try {
+      final StackTraceElement[] frames = cause.getStackTrace();
+      notCaptured(
+          err,
+          frames.length == 0 ? String.valueOf(cause) : String.format("%s at %s", cause, frames[0]));
+    } catch (final Throwable ignored) {
+      // Nothing left to say it with.
+    }
+  }
+
+  // The one line a capture that did not happen leaves in the build's test output: the reason the
+  // editor cannot run these tests.
+  static void notCaptured(final PrintStream err, final String reason) {
+    err.printf("[lathe] test launch not captured: %s%n", reason);
   }
 
   // "1.8" up to Java 8, then "9", "11", "17".

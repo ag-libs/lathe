@@ -185,22 +185,22 @@ class LatheModelInjectorTest {
 
   // Surefire starts no test JVM for a selection it does not run: an abstract base class or a
   // helper sorting first would leave the module uncaptured (jdbi's core:
-  // AbstractJavaTimeArrayTests).
+  // AbstractJavaTimeArrayTests). Abstract bases by name go after the other test names.
   @Test
-  void injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsTheFirstFiveTestNames(
+  void injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsRunnableTestNamesFirst(
       @TempDir final Path dir) throws IOException {
     final MavenProject project = project();
     for (final String name :
         List.of(
             "AbstractArrayTests",
+            "AbstractBindTests",
+            "AbstractJdbiTest",
+            "AbstractQueryTests",
+            "AbstractTypeTests",
             "Callback",
             "FooBarType",
-            "ArrayTest",
-            "BindTests",
-            "JdbiTestCase",
-            "TestJdbi",
-            "TestQuery",
-            "ZebraTest")) {
+            "BindTest",
+            "TestJdbi")) {
       write(dir.resolve("com/example/%s.java".formatted(name)));
     }
 
@@ -210,8 +210,24 @@ class LatheModelInjectorTest {
 
     assertThat(project.getProperties())
         .containsOnly(
-            entry("test", "AbstractArrayTests,ArrayTest,BindTests,JdbiTestCase,TestJdbi"),
+            entry(
+                "test", "BindTest,TestJdbi,AbstractArrayTests,AbstractBindTests,AbstractJdbiTest"),
             entry("surefire.failIfNoSpecifiedTests", "false"));
+  }
+
+  // A module whose tests are partly Kotlin keeps running them all: its Java sources may be only
+  // helpers, and src/test/kotlin is not yet a test root when the extension looks.
+  @Test
+  void injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection(@TempDir final Path dir)
+      throws IOException {
+    final MavenProject project = project();
+    write(dir.resolve("src/test/java/com/example/TypeConversionHelper.java"));
+    write(dir.resolve("src/test/kotlin/com/example/ExtensionsTest.kt"));
+    project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties()).isEmpty();
   }
 
   // A module that names its own includes (a @Suite) keeps its classes in the selection, after the

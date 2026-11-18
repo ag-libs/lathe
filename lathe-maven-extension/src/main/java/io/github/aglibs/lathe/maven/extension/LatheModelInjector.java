@@ -4,7 +4,9 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.stream.Stream;
@@ -33,6 +35,10 @@ final class LatheModelInjector {
   // How many classes a capture-only run selects: enough that a few it does not run (abstract
   // bases sort first by name: AbstractFooTests) still leave one that starts the test JVM.
   private static final int CAPTURE_CLASSES = 5;
+  private static final String ABSTRACT_PREFIX = "Abstract";
+  private static final String JAVA_ROOT_NAME = "java";
+  private static final List<String> OTHER_TEST_LANGUAGE_EXTENSIONS =
+      List.of(".kt", ".groovy", ".scala");
   private static final String INIT_GOAL = "init";
   private static final String INIT_EXECUTION_ID = "lathe-init";
   private static final String SYNC_EXECUTION_ID = "lathe-sync";
@@ -101,46 +107,79 @@ final class LatheModelInjector {
   // Surefire reads its test selection from the module's properties when the build names none, and
   // it replaces the module's includes. Nothing is compiled yet, so the classes come from the test
   // sources, a few of them: Surefire starts no JVM for a selection it does not run (an abstract
-  // base class, a test helper), and one of several is enough. The names Surefire's default
-  // includes match come first, each part in name order; a module whose tests are generated or not
-  // Java keeps running them all.
+  // base class, a test helper), and one of several is enough. A module whose tests are generated,
+  // or partly in another language, keeps running them all: its Java sources may be only helpers.
   void injectCaptureClass(final MavenProject project) {
     final Properties properties = project.getProperties();
     if (properties.containsKey(SUREFIRE_TEST_PROPERTY)) {
       return;
     }
 
-    final List<String> names =
-        project.getTestCompileSourceRoots().stream()
-            .flatMap(
-                root ->
-                    IOUtil.unchecked(
-                        () -> FileUtil.walkFiles(Path.of(root), LatheModelInjector::isTypeSource))
-                        .stream())
-            .map(FileUtil::javaTypeName)
-            .sorted()
-            .distinct()
-            .toList();
-    if (names.isEmpty()) {
+    final List<Path> roots = project.getTestCompileSourceRoots().stream().map(Path::of).toList();
+    if (hasOtherLanguageSources(roots)) {
       return;
     }
 
     final List<String> selection =
-        Stream.concat(
-                names.stream().filter(LatheModelInjector::isSurefireTestName),
-                names.stream().filter(name -> !isSurefireTestName(name)))
+        roots.stream()
+            .flatMap(
+                root ->
+                    IOUtil.unchecked(
+                        () -> FileUtil.walkFiles(root, LatheModelInjector::isTypeSource))
+                        .stream())
+            .map(FileUtil::javaTypeName)
+            .distinct()
+            .sorted(
+                Comparator.comparingInt(LatheModelInjector::captureRank)
+                    .thenComparing(Comparator.naturalOrder()))
             .limit(CAPTURE_CLASSES)
             .toList();
+    if (selection.isEmpty()) {
+      return;
+    }
+
     properties.setProperty(SUREFIRE_TEST_PROPERTY, String.join(",", selection));
     properties.setProperty(SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY, "false");
   }
 
-  // Surefire's default includes, by simple name: Test*, *Test, *Tests and *TestCase.
-  private static boolean isSurefireTestName(final String name) {
-    return name.startsWith("Test")
-        || name.endsWith("Test")
-        || name.endsWith("Tests")
-        || name.endsWith("TestCase");
+  // The names Surefire's default includes match (Test*, *Test, *Tests, *TestCase) first, an
+  // abstract base's by its usual name (AbstractFooTests) after them, then the rest.
+  private static int captureRank(final String name) {
+    final boolean testName =
+        name.startsWith("Test")
+            || name.endsWith("Test")
+            || name.endsWith("Tests")
+            || name.endsWith("TestCase");
+    if (!testName) {
+      return 2;
+    }
+
+    return name.startsWith(ABSTRACT_PREFIX) ? 1 : 0;
+  }
+
+  // Kotlin, Groovy or Scala test sources beside the Java ones: in a test root, or, for a root laid
+  // out as src/<set>/java, in its source set (src/test/kotlin, which a build helper adds as a root
+  // only later in the build). No other parent: one may be the whole module, build output included.
+  private static boolean hasOtherLanguageSources(final List<Path> roots) {
+    return roots.stream()
+        .flatMap(root -> Stream.of(root, javaRootSourceSet(root)))
+        .filter(Objects::nonNull)
+        .distinct()
+        .anyMatch(
+            dir ->
+                !IOUtil.unchecked(
+                        () -> FileUtil.walkFiles(dir, LatheModelInjector::isOtherLanguageSource))
+                    .isEmpty());
+  }
+
+  private static Path javaRootSourceSet(final Path root) {
+    final Path name = root.getFileName();
+    return name != null && JAVA_ROOT_NAME.equals(name.toString()) ? root.getParent() : null;
+  }
+
+  private static boolean isOtherLanguageSource(final Path path) {
+    final String name = path.getFileName().toString();
+    return OTHER_TEST_LANGUAGE_EXTENSIONS.stream().anyMatch(name::endsWith);
   }
 
   private static boolean isTypeSource(final Path path) {
