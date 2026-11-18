@@ -42,6 +42,8 @@ public final class WorkspaceManifest {
   // batch markers have none.
   private final Map<Path, ContentFingerprint> buildFileFingerprints;
   private final List<Path> runnerClasspath;
+  // A runner for each JUnit platform version the workspace's tests use, by that version.
+  private final Map<String, List<Path>> runnerClasspaths;
   private final ResourceRootIndex resourceRoots;
   private final ReactorRewrite reactorRewrite;
   // The user-facing remediation when workspace.json is missing, has another schema version or
@@ -66,6 +68,7 @@ public final class WorkspaceManifest {
       final List<Path> buildFiles,
       final Map<Path, ContentFingerprint> buildFileFingerprints,
       final List<Path> runnerClasspath,
+      final Map<String, List<Path>> runnerClasspaths,
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
       final String loadProblem,
@@ -79,6 +82,7 @@ public final class WorkspaceManifest {
     this.buildFiles = buildFiles;
     this.buildFileFingerprints = buildFileFingerprints;
     this.runnerClasspath = runnerClasspath;
+    this.runnerClasspaths = runnerClasspaths;
     this.resourceRoots = resourceRoots;
     this.reactorRewrite = reactorRewrite;
     this.loadProblem = loadProblem;
@@ -109,6 +113,7 @@ public final class WorkspaceManifest {
         List.of(),
         Map.of(),
         List.of(),
+        Map.of(),
         ResourceRootIndex.empty(),
         ReactorRewrite.none(),
         loadProblem,
@@ -180,6 +185,12 @@ public final class WorkspaceManifest {
                       BuildFileData::fingerprint,
                       (first, ignored) -> first));
       final List<Path> runnerClasspath = data.runnerClasspath().stream().map(Path::of).toList();
+      final Map<String, List<Path>> runnerClasspaths =
+          data.runnerClasspaths().entrySet().stream()
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      Map.Entry::getKey,
+                      entry -> entry.getValue().stream().map(Path::of).toList()));
       final ReactorRewrite reactorRewrite =
           ReactorRewrite.of(
               workspaceRoot, PackedJars.withPackedTrees(workspaceRoot, data.outputs()));
@@ -193,6 +204,7 @@ public final class WorkspaceManifest {
           resolvedBuildFiles,
           buildFileFingerprints,
           runnerClasspath,
+          runnerClasspaths,
           ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
           reactorRewrite,
           null,
@@ -284,6 +296,10 @@ public final class WorkspaceManifest {
 
   public List<Path> runnerClasspath() {
     return runnerClasspath;
+  }
+
+  public Map<String, List<Path>> runnerClasspaths() {
+    return runnerClasspaths;
   }
 
   // The dependency jars and the JDK the workspace compiles against, with their sources.

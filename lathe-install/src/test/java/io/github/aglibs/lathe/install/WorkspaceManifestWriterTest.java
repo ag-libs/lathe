@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,7 +63,8 @@ class WorkspaceManifestWriterTest {
         List.of("pom.xml"),
         List.of(),
         List.of(output),
-        TOOL);
+        TOOL,
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -110,7 +112,8 @@ class WorkspaceManifestWriterTest {
         List.of("pom.xml"),
         List.of(),
         List.of(),
-        TOOL);
+        TOOL,
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -138,7 +141,8 @@ class WorkspaceManifestWriterTest {
         List.of("pom.xml"),
         List.of(),
         List.of(),
-        TOOL);
+        TOOL,
+        Map.of());
 
     final var data =
         Json.read(
@@ -162,7 +166,8 @@ class WorkspaceManifestWriterTest {
         List.of("pom.xml"),
         List.of(),
         List.of(),
-        TOOL);
+        TOOL,
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -179,7 +184,8 @@ class WorkspaceManifestWriterTest {
         List.of("pom.xml"),
         List.of(),
         List.of(),
-        TOOL);
+        TOOL,
+        Map.of());
 
     // Same content: the rewrite is skipped but the mtime is bumped; the content stays
     // byte-identical.
@@ -205,7 +211,16 @@ class WorkspaceManifestWriterTest {
             Path.of("/cache/jdk"));
 
     WorkspaceManifestWriter.write(
-        workspaceRoot, deps, jdk, null, List.of(), List.of("pom.xml"), List.of(), List.of(), TOOL);
+        workspaceRoot,
+        deps,
+        jdk,
+        null,
+        List.of(),
+        List.of("pom.xml"),
+        List.of(),
+        List.of(),
+        TOOL,
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);

@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +34,8 @@ public final class WorkspaceManifestWriter {
       final List<String> buildFiles,
       final List<ResourceRootData> resourceRoots,
       final List<OutputData> outputs,
-      final Path buildTool) {
+      final Path buildTool,
+      final Map<String, List<String>> runnerClasspaths) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
@@ -45,7 +47,8 @@ public final class WorkspaceManifestWriter {
             fingerprinted(workspaceRoot, buildFiles),
             resourceRoots,
             outputs,
-            buildTool.toString());
+            buildTool.toString(),
+            runnerClasspaths);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     try {
       if (jdkSource.home() != null) {

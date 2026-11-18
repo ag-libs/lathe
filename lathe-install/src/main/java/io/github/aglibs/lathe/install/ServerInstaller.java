@@ -11,9 +11,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -22,6 +25,21 @@ import org.slf4j.LoggerFactory;
 public final class ServerInstaller {
 
   private static final Logger LOG = LoggerFactory.getLogger(ServerInstaller.class);
+  private static final String PLATFORM_GROUP = "org.junit.platform";
+  private static final String JUPITER_GROUP = "org.junit.jupiter";
+  private static final String LAUNCHER_ARTIFACT = LatheLayout.JUNIT_PLATFORM_LAUNCHER;
+  private static final String ENGINE_ARTIFACT = "junit-jupiter-engine";
+  private static final String PLATFORM_COMMONS =
+      "%s:%s".formatted(PLATFORM_GROUP, LatheLayout.JUNIT_PLATFORM_COMMONS);
+  private static final String JUPITER_API = "%s:junit-jupiter-api".formatted(JUPITER_GROUP);
+  // JUnit 5's Jupiter runs on platform 1.x; from JUnit 6 on, both share one version.
+  private static final int JUNIT_5_PLATFORM_MAJOR = 1;
+  private static final int JUNIT_SHARED_VERSION_MAJOR = 6;
+  // Versions that parse, newest first, then those that do not, in their given order.
+  private static final Comparator<Optional<Version>> NEWEST_FIRST =
+      Comparator.comparing(
+          (Optional<Version> version) -> version.orElse(null),
+          Comparator.nullsLast(Comparator.<Version>reverseOrder()));
 
   // jdk.compiler internals the MCP launcher grants to ALL-UNNAMED: it runs entirely on the
   // classpath, so its in-process javac is in the unnamed module there.
@@ -109,7 +127,11 @@ public final class ServerInstaller {
     try {
       return FileUtil.subdirectories(serversDir).stream()
           .filter(path -> serversDir.equals(path.getParent()))
-          .flatMap(path -> versionOf(path).map(version -> Map.entry(version, path)).stream())
+          .flatMap(
+              path ->
+                  parsedVersion(path.getFileName().toString())
+                      .map(version -> Map.entry(version, path))
+                      .stream())
           .max(Map.Entry.comparingByKey())
           .map(Map.Entry::getValue)
           .orElse(null);
@@ -118,9 +140,9 @@ public final class ServerInstaller {
     }
   }
 
-  private static Optional<Version> versionOf(final Path versionDir) {
+  private static Optional<Version> parsedVersion(final String version) {
     try {
-      return Optional.of(Version.parse(versionDir.getFileName().toString()));
+      return Optional.of(Version.parse(version));
     } catch (final IllegalArgumentException e) {
       return Optional.empty();
     }
@@ -210,33 +232,91 @@ public final class ServerInstaller {
     return List.copyOf(classpath);
   }
 
+  // A runner for each JUnit platform version among the coordinates, by that version: the launcher
+  // at it, and the engine of the newest Jupiter of its generation when there is one (a JUnit 4
+  // module's vintage engine is on its own test classpath). A module replays on the runner of the
+  // platform its own test classpath holds, so a reactor on JUnit 5 and 6 at once runs both.
+  public Map<String, List<Path>> resolveRunnerClasspaths(
+      final Collection<String> externalCoordinates) throws SyncException {
+    final Path runnerJar = resolveRunnerJar();
+    final List<String> jupiterVersions = versionsOf(externalCoordinates, JUPITER_API);
+    final var runners = new LinkedHashMap<String, List<Path>>();
+    for (final String platform :
+        versionsOf(externalCoordinates, PLATFORM_COMMONS).stream().distinct().toList()) {
+      final var classpath = new ArrayList<Path>();
+      classpath.add(runnerJar);
+      classpath.addAll(resolveTransitiveJars(PLATFORM_GROUP, LAUNCHER_ARTIFACT, platform));
+      final Optional<String> jupiter =
+          jupiterVersions.stream().filter(version -> sameGeneration(platform, version)).findFirst();
+      if (jupiter.isPresent()) {
+        classpath.addAll(resolveTransitiveJars(JUPITER_GROUP, ENGINE_ARTIFACT, jupiter.get()));
+      }
+
+      runners.put(platform, List.copyOf(classpath));
+    }
+
+    return Map.copyOf(runners);
+  }
+
+  // A reactor may hold several JUnit versions (a module, or a dependency, on another): the newest
+  // Jupiter, and the newest platform of its generation, so the launcher and engine go together.
   private List<Path> resolveJUnitSupportJars(final Collection<String> externalCoordinates)
       throws SyncException {
-    final String platformVersion =
-        versionOf(externalCoordinates, "org.junit.platform:junit-platform-commons");
     final String jupiterVersion =
-        versionOf(externalCoordinates, "org.junit.jupiter:junit-jupiter-api");
+        versionsOf(externalCoordinates, JUPITER_API).stream().findFirst().orElse(null);
+    final String platformVersion =
+        jupiterVersion == null
+            ? null
+            : versionsOf(externalCoordinates, PLATFORM_COMMONS).stream()
+                .filter(platform -> sameGeneration(platform, jupiterVersion))
+                .findFirst()
+                .orElse(null);
     if (platformVersion == null || jupiterVersion == null) {
       LOG.debug("[sync] no JUnit Jupiter dependency detected — skipping runner support jars");
       return List.of();
     }
 
     final var jars = new ArrayList<Path>();
-    jars.addAll(
-        resolveTransitiveJars("org.junit.platform", "junit-platform-launcher", platformVersion));
-    jars.addAll(resolveTransitiveJars("org.junit.jupiter", "junit-jupiter-engine", jupiterVersion));
+    jars.addAll(resolveTransitiveJars(PLATFORM_GROUP, LAUNCHER_ARTIFACT, platformVersion));
+    jars.addAll(resolveTransitiveJars(JUPITER_GROUP, ENGINE_ARTIFACT, jupiterVersion));
     return List.copyOf(jars);
   }
 
-  // The version of groupId:artifactId among groupId:artifactId:version coordinates.
-  private static String versionOf(
+  // The versions of groupId:artifactId among groupId:artifactId:version coordinates, newest first
+  // as versions (as text, 1.10.3 sorts before 6.1.3); one that does not parse comes after them,
+  // so it is still used when it is the only one.
+  private static List<String> versionsOf(
       final Collection<String> coordinates, final String groupArtifact) {
     final String prefix = "%s:".formatted(groupArtifact);
     return coordinates.stream()
         .filter(gav -> gav.startsWith(prefix))
         .map(gav -> gav.substring(prefix.length()))
-        .findFirst()
-        .orElse(null);
+        .sorted(Comparator.comparing(ServerInstaller::parsedVersion, NEWEST_FIRST))
+        .toList();
+  }
+
+  // Jupiter 5 runs on platform 1; from 6 on, platform and Jupiter share their version. A version
+  // whose major is not a number is taken to match, as nothing tells otherwise.
+  private static boolean sameGeneration(final String platform, final String jupiter) {
+    final OptionalInt platformMajor = major(platform);
+    final OptionalInt jupiterMajor = major(jupiter);
+    if (platformMajor.isEmpty() || jupiterMajor.isEmpty()) {
+      return true;
+    }
+
+    final int jupiterGeneration = jupiterMajor.getAsInt();
+    return platformMajor.getAsInt()
+        == (jupiterGeneration < JUNIT_SHARED_VERSION_MAJOR
+            ? JUNIT_5_PLATFORM_MAJOR
+            : jupiterGeneration);
+  }
+
+  private static OptionalInt major(final String version) {
+    try {
+      return OptionalInt.of(Integer.parseInt(version.split("\\.", 2)[0]));
+    } catch (final NumberFormatException e) {
+      return OptionalInt.empty();
+    }
   }
 
   private List<Path> resolveTransitiveJars(

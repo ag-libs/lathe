@@ -107,6 +107,10 @@ public final class LatheLayout {
   public static final String STYLE_SHARED_FILE = "lathe-style.json";
   public static final String TEST_RUNNER_MAIN_CLASS =
       "io.github.aglibs.lathe.runner.LatheTestRunner";
+  // JUnit's platform artifacts, whose jars name a test runner's platform version: the launcher a
+  // sync resolves for it, and the commons every JUnit Platform test classpath holds.
+  public static final String JUNIT_PLATFORM_LAUNCHER = "junit-platform-launcher";
+  public static final String JUNIT_PLATFORM_COMMONS = "junit-platform-commons";
 
   // What users and agents run to refresh an already-synced workspace: the script the build wrote,
   // which knows the build tool. Every remediation below and the MCP instructions compose it.
