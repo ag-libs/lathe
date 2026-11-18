@@ -1526,36 +1526,6 @@ None yet.
 
 ---
 
-## WS-43 — Lathe's Gradle plugin breaks a build that reads every configuration's dependencies while configuring
-
-**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; Kafka cannot be set up)
-
-**Kind: bug**
-
-**Value: high — Size: S–M**
-
-**Affects: Gradle setup (`:LatheInit`, `latheSync`) and every build of the project with Lathe's plugin applied.**
-
-Found by the exploratory round on Apache Kafka (2026-11-18), on 0.3.1 and on main `cdf57f1`.
-
-### Observed behaviour
-
-Kafka's `build.gradle` (line 536), in `afterEvaluate`, walks every resolvable configuration's `incoming.dependencies` to look for Mockito.
-That runs the `withDependencies` callback of Lathe's sources configuration (`LatheProjectPlugin.registerLibraries`, line 510), which resolves the test compile classpath at once, while other projects are still being configured.
-Kafka then fails to configure: `Could not resolve all dependencies for configuration ':coordinator-common:compileClasspath'` … `Value for :server-common project components has not been calculated yet`.
-Without Lathe's init script, `./gradlew :clients:dependencies` succeeds.
-
-### Fix direction
-
-Do not resolve anything when the sources configuration's dependencies are only listed: add the source dependencies when the facts task resolves them (a detached configuration in the task, or a provider the task forces), not in `withDependencies`.
-A TestKit fixture whose build reads every configuration's `incoming.dependencies` in `afterEvaluate`.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
