@@ -1589,36 +1589,6 @@ A module run covering several source sets needs one launch per source set.
 
 ---
 
-## TE-21 — A JUnit 6 build's tests replay on the JUnit 5 runner and fail before any test runs
-
-**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; every test run of a JUnit 6 build fails)
-
-**Kind: bug**
-
-**Value: high — Size: S**
-
-**Affects: editor test runs and MCP `run_test` on a build that uses JUnit 6.**
-
-Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
-
-### Observed behaviour
-
-Keycloak's `services` tests run on JUnit 6.1.3 (its captured class path lists `junit-platform-commons-6.1.3.jar` and `junit-jupiter-api-6.1.3.jar`).
-The workspace's `runnerClasspath` names `junit-platform-launcher-1.10.3.jar` and `junit-jupiter-engine-5.10.3.jar`, the fallback versions.
-`run_test` on `VaultTranscriberTest` then fails in discovery, after 76 s: `NoSuchMethodError: 'boolean org.junit.platform.commons.util.ReflectionUtils.returnsVoid(java.lang.reflect.Method)'`, the 5.10 engine calling into the 6.1 platform commons.
-The manifest came from a whole-reactor sync stopped after the root project's sync, which is the step that writes it in a full build too.
-
-### Fix direction
-
-Likely cause, unconfirmed: the runner's versions are read from the reactor's external artifacts when the root project syncs, and those do not include the modules' test-scoped JUnit.
-Take the platform and Jupiter versions from the captured test class paths, per module if they differ, and never pair a launcher and engine of another major version with the project's platform.
-
-### Regression targets
-
-None yet.
-
----
-
 ## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry
 
 **Status: deferred** (triaged 2026-11-18: custom test annotations built on `@Testable` are mostly in large projects like Kafka; the fix is small and clear when it is picked)

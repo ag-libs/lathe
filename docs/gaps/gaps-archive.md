@@ -12263,6 +12263,45 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-21 — A JUnit 6 build's tests replay on the JUnit 5 runner and fail before any test runs — done
+
+**Status: done** (2026-11-18, PR #385)
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on a build that uses JUnit 6.**
+
+Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Keycloak's `services` tests run on JUnit 6.1.3 (its captured class path lists `junit-platform-commons-6.1.3.jar` and `junit-jupiter-api-6.1.3.jar`).
+The workspace's `runnerClasspath` names `junit-platform-launcher-1.10.3.jar` and `junit-jupiter-engine-5.10.3.jar`, the fallback versions.
+`run_test` on `VaultTranscriberTest` then fails in discovery, after 76 s: `NoSuchMethodError: 'boolean org.junit.platform.commons.util.ReflectionUtils.returnsVoid(java.lang.reflect.Method)'`, the 5.10 engine calling into the 6.1 platform commons.
+The manifest came from a whole-reactor sync stopped after the root project's sync, which is the step that writes it in a full build too.
+
+### Fix direction
+
+Likely cause, unconfirmed: the runner's versions are read from the reactor's external artifacts when the root project syncs, and those do not include the modules' test-scoped JUnit.
+Take the platform and Jupiter versions from the captured test class paths, per module if they differ, and never pair a launcher and engine of another major version with the project's platform.
+
+### Resolution
+
+The sync resolves a test runner for each JUnit platform version the reactor's test classpaths hold: the launcher, and the engine of the newest Jupiter of its generation (1.x for Jupiter 5, the same version from 6 on), or the launcher alone for the vintage engine.
+`workspace.json` records them by version, and each module replays on the runner of the platform its own test classpath names, so a reactor on JUnit 5 and 6 at once runs both; Gradle files each project's aligned runner under its launcher's version.
+The first fix alone (the newest version, compared as a version, rather than the first by name) broke a JUnit 5 module beside JUnit 6 ones, which the per-version runners fix.
+
+### Regression targets
+
+- `ServerInstallerTest.resolveRunnerClasspath_severalJUnitVersions_resolvesTheHighest`
+- `ServerInstallerTest.resolveRunnerClasspath_newerPlatformThanJupiter_launcherOfJupitersGeneration`
+- `ServerInstallerTest.resolveRunnerClasspath_versionThatDoesNotParse_stillResolved`
+- `ServerInstallerTest.resolveRunnerClasspaths_platformWithoutJupiter_launcherAlone`
+- `RunCoordinatorTest.runnerFor_moduleOnEitherPlatform_itsOwnRunnerElseTheWorkspaces`
+- `FileUtilTest.jarVersion_repositoryJarOrOther_versionOrNone`
+
+---
+
 ## TE-23 — A test JVM run outside its module's directory writes its capture under the wrong module — done
 
 **Status: done** (2026-11-18)
