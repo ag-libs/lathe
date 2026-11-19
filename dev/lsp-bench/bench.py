@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Runs the pre-registered queries (README.md) against Lathe and jdtls on one project and records
-readiness, build or import time, memory, CPU, latency and correctness. Run ./setup.sh first.
+"""Runs the pre-registered measurements (README.md) against Lathe and jdtls on one project, one group
+per session (the 2026-11-19 amendment), and records readiness, build or import time, memory, CPU,
+latency and correctness. Run ./setup.sh first.
 
-    python3 dev/lsp-bench/bench.py spring-petclinic                  # 3 cold + 3 warm runs per server, -Xmx2G
-    python3 dev/lsp-bench/bench.py spring-petclinic --runs 1 --servers lathe
-    python3 dev/lsp-bench/bench.py spring-petclinic --heap 4G        # both at another heap: a labelled variant
-    python3 dev/lsp-bench/bench.py spring-petclinic --prime          # downloads, before measuring
+    python3 dev/lsp-bench/bench.py spring-petclinic --prime           # downloads, before measuring
+    python3 dev/lsp-bench/bench.py spring-petclinic --group start     # 2 cold + 4 warm runs per server, parity first
+    python3 dev/lsp-bench/bench.py spring-petclinic --group errors    # errors against the build, typing
+    python3 dev/lsp-bench/bench.py spring-petclinic --group changes   # branch switch, build-file change
+    python3 dev/lsp-bench/bench.py helidon --group start --servers jdtls   # a group split per server
+    python3 dev/lsp-bench/bench.py spring-petclinic --heap 4G         # both at another heap: a labelled variant
 
-Results go to dev/lsp-bench/results/<time>-<project>/: a JSON file and the server's log per run,
-environment.json, and report.md.
+What is right or wrong is checked once and only timings are repeated: a start session's cold runs time
+the build and the first start, its warm runs the reopening and memory, each answering the queries once;
+its first warm run also checks the rest of feature parity (completion, rename, the import fix,
+formatting, folding, debugging a main method).
+
+Results go to dev/lsp-bench/results/<time>-<project>-<group>/: a JSON file and the server's log per
+run, environment.json, and report.md; `report.py --headline` sums up every session.
 """
 import argparse
 import datetime
@@ -36,6 +44,8 @@ import measure as M  # noqa: E402
 import projects as P  # noqa: E402
 import queries as Q  # noqa: E402
 import servers as S  # noqa: E402
+import stage2  # noqa: E402
+from debug_probe import DapClient  # noqa: E402
 from lsp import LspClient  # noqa: E402
 
 RESULTS = BENCH / "results"
@@ -299,8 +309,9 @@ def import_fix(client, repo, case):
 
 
 def scenario_results(client, repo, case, reps, run, suffixes):
-    """One row per timing a scenario returns, as the amendment reports them; a run is right when every
-    timing is there and its last value, when it is a bool, is true."""
+    """One row per timing a scenario returns, as the amendment reports them, over 1 + reps runs (every
+    time kept, for the range); a run is right when every timing is there and its last value, when it
+    is a bool, is true."""
     runs = [run(client, repo, case) for _ in range(1 + reps)]
     right = all(r[-1] for r in runs) if isinstance(runs[0][-1], bool) else True
     rows = {}
@@ -308,7 +319,7 @@ def scenario_results(client, repo, case, reps, run, suffixes):
         times = [r[index] for r in runs]
         done = [t for t in times if t is not None]
         rows["%s: %s" % (case["name"], suffix)] = {
-            "method": case["method"], "supported": True,
+            "method": case["method"], "supported": True, "times": times,
             "first_ms": times[0], "median_ms": statistics.median(done[1:] or done) if done else None,
             "p95_ms": p95(done[1:] or done) if done else None,
             "error": None if len(done) == len(times) else "not within %ss" % DIAGNOSTICS_TIMEOUT_S,
@@ -374,6 +385,7 @@ def run_cases(client, repo, cases, capabilities, reps, request_timeout, on_timeo
         results[case["name"]] = {
             "method": case["method"],
             "supported": True,
+            "times": [first_ms] + times,
             "first_ms": first_ms,
             "median_ms": statistics.median(times) if times else None,
             "p95_ms": p95(times) if times else None,
@@ -415,8 +427,9 @@ def initialize(client, spec, repo, name, timeout):
 
 # A branch switch: how long it may take to be right again, how often it is checked, and how long the
 # answers must stay unchanged before the poll stops.
-SWITCH_DEADLINE_S = 600
-BUILD_DEADLINE_S = 600
+# Five minutes, from the 2026-11-19 amendment (was ten).
+SWITCH_DEADLINE_S = 300
+BUILD_DEADLINE_S = 300
 # An outside change starts once the server has no work in progress and has sent nothing for this
 # long, as a user sees it go idle: jdtls answers queries while its first build still runs, and a
 # project update sent then is applied without revalidating the open files.
@@ -464,7 +477,9 @@ def switch_checks(repo, project, ref, pin):
     none). Main-module files first, then any."""
     main = project["main_module"] + "/"
     status = [line.split("\t") for line in git(repo, "diff", "--name-status", "--no-renames", ref, pin).splitlines()]
-    java = [(s, p) for s, p in status if p.endswith(".java") and "/src/main/java/" in "/" + p]
+    # package-info.java and module-info.java declare no type that search could find.
+    java = [(s, p) for s, p in status if p.endswith(".java") and "/src/main/java/" in "/" + p
+            and Path(p).name not in ("package-info.java", "module-info.java")]
 
     def first(kind):
         files = sorted((not p.startswith(main), p) for s, p in java if s == kind)
@@ -511,11 +526,11 @@ def switch_answers(client, repo, checks, timeout):
             errors_in(client, Q.uri(repo, checks["watched"])) or 0)
 
 
-def checkout(repo, rev, reapply):
+def checkout(repo, rev, reapply, pinned):
     """Checks out a commit and re-applies the benchmark's own edits to it (the Lathe extension, a
-    project's appended lines), as a user's setup survives a branch switch."""
+    project's appended lines and replacements), as a user's setup survives a branch switch."""
     git(repo, "checkout", "-q", "-f", "--detach", rev)
-    reapply()
+    reapply(pinned)
 
 
 def reload(client, repo, texts):
@@ -555,7 +570,7 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
     # The answers just before the switch: a check whose answer does not change tells nothing.
     before = switch_answers(client, repo, checks, args.request_timeout)
     polls = []
-    checkout(repo, ref, reapply)
+    checkout(repo, ref, reapply, pinned=False)
     # From the checkout's return, as the user sees it; the benchmark's own edits differ per server.
     start = time.monotonic()
     try:
@@ -571,7 +586,7 @@ def branch_switch(client, repo, project, cases, args, fresh_answers, reapply):
             time.sleep(SWITCH_POLL_S)
         expected = fresh_answers(checks)
     finally:
-        checkout(repo, pin, reapply)
+        checkout(repo, pin, reapply, pinned=True)
     # Back at the pin, the server must catch up again before it stops: what it saves is the warm
     # run's start, and a warm run that starts from the older commit's index measures nothing.
     back = time.monotonic()
@@ -665,9 +680,20 @@ def jdtls_update(client, repo, project, log):
     watched-file event), so the user runs :JdtUpdateConfig and picks the main module's project."""
     projects = client.request("workspace/executeCommand", {"command": "java.project.getAll", "arguments": []},
                               timeout=BUILD_DEADLINE_S) or []
-    uri = next(u for u in projects if urllib.parse.unquote(u).rstrip("/").endswith("/" + project["main_module"]))
+    # The main module's own directory: a single-module project's is the root ("."), which no suffix names.
+    wanted = (repo / project["main_module"]).resolve()
+    uri = next((u for u in projects if Path(urllib.parse.unquote(urllib.parse.urlparse(u).path)).resolve() == wanted),
+               None)
+    if uri is None:
+        raise RuntimeError("jdtls lists no project at %s (java.project.getAll: %s)" % (project["main_module"], projects))
     client.notify("java/projectConfigurationsUpdate", {"identifiers": [{"uri": uri}]})
     return {"prompt_ms": None, "step_ms": 0}
+
+
+def step_failed(step):
+    """Whether the user's step after a build-file change failed: Lathe's sync script exited non-zero.
+    jdtls's step is a notification, which cannot fail visibly."""
+    return step.get("step_exit") not in (None, 0)
 
 
 def build_change(client, repo, project, cases, update, log):
@@ -690,9 +716,13 @@ def build_change(client, repo, project, cases, update, log):
         start = time.monotonic()
         build_file.write_text(built.replace(change["after"], change["after"] + change["insert"], 1), encoding="utf-8")
         result.update(update(client, repo, project, log))
-        # From the build file's change: the user's step is part of the wait. Settled, as a typed
-        # error's: a server may clear a file's diagnostics before it compiles it again.
-        result["fixed_ms"] = until_errors(client, target, lambda n: n == 0, BUILD_DEADLINE_S, SETTLED_S, start)
+        if step_failed(result):
+            # What a user sees when the sync fails: the dependency never arrives, so nothing is waited for.
+            result["fixed_ms"] = None
+        else:
+            # From the build file's change: the user's step is part of the wait. Settled, as a typed
+            # error's: a server may clear a file's diagnostics before it compiles it again.
+            result["fixed_ms"] = until_errors(client, target, lambda n: n == 0, BUILD_DEADLINE_S, SETTLED_S, start)
         if result["fixed_ms"] is None:
             published = [m["params"] for _, m in client.diagnostics.times if m["params"].get("uri") == target]
             result["errors_left"] = [d["message"] for d in published[-1]["diagnostics"] if d.get("severity") == 1]
@@ -700,11 +730,236 @@ def build_change(client, repo, project, cases, update, log):
         build_file.write_text(built, encoding="utf-8")
         Q.change(client, repo, path, original, save=True)
     # The same step again, so the server stops in step with the pinned build, the next run's start;
-    # stopped before it is idle, jdtls abandons the update.
-    update(client, repo, project, log)
-    wait_quiet(client, BUILD_DEADLINE_S)
+    # stopped before it is idle, jdtls abandons the update. A step that fails leaves nothing to wait for.
+    if not step_failed(update(client, repo, project, log)):
+        wait_quiet(client, BUILD_DEADLINE_S)
     result["unshown_prompts"] = client.actionable.qsize()
     return result
+
+
+def is_typing(case):
+    return case["method"] == "textDocument/publishDiagnostics"
+
+
+def is_editing(case):
+    return case["method"] in ("textDocument/completion", "textDocument/rename") or "import_removed" in case
+
+
+# What each kind of run does once its server is ready (the 2026-11-19 amendment): a cold run only times
+# the first answer; a warm run answers the navigation queries once, for its memory; the first warm run
+# of a start session checks the rest of feature parity too; an errors run types errors and compares
+# the diagnostics with the build's; branch and build run an outside change.
+PLANS = ("ready", "start", "parity", "errors", "branch", "build")
+
+
+def plan_cases(cases, plan):
+    if plan == "ready":
+        return []
+    if plan == "errors":
+        return [c for c in cases if is_typing(c)]
+    navigation = [c for c in cases if not is_typing(c) and not is_editing(c)]
+    return navigation + [c for c in cases if is_editing(c)] if plan == "parity" else navigation
+
+
+def statement_line(repo, path, statement):
+    """The 1-based line of the first line holding a statement."""
+    lines = (repo / path).read_text(encoding="utf-8").split("\n")
+    found = next((i for i, line in enumerate(lines) if statement in line), None)
+    if found is None:
+        raise RuntimeError("%r not found in %s" % (statement, path))
+    return found + 1
+
+
+def ensure_open(client, repo, path, opened):
+    if path not in opened:
+        client.notify("textDocument/didOpen", {"textDocument": {"uri": Q.uri(repo, path), "languageId": "java",
+                                                                  "version": 1,
+                                                                  "text": (repo / path).read_text(encoding="utf-8")}})
+        opened.append(path)
+
+
+def dap_send(dap, command, arguments):
+    """A DAP request whose response is read later, as a launch's comes after configurationDone."""
+    dap._seq += 1
+    dap._send({"seq": dap._seq, "type": "request", "command": command, "arguments": arguments})
+    return dap._seq
+
+
+def dap_response(dap, seq, timeout):
+    with dap._resp_cv:
+        if not dap._resp_cv.wait_for(lambda: seq in dap._responses, timeout=timeout):
+            raise TimeoutError("no DAP response to request %d" % seq)
+        response = dap._responses.pop(seq)
+    if not response.get("success", False):
+        raise RuntimeError("DAP request failed: %s" % response.get("message"))
+    return response
+
+
+def initialized_or_failed(dap, launch, timeout):
+    """Waits for the initialized event, raising at once when the launch is refused (a class path
+    java-debug cannot resolve) instead of waiting out the timeout for an event that never comes."""
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        with dap._resp_cv:
+            refused = launch in dap._responses and not dap._responses[launch].get("success", False)
+            message = dap._responses[launch].get("message") if refused else None
+        if refused:
+            raise RuntimeError("java-debug refused the launch: %s" % message)
+        try:
+            if dap._events.get(timeout=0.5).get("event") == "initialized":
+                return
+        except queue.Empty:
+            pass
+    raise TimeoutError("no DAP 'initialized' event")
+
+
+DAP_INITIALIZE = {"clientID": "lsp-bench", "linesStartAt1": True, "columnsStartAt1": True, "pathFormat": "path"}
+DEBUG_TIMEOUT_S = 180
+
+
+def stop_at(dap, file, line, timeout):
+    """setBreakpoints, configurationDone, then the line the debuggee stopped at."""
+    dap.request("setBreakpoints", {"source": {"path": str(file)}, "breakpoints": [{"line": line}]})
+    dap.request("configurationDone")
+    stopped = dap.wait_event("stopped", timeout)
+    frames = dap.request("stackTrace", {"threadId": stopped["body"]["threadId"]})["body"]["stackFrames"]
+    return stopped["body"].get("reason"), frames[0].get("line") if frames else None
+
+
+def lathe_debug(client, repo, file, line, timeout):
+    """What :LatheDebug does on a main class: lathe.debug.main launches it suspended under a JDWP agent
+    and opens a DAP host, which nvim-dap attaches to; then the breakpoint."""
+    main, start = None, time.monotonic()
+    # Discovery answers from the file's analysis, so it is empty until the just-opened file compiled,
+    # as lathe.nvim's test adapter waits for the file's first publish.
+    while main is None and time.monotonic() - start < timeout:
+        runnables = client.request("workspace/executeCommand", {"command": "lathe.runnables.file",
+                                                                "arguments": [{"uri": file.as_uri()}]}, timeout=timeout)
+        main = next((t for t in runnables or [] if t.get("kind") == 0), None)
+        if main is None:
+            time.sleep(0.5)
+    if main is None:
+        raise RuntimeError("no main class discovered in %s" % file.name)
+    started = client.request("workspace/executeCommand", {"command": "lathe.debug.main", "arguments": [
+        {"moduleRel": main["moduleRel"], "mainClass": main["parentId"], "token": "lsp-bench"}]}, timeout=timeout)
+    dap = None
+    try:
+        # Inside the try: the debuggee already waits under JDWP, and the finally cancels it.
+        dap = DapClient("127.0.0.1", started["dapPort"], timeout=timeout)
+        dap.request("initialize", dict(DAP_INITIALIZE, adapterID="lathe"))
+        for attempt in range(40):
+            try:
+                dap.request("attach", {"hostName": "127.0.0.1", "port": started["jdwpPort"]})
+                break
+            except RuntimeError as e:
+                if "refused" not in str(e).lower() or attempt == 39:
+                    raise
+                time.sleep(0.5)
+        dap.wait_event("initialized")
+        return stop_at(dap, file, line, timeout)
+    finally:
+        try:
+            client.request("workspace/executeCommand", {"command": "lathe.run.cancel",
+                                                        "arguments": [{"token": "lsp-bench"}]}, timeout=30)
+        except Exception:  # the debuggee may have ended already
+            pass
+        if dap:
+            dap.close()
+
+
+def jdtls_debug(client, repo, file, line, timeout):
+    """What nvim-jdtls and nvim-dap do on a main class: java-debug resolves the main class, its class
+    path and Java, starts a debug session, and nvim-dap launches it there; then the breakpoint."""
+    def command(name, *arguments):
+        return client.request("workspace/executeCommand", {"command": name, "arguments": list(arguments)},
+                              timeout=timeout)
+
+    mains = command("vscode.java.resolveMainClass") or []
+    main = next((m for m in mains if Path(m.get("filePath", "")).resolve() == file.resolve()), None)
+    if main is None:
+        raise RuntimeError("java-debug resolved no main class in %s" % file.name)
+    java = command("vscode.java.resolveJavaExecutable", main["mainClass"], main["projectName"])
+    modules, classes = command("vscode.java.resolveClasspath", main["mainClass"], main["projectName"])
+    dap = DapClient("127.0.0.1", int(command("vscode.java.startDebugSession")), timeout=timeout)
+    try:
+        dap.request("initialize", dict(DAP_INITIALIZE, adapterID="java"))
+        launch = dap_send(dap, "launch", {"type": "java", "request": "launch", "name": "lsp-bench",
+                                          "mainClass": main["mainClass"], "projectName": main["projectName"],
+                                          "javaExec": java, "modulePaths": modules, "classPaths": classes,
+                                          "cwd": str(repo), "console": "internalConsole", "args": ""})
+        initialized_or_failed(dap, launch, timeout)
+        stopped = stop_at(dap, file, line, timeout)
+        dap_response(dap, launch, timeout)
+        return stopped
+    finally:
+        try:
+            dap.request("disconnect", {"terminateDebuggee": True}, timeout=30)
+        except Exception:  # the debuggee may have ended already
+            pass
+        dap.close()
+
+
+def extra_checks(client, repo, project, cases, capabilities, spec, server, timeout):
+    """Feature parity's rows that are no query of the case file, checked once: formatting answers,
+    folding gives ranges, and a main method stops at a breakpoint on its first statement."""
+    probe_file = next(c for c in cases.CASES if c["name"] == cases.PROBE)["at"][0]
+    document = {"textDocument": {"uri": Q.uri(repo, probe_file)}}
+    rows = {}
+
+    def row(name, method, supported, run):
+        if not supported:
+            rows[name] = {"method": method, "supported": False}
+            return
+        start = time.monotonic()
+        try:
+            correct, text, error = (*run(), None)
+        except Exception as e:  # a failure is a result to record
+            correct, text, error = False, "", str(e)
+        ms = (time.monotonic() - start) * 1000
+        rows[name] = {"method": method, "supported": True, "times": [ms], "first_ms": ms, "median_ms": None,
+                      "p95_ms": None, "error": error, "correct": correct,
+                      "answer": {"names": [], "locations": [], "text": text}}
+
+    def formatting():
+        edits = client.request("textDocument/formatting", dict(document, options={"tabSize": 4, "insertSpaces": True}),
+                               timeout=timeout)
+        # LSP's answer is TextEdit[] or null: null is "nothing to change".
+        return edits is None or isinstance(edits, list), "%d edit(s)" % len(edits or [])
+
+    def folding():
+        ranges = client.request("textDocument/foldingRange", document, timeout=timeout) or []
+        return bool(ranges), "%d range(s)" % len(ranges)
+
+    row("formatting: the definition query's file", "textDocument/formatting",
+        capabilities.get("documentFormattingProvider"), formatting)
+    row("foldingRange: the definition query's file", "textDocument/foldingRange",
+        capabilities.get("foldingRangeProvider"), folding)
+    if project.get("debug_main"):
+        path, statement = project["debug_main"]
+        debug = lathe_debug if server == "lathe" else jdtls_debug
+
+        def debugs():
+            # Inside the row, so a statement not found fails this row only, not the parity run.
+            line = statement_line(repo, path, statement)
+            ensure_open(client, repo, path, Q.opened_files(cases.CASES))
+            reason, at = debug(client, repo, repo / path, line, DEBUG_TIMEOUT_S)
+            return reason == "breakpoint" and at == line, "stopped (%s) at line %s, breakpoint at %d" % (reason, at, line)
+
+        row("debug: a breakpoint in main", "debug/main",
+            server == "lathe" or bool(spec["init_options"].get("bundles")), debugs)
+    return rows
+
+
+def last_published(client, target):
+    """A file's last published diagnostics; None before any publish."""
+    published = [msg["params"] for _, msg in client.diagnostics.times if msg["params"].get("uri") == target]
+    return published[-1]["diagnostics"] if published else None
+
+
+def settle(client, edit, target):
+    """Ms from an edit until the file's diagnostics settle (none for SETTLED_S after the last publish
+    for its version); None when nothing is published within the timeout."""
+    return until_published(client, edit, target, lambda _diagnostics: True, settled=True)
 
 
 def tree_state(repo):
@@ -712,12 +967,12 @@ def tree_state(repo):
     return git(repo, "rev-parse", "HEAD").strip(), set(git(repo, "status", "--porcelain").splitlines())
 
 
-def run_server(server, name, project, cases, mode, args, out_dir, label):
+def run_server(server, name, project, cases, mode, plan, args, out_dir, label):
     repo = S.repo_of(name)
     state = S.WORK / "state" / name / server
     log = out_dir / ("%s.log" % label)
     before = set(M.processes())
-    result = {"server": server, "mode": mode, "cases": {}}
+    result = {"server": server, "mode": mode, "plan": plan, "cases": {}}
     result["build_ms"] = S.SERVERS_BY_NAME[server]["prepare"](name, project, mode, state, log)
     # What the build left running (Gradle's worker processes outlive it) is not the server's.
     M.stop_leftovers(before, str(repo))
@@ -726,12 +981,14 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
     tree = tree_state(repo)
     if tree[0] != git(repo, "rev-parse", project["commit"]).strip():
         result["error"] = "the clone is at %s, not the pinned commit" % tree[0][:10]
+        result["not_started"] = True
         return result
     spec = S.SERVERS_BY_NAME[server]["spec"](name, project, state, args.heap, jdtls_overrides(args))
     if server == "lathe":
         result["server_version"] = S.lathe_server_version(repo)
         if result["server_version"] != S.LATHE_VERSION:
             result["error"] = "the build wrote Lathe %s, not %s" % (result["server_version"], S.LATHE_VERSION)
+            result["not_started"] = True
             return result
     probe = next(c for c in cases.CASES if c["name"] == cases.PROBE)
 
@@ -748,10 +1005,25 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
         imported_at = client.started_at()
         result["import_ms"] = (imported_at - start) * 1000 if server == "jdtls" and imported_at else None
         result["startup_peak_mb"] = sampler.peak_mb(until=ready_at)
-        if args.scenario:
+        if plan in ("branch", "build", "errors"):
             result["quiet_ms"] = wait_quiet(client, args.ready_timeout)
-        if args.scenario == "branch":
+        if plan == "branch":
+            cached = args.fresh_answers.setdefault(server, {})
+
             def fresh_answers(checks):
+                """Once per server and session: a fresh start's answers at the switched commit do not
+                change between the session's repeats."""
+                if project["branch_ref"] not in cached:
+                    try:
+                        cached[project["branch_ref"]] = fresh_start_answers(checks)
+                    except Exception as e:  # kept, so the session's other repeats fail at once
+                        cached[project["branch_ref"]] = RuntimeError(
+                            "the fresh start at %s gave no right answer: %s" % (project["branch_ref"], e))
+                if isinstance(cached[project["branch_ref"]], Exception):
+                    raise cached[project["branch_ref"]]
+                return cached[project["branch_ref"]]
+
+            def fresh_start_answers(checks):
                 """What a fresh start of the same server answers at the switched commit, once its answers
                 stop changing (its indexes warm up after it is ready). Its own empty state: two jdtls
                 sharing one Eclipse workspace leave the running one's index broken."""
@@ -761,9 +1033,11 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
                                                                jdtls_overrides(args))
                 fresh = launch(fresh_spec, repo, name, log)
                 try:
-                    initialize(fresh, fresh_spec, repo, name, args.ready_timeout)
+                    # Within the switch's own deadline: a fresh start that never answers right must
+                    # not hold the session for the whole ready timeout.
+                    initialize(fresh, fresh_spec, repo, name, SWITCH_DEADLINE_S)
                     open_files(fresh, repo, [probe, checks["references"], {"file": checks["watched"]}])
-                    wait_ready(fresh, repo, probe, time.monotonic(), args.ready_timeout, args.request_timeout)
+                    wait_ready(fresh, repo, probe, time.monotonic(), SWITCH_DEADLINE_S, args.request_timeout)
                     answers, since = None, time.monotonic()
                     while time.monotonic() - since < FRESH_STEADY_S:
                         latest = switch_answers(fresh, repo, checks, args.request_timeout)
@@ -774,22 +1048,38 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
                 finally:
                     fresh.stop()
             result["branch_switch"] = branch_switch(client, repo, project, cases, args, fresh_answers,
-                                                    lambda: S.SERVERS_BY_NAME[server]["edits"](name, project))
+                                                    lambda pinned: S.SERVERS_BY_NAME[server]["edits"](name, project,
+                                                                                                      pinned))
             return result
-        if args.scenario == "build":
+        if plan == "build":
             result["build_change"] = build_change(client, repo, project, cases,
                                                   lathe_update if server == "lathe" else jdtls_update, log)
             return result
-        result["cases"] = run_cases(client, repo, cases.CASES, init.get("capabilities", {}), args.reps,
+        capabilities = init.get("capabilities", {})
+        if plan == "errors":
+            result["cases"] = run_cases(client, repo, plan_cases(cases.CASES, plan), capabilities,
+                                        max(0, args.typing_reps - 1), args.request_timeout,
+                                        lambda: thread_dumps(sampler.pids, out_dir, label))
+            seen = stage2.server_errors(client, repo, args.truth, last_published,
+                                        lambda edit, target: settle(client, edit, target),
+                                        lambda: wait_quiet(client, args.ready_timeout))
+            result["errors_vs_build"] = {"server": seen, "compare": stage2.compare(args.truth, seen)}
+            return result
+        result["cases"] = run_cases(client, repo, plan_cases(cases.CASES, plan), capabilities, args.reps,
                                     args.request_timeout,
                                     lambda: thread_dumps(sampler.pids, out_dir, label),
-                                    (lambda edit: S.compiles_with(name, project, edit)) if args.compile_renames else None)
+                                    (lambda edit: S.compiles_with(name, project, edit))
+                                    if plan == "parity" and args.compile_renames else None)
+        if plan == "parity":
+            result["cases"].update(extra_checks(client, repo, project, cases, capabilities, spec, server,
+                                                args.request_timeout))
         result["query_peak_mb"] = sampler.peak_mb(since=ready_at)
         time.sleep(5)
         sampler.sample()
         result["idle_mb"] = sampler.last_mb()
     except Exception as e:  # the run is recorded as failed with its reason; the next one still runs
-        result["error"] = str(e)
+        # repr when the message is empty (StopIteration): an empty error would read as none.
+        result["error"] = str(e) or repr(e)
     finally:
         sampler.stop()
         result["cpu_s"] = sampler.cpu_s()
@@ -816,8 +1106,13 @@ def jdtls_overrides(args):
     return overrides
 
 
+def load_limit():
+    """Half the cores, as the release battery marks a loaded run (the 2026-11-19 amendment)."""
+    return os.cpu_count() / 2
+
+
 def overloaded():
-    return os.getloadavg()[0] > os.cpu_count()
+    return os.getloadavg()[0] > load_limit()
 
 
 def machine():
@@ -855,20 +1150,42 @@ def slept_s():
     return time.clock_gettime(time.CLOCK_BOOTTIME) - time.clock_gettime(time.CLOCK_MONOTONIC)
 
 
-def measured_run(server, name, project, cases, mode, args, out_dir, label):
-    """One run, repeated when the machine was busy before or after it, or slept during it
-    (README.md, Runs)."""
+# How long a run waits for the machine to settle before it starts, and how often it looks.
+IDLE_WAIT_S = 600
+IDLE_POLL_S = 15
+
+
+def wait_idle():
+    """Waits until the 1-minute load is under the limit, as the last run's own build and indexing
+    still count in it for a minute or more; the load when it gave up, or None once idle."""
+    start = time.monotonic()
+    while overloaded():
+        if time.monotonic() - start > IDLE_WAIT_S:
+            return os.getloadavg()[0]
+        time.sleep(IDLE_POLL_S)
+    return None
+
+
+def measured_run(server, name, project, cases, mode, plan, args, out_dir, label):
+    """One run on a machine that is idle when it starts, repeated when the machine stayed busy or
+    slept during it (README.md, Runs). The load after a run is recorded, not judged: the run's own
+    build, import and indexing raise it."""
     for attempt in range(1, LOAD_ATTEMPTS + 1):
+        busy = wait_idle()
+        if busy is not None:
+            print("  load %.1f above %g (half the cores) for %d s, run not started" % (busy, load_limit(), IDLE_WAIT_S),
+                  flush=True)
+            continue
         load_before = os.getloadavg()
         slept_before = slept_s()
-        result = run_server(server, name, project, cases, mode, args, out_dir, label)
+        result = run_server(server, name, project, cases, mode, plan, args, out_dir, label)
         result["load"] = {"before": load_before, "after": os.getloadavg(), "attempt": attempt}
         if slept_s() - slept_before > 1:
             print("  the machine slept during the run, run discarded", flush=True)
             continue
-        if not (load_before[0] > os.cpu_count() or overloaded()):
-            return result
-        print("  load above %d cores, run discarded" % os.cpu_count(), flush=True)
+        return result
+    # A run the machine kept from happening is the harness's failure, not the server's (not_started).
+    result = {"server": server, "mode": mode, "plan": plan, "cases": {}, "not_started": True}
     result["error"] = "no attempt ran on an idle, awake machine"
     return result
 
@@ -889,6 +1206,11 @@ def summary_line(result):
         return "build-file change: error shown %s, prompt %s, step %s (exit %s), no error %s  %s" % (
             seconds(build.get("error_shown_ms")), seconds(build.get("prompt_ms")), seconds(build.get("step_ms")),
             build.get("step_exit", "-"), seconds(build.get("fixed_ms")), result.get("error") or "")
+    errors = result.get("errors_vs_build")
+    if errors:
+        c = errors["compare"]
+        return "errors against the build: %d false, %d of %d injected missed, %d unsettled  %s" % (
+            c["false_errors"], c["missed_injected"], c["injected"], len(c["unsettled"]), result.get("error") or "")
     correct = sum(1 for c in result["cases"].values() if c.get("correct"))
     supported = sum(1 for c in result["cases"].values() if c.get("supported"))
     # Rows, not cases: a typed-error case reports two.
@@ -902,6 +1224,31 @@ def summary_line(result):
 
 # Both servers at the heap vscode-java gives jdtls: the 2026-11-11 amendment.
 DEFAULT_HEAP = "2G"
+# A session's groups and the most a session should take (the 2026-11-19 amendment).
+GROUPS = ("start", "errors", "changes")
+SESSION_MINUTES = 45
+
+
+def session_runs(server, args, scenarios):
+    """(mode, plan, label) of each run of one server in a session: a priming run is one cold start; a
+    start session's cold runs, then its warm runs, the first of them the parity run; an errors session's
+    one warm run; a changes session's runs of each outside change."""
+    if args.prime:
+        return [("cold", "ready", "%s-prime" % server)]
+    if args.group == "start":
+        return ([("cold", "ready", "%s-cold-%d" % (server, i + 1)) for i in range(args.cold)]
+                + [("warm", "parity" if i == 0 else "start", "%s-warm-%d" % (server, i + 1)) for i in range(args.warm)])
+    if args.group == "errors":
+        return [("warm", "errors", "%s-errors" % server)]
+    return [("warm", scenario, "%s-%s-%d" % (server, scenario, i + 1))
+            for scenario in scenarios for i in range(args.change_reps)]
+
+
+def positive(text):
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return value
 
 
 def main():
@@ -909,19 +1256,26 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     parser = argparse.ArgumentParser()
     parser.add_argument("project", choices=sorted(P.PROJECTS))
+    parser.add_argument("--group", choices=GROUPS, default="start",
+                        help="the session's group of measurements (the 2026-11-19 amendment)")
     parser.add_argument("--servers", default="lathe,jdtls")
-    parser.add_argument("--runs", type=int, default=3, help="cold runs and warm runs per server")
-    parser.add_argument("--reps", type=int, default=10, help="timed repeats of each query")
+    parser.add_argument("--cold", type=int, default=2, help="start group: cold runs per server")
+    parser.add_argument("--warm", type=int, default=4,
+                        help="start group: warm runs per server, the first the parity run (memory comes from the rest)")
+    parser.add_argument("--reps", type=int, default=0,
+                        help="timed repeats of each query after its first answer (default 0: answered once)")
+    parser.add_argument("--typing-reps", type=positive, default=10, help="errors group: runs of each typed error")
+    parser.add_argument("--change-reps", type=int, default=3,
+                        help="changes group: runs of each outside change per server")
     parser.add_argument("--heap", default=DEFAULT_HEAP,
                         help="the same -Xmx for every server (default %s, vscode-java's for jdtls)" % DEFAULT_HEAP)
     parser.add_argument("--ready-timeout", type=int, default=1800, help="seconds")
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
     parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
                         help="a jdtls setting changed from vscode-java's defaults: a labelled variant")
-    parser.add_argument("--scenario", choices=["branch", "build"],
-                        help="run an outside-change scenario after the server is ready, instead of the queries")
-    parser.add_argument("--compile-renames", action="store_true",
-                        help="apply each rename case's edit to a copy of the project and compile it there")
+    parser.add_argument("--compile-renames", action=argparse.BooleanOptionalAction, default=True,
+                        help="start group's parity run: apply each rename's edit to a copy of the project and "
+                             "compile it there (default on)")
     parser.add_argument("--baseline", action="store_true",
                         help="first time the build the project costs without Lathe (once per project)")
     parser.add_argument("--prime", action="store_true",
@@ -933,16 +1287,31 @@ def main():
     cases = importlib.import_module("cases.%s" % project["cases"])
     if not S.repo_of(name).is_dir():
         raise SystemExit("no clone of %s: run setup.sh first" % name)
-    needs = {"branch": "branch_ref", "build": "build_change"}.get(args.scenario)
-    if needs and needs not in project:
-        raise SystemExit("%s has no %s in projects.py: no %s scenario" % (name, needs, args.scenario))
+    scenarios = [s for s, needs in (("branch", "branch_ref"), ("build", "build_change")) if needs in project]
+    if args.group == "changes" and not scenarios:
+        raise SystemExit("%s has no branch_ref or build_change in projects.py: no changes group" % name)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    suffix = "-prime" if args.prime else "-heap" + args.heap if args.heap != DEFAULT_HEAP else ""
+    suffix = "-prime" if args.prime else "-" + args.group
+    suffix += "-heap" + args.heap if args.heap != DEFAULT_HEAP else ""
     if args.jdtls_setting:
         suffix += "-variant"
     out_dir = RESULTS / ("%s-%s%s" % (stamp, name, suffix))
     out_dir.mkdir(parents=True)
-    (out_dir / "environment.json").write_text(json.dumps(environment(name, project, args), indent=2))
+    session_start = time.monotonic()
+    env = environment(name, project, args)
+    (out_dir / "environment.json").write_text(json.dumps(env, indent=2))
+    args.fresh_answers = {}
+    args.truth = None
+    if "jdtls" in args.servers.split(",") and args.group == "start" and not args.prime and not S.java_debug_bundles():
+        raise SystemExit("no java-debug bundle in %s: run setup.sh, or jdtls's debug row reads unsupported"
+                         % S.JAVA_DEBUG)
+    if args.group == "errors" and not args.prime:
+        print("%-14s" % "build truth", end="", flush=True)
+        args.truth = stage2.build_truth(name, project, cases.CASES, out_dir / "build-truth.log")
+        (out_dir / "build_truth.json").write_text(json.dumps(args.truth, indent=2))
+        print("%d files, %d with the error injected, %d skipped, %d unanswered" % (
+            len(args.truth["files"]), len(args.truth["injected"]), len(args.truth["skipped"]),
+            len(args.truth["unanswered"])), flush=True)
     if args.baseline:
         print("%-14s" % "baseline", end="", flush=True)
         before = set(M.processes())
@@ -952,15 +1321,19 @@ def main():
             {"build_ms": build_ms, "command": " ".join(S.baseline_command(project, S.repo_of(name)))}, indent=2))
         print("build %6.1fs" % (build_ms / 1000), flush=True)
     for server in args.servers.split(","):
-        for i in range(1 if args.prime else args.runs):
-            for mode in ("cold",) if args.prime else ("cold", "warm"):
-                label = "%s-%s-%d" % (server, mode, i + 1)
-                print("%-14s" % label, end="", flush=True)
-                result = measured_run(server, name, project, cases, mode, args, out_dir, label)
-                (out_dir / ("%s.json" % label)).write_text(json.dumps(result, indent=2))
-                print(summary_line(result), flush=True)
-                if result.get("tree_changed"):
-                    print("%-14s TREE CHANGED: %s" % ("", "; ".join(result["tree_changed"])), flush=True)
+        for mode, plan, label in session_runs(server, args, scenarios):
+            print("%-14s" % label, end="", flush=True)
+            result = measured_run(server, name, project, cases, mode, plan, args, out_dir, label)
+            (out_dir / ("%s.json" % label)).write_text(json.dumps(result, indent=2))
+            print(summary_line(result), flush=True)
+            if result.get("tree_changed"):
+                print("%-14s TREE CHANGED: %s" % ("", "; ".join(result["tree_changed"])), flush=True)
+    minutes = (time.monotonic() - session_start) / 60
+    env["session_minutes"] = round(minutes, 1)
+    env["load_after"] = os.getloadavg()
+    (out_dir / "environment.json").write_text(json.dumps(env, indent=2))
+    if minutes > SESSION_MINUTES:
+        print("session took %.0f min, more than %d: split it per server (--servers)" % (minutes, SESSION_MINUTES))
     print("results in", out_dir)
     subprocess.run([sys.executable, str(BENCH / "report.py"), str(out_dir)], check=True)
 

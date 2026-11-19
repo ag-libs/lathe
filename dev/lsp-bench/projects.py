@@ -3,6 +3,8 @@ builds, and its query file under cases/.
 
 `main_module` is where the position rules (README.md, Queries) take their candidates: the module the
 project's other modules build on, named before the project's first run.
+`debug_main` is the main method the feature-parity check debugs (the 2026-11-19 amendment): its file
+and its first statement, where the breakpoint goes; the main module's own, or the nearest a project has.
 """
 import os
 from pathlib import Path
@@ -22,6 +24,26 @@ PROJECTS = {
         "jdk": CORRETTO_25,
         "cases": "spring_petclinic",
         "main_module": ".",
+        # The branch switch's older commit: 65 back along the main line, the nearest at least 50 back
+        # whose diff adds or deletes a main-code type (the 2026-11-19 amendment): 50 back touches none.
+        "branch_ref": "b21890c126",
+        # The build-file change: AssertJ, which the Spring Boot BOM manages and the local repository
+        # holds through the test starters, on the main code's class path only once it is declared.
+        # After the class line's blank line, as spring-javaformat, which the sync's build validates, wants.
+        "build_change": {"build_file": "pom.xml", "after": "  <dependencies>\n",
+                         "insert": "    <dependency>\n      <groupId>org.assertj</groupId>\n"
+                                   "      <artifactId>assertj-core</artifactId>\n    </dependency>\n",
+                         "file": "src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java",
+                         "anchor": "public class PetClinicApplication {\n\n",
+                         "use": "\tpublic static final Class<?> BENCH_ASSERTJ = org.assertj.core.api.Assertions.class;\n\n"},
+        "debug_main": ("src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java",
+                       "SpringApplication.run(PetClinicApplication.class, args);"),
+        # WS-40: its nohttp check scans the whole project from the second build on and fails on the SBOM
+        # Lathe's class mirror copies into .lathe/; Lathe's checkout takes the user guide's workaround
+        # (troubleshooting.md), .lathe/ excluded as target/ is (README.md, the 2026-11-19 amendment).
+        "lathe_replacements": {"pom.xml": (
+            "<excludes>**/.git/**/*,**/.idea/**/*,**/target/**/,**/.flattened-pom.xml,**/*.class</excludes>",
+            "<excludes>**/.git/**/*,**/.idea/**/*,**/target/**/,**/.flattened-pom.xml,**/*.class,**/.lathe/**/*</excludes>")},
     },
     "dropwizard": {
         "url": GIT_HOME / "dropwizard",
@@ -44,6 +66,8 @@ PROJECTS = {
         # Its pgpverify check rejects an unsigned artifact; Lathe's releases are signed, the pinned
         # local build is not, so Lathe's build allows its group unsigned and verifies all the rest.
         "lathe_appends": {"pgp-keys-map.list": "io.github.ag-libs = noSig\n"},
+        "debug_main": ("dropwizard-example/src/main/java/com/example/helloworld/HelloWorldApplication.java",
+                       "new HelloWorldApplication().run(args);"),
     },
     "helidon": {
         "url": GIT_HOME / "helidon",
@@ -58,6 +82,12 @@ PROJECTS = {
         # annotation processors) only from a repository, so its runs install Helidon first, into a
         # repository of their own; the install is timed as jdtls's build.
         "jdtls_install": True,
+        # Its compiler plugin takes those processors from the reactor, so the errors-against-the-build
+        # builds (stage2.py) build the whole reactor, not the target modules and what they depend on.
+        "errors_whole_reactor": True,
+        # The webserver's own main lives in its tests' application module; its config is generated.
+        "debug_main": ("webserver/tests/imperative/src/main/java/io/helidon/webserver/tests/imperative/ImperativeMain.java",
+                       "Config config = Services.get(Config.class);"),
     },
     "hibernate-orm": {
         "url": GIT_HOME / "hibernate-orm",

@@ -4,7 +4,7 @@
 
 **In progress.** The harness is built (`dev/lsp-bench/`: the pre-registration #134, the navigation queries #135, the editing loop and outside changes 2026-11-11 to 11-13) and was trialled on every project.
 On 2026-11-19 the published comparison was narrowed to five headline items, recorded as the 2026-11-19 amendment of `dev/lsp-bench/README.md`.
-Next: what the headline still lacks (below), a trial round on the release candidate, then the measured round on the release.
+The harness for the five items is built (below); next, a trial round on the release candidate, then the measured round on the release.
 The measured results stay out of the repository until the comparison page is written.
 
 ## The rule
@@ -54,14 +54,14 @@ Setup is stated in the page's introduction as counts, not as an item: the lines 
   | Measurement | Runs per server and project | Why |
   |---|---|---|
   | A cold run: the build, then the first start (jdtls: its `mvn install` on Helidon, then its first start on an empty workspace, which imports) | 2 | minutes long, with little spread |
-  | A warm run: reopening the built project, with peak and idle memory | 3 | memory comes from the same runs |
+  | A warm run: reopening the built project, with peak and idle memory | 4 | the first is also the parity run; memory comes from the other 3 |
   | A typed error until it shows, and until it is gone | 10 | seconds each |
   | A branch switch; a build-file change | 3, with a 5-minute deadline | each can take minutes |
   | Feature parity; errors against the build | 1 | the same answer every run |
 
   A cold run gives the time to a first answer, its build and its first start shown apart; a warm run gives the reopening time.
   Every timed value is the median with its minimum and maximum, never one run.
-- A run is discarded and repeated when the machine's load exceeds half its cores or the machine suspends.
+- A run starts only once the machine's load is under half its cores, and is repeated when the machine suspends during it.
 - A latency counts only for a right answer; a wrong answer is reported as wrong, not as fast.
 - Every right answer is fixed before the first measured run: the queries and their checks, the injected errors, the branch-switch commit and the dependency.
 - Every published value links to its raw results and to the one command that reproduces it.
@@ -90,16 +90,30 @@ Estimated from the stage 1 runs:
 About 4 hours in 7 sessions: spring-petclinic in one, Dropwizard in two (start and parity; the other two groups), Helidon in four (start and parity once per server; errors and typing; outside changes).
 The trial round runs everything once, in about 1½ hours.
 
-## What is left to build
+## The harness
 
-About 4 days, and 1–2 more for what the trial round finds:
-- **Sessions in `bench.py`:** a `--group` option, a run count per measurement as in the table above (today `--runs` sets the cold and warm runs together, and every query is repeated in every run), and one results file per session (about 1 day).
-- **Item 3 against the build (`stage2.py`):** as measurement 4 of the 2026-11-11 amendment fixes it: a clean build, and a build with the same type error injected into each file a query of the project points at (`-fae`, so every module compiles); the build's javac errors and warnings read per file and compared with each server's published diagnostics on those files, both ways, warnings only in the categories the build enables; the headline counts errors, warnings are on the page (about 2 days).
-  The typing part exists (the editing loop's diagnostics while typing).
-- **Item 5's extra rows:** formatting answers with edits, folding with ranges, and a main method runs and stops at a breakpoint, each checked once per project; rename's compile check and the import fix exist (about ½ day).
-- **The headline in `report.py`:** the README table below, from every session's results, each value linked to its raw file and its command (about ½ day).
+`dev/lsp-bench/`, one session per command:
 
-Branch switch and build-file change (item 4), memory and ready times (items 1 and 2) and the navigation queries (item 5) are built.
+```bash
+python3 -I dev/lsp-bench/bench.py <project> --prime             # downloads, not measured
+python3 -I dev/lsp-bench/bench.py <project> --group start       # items 1, 2 and 5
+python3 -I dev/lsp-bench/bench.py <project> --group errors      # item 3
+python3 -I dev/lsp-bench/bench.py <project> --group changes     # item 4
+python3 -I dev/lsp-bench/bench.py helidon --group start --servers jdtls   # a group split per server
+python3 -I dev/lsp-bench/report.py --headline dev/lsp-bench/results/*     # the five items per project
+python3 -I dev/lsp-bench/selfcheck.py                           # the logic, without servers, in seconds
+```
+
+- **Sessions (`bench.py --group`):** a run count per measurement, as in the table above; a cold run times the build and the first start only, a warm run answers the queries once, and the first warm run of a start session checks the rest of parity; the branch switch's fresh-start answers are taken once per session.
+- **Errors against the build (`stage2.py`):** a worktree of the clone at the pinned commit, built offline with no Lathe; the injected error is `static final int LATHE_BENCH = "x";` after the opening line of each target file's first top-level class, interface or record (an enum or annotation type is left out); the injected build runs in passes, each dropping the injections the last reported, as Maven skips the modules downstream of a failed one.
+  Each server then gets the same files: as opened, and with the same error typed in, unsaved, until its diagnostics settle.
+- **Parity's extra rows (`extra_checks`):** formatting answers, folding gives ranges, and a main method (`debug_main` in `projects.py`) stops at a breakpoint on its first statement: on Lathe through `lathe.debug.main` and its DAP host, on jdtls through the java-debug bundle (0.60.0, plugin 0.53.2), loaded in every jdtls run as a user who debugs has it.
+- **The headline (`report.py --headline`):** the five items per project, each value the median with its range, the setup counts from `setup/`, the parity table, and every value's result files and command.
+
+Trial sessions run on a snapshot of `main` stamped with its commit (`0.3.99-<commit>`, the amendment's rule), never the local `0.1.0-SNAPSHOT`; the 2026-11-19 trial ran on `0.3.99-0e2144a5`.
+Checked before that, on versions other than the round's pinned ones: the self-checks; the ground truth on spring-petclinic (three target files, each injection reported on its own line, no error on the clean build); and both debug flows on spring-petclinic, each stopping at the breakpoint (Lathe 0.3.1 with its older name for the runnables command, jdtls 1.51).
+The trial round runs them on the pinned versions.
+Lathe 0.3.1 advertises no formatter on spring-petclinic, whose style (spring-javaformat) it does not run, so that row would show Lathe unsupported there.
 
 ## The page
 
@@ -140,7 +154,7 @@ Each value is a median; its range and the command that reproduces it are on the 
 ## Order
 
 1. Finish the release QA (the MCP battery and the gaps).
-2. Build what is left above.
+2. Set up the round's machine (`setup.sh`, the clones and the pinned Lathe).
 3. A trial round on the release candidate, about 1½ hours: it tests the harness, and a loss it shows is fixed or filed before the release; its numbers are never published.
 4. The measured round on the release, about 4 hours in sessions of at most 45 minutes.
 5. The page.

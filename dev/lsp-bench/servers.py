@@ -27,6 +27,9 @@ LATHE_VERSION = os.environ.get("BENCH_LATHE_VERSION", "0.3.99-c15d3a55")
 # The Gradle plugin and the Lathe jars it resolves, copied from the build by setup.sh.
 LATHE_GRADLE_REPO = WORK / "lathe-gradle-repo"
 JDTLS = SERVERS / "jdtls"
+# The java-debug bundle nvim-jdtls users load for running and debugging (Mason's java-debug-adapter, as
+# the Extension Pack for Java gives it to vscode-java), unpacked by setup.sh from its pinned release.
+JAVA_DEBUG = SERVERS / "java-debug"
 JDTLS_JAVA_HOME = P.CORRETTO_25
 MAVEN = os.environ.get("BENCH_MAVEN", "/opt/maven-mvnd-1.0.3-linux-amd64/mvn/bin/mvn")
 LATHE_EXTENSION = """    <extension>
@@ -165,9 +168,11 @@ def baseline_build(name, project, log):
     return (time.monotonic() - start) * 1000
 
 
-def lathe_edits(name, project):
-    """What the benchmark changes in a checkout for Lathe: its Maven extension and a project's appended
-    lines. Safe to repeat, so a branch switch re-applies it to the commit it checks out."""
+def lathe_edits(name, project, pinned=True):
+    """What the benchmark changes in a checkout for Lathe: its Maven extension, a project's appended
+    lines, and a project's replacements (a workaround a Lathe user applies, as for WS-40). Safe to
+    repeat, so a branch switch re-applies it to the commit it checks out; a replacement whose text is
+    not there stops the session at the pinned commit, and is left out at another, whose file may differ."""
     repo = repo_of(name)
     if project["build"] == "maven" and "lathe-maven-extension" not in (
             (repo / ".mvn" / "extensions.xml").read_text(encoding="utf-8")
@@ -178,9 +183,19 @@ def lathe_edits(name, project):
         if line not in (target.read_text(encoding="utf-8") if target.exists() else ""):
             with open(target, "a", encoding="utf-8") as f:
                 f.write(line)
+    for path, (old, new) in project.get("lathe_replacements", {}).items():
+        target = repo / path
+        text = target.read_text(encoding="utf-8")
+        if new in text:
+            continue
+        if old not in text:
+            if not pinned:
+                continue
+            raise SystemExit("%s: the text lathe_replacements replaces is not in %s" % (name, path))
+        target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-def no_edits(name, project):
+def no_edits(name, project, pinned=True):
     """jdtls needs no change to a checkout."""
 
 
@@ -196,6 +211,13 @@ def lathe_prepare(name, project, mode, log):
         subprocess.run(lathe_build_command(project, repo), cwd=repo, env=build_env(project),
                        stdout=out, stderr=subprocess.STDOUT, check=True)
     return (time.monotonic() - start) * 1000
+
+
+def lathe_touched(repo):
+    """Whether Lathe's runs left the checkout changed: a tracked file edited, or .lathe/ there."""
+    status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo,
+                            capture_output=True, text=True).stdout.strip()
+    return bool(status) or (repo / ".lathe").exists()
 
 
 def lathe_server_version(repo):
@@ -247,10 +269,14 @@ def jdtls_config_dir():
 def jdtls_prepare(name, project, mode, state, log):
     """Cold: a fresh checkout and no jdtls workspace; the project installed first where jdtls needs
     it, timed in ms. Warm: what the last run left."""
+    repo = repo_of(name)
     if mode == "warm":
         state.mkdir(parents=True, exist_ok=True)
+        # jdtls never sees Lathe's checkout: the extension, a replaced file, .lathe/ and its build
+        # output go, as after a cold run's fresh checkout; jdtls's own state stays.
+        if lathe_touched(repo):
+            fresh_checkout(repo, project["commit"])
         return None
-    repo = repo_of(name)
     fresh_checkout(repo, project["commit"])
     shutil.rmtree(state, ignore_errors=True)
     state.mkdir(parents=True, exist_ok=True)
@@ -332,7 +358,16 @@ def jdtls_spec(name, project, state, heap, overrides=None):
     ]
     env = {**os.environ, "JAVA_HOME": JDTLS_JAVA_HOME}
     init_options = {"settings": settings, "extendedClientCapabilities": NVIM_JDTLS_CAPABILITIES}
+    # Loaded in every run, as a user who debugs has it in their config (the 2026-11-19 amendment).
+    bundles = java_debug_bundles()
+    if bundles:
+        init_options["bundles"] = bundles
     return {"cmd": cmd, "env": env, "init_options": init_options, "settings": settings}
+
+
+def java_debug_bundles():
+    """The java-debug plugin jar setup.sh unpacked, as nvim-jdtls passes it in `bundles`."""
+    return sorted(glob.glob(str(JAVA_DEBUG / "extension" / "server" / "com.microsoft.java.debug.plugin-*.jar")))
 
 
 def size_mb(path):
@@ -356,13 +391,15 @@ def tree_files(repo):
 
 
 def lathe_disk(name, state):
-    """Lathe's .lathe/ and the jars its launcher runs (shared by every project on one version)."""
+    """Lathe's .lathe/ and the jars its launcher runs (shared by every project on one version); the
+    files the benchmark itself replaced in (lathe_replacements) are its edits, not the server's."""
     repo = repo_of(name)
+    replaced = set(P.PROJECTS[name].get("lathe_replacements", {}))
     args = repo / ".lathe" / "lathe-server.args"
     jars = {p for line in (args.read_text(encoding="utf-8").split() if args.exists() else [])
             for p in line.split(os.pathsep) if p.endswith(".jar")}
     return {"state_mb": size_mb(repo / ".lathe"), "install_mb": sum(size_mb(j) for j in jars),
-            "tree": tree_files(repo)}
+            "tree": [p for p in tree_files(repo) if p not in replaced]}
 
 
 def jdtls_disk(name, state):
@@ -385,9 +422,11 @@ def versions(project):
         return out.stderr.splitlines()[0] if out.stderr else None
 
     tarballs = glob.glob(str(SERVERS / "jdt-language-server-*.tar.gz"))
+    bundles = java_debug_bundles()
     return {
         "lathe": LATHE_VERSION,
         "jdtls": os.path.basename(tarballs[0]) if tarballs else None,
+        "java_debug": os.path.basename(bundles[0]) if bundles else None,
         "build_jdk": java_version(project["jdk"]),
         "jdtls_jdk": java_version(JDTLS_JAVA_HOME),
     }

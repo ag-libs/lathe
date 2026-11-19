@@ -178,9 +178,38 @@ Then every row with its raw results and the command that reproduces it, the rows
   - **Running a test leaves the round.** Measurement 8 is not built, and few users of either server run tests from Neovim; the page states that Lathe replays the build's own launch as a fact, without a number.
   - **The projects** are spring-petclinic, Dropwizard and Helidon; Hibernate ORM and OpenMetadata keep their pinned queries but are not measured in this round.
   - **Correctness once, timings repeated.** What is right or wrong (feature parity, errors against the build, whether a change ends right) is checked once, as it does not vary between runs; only timings are repeated, replacing the 3 cold and 3 warm runs:
-    2 cold runs (the build and the first start, jdtls's first start being its import, after its `mvn install` on Helidon), each giving the time to a first answer with its parts shown; 3 warm runs, giving the reopening time and peak and idle memory; a typed error 10 times; the branch switch and the build-file change 3 times each, with a 5-minute deadline (was 10).
+    2 cold runs (the build and the first start, jdtls's first start being its import, after its `mvn install` on Helidon), each giving the time to a first answer with its parts shown; 4 warm runs, giving the reopening time, the first of them the parity run and the other 3 peak and idle memory (the parity run also debugs a main method, whose JVM counts as the server's); a typed error 10 times; the branch switch and the build-file change 3 times each, with a 5-minute deadline (was 10).
     The queries run once per server and project, for their answers, not repeated in every run.
     Every timed value is the median with its minimum and maximum.
-    A run is discarded when the load average exceeds half the core count (was the core count), as the release battery marks a run.
+    A run starts only once the 1-minute load average is under half the core count (was: discarded above the core count, before or after it), waiting up to 10 minutes; the load after a run is recorded, not judged, as the run's own build, import and indexing raise it.
   - **Sessions of at most 45 minutes**, each one project and one or more whole groups (start and parity; errors and typing; outside changes), so the round fits around a working day; a group longer than that runs one server per session; an interrupted session is discarded and run again, never resumed.
-  - **Setup is counted**, not described (measurement 10): the lines of Neovim configuration, the files downloaded and the commands run before each server answers its first query.
+  - **Setup is counted**, not described (measurement 10): the lines of Neovim configuration, the files downloaded and the commands run before each server answers its first query, from the minimal configs in `setup/` by the rule in `setup/README.md`.
+  - **What the code fixes**, before the round's first session:
+    - a branch switch's older commit is the 50th back along the main line, or the nearest one further back whose diff adds or deletes a main-code type (`package-info.java` and `module-info.java` declare none), so the switch changes what search finds: Dropwizard's (`e357826376`) and Helidon's (`c2fe76b86e`) are the 50th, spring-petclinic's is `b21890c126`, 65 back, as its 50th touches no type (found by the trial session);
+    - spring-petclinic's build-file change adds AssertJ, which the Spring Boot BOM manages and the test starters put in the local repository, used in `PetClinicApplication`;
+    - jdtls never runs on Lathe's checkout: an errors or changes session's runs are warm, so when Lathe's runs left the clone changed (the extension, a replaced file, `.lathe/`), jdtls's run starts from a fresh checkout of the pinned commit with its own state kept, and Lathe's next run builds again;
+    - a run the harness never started (the machine stayed busy, the clone at another commit, another Lathe version) is no answer of the server's: the headline leaves it out instead of counting it "never";
+    - a build-file change whose user step fails (Lathe's sync script exits non-zero) ends there: "never", with the step's exit code and the errors left, not a wait to the deadline for an error that can no longer clear;
+    - the branch switch's fresh start at the older commit, which gives the right answers, gets the switch's 5-minute deadline to be ready, not the ready timeout; a fresh start that never answers right fails the run with that reason, once per server and session;
+    - the main method each project debugs (`debug_main` in `projects.py`): spring-petclinic's `PetClinicApplication`, Dropwizard's `HelloWorldApplication`, Helidon's `ImperativeMain` (the webserver's own main is in its tests' application module), the breakpoint on its first statement;
+    - jdtls loads the java-debug bundle (`vscode-java-debug` 0.60.0, plugin 0.53.2) in every run, as a user who debugs has it in their config, and as the Extension Pack for Java gives it to vscode-java;
+    - the injected error of measurement 4 is `static final int LATHE_BENCH = "x";` after the opening line of the file's first top-level class, interface or record, where each accepts it; a file whose first top-level type is an enum or annotation type is left out; the build runs offline with no Lathe and the project's checks off, in passes, and Helidon's builds its whole reactor, as its compiler plugin takes the reactor's own processors;
+    - formatting counts as supported when the server answers the request on the definition query's file, edits or none; folding when it gives ranges; debugging when the main method stops at the breakpoint.
+  - **Which Lathe a trial runs: a snapshot of `main`, never the local `0.1.0-SNAPSHOT`.** A trial session before the release runs `main` built from a clean worktree and stamped with its commit, as the Servers table's pinned build is: `mvn versions:set -DnewVersion=0.3.99-<commit>`, then `mvn install -DskipTests` (`setup.sh`'s header), and `BENCH_LATHE_VERSION=0.3.99-<commit>` for the session.
+    The `0.1.0-SNAPSHOT` in a developer's `~/.m2` mixes jars of several commits, so a result taken on it names no build.
+    Every session records the version in `environment.json`, and its report and the headline print it, so a finding names the commit it was seen on.
+    The 2026-11-19 trial ran on `0.3.99-0e2144a5` (`main` at `0e2144a5`); its first sessions, on the published 0.3.1, tested only the harness, and their findings about Lathe are not taken as `main`'s.
+    The reported round runs on the release.
+  - **WS-40 on spring-petclinic, and its workaround.** Found by the 2026-11-19 trial session: from the second build on, petclinic's nohttp check fails, so Lathe's sync after the build-file change fails and the file never gets the new dependency.
+    The check is the `nohttp-checkstyle-validation` execution of `maven-checkstyle-plugin`, which scans `${basedir}` in `validate`, before the sync can run; it finds `http://` URLs in `.lathe/classes/META-INF/sbom/application.cdx.json`, the SBOM Lathe's class mirror copies.
+    The first build passes only because `.lathe/` does not exist yet.
+    The workaround is the user guide's ([troubleshooting.md](../../docs/guide/troubleshooting.md)): exclude `.lathe/` from that execution, as it already excludes `target/`:
+
+    ```xml
+    <excludes>**/.git/**/*,**/.idea/**/*,**/target/**/,**/.flattened-pom.xml,**/*.class,**/.lathe/**/*</excludes>
+    ```
+
+    Lathe's checkout of the project takes it (`lathe_replacements` in `projects.py`, applied with the Lathe extension by `lathe_edits`, again after every fresh checkout and branch switch); jdtls's checkout is left as it is, and the edit is not counted among the files a server writes into the tree.
+    It is one more step of Lathe's setup on that project, which its setup row and the page name.
+    Without it, Lathe's "right again after a dependency is added" on spring-petclinic is "never", and every sync after the first fails the same way.
+    When WS-40 is fixed, the replacement goes, and the round runs again on the release that fixes it.
