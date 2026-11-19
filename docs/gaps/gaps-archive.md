@@ -13871,6 +13871,38 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
+`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
+The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
+
+### Fix direction
+
+Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
+
+### Resolution
+
+`LatheChangeImpact` says what kind of family it holds (`Family`: `METHOD`, `TYPE`, `NONE`), read in the same worker request that finds a method's overrides, so `analyze_change` prints one line format per kind.
+A method keeps `overrides:`, `overridden by:` and `redeclared by:`; a type lists its subtypes as `subtypes:`; a field, variable or parameter, and no symbol, get no family line.
+
+### Regression targets
+
+- `McpTextTest.analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty`
+- `LatheEngineVerifyTest.analyzeChange_typeAndField_typeListsSubtypesFieldHasNoFamily`
+
+---
+
 ## MC-99 — `run_test` with a `method` but no `scope` runs the whole class — done
 
 **Status: done** (2026-11-19)

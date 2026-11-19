@@ -2314,35 +2314,6 @@ None yet.
 
 ---
 
-## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
-`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
-The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
-
-### Fix direction
-
-Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
-Still on main `dbbdabf1` (2026-11-19).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results
 
 **Status: deferred** (triaged 2026-11-18: low; the count is right, only the first lines are)
