@@ -744,6 +744,7 @@ The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `Han
 ### Fix direction
 
 Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
+Still on main `dbbdabf1` (2026-11-19): `JavadocReferences.visitReference` reports the whole reference as one span resolved to the member, so no offset inside it reaches a parameter type.
 
 ### Regression targets
 
@@ -1083,7 +1084,7 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ## CA-18 — Extract method's compile check runs no javac plugins, so it can offer a refactor that fails Error Prone
 
-**Status: accepted** (triaged 2026-11-17: keeping `var` is small and removes the case seen)
+**Status: deferred** (triaged 2026-11-19: keeping the caller's `var` does not remove the warning, which is on the extracted method's return type; no simple fix picks the type a plugin would accept)
 
 **Kind: bug**
 
@@ -1108,8 +1109,9 @@ The return type is the local's inferred concrete type, and the caller's `var` be
 
 ### Fix direction
 
-Keep the caller's `var` when the selection declared the local with `var`.
-Only a `var` local carries the inferred type: an explicitly typed local's `asType()` already is its declared type, so keeping `var` is the whole fix.
+Keeping the caller's `var` when the selection declared the local with `var` tidies the call site only.
+`[NonApiType]` flags the extracted method's return type, which is the local's inferred type (`ExtractMethodProvider` takes it from `asType()`), so the method still returns `ArrayList<Class<?>>`.
+Avoiding the warning needs a return type the plugin accepts (`List`, `Collection`, …), and nothing in the analysis compile says which one.
 A check through the build's plugins is out of reach of the analysis compile.
 
 ### Regression targets
@@ -1831,6 +1833,7 @@ Its unfiltered list ranks both scopes equally within the buffer's package and mo
 so the alphabetical tie-break (`main` < `test`) still decides.
 The typed-package path already prefers the kind's scope; that partial improvement does not fix the unfiltered list.
 Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
+Still on main `dbbdabf1` (2026-11-19): `SourceLayout.rank` gives both scopes of the buffer's package rank 0, and the client keeps the server's order.
 
 ### Regression targets
 
@@ -2364,6 +2367,7 @@ The line is meaningless for a field or variable, and an agent parsing the answer
 ### Fix direction
 
 Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
+Still on main `dbbdabf1` (2026-11-19).
 
 ### Regression targets
 
@@ -2391,6 +2395,7 @@ The schema says `method` is required when `scope` is `method`, but an agent that
 ### Fix direction
 
 A `method` with no `scope` means `scope=method`; a `method` with another scope is refused, naming the conflict.
+Still on main `dbbdabf1` (2026-11-19): `LatheMcpTools.testScope` defaults to `CLASS`, and `LatheEngine` filters by `method` only for `METHOD`.
 
 ### Regression targets
 
