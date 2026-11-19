@@ -68,6 +68,10 @@ class ReferenceLocatorTest {
     return ReferenceTarget.from(element, analysis.trees(), analysis.types(), analysis.elements());
   }
 
+  private static Range nameRange(final Position start, final String name) {
+    return new Range(start, new Position(start.getLine(), start.getCharacter() + name.length()));
+  }
+
   private List<ReferenceMatch> refs(
       final AttributedFileAnalysis analysis,
       final ReferenceTarget target,
@@ -195,6 +199,80 @@ class ReferenceLocatorTest {
     assertThat(refs(analysis, targetAt(analysis, "class Other", "Other"), false))
         .extracting(match -> match.range().getStart().getLine())
         .containsExactly(3);
+  }
+
+  @Test
+  void javadocLinkMentions_parameterTypeOfAMember_includedForTheTypeAndTheMember()
+      throws IOException {
+    final var source =
+        """
+        class Other {}
+        class Test {
+            void take(Other other) {}
+            /** See {@link #take(Other)}. */
+            void test() {}
+        }
+        """;
+    final var analysis = compile(source);
+
+    assertThat(refs(analysis, targetAt(analysis, "class Other", "Other"), false))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "void take(Other", "Other"), posOf(source, "#take(Other)", "Other"));
+    assertThat(refs(analysis, targetAt(analysis, "void take", "take"), false))
+        .extracting(match -> match.range().getStart())
+        .containsExactly(posOf(source, "#take(Other)", "take"));
+  }
+
+  @Test
+  void javadocLinkMentions_typeBeforeTheMember_includedForThatTypeOnly() throws IOException {
+    final var source =
+        """
+        class Other { void run() {} }
+        class Sub extends Other {}
+        class Test {
+            /** See {@link Other#run()}, {@link Sub#run()} and {@link Other#removed()}. */
+            void test() {}
+        }
+        """;
+    final var analysis = compile(source);
+
+    // Sub#run names Sub, though run is Other's; a member that does not resolve still names Other.
+    assertThat(refs(analysis, targetAt(analysis, "class Other", "Other"), false))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "extends Other", "Other"),
+            posOf(source, "{@link Other#run", "Other"),
+            posOf(source, "{@link Other#removed", "Other"));
+    assertThat(refs(analysis, targetAt(analysis, "class Sub", "Sub"), false))
+        .extracting(match -> match.range().getStart())
+        .containsExactly(posOf(source, "{@link Sub#", "Sub"));
+    assertThat(refs(analysis, targetAt(analysis, "void run", "run"), false))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "Other#run", "run"), posOf(source, "Sub#run", "run"));
+  }
+
+  @Test
+  void javadocLinkMentions_qualifiedArrayParameterType_matchesOnlyTheSimpleName()
+      throws IOException {
+    final var source =
+        """
+        class Test {
+            static class Other {}
+            void pair(int count, Other[] others) {}
+            /** See {@link #pair(int, Test.Other[])}. */
+            void test() {}
+        }
+        """;
+    final var analysis = compile(source);
+
+    // The primitive adds no match, and the qualifier Test is not part of Other's.
+    assertThat(refs(analysis, targetAt(analysis, "class Other", "Other"), false))
+        .extracting(ReferenceMatch::range)
+        .containsExactlyInAnyOrder(
+            nameRange(posOf(source, "Other[] others", "Other"), "Other"),
+            nameRange(posOf(source, "Test.Other[]", "Other"), "Other"));
   }
 
   @Test

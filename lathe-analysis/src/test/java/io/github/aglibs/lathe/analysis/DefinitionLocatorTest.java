@@ -321,6 +321,68 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  private static final String JAVADOC_SIGNATURE_SOURCE =
+      """
+      class Test {
+        static class Payload {}
+        static class Sub extends Test {}
+        /**
+         * See {@link Sub#doc()}, {@link #bounded(Payload)}, {@link #pair(int, Payload[])}, {@link Test#take(Test.Payload)} and
+         * {@link #take(Payload named)}; wrapped, {@link #pair(int,
+         * Payload[] wrapped)}.
+         *
+         * @see #take(Payload)
+         */
+        void doc() {}
+        void take(Payload payload) {}
+        void pair(int count, Payload[] payloads) {}
+        <T extends Payload> void bounded(T value) {}
+      }
+      """;
+
+  // A parameter type (a type variable's erasure too), or the type before '#' (the subtype written
+  // for an inherited member), in a Javadoc reference reaches the type; the member's name, a
+  // primitive parameter, a parameter
+  // type's qualifier or a parameter name still reaches the member, as does a reference wrapped over
+  // comment lines, whose signature text no longer matches the source.
+  @ParameterizedTest
+  @CsvSource({
+    "@see #take(Payload), Payload, class Payload, Payload",
+    "'{@link #pair(int, Payload[])}', Payload, class Payload, Payload",
+    "'{@link Test#take(Test.Payload)}', Payload, class Payload, Payload",
+    "@see #take(Payload), take, void take, take",
+    "'{@link #pair(int, Payload[])}', int, void pair, pair",
+    "(Test.Payload), Test, void take, take",
+    "'{@link Test#take(Test.Payload)}', Test, class Test, Test",
+    "'{@link Sub#doc()}', Sub, class Sub, Sub",
+    "'{@link Sub#doc()}', doc, void doc, doc",
+    "'{@link #bounded(Payload)}', Payload, class Payload, Payload",
+    "#take(Payload named), named, void take, take",
+    "#take(Payload named), Payload, class Payload, Payload",
+    "Payload[] wrapped, Payload, void pair, pair"
+  })
+  void definition_javadocReferenceSignature_reachesTheNameUnderTheCursor(
+      final String context, final String token, final String target, final String targetToken) {
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, JAVADOC_SIGNATURE_SOURCE, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              JAVADOC_SIGNATURE_SOURCE,
+              1,
+              posOf(JAVADOC_SIGNATURE_SOURCE, context, token),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.getRange().getStart())
+                      .isEqualTo(posOf(JAVADOC_SIGNATURE_SOURCE, target, targetToken)));
+    }
+  }
+
   private static final String GREETER_SOURCE =
       """
       public class Greeter {
