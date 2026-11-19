@@ -2275,31 +2275,3 @@ Order a capped list by module and source tree (main before test, the declaring m
 ### Regression targets
 
 None yet.
-
----
-
-## MC-101 — `find_references` lists every override's declaration as a use
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: MCP `find_references`.**
-
-Found by the exploratory MCP round on Dropwizard (2026-11-19, `8c099a5`).
-
-### Observed behaviour
-
-`find_references` on the abstract `Application.run(T, Environment)` answers "55 references": 4 calls and 1 Javadoc `{@link}` mention, the 49 subclass declarations that override it, and its own declaration.
-For the same method `analyze_change` counts 5 references (1 production, 4 test) and lists the 49 overrides separately, and `call_hierarchy` lists 4 callers.
-The tool's description promises "every real use", and the answer ends "All javac-resolved references to this exact declaration", so an agent asking who calls the method gets eleven times the answer.
-A method's own declaration is listed for every symbol (`Duration.toMilliseconds`, the field `Duration.count`).
-
-### Fix direction
-
-List uses only, as `analyze_change` counts them; leave the declaration and the overriding declarations out, or list them apart, as `analyze_change`'s `overridden by:` does.
-Uses made through an override (FR-006) stay.
-
-### Regression targets
-
-None yet.

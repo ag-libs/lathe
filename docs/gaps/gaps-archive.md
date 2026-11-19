@@ -13993,6 +13993,42 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-101 — `find_references` lists every override's declaration as a use — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: MCP `find_references`.**
+
+Found by the exploratory MCP round on Dropwizard (2026-11-19, `8c099a5`).
+
+### Observed behaviour
+
+`find_references` on the abstract `Application.run(T, Environment)` answers "55 references": 4 calls and 1 Javadoc `{@link}` mention, the 49 subclass declarations that override it, and its own declaration.
+For the same method `analyze_change` counts 5 references (1 production, 4 test) and lists the 49 overrides separately, and `call_hierarchy` lists 4 callers.
+The tool's description promises "every real use", and the answer ends "All javac-resolved references to this exact declaration", so an agent asking who calls the method gets eleven times the answer.
+A method's own declaration is listed for every symbol (`Duration.toMilliseconds`, the field `Duration.count`).
+
+### Fix direction
+
+List uses only, as `analyze_change` counts them; leave the declaration and the overriding declarations out, or list them apart, as `analyze_change`'s `overridden by:` does.
+Uses made through an override (FR-006) stay.
+
+### Resolution
+
+`find_references` lists uses only, as `analyze_change` counts them: neither the symbol's own declaration nor an override's is listed, so `Application.run` answers its 5 uses.
+The search still finds the declarations, as a position naming a symbol is its declaration or a use, so an unused symbol answers "No uses: the symbol is declared, and nothing in the project uses it.", and a position the search finds nothing for (a file no module compiles) "No symbol at that position.", which an agent cannot take for dead code (`LatheReferences.resolved`).
+The tool's description says the declarations are left out and that `find_implementations` and `analyze_change` list the overrides.
+The editor's references are unchanged: they follow the client's `includeDeclaration`.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.references_overriddenMethod_listsTheCallNotTheDeclarations`
+- `FieldAndEnumConstantSearchTest.references_fieldUses_taggedReadOrWrite_filteredByAccess`
+
+---
+
 ## MC-102 — A qualified name as `symbol` is refused on the line that reads it — done
 
 **Status: done** (2026-11-19)

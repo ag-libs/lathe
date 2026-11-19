@@ -125,7 +125,6 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
     assertThat(accesses(counter, field, ANY_ACCESS))
         .containsExactlyInAnyOrder(
-            LatheReference.Access.OTHER,
             LatheReference.Access.WRITE,
             LatheReference.Access.WRITE,
             LatheReference.Access.WRITE,

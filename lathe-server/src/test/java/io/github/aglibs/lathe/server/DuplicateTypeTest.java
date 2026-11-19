@@ -102,8 +102,9 @@ class DuplicateTypeTest extends LatheEngineTestBase {
             .map(reference -> LatheUri.toPath(reference.location().uri()))
             .distinct()
             .toList();
-    assertThat(paths).contains(declaration, files.get(owner + "Use"));
-    assertThat(paths).doesNotContain(files.get(owner.equals("base") ? "overlay" : "base"));
+    assertThat(paths).contains(files.get(owner + "Use"));
+    final String other = owner.equals("base") ? "overlay" : "base";
+    assertThat(paths).doesNotContain(files.get(other), files.get(other + "Use"));
     if (owner.equals("overlay")) {
       assertThat(paths).contains(files.get("consumer"));
     } else {
@@ -286,7 +287,7 @@ class DuplicateTypeTest extends LatheEngineTestBase {
                 .value()
                 .references())
         .extracting(reference -> LatheUri.toPath(reference.location().uri()))
-        .containsExactlyInAnyOrder(selected, selectedUse);
+        .containsExactly(selectedUse);
     renameAt(selected, shared, "Shared", "Renamed");
     assertThat(Files.readString(selected.resolveSibling("Renamed.java"))).contains("class Renamed");
     assertThat(Files.readString(selectedUse)).contains("Renamed field");
