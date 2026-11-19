@@ -7,6 +7,46 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: go to definition on a parameter type inside a Javadoc member reference (`@see #m(Type)`, `{@link #m(Type)}`).**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+In jdbi's `Jdbi.java`, line 362 reads `@see #withHandle(HandleCallback)`.
+Definition with the cursor on `HandleCallback` lands on `Jdbi.java:410`, the `withHandle` method, as it does on `withHandle` itself.
+The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `HandleCallback.java:22`.
+
+### Fix direction
+
+Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
+Still on main `dbbdabf1` (2026-11-19): `JavadocReferences.visitReference` reports the whole reference as one span resolved to the member, so no offset inside it reaches a parameter type.
+
+### Resolution
+
+`JavadocReferences` reports a span for the type before `#` and for each parameter type of a member reference, ahead of the reference itself, so the narrowest span under the cursor wins.
+Each element is javac's: the type before `#` is resolved as a reference of its own in the same comment, so `Sub#inherited` reaches `Sub`, not the member's owner, and keeps its span when the member does not resolve; a parameter type is the resolved method's parameter, through any array and a type variable's erasure, and a primitive gets no span and still reaches the member.
+The public DocTree API gives these parts no position, so each span is the element's simple name, found as an identifier in the signature text, as `ReferenceLocator` finds every Javadoc mention; the parameter types are found one after the other after `(`.
+A qualifier of a parameter type (`Test.Payload`) or a parameter name (`#take(Payload payload)`) stays the member's, and a reference wrapped over comment lines, whose signature text no longer matches its source span, is left out.
+References, highlight and rename of these types now include the mentions too.
+
+### Regression targets
+
+- `DefinitionLocatorTest.definition_javadocReferenceSignature_reachesTheNameUnderTheCursor`
+- `ReferenceLocatorTest.javadocLinkMentions_parameterTypeOfAMember_includedForTheTypeAndTheMember`
+- `ReferenceLocatorTest.javadocLinkMentions_qualifiedArrayParameterType_matchesOnlyTheSimpleName`
+- `ReferenceLocatorTest.javadocLinkMentions_typeBeforeTheMember_includedForThatTypeOnly`
+
+---
+
 ## FR-035 — A rename started outside a file whose package is not its directory misses the declaration in it — non-goal
 
 **Status: non-goal** (2026-11-18: not reproduced; the probe's rename edits the declaration in the misplaced file too)

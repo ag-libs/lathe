@@ -723,35 +723,6 @@ None yet.
 
 ---
 
-## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: go to definition on a parameter type inside a Javadoc member reference (`@see #m(Type)`, `{@link #m(Type)}`).**
-
-Found by the editor exploratory round on jdbi (2026-11-17).
-
-### Observed behaviour
-
-In jdbi's `Jdbi.java`, line 362 reads `@see #withHandle(HandleCallback)`.
-Definition with the cursor on `HandleCallback` lands on `Jdbi.java:410`, the `withHandle` method, as it does on `withHandle` itself.
-The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `HandleCallback.java:22`.
-
-### Fix direction
-
-Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
-Still on main `dbbdabf1` (2026-11-19): `JavadocReferences.visitReference` reports the whole reference as one span resolved to the member, so no offset inside it reaches a parameter type.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
 
 **Status: deferred** (triaged 2026-11-18: a feature, and the feature freeze holds)
