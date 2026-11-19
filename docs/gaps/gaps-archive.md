@@ -13993,6 +13993,40 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-102 — A qualified name as `symbol` is refused on the line that reads it — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: MCP position tools (`get_definition` seen; they share the `symbol` lookup).**
+
+Found by the exploratory MCP round on Helidon (2026-11-19, `8c099a5`).
+
+### Observed behaviour
+
+`get_definition` with `symbol` `java.net.InetSocketAddress` on `import java.net.InetSocketAddress;` answers "Line 19 has no symbol named 'java.net.InetSocketAddress'. Line 19 reads: import java.net.InetSocketAddress;".
+On `requires io.helidon.builder.api;` the module name is refused the same way.
+The simple name, any one segment (`api`, `builder`), or a column resolves at once, to `InetSocketAddress.java` and to the `io.helidon.builder.api` module.
+The answer contradicts itself, and the qualified name is what an agent copies from an import or a `requires`.
+
+### Fix direction
+
+Accept a dotted `symbol` that the line contains, and resolve it at its last segment.
+
+### Resolution
+
+A dotted `symbol` stands at its last segment that is a name, where the line spells the whole name as one word (`LatheEngine.nameColumns`): `java.util.List` and `util.List` on `import java.util.List;`, `java.util.*` (at `util`), `String.class` (at `String`), and a module name on its `requires`, resolve; a longer qualifier, a cut-off segment, or a name ending in a dot is refused as before.
+The text only finds the column, as for a simple name; javac resolves it.
+
+### Regression targets
+
+- `LatheMcpToolsTest.describeSymbol_qualifiedName_resolvesAtItsLastSegment`
+- `LatheEngineNavigationTest.nameColumns_qualifiedName_columnOfItsLastNamedSegment`
+
+
+---
+
 ## MC-103 — A generated file at the build's own path is "not checked", without naming Lathe's copy — done
 
 **Status: done** (2026-11-19)
