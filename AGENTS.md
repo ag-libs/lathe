@@ -47,10 +47,14 @@ Which file answers which question:
     * Body: wrapped at 72 columns (`git log` does not reflow); the problem first, then the fix and why it is right, in short plain sentences.
       Test results go in the PR description, not the commit.
     * Trailers: `Refs: MC-41` for the gap.
-- **Clean PR descriptions** — the description is what the reviewer reads first.
-  Write it as plain prose with no section headings: the gap on the first line when there is one, then the problem, the change and why it is right, in a few short paragraphs.
-  Say how it was tested in a sentence when the tests in the diff do not make it obvious.
-  No filler, no narration of the diff, no file-by-file change log, no template.
+- **Short PR descriptions** — the description is what the reviewer reads first, so a human takes it in at a glance.
+  Plain prose, no headings, no template, at most about 100 words:
+    * the gap on the first line when there is one (`Fixes MC-41`);
+    * the problem as a user or agent meets it, in one or two sentences, with one concrete example;
+    * the fix and why it is right, in one or two sentences;
+    * how it was checked, in one sentence, only when the tests in the diff do not show it.
+  Leave out what the diff, the commits or the gap entry already hold: class and method names, alternatives not taken, trade-offs worth a design note, test commands, rebase notes, review history.
+  Those belong in the commit message body or the gap's resolution.
 - **No backward compatibility requirement** — the tool has no external adopters yet; schema changes,
   format changes, and API changes may break existing files without migration support.
 - **Public repo — genericize private-workspace identifiers** — never commit real paths, packages,
