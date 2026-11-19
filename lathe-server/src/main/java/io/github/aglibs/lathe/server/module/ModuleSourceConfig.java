@@ -86,6 +86,16 @@ public record ModuleSourceConfig(
         .max(Comparator.comparingInt(Path::getNameCount));
   }
 
+  // The copy Lathe analyses of a file the build's annotation processing wrote: the same path under
+  // this tree's generated-sources mirror.
+  public Optional<Path> mirrorOf(final Path file) {
+    if (originalGenSourcesDir == null || !file.startsWith(originalGenSourcesDir)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(generatedSourcesDir().resolve(originalGenSourcesDir.relativize(file)));
+  }
+
   // The build's annotation-processor output, or Lathe's mirror of it: sources the processors
   // rewrite from the hand-written ones.
   public boolean isGenerated(final Path file) {

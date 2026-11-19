@@ -13993,6 +13993,38 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-103 — A generated file at the build's own path is "not checked", without naming Lathe's copy — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: MCP `get_diagnostics`, `find_references` (and the other file tools) on annotation-processor output under `target/`.**
+
+Found by the exploratory MCP round on Helidon (2026-11-19, `8c099a5`).
+
+### Observed behaviour
+
+On `webserver/webserver/target/generated-sources/annotations/io/helidon/webserver/WebServerConfig.java`, the file the build generated, `get_diagnostics` answers "WebServerConfig.java was not checked", and `find_references` "No references found", both noting that it "is in no source root of module webserver/webserver, so a sync does not add it".
+Lathe analyses the same generated file as `.lathe/webserver/webserver/generated-sources/io/helidon/webserver/WebServerConfig.java`, the path `search_symbols` and `get_definition` return; the answer does not say so.
+`outline` on the `target/` path works.
+
+### Fix direction
+
+Map a file under a module's generated-sources output to Lathe's mirror of it, or name the mirror path in the "not checked" note.
+
+### Resolution
+
+The note names Lathe's copy: "`<path>` is processor output the build writes; Lathe checks its copy `.lathe/<module>/generated-sources/<path>` — pass that path" (`ChangeVerifier.notCheckedReason`, `ModuleSourceConfig.mirrorOf`).
+A test file names the test tree's copy; a file with no copy yet says a sync makes one, where the plain note said a sync does not add it.
+The path is not mapped to the copy where file tools take it, which would move the file's read onto the event loop; the agent passes the named path instead.
+
+### Regression targets
+
+- `LatheEngineNotesTest.notes_buildsProcessorOutput_namesLathesCopy`
+
+---
+
 ## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden — done
 
 **Status: done** (2026-11-19)

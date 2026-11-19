@@ -2330,29 +2330,3 @@ Accept a dotted `symbol` that the line contains, and resolve it at its last segm
 ### Regression targets
 
 None yet.
-
----
-
-## MC-103 — A generated file at the build's own path is "not checked", without naming Lathe's copy
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: MCP `get_diagnostics`, `find_references` (and the other file tools) on annotation-processor output under `target/`.**
-
-Found by the exploratory MCP round on Helidon (2026-11-19, `8c099a5`).
-
-### Observed behaviour
-
-On `webserver/webserver/target/generated-sources/annotations/io/helidon/webserver/WebServerConfig.java`, the file the build generated, `get_diagnostics` answers "WebServerConfig.java was not checked", and `find_references` "No references found", both noting that it "is in no source root of module webserver/webserver, so a sync does not add it".
-Lathe analyses the same generated file as `.lathe/webserver/webserver/generated-sources/io/helidon/webserver/WebServerConfig.java`, the path `search_symbols` and `get_definition` return; the answer does not say so.
-`outline` on the `target/` path works.
-
-### Fix direction
-
-Map a file under a module's generated-sources output to Lathe's mirror of it, or name the mirror path in the "not checked" note.
-
-### Regression targets
-
-None yet.

@@ -693,6 +693,19 @@ final class ChangeVerifier {
       return "%s does not exist, and the last build did not compile it".formatted(relative);
     }
 
+    final Optional<Path> mirror =
+        state.registry().allConfigs().stream()
+            .map(config -> config.mirrorOf(file))
+            .flatMap(Optional::stream)
+            .findFirst();
+    if (mirror.isPresent()) {
+      return Files.exists(mirror.get())
+          ? "%s is processor output the build writes; Lathe checks its copy %s — pass that path"
+              .formatted(relative, state.root().relativize(mirror.get()))
+          : "%s is processor output the build writes, and Lathe has no copy of it yet — run `%s`"
+              .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND);
+    }
+
     return state
         .manifest()
         .builtModuleDirOf(file)
