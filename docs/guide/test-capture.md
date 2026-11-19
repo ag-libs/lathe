@@ -1,15 +1,43 @@
 # Test capture
 
-Lathe runs and debugs tests by **replaying** them from the captured `.lathe/` bytecode with no
-recompilation.
-To know *how* to launch that replay JVM — the exact classpath, module path, and JVM arguments your build's
-test run used — Lathe captures the real launch from inside the test JVM.
-That capture is done by `lathe-junit`, which the build puts into every module's test JVM; there is no test
-configuration to add.
+To rerun one JUnit test from Neovim or an AI agent, Lathe needs to know how your build starts that test's JVM.
+A Lathe-enabled Maven or Gradle build records the launch once, so you can rerun the method with the same JDK and flags.
 
-On any build that actually runs tests, `lathe-junit` fires once per module, before the tests run, and writes
-`.lathe/<module>/test-launch.json`.
-It records — from live JVM introspection, not by parsing a command line:
+The [first build](../../README.md#first-build) captures supported JUnit Platform launches without executing the tests.
+Skipping the test task or building a module with no discoverable tests records no new launch.
+See the [requirements](#requirements-and-current-limits) for supported JDKs, test engines, and build tasks.
+
+## Capture without running tests
+
+To refresh a captured launch, run the command for your build from the project root.
+
+```bash
+mvn test -Dlathe.capture.only=true                        # Maven
+./gradlew latheSync -Plathe.capture.only=true --continue  # Gradle
+```
+
+In Windows PowerShell, quote the property: `'-Dlathe.capture.only=true'` or `'-Plathe.capture.only=true'`.
+
+Each module with supported tests starts a test JVM so Lathe can record its launch.
+JUnit 5.10 and later reports the selected tests as skipped.
+On older JUnit, Lathe filters them out.
+
+**Maven.** Add `clean` for the first capture so every module compiles with Lathe.
+A build with `-DskipTests` skips the JVM that records the launch.
+If older JUnit and `failIfNoTests` cause the build to fail, add `-DfailIfNoTests=false`.
+Skipped-test warnings are expected.
+During a multi-module build, Maven can also warn that a dependency belongs to the reactor while the root sync is waiting for that module to build.
+
+**Gradle.** A capture-only run starts the default test JVM even if the task is up to date.
+To capture tests from another source set, run its own task once, for example `./gradlew integrationTest -Plathe.capture.only=true`.
+An editor sync captures the default tests.
+[Gradle test limits](gradle.md#known-limits)
+
+## What Lathe records
+
+The build loads `lathe-junit` in the test JVM.
+Before tests run, it reads the effective settings and writes `.lathe/<module>/test-launch.json` for the module's default tests.
+The following settings are available for replay.
 
 - `java.home` (replay uses the same JDK),
 - the test classpath (with `lathe-junit`'s own jar removed, so replay never has to strip it),
@@ -17,18 +45,11 @@ It records — from live JVM introspection, not by parsing a command line:
   `--add-exports`, `--add-modules`),
 - and the remaining JVM arguments the build gave the test JVM.
 
-Because these are read *after* the JVM expanded its launch, the captured template is the **effective,
-interpreted** launch — the module graph the tests actually ran under — rather than a guess reconstructed
-from build files.
-
-That launch includes the options the test JVM took from `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and
-`_JAVA_OPTIONS`, so a replay does not inherit those variables from the editor's environment: each option
-applies once, as in the build.
-Main-class runs are built from the build's paths, not a captured JVM, so they still inherit them.
-When a variable carries an option the build's test JVM ran without (set for the editor only, or since the
-last build), the run's output starts with a note naming it, and so does MCP `run_test`'s answer.
-To give a replay such an option, set the variable in the
-[run configuration's `env`](run-configuration.md), or re-run the build.
+The JVM has already expanded argument files and environment options when Lathe reads these settings.
+A replay applies captured options once, including those originally supplied through `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, or `_JAVA_OPTIONS`.
+If your editor sets a new option through one of those variables, the run output names the variable, as does the agent's `run_test` result.
+To apply it, capture a new launch or set it in the [run configuration's environment](run-configuration.md).
+A main method inherits the editor's environment because its launch is built from the module's paths.
 
 ## On Maven
 
@@ -45,42 +66,6 @@ The [Gradle plugin](gradle.md) loads `lathe-junit` into each project's `test` ta
 the `JDK_JAVA_OPTIONS` environment variable, which leaves the task's cache key alone.
 `test`, `check` and `build` capture; Gradle passes the task's `jvmArgs` and `systemProperty` values to the test
 JVM as real arguments, so they are captured too.
-
-## Capture without running tests
-
-To refresh the launch templates without paying for a test run, set `lathe.capture.only`: each module still
-starts its test JVM and writes its `test-launch.json`, but no test runs.
-The launch is the same whichever tests run, so Lathe gives the run a single test class, the first in name order,
-and each module starts one test JVM that discovers that class only, instead of a JVM per fork discovering every class.
-On Maven the class comes from the test sources, and a `-Dtest` you pass is kept;
-a module whose test sources are not Java (or are all generated) runs every class, as before.
-On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the class's tests are discovered as usual
-(a `@Suite`'s included) and reported as skipped.
-On older JUnit, a post-discovery filter excludes every test instead.
-
-```bash
-mvn test -Dlathe.capture.only=true                    # Maven
-./gradlew latheSync -Plathe.capture.only=true         # Gradle
-```
-
-- **Maven:** for the [first run](maven.md#initialize), add `clean` (`mvn clean test -Dlathe.capture.only=true`)
-  so every module compiles through Lathe rather than reusing up-to-date output.
-  `-DskipTests` is **not** a substitute: it skips the fork entirely, so nothing is captured.
-  On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add
-  `-DfailIfNoTests=false` so the test-free run stays green.
-  Such a run prints two kinds of `[WARNING]` lines, both expected:
-  Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, as each module starts one test class
-  and its tests are skipped, not run;
-  and `The following dependencies could not be resolved at this point of the build but seem to be part of
-  the reactor`, as the sync, which runs on the root project, resolves the modules before they are built.
-  The sync still completes.
-- **Gradle:** a capture-only run always starts the test JVM, never serving the task from the build cache or as
-  up to date, and does not fail for running no tests. `-Plathe.capture.only=true` works on a plain test run
-  too (`./gradlew test -Plathe.capture.only=true`).
-  The test task of another source set (an `integrationTest`, a JVM test suite) captures into a launch of its own
-  whenever it runs, and runs the same way when run capture-only (`./gradlew integrationTest -Plathe.capture.only=true`);
-  the editor's sync with tests does not start it, as its dependencies (a database it starts, say) would run on every
-  sync. A capture-only run skips a test task of no source set Lathe captures (a second task on `test`'s classes).
 
 ## Resources
 
@@ -105,8 +90,9 @@ On every build:
 - **JUnit Platform (JUnit 5/6, or the JUnit 4 vintage engine).**
   Capture rides the JUnit Platform launcher; pure TestNG runs, and Gradle test tasks on `useJUnit()` or
   `useTestNG()`, are not captured.
-- A module whose tests are skipped or absent produces no `test-launch.json`, so its tests are not
-  runnable from the editor until a build actually runs them.
+- **A test JVM must start.**
+  Skipping the test task entirely leaves the module without a new launch.
+  Use [capture-only mode](#capture-without-running-tests) to record the launch without executing the tests.
 - **A test that finds files from where its class file lies fails when run from the editor**, as Lathe loads the
   classes from its own copy under `.lathe/`; see
   [Troubleshooting](troubleshooting.md) for running it with the build, and for the change that makes it work in

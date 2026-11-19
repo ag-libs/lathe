@@ -1,34 +1,32 @@
 # Lathe in Emacs (Eglot)
 
-Lathe is a standard LSP server, and Emacs ships a standard LSP client — **Eglot** (built in since
-Emacs 29). So you get Lathe's build-derived intelligence in a **vanilla `emacs -Q`**, with no plugins
-(no `lsp-mode`, no `company`/`corfu`) — just one line of Elisp.
-Linux and macOS only; on Windows, use [VS Code or Cursor](vscode.md) or [Zed](zed.md).
+Emacs 29 and later include Eglot, the client you can use to edit Java with Lathe.
+Use Xref on a method name to visit its definition or find its references.
+This setup works on Linux and macOS.
+[Windows editor options](../../../README.md#editors)
 
 ![Lathe plugged into vanilla Emacs via Eglot — hover, cross-module nav, extract, rename, live diagnostics](../../emacs-tour-ebbbb6f4.gif)
 
 ## Setup
 
-One line in `init.el` points Eglot at Lathe's per-workspace launcher for Java files:
+Run the [first build](../../../README.md#first-build) in your project.
+Eglot starts the launcher relative to its project root, usually the version-control root.
+That directory must contain the build's `.lathe/` folder.
+
+Add the following to `init.el` so the registration runs after Eglot loads.
 
 ```elisp
-(add-to-list 'eglot-server-programs
-             '(java-mode ".lathe/lathe-launcher.sh"))
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs
+               '(java-mode ".lathe/lathe-launcher.sh")))
 ```
 
-The launcher is the script the build's sync writes at `<root>/.lathe/`, pinned to the server version this
-project uses. Eglot starts the server with the project root as its working directory, so the relative
-path resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` in the nearest `.lathe/` at or
-above it).
-
-Open a Java file in a project Lathe has synced (a Lathe-enabled build (the first build: `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle) populates `.lathe/`), then
-`M-x eglot` — or add `eglot-ensure` to `java-mode-hook` to connect automatically. Eglot picks the
-project's version-control root, which must be the root of the build where `.lathe/` lives.
+Open a Java file in `java-mode` and run `M-x eglot`.
+To connect whenever you open a Java file, add `(add-hook 'java-mode-hook #'eglot-ensure)` to your init file.
 
 ## What works
 
-All through Emacs's built-in facilities (Xref, Flymake, ElDoc, `completion-at-point`), resolved from
-your real build:
+Eglot uses Xref for navigation, Flymake for diagnostics, and ElDoc for documentation.
 
 | Feature                          | Command                                             |
 |----------------------------------|-----------------------------------------------------|

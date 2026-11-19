@@ -38,8 +38,7 @@ Call the setup function once, e.g. in your plugin config: >lua
 <
 Without it, only indentation loads and the language server is not registered.
 
-For `setup()` options, the full feature/endpoint reference, and a suggested
-keymap set, see the guide:
+For setup options, editing commands, test and debugger setup, and the example keymaps:
   https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md
 
 ==============================================================================

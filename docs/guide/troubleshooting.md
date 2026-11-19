@@ -1,95 +1,122 @@
 # Troubleshooting
 
-Common problems and their fixes.
-If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) with the Lathe version, your editor, and the server log from a run with `LATHE_DEBUG=1`.
+## The editor has no Java features
 
-- **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run the
-  first build at the root of the build, which sets up Lathe without running the tests:
-  `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle.
-  If it still isn't working, confirm Lathe is set up in the build ([Maven](maven.md), [Gradle](gradle.md)).
-  On Maven, a build log with no `[lathe]` lines means Lathe didn't load: check `mvn -v` (or the project's
-  `.mvn/wrapper`) for Maven 3.6.3 or newer.
-  On Gradle, the build prints `[lathe]` lines only for warnings; `./gradlew help --task latheSync` shows whether
-  the plugin is applied.
-- **The build stops with `[lathe] This build is older than Lathe supports`** — Lathe needs Maven 3.6.3+
-  with `maven-compiler-plugin` 3.6.2+, or Gradle 8.8+. The message lists each problem with its fix: upgrade
-  the build tool (or the project's wrapper), or on Maven pin a newer compiler plugin in
-  `<pluginManagement>`. To build without Lathe, add the switch the message names (`-Dlathe.disabled=true`
-  on Maven, `-Plathe.disabled=true` on Gradle).
-- **The server runs on the wrong JDK** — the server's `[startup]` log line, the MCP server's, and on Maven the
-  build's `[lathe]` lines name the JVM they run on (`java=… java.home=…`); compare it with the JDK your project
-  targets, and see [choosing the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home).
-- **Go to definition into the JDK (`String`, `List`) finds nothing** — the JDK the build ran on has no sources (`lib/src.zip` under its home).
-  The build's sync logs `[sync] JDK sources are missing: …`, and the editor says so the first time a jump into the JDK finds nothing.
-  Install the JDK's sources (on Debian/Ubuntu the `openjdk-<version>-source` package; most other JDK installers include them or have a source option),
-  or build with a JDK that has `lib/src.zip` (`JAVA_HOME`, or the Gradle toolchain), then sync again.
-- **Go to definition into a dependency finds nothing** — the dependency publishes no sources jar, or one that is not a readable zip (the sync warns about it).
-  The editor says which dependency declares the type, once per dependency, and MCP's `get_definition` says so with every answer.
-  Hover and `describe_symbol` still show the declaration, read from the class file.
-- **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
-  its LSP log (Neovim: [cheatsheet](editors/neovim.md#verbose-logging)). An unexpected exit
-  is also surfaced as an editor notification pointing at the log, and a server that fails at JVM
-  startup writes its error there too.
-- **A build check fails on files under `.lathe/`, from the second build on** — a check that scans the
-  whole project directory, not just the source roots, finds the compiled classes and resources Lathe
-  keeps in `.lathe/` (from the first build's sync on, so the first build passes).
-  nohttp is the usual one: a copied SBOM or a resource with an `http://` URL fails it.
-  Exclude `.lathe/` from the check, as you exclude `target/` or `build/`:
+If the editor reports a missing launcher, run the [first build](../../README.md#first-build) from the project root.
+The build creates `.lathe/lathe-launcher.sh` or, on Windows, `.lathe\lathe-launcher.cmd`.
 
-  ```xml
-  <!-- Maven: the maven-checkstyle-plugin execution that runs nohttp-checkstyle -->
-  <excludes>**/.git/**/*,**/target/**/*,**/.lathe/**/*</excludes>
-  ```
+- **Maven.** Look for `[lathe]` in the build log.
+  If the extension didn't load, check its registration and the Maven version reported by `mvn -v` or the project's wrapper.
+  [Maven requirements](maven.md#requirements)
+- **Gradle.** Run `./gradlew help --task latheSync` to see whether the settings plugin was applied.
+  A successful Gradle build may print no `[lathe]` lines.
+  [Gradle setup](gradle.md#setup)
 
-  ```groovy
-  // Gradle: the io.spring.nohttp plugin's own source set (an exclude on its checkstyleNohttp task is lost)
-  nohttp {
-    source.exclude '**/.lathe/**'
-  }
-  ```
+If the launcher exists but the server exits, set `LATHE_DEBUG=1` before starting the editor and reproduce the problem.
+The editor's LSP log includes JVM startup errors and the reason for an unexpected exit.
+[Neovim logging](editors/neovim.md#verbose-logging)
 
-  Do the same for other whole-project checks (a license-header or RAT check that does not read
-  `.gitignore`), and add `.lathe/` to `.dockerignore` if a Docker build copies the project directory.
-- **Another Java language server (jdtls) misbehaves when Lathe is present** — a co-running Eclipse JDT LS
-  scans Lathe's generated `.lathe/` mirror and can treat it as duplicate projects. Add `**/.lathe/**` to
-  its `java.import.exclusions`; see
-  [installation.md](installation.md#coexisting-with-another-java-language-server-jdtls).
-- **Lombok: "cannot find symbol" on a generated member, or the server stops on opening a Lombok
-  file** — Lathe runs Lombok from the module's processor path (or class path), unless the build turns
-  annotation processing off (`<proc>none</proc>`, `-proc:none`);
-  re-sync after adding it. The server stopping on open means the JDK is newer than the project's Lombok
-  supports, which fails the build too: upgrade Lombok. See [Lombok](how-it-works.md#lombok) for what
-  works and its limits.
-- **Lombok: right after editing `lombok.config`, an open file shows errors as if the old settings still
-  applied** — Lombok in the editor's analysis reads `lombok.config` again at most every 2 seconds, so a
-  check within that time uses the old settings. Edit the file, or reopen it, to check it again.
-  What Lathe writes to `.lathe/`, and `verify_change`, use the new settings at once.
-- **Errors like `package <relocated package> does not exist`, or Lathe's sync failing to compile a module,
-  on a Maven project that shades a library** — a module whose main jar `maven-shade-plugin` replaces holds
-  the relocated classes its dependents compile against, and only `package` builds that jar. Build with
-  `package` once, and have Lathe's sync build there too: `-Dlathe.sync.phase=package` in
-  `.mvn/maven.config`. The build warns with this line when it sees such a module; see
-  [Maven](maven.md#what-the-build-writes-to-lathe).
-- **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
-  javac. Sync carries the build's own module grants into `.lathe/jvm.args` automatically (on Maven, forked
-  `-J--add-exports`/`--add-opens`, `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`; on Gradle,
-  those in `org.gradle.jvmargs` and in a forked compile's `options.forkOptions.jvmArgs`);
-  restart the server after it changes. Add anything else (or tune heap/GC) with
-  `LATHE_JVM_OPTS`; see
-  [installation.md](installation.md#tuning-the-server-jvm-lathe_jvm_opts).
-- **A test passes with the build but fails when run from the editor, unable to find a source or generated
-  file** — Lathe runs a test from its own copy of the compiled classes under `.lathe/`, not from `target/` or
-  `build/`. A test that finds files by walking up from its own class file (`getResource(...).getFile()`,
-  `getProtectionDomain().getCodeSource().getLocation()`) to the build's folders (`src/<sourceSet>/java`,
-  `target/generated-sources/annotations`) lands under `.lathe/` instead: annotation-processor and code-generator
-  tests do this, such as Hibernate ORM's processor tests and Helidon's data-repository tests.
-  To run such a test, run it with the build (`./gradlew :module:test --tests 'com.example.SomeTest'`,
-  `mvn -pl module test -Dtest=SomeTest`); everything else keeps running from the editor.
-  To fix it in the project, find the files without the class file's location, which works for the build and the
-  editor alike:
-  - relative to the working directory, which is the module's own folder for Gradle and Surefire unless the build moves it, and Lathe runs the test where the build did:
-    `Path.of("src", "test", "java")`;
-  - or from a system property the build sets, the most robust, since the build knows its layout. On Gradle,
-    `test { systemProperty 'test.sourceDir', file('src/test/java').absolutePath }`; on Maven, in Surefire's
-    `<argLine>-Dtest.sourceDir=${project.basedir}/src/test/java</argLine>`, not `<systemPropertyVariables>`,
-    which Lathe can't see. The test reads `System.getProperty("test.sourceDir")`.
+## The build or server uses the wrong version
+
+**“This build is older than Lathe supports.”**
+Use Maven 3.6.3+ with `maven-compiler-plugin` 3.6.2+, or Gradle 8.8+.
+The message identifies what to upgrade, including a project wrapper or a compiler plugin pinned in Maven's `<pluginManagement>`.
+To run that build with Lathe disabled, use `-Dlathe.disabled=true` on Maven or `-Plathe.disabled=true` on Gradle.
+
+**The server uses an unexpected JDK.**
+Look at `java=` and `java.home=` in the server's `[startup]` log line.
+The MCP server reports its JDK there too, and Maven reports its JVM in the build's `[lathe]` lines.
+Compare the paths with the JDK you intended to use.
+[Choose the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home)
+
+**A Maven sync fails after upgrading Lathe, or a “build is running” note never clears.**
+A running `mvnd` daemon keeps the Lathe extension it first loaded.
+Run `mvnd --stop`, then build again.
+
+## Navigation
+
+**Go to definition on a JDK type such as `String` goes nowhere.**
+Check for `lib/src.zip` under the JDK home recorded by the build.
+If it's missing, sync reports `[sync] JDK sources are missing` and the editor tells you on the first failed jump.
+Install sources for that JDK (for example, the matching `openjdk-<version>-source` package on Debian or Ubuntu), or select a JDK with sources through `JAVA_HOME` or the Gradle toolchain.
+Sync again after the change.
+
+**A library type has no source to open.**
+Check whether the dependency publishes a readable sources JAR.
+Sync warns about an unreadable archive.
+The editor names the dependency on the first failed jump, and the agent's `get_definition` names it each time.
+Hover or `describe_symbol` can still show the declaration from the class file.
+
+**Eclipse JDT LS reports duplicate projects.**
+Add `**/.lathe/**` to its `java.import.exclusions`.
+On Maven, also keep Lathe out of JDT LS's own project import.
+[Run both servers](installation.md#coexisting-with-another-java-language-server-jdtls)
+
+## Build checks and compiler settings
+
+**A project-wide check fails on files under `.lathe/` after the first build.**
+Lathe copies classes and resources into that directory.
+A check such as nohttp may flag a URL in a copied resource on the next build.
+Exclude the directory from the check, as you would a build output directory.
+
+```xml
+<!-- Maven: the maven-checkstyle-plugin execution that runs nohttp-checkstyle -->
+<excludes>**/.git/**/*,**/target/**/*,**/.lathe/**/*</excludes>
+```
+
+```groovy
+// Gradle: configure the io.spring.nohttp plugin's source set
+nohttp {
+  source.exclude '**/.lathe/**'
+}
+```
+
+Apply the same exclusion to license-header or RAT checks that scan generated output.
+Add `.lathe/` to `.dockerignore` if a Docker build copies the project directory.
+
+**A Maven module reports a missing relocated package.**
+When `maven-shade-plugin` replaces a module's main JAR, downstream modules need the JAR produced by the `package` phase.
+Build through `package` once and add `-Dlathe.sync.phase=package` to `.mvn/maven.config` for future syncs.
+Lathe prints this setting when it detects such a module.
+[Maven build output](maven.md#what-the-build-writes-to-lathe)
+
+**A processor or compiler plugin needs extra JVM access.**
+Sync copies module grants to `.lathe/jvm.args`.
+On Maven these include the forked compiler's `-J--add-exports` and `-J--add-opens`, grants in `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`.
+On Gradle they include grants in `org.gradle.jvmargs` or the compiler task's `options.forkOptions.jvmArgs`.
+Restart the server after changing them.
+Use `LATHE_JVM_OPTS` for additional JVM options.
+[Server JVM settings](installation.md#tuning-the-server-jvm-lathe_jvm_opts)
+
+## Lombok
+
+**A generated getter or builder is missing.**
+Check that Lombok is on the module's processor path or classpath and that the build enables annotation processing.
+Settings such as `<proc>none</proc>` and `-proc:none` turn it off.
+Sync after adding Lombok.
+If the server stops when you open a Lombok file, check that the project's Lombok version supports the JDK running the server.
+[Lombok support](how-it-works.md#lombok)
+
+**An open file still uses the old `lombok.config`.**
+Lombok rereads its configuration at most every two seconds during editor analysis.
+After that interval, edit or reopen the file.
+Lathe's writes to `.lathe/` and the agent's `verify_change` use the new settings immediately.
+
+## A test passes in the build but can't find a file in the editor
+
+Lathe loads test classes from `.lathe/`.
+Tests that locate source or generated files by walking up from their own class file can therefore end up under the wrong directory.
+This affects tests using `getResource(...).getFile()` or `getProtectionDomain().getCodeSource().getLocation()` to locate files such as annotation-processor fixtures.
+
+To run the test with its original layout, use `mvn -pl module test -Dtest=SomeTest` or `./gradlew :module:test --tests 'com.example.SomeTest'`.
+To make the test work in both environments, use one of these paths.
+
+- Resolve the path from the test’s working directory.
+  Gradle and Surefire default to the module directory, so `Path.of("src", "test", "java")` points to the test sources.
+  If your build sets a different working directory, Lathe uses that directory too.
+- Pass the directory explicitly and read it with `System.getProperty("test.sourceDir")`.
+  In Gradle, use `test { systemProperty 'test.sourceDir', file('src/test/java').absolutePath }`.
+  In Maven Surefire, use `<argLine>-Dtest.sourceDir=${project.basedir}/src/test/java</argLine>` so the option reaches the JVM launch Lathe captures.
+  [Test capture limits](test-capture.md#requirements-and-current-limits)
+
+If you still need help, include your editor, Lathe and build versions, and the relevant server log when you [report the problem](../../CONTRIBUTING.md#reporting-a-bug).

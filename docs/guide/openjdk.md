@@ -1,12 +1,8 @@
 # Lathe for OpenJDK
 
-Lathe provides code intelligence — go-to-definition, find-references, completion, diagnostics, hover,
-and workspace symbol search — for the OpenJDK source, in any LSP editor. It is built on the JDK's own
-`javac`, so analysis matches what the compiler sees.
-
-This front-end reads the **`make` build** instead of Maven: the per-module `javac` invocation the build
-ran, and the exploded JDK you built. The editor uses the build's own configuration — the same module
-graph, the same `--add-exports` / `--patch-module` flags, the same language level (preview included).
+Open the JDK sources in your editor and follow a call across module boundaries, including into internal packages and generated code.
+Lathe reads each module's compiler invocation from your OpenJDK `make` build.
+That gives it the same module graph, language level, preview settings, and `--patch-module` and `--add-exports` flags.
 
 ![Lathe on the OpenJDK source — whole-JDK symbol search, completion, live diagnostics, and cross-module go-to-definition](../openjdk-demo-ecd74b0f.gif)
 
@@ -17,32 +13,35 @@ graph, the same `--add-exports` / `--patch-module` flags, the same language leve
 
 ## Setup
 
-Prerequisites: a buildable JDK checkout, and Maven 3.6.3+ on `PATH`, running on JDK 17 or later.
+Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or newer.
 
-```sh
-bash configure --with-boot-jdk=/path/to/jdk-N   # if not already configured
-make jdk                                         # build the exploded image
-echo '.lathe/' >> .git/info/exclude              # local state, keep out of git
-mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
-```
+1. Configure the checkout if needed and build the JDK you want to edit.
 
-`sync` reads the build, writes `.lathe/` in the checkout, and installs the server into
-`~/.cache/lathe/`. It finds the build automatically when exactly one configured `build/<conf>` exists; with several,
-pass `-Dlathe.buildDir=build/<conf>` to pick one. Then open any source — e.g. `src/java.base/share/classes/java/util/ArrayList.java` — in your
-editor's Lathe client; the server runs on the JDK you built via `.lathe/java-home`.
+   ```sh
+   bash configure --with-boot-jdk=/path/to/jdk-N
+   make jdk
+   ```
 
-File edits are analysed live; re-run `sync` only on build-shape changes (below).
+2. Run the sync from the checkout root.
+   Sync writes a `.gitignore` inside `.lathe/`, so git ignores the directory with no change to the checkout.
+
+   ```sh
+   mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
+   ```
+
+   If you have several configured builds, add `-Dlathe.buildDir=build/<conf>` to select one.
+   Sync writes the workspace under `.lathe/`, installs the server under `~/.cache/lathe/`, and records the JDK you built in `.lathe/java-home`.
+
+3. Open `src/java.base/share/classes/java/util/ArrayList.java` in your editor's Lathe client.
+   Follow `AbstractList` to its declaration to start exploring.
+   Ordinary Java source edits are analyzed live.
+   [When to sync again](#re-syncing)
 
 ## What you get
 
-- Diagnostics matching the build — the real module graph and compiler flags.
-- Go-to-definition and find-references across all ~66 modules and into the JDK's own source (incl.
-  `sun.*` internals and generated sources), resolving to real files.
-- Completion, hover, and signature help over the module graph.
-- Workspace symbol search, including types in just-created, not-yet-built files.
-- The `make/` build tools, not only the modules.
-- Constant per-keystroke cost regardless of JDK size — dependencies come from the build's compiled
-  output, not re-parsed source.
+Lathe provides diagnostics, completion, hover, and workspace symbol search for the modules you built and the Java tools under `make/`.
+Navigation and references work across module boundaries, including internal packages and generated sources.
+The server uses the module graph and compiler flags from your chosen build.
 
 ## Re-syncing
 
@@ -54,24 +53,11 @@ File edits are analysed live; re-run `sync` only on build-shape changes (below).
 
 Lathe never runs `make`.
 
-## Compared to IntelliJ IDEA / Eclipse
+## Current limits
 
-The IDEs are full environments and run and debug jtreg tests, which Lathe does not yet. Lathe is
-lighter, editor-agnostic, and reads the build directly:
-
-| | IntelliJ / Eclipse | Lathe |
-|---|---|---|
-| Analysis engine | Each IDE's own front-end | The build's `javac` |
-| Preview / new syntax | Can trail the in-tree compiler | Tracks the build's compiler |
-| Module flags | Worked out by the IDE | Taken from the build |
-| Setup | Project import | One `sync` over the `make` output |
-| Run / debug jtreg | Supported | Not yet |
-
-## Not supported yet
-
-- jtreg tests — running, debugging, and `test/` analysis. Planned: derive a test's config from its
-  `@test` / `@library` / `@modules` tags on open.
-- Other-platform source overlays, and modules that were not built.
+Run jtreg tests with the OpenJDK build.
+Lathe currently provides code intelligence for built modules and their platform sources.
+Editing jtreg tests, debugging them, and analyzing source overlays for other platforms are outside that support.
 
 ## See also
 

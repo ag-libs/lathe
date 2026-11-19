@@ -3,64 +3,31 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.ag-libs/lathe-maven-extension?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.ag-libs/lathe-maven-extension)
 [![CI](https://github.com/ag-libs/lathe/actions/workflows/ci.yml/badge.svg)](https://github.com/ag-libs/lathe/actions/workflows/ci.yml)
 
-Lathe is a Java language server that doesn't import your project.
-It watches your build compile and records the classpath, flags and module setup for every module, then runs javac with exactly that.
-So the errors in your editor are the errors your build gives, including on projects with annotation processors, Lombok or generated sources.
-AI coding agents get the same answers through an MCP server.
+Lathe is a Java language server that learns your project from its build.
+It runs `javac` as you edit using compiler settings from Maven, Gradle, or the OpenJDK `make` build.
+When one module generates a class and another imports it, you can follow that import straight to the generated Java source.
 
-![Lathe demo: completion, diagnostics, running, debugging and testing in Neovim](docs/demo-038eec79.gif)
+[First build](#first-build) · [Editors](#editors) · [AI agents](#ai-agents)
 
-<!-- The GIF filename carries a content hash (docs/demo-<hash>.gif) so browsers never serve a stale
-     cached copy: dev/demo/record.sh regenerates it, renames it by content hash, deletes the previous
-     one, and rewrites the link above. Do not hand-edit the hash. Recorded against the public
-     com.example multi-module fixture. -->
+![Java completion, diagnostics, running, debugging and testing with Lathe in Neovim](docs/demo-038eec79.gif)
 
-## What you get
+<!-- dev/demo/record.sh regenerates the GIF and updates its content hash. -->
 
-**In the editor.**
-Errors and warnings come from the JDK's compiler with your build's flags.
-Go to definition, find references and rename work across every module in the build, and navigation steps into your dependencies' sources and the JDK's.
-Extract method, variable, constant and field are there too; extract method compiles its result before you apply it.
-In Neovim you can also run a `main` method, run or debug a test, and scaffold a new type, all from the classes the build already compiled, so there is no rebuild first.
+*In Neovim, you can run a main method, rerun a single test, or stop at a breakpoint using the classes your build already compiled.*
 
-**For AI coding agents.**
-An MCP server exposes the same engine to Claude Code and other agents.
-The agent can check diagnostics on the real classpath, find every real use of a symbol and who implements or overrides it, rename across the build, run a single test without a build, and check that an edit still compiles, callers included.
-These are the operations `grep` gets wrong on a multi-module project.
+## First build
 
-**How it stays correct.**
-When you build, Lathe records how each module is compiled, tested and run.
-The editor and the agent read that record, so there is no second project model to drift from the build.
-After a branch switch, a `git pull` or an agent's edits, Lathe recompiles the changed files on its own.
-See [how Lathe works](docs/guide/how-it-works.md) and the full [feature list](docs/guide/features.md).
+Choose the build for your project and run its commands from the project root.
+This installs the language server and creates the `.lathe/` workspace that your editor or coding agent uses.
+Lathe writes a `.gitignore` inside it, so git ignores the directory with no change to your project.
+The Maven and Gradle commands below also capture supported JUnit test launches without running the tests.
 
-## Quick start
+<details>
+<summary>Maven</summary>
 
-You need Java 17 or newer, and Maven 3.6.3+ or Gradle 8.8+ (details for [Maven](docs/guide/maven.md#requirements) and [Gradle](docs/guide/gradle.md#requirements)).
-
-There are two ways to set a project up.
-The first does not change your build files.
-
-### From Neovim, without touching the build
-
-Install the [lathe.nvim plugin](docs/guide/editors/neovim.md#install), open any file of the project and run:
-
-```
-:LatheInit
-```
-
-It finds the build's root and asks you to confirm it, then runs one clean build that records how each module is compiled and tested, without running the tests.
-Lathe is passed to that build from outside, so nothing in your project changes.
-Compile errors don't stop it.
-When the build ends the server attaches.
-Later, `:LatheSync` refreshes the workspace; a build you run yourself from the shell doesn't, because it runs without Lathe.
-
-### By registering Lathe in the build
-
-Use this if you want Lathe for everyone on the project, for an editor other than Neovim, or so that every build refreshes Lathe on its own.
-Registered in the build, Lathe records each module as it compiles, for the cost of a directory walk and a copy of the module's classes, typically well under a second ([details](docs/guide/how-it-works.md#build-capture)).
-
-Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
+Use Maven 3.6.3 or later with JDK 17 or newer.
+Create `.mvn/extensions.xml` at the project root with the following content.
+If the file already exists, add the `<extension>` entry inside its existing `<extensions>` element.
 
 ```xml
 <extensions>
@@ -72,7 +39,21 @@ Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `
 </extensions>
 ```
 
-Gradle: apply the settings plugin in `settings.gradle.kts`:
+```sh
+mvn clean test -Dlathe.capture.only=true
+```
+
+In Windows PowerShell, quote the property: `mvn clean test '-Dlathe.capture.only=true'`.
+
+[Maven guide](docs/guide/maven.md)
+
+</details>
+
+<details>
+<summary>Gradle</summary>
+
+Use Gradle 8.8 or later with JDK 17 or newer.
+Add the plugin to the `plugins` block in your root settings file (`settings.gradle.kts` or `settings.gradle`).
 
 ```kotlin
 plugins {
@@ -80,79 +61,125 @@ plugins {
 }
 ```
 
-Then build once.
-This records the project's setup without running the tests:
-
-```bash
-mvn clean test -Dlathe.capture.only=true               # Maven
-./gradlew latheSync -Plathe.capture.only=true          # Gradle
+```sh
+./gradlew latheSync -Plathe.capture.only=true --continue
 ```
 
-Maven prints `[WARNING]` lines about skipped tests and unresolved reactor modules; they are expected ([why](docs/guide/test-capture.md)).
-After this, every build keeps `.lathe/` current, whoever runs it and from wherever.
+For Groovy settings files, Windows commands, or a personal init script, see the [Gradle guide](docs/guide/gradle.md#setup).
 
-Either way, the build writes a `.lathe/` directory next to your sources.
-It ignores itself in git.
-Setup without the extension, Gradle's personal init script, and turning Lathe off are in the [Maven](docs/guide/maven.md) and [Gradle](docs/guide/gradle.md) guides.
+</details>
 
-Now set up your [editor](#editors) or your [AI agent](#ai-agents).
+<details>
+<summary>OpenJDK (make)</summary>
+
+If you work on the JDK itself, configure the OpenJDK checkout and build it with `make jdk`.
+Then use Maven 3.6.3 or later running on JDK 17 or newer to sync Lathe with the JDK you built.
+
+```sh
+mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
+```
+
+[OpenJDK setup and demo](docs/guide/openjdk.md#setup)
+
+</details>
 
 ## Editors
 
-| Editor           | What you get                                                                                              | Guide                                                                             |
-|------------------|-----------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
-| Neovim           | Everything: LSP, plus run, test, debug, new-type scaffolding and `:LatheInit`                             | [Neovim](docs/guide/editors/neovim.md#install) · [example config](examples/nvim/) |
-| VS Code / Cursor | Standard LSP through the "Lathe for Java" extension ([`.vsix` on each release](https://github.com/ag-libs/lathe/releases), preview) | [VS Code](docs/guide/editors/vscode.md)                                           |
-| Emacs            | Standard LSP through the built-in [Eglot](https://www.gnu.org/software/emacs/manual/html_mono/eglot.html), no plugin needed | [Emacs](docs/guide/editors/emacs.md)                                              |
-| Zed              | Standard LSP through the [Java extension](https://github.com/zed-extensions/java), plus one settings file | [Zed](docs/guide/editors/zed.md)                                                  |
+[Neovim](#neovim) · [VS Code and Cursor](#vs-code-and-cursor) · [Emacs](docs/guide/editors/emacs.md) · [Zed](docs/guide/editors/zed.md)
 
-Lathe is a standard language server, so any other LSP client can use it too.
-On Windows, use VS Code, Cursor or Zed.
+On Windows, use VS Code, Cursor, or Zed; the Neovim and Emacs clients run on Linux and macOS.
+
+### Neovim
+
+On Linux or macOS with Neovim 0.12+, install the editor plugin once, then set up each project through its build.
+If you already run `nvim-jdtls` and want to keep both servers, follow the [jdtls setup notes](docs/guide/installation.md#coexisting-with-another-java-language-server-jdtls).
+
+#### Install the plugin
+
+Choose the snippet for your plugin manager.
+
+**lazy.nvim** — If your config imports `lua/plugins/`, save this as `~/.config/nvim/lua/plugins/lathe.lua`.
+Restart Neovim and run `:Lazy install`.
+
+```lua
+return {
+  "ag-libs/lathe.nvim",
+  ft = "java",
+  cmd = "LatheStart",
+  main = "lathe",
+  opts = {},
+}
+```
+
+**Built-in package manager** — Add these lines to `~/.config/nvim/init.lua`, restart Neovim, and accept the install prompt.
+
+```lua
+vim.pack.add({ "https://github.com/ag-libs/lathe.nvim" })
+require("lathe").setup()
+```
+
+After the [first build](#first-build), open a Java source file in the project and Lathe attaches automatically.
+Once the workspace has loaded, use **Go to Definition** on a method call to open its source, even in another module.
+For completion, type part of a name and invoke your usual completion command.
+To run a `main` method, put the cursor inside it and type `:LatheRun`.
+
+Lathe picks up Java source edits automatically.
+After changing dependencies, compiler settings, or modules, run `:LatheSync` in Neovim or rerun the Lathe-enabled build.
+
+<details>
+<summary>Set up Java indentation, automatic completion, tests, and debugging</summary>
+
+- **Indentation.** Install the Java Tree-sitter parser.
+  With nvim-treesitter, run `:TSInstall java`.
+- **Completion menu and keymaps.** The demo uses blink.cmp for suggestions as you type and Telescope for navigation.
+  You can copy those pieces into your existing config.
+  [Example init.lua](examples/nvim/init.lua) · [Try the example separately](examples/nvim/README.md#try-it)
+- **JUnit tests.** Install neotest and add `require("lathe.neotest")` to its `adapters` list.
+  The Maven and Gradle steps above capture the test launch for supported JUnit Platform projects.
+  [Neotest setup](docs/guide/editors/neovim.md#tests-neotest) · [Test capture requirements](docs/guide/test-capture.md#requirements-and-current-limits)
+- **Breakpoints.** Load nvim-dap before Lathe so the plugin can register `:LatheDebug`.
+  With lazy.nvim, add `dependencies = { "mfussenegger/nvim-dap" },` to the Lathe spec above.
+  [Debugger setup and keymaps](docs/guide/editors/neovim.md#debug-nvim-dap)
+
+</details>
+
+### VS Code and Cursor
+
+The **Lathe for Java** preview provides completion, compiler diagnostics, navigation, rename, and refactoring.
+Use **Rename Symbol** on an interface method and Lathe updates its implementations and callers across modules.
+Lathe's run, test, and debug controls are currently available in Neovim.
+
+1. Complete the [first build](#first-build) to create the `.lathe/` directory that the extension looks for.
+2. Download the `.vsix` release asset and choose **Extensions → ⋯ → Install from VSIX…** in VS Code or Cursor.
+   [Lathe releases](https://github.com/ag-libs/lathe/releases)
+3. Open the project folder.
+   If **Language Support for Java by Red Hat** is installed, disable it for this workspace so only one server handles your Java files.
+4. Open a Java file and choose **Go to Definition** on a method call.
+   Try a library method to jump into the dependency's source when its sources are available.
+
+[VS Code and Cursor guide](docs/guide/editors/vscode.md)
 
 ## AI agents
 
-The build's sync step writes an MCP launcher into `.lathe/`, so there is nothing more to install.
-From the project root, register it with Claude Code:
-
-```bash
-claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
-```
-
-The agent then has `get_diagnostics`, `find_references`, `find_implementations`, `rename_symbol`, `run_test`, `verify_change` and a few more, all answered by the compiler on the build's classpath.
-Other agents, a single registration for every project, and what each tool does are in the [AI agents guide](docs/guide/ai-agents.md).
-
-## Status
-
-Lathe is in active development and published to [Maven Central](https://central.sonatype.com/namespace/io.github.ag-libs).
-
-- **Builds:** [Maven](docs/guide/maven.md), [Gradle](docs/guide/gradle.md), and the [OpenJDK `make` build](docs/guide/openjdk.md).
-- **Platforms:** Linux, macOS and Windows 10/11.
-- **Editors:** Neovim has the full feature set; run, test and debug are Neovim-only for now.
-
-What works today, in detail, is in [status](docs/status.md).
+An MCP server gives coding agents access to the same compiler and project information as your editor.
+After changing a method signature, ask your agent “Which callers in other modules still need updating?”
+Lathe can compile the affected callers and report the file and line of each error.
+The initial build installs the MCP launcher.
+[Connect your agent](docs/guide/ai-agents.md)
 
 ## Documentation
 
-- [How Lathe works](docs/guide/how-it-works.md)
-- [Features](docs/guide/features.md)
-- [Installation](docs/guide/installation.md): the build, the editor clients, the server JVM and JDK
-- [Maven](docs/guide/maven.md), including how to turn Lathe off
-- [Gradle](docs/guide/gradle.md)
-- [OpenJDK](docs/guide/openjdk.md)
-- [AI agents](docs/guide/ai-agents.md)
-- [Run configuration](docs/guide/run-configuration.md) and [test capture](docs/guide/test-capture.md)
-- [Troubleshooting](docs/guide/troubleshooting.md)
-- Project: [roadmap](docs/roadmap.md) · [design index](docs/design-index.md)
+[Features](docs/guide/features.md) · [How Lathe works](docs/guide/how-it-works.md) · [Installation](docs/guide/installation.md) · [Troubleshooting](docs/guide/troubleshooting.md) · [Project status](docs/status.md)
 
 ## Contributing
 
-Feedback, bug reports, and questions are welcome: please [open an issue](https://github.com/ag-libs/lathe/issues).
-Lathe isn't accepting code contributions at the moment, so please open an issue rather than a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md).
-Thank you for trying Lathe.
+We welcome questions, bug reports, and feedback through [GitHub issues](https://github.com/ag-libs/lathe/issues).
+Code contributions are currently closed.
+[Contributing policy](CONTRIBUTING.md)
 
 Lathe is developed with AI coding tools, mainly Claude Code.
-A maintainer reviews every change and takes responsibility for it, and AI-assisted commits carry a `Co-Authored-By` trailer.
-This follows the [Apache Software Foundation's guidance](https://www.apache.org/legal/generative-tooling.html) on generative tools.
+A maintainer reviews every change and takes responsibility for it.
+AI-assisted commits carry a `Co-Authored-By` trailer, following the [Apache Software Foundation's guidance](https://www.apache.org/legal/generative-tooling.html).
 
 ## License
 

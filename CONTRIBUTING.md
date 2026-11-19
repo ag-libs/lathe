@@ -1,25 +1,24 @@
 # Contributing to Lathe
 
-Thank you for trying Lathe.
-Feedback, bug reports, and questions are welcome: please open an issue.
+Bug reports, questions, and feature requests are welcome through [GitHub issues](https://github.com/ag-libs/lathe/issues).
+For a security concern, follow the private reporting instructions in the [security policy](SECURITY.md).
 
 ## Reporting a bug
 
-[Open an issue](https://github.com/ag-libs/lathe/issues).
-The most useful things to include are the Lathe version, your editor, your JDK and Maven versions, and the server log from a run with `LATHE_DEBUG=1` set before you start the editor.
-A small project that shows the problem helps most of all.
-
-For a security problem, don't open a public issue; see [SECURITY.md](SECURITY.md).
+Describe the action you took, what you expected, and what happened.
+Include your editor, Lathe version, JDK version, and Maven or Gradle version.
+For an editor issue, start the editor with `LATHE_DEBUG=1`, reproduce the problem, and include the relevant lines from the server log.
+A small project that reproduces the problem helps a maintainer try the same steps.
+[Troubleshooting](docs/guide/troubleshooting.md)
 
 ## Ideas and feature requests
 
-Open an issue too.
-Describe what you're trying to do; the problem matters more than a proposed solution.
+Describe what you want to do in your project and where the current workflow gets in the way.
 
 ## Pull requests
 
-Lathe isn't accepting code contributions at the moment, so please open an issue rather than a pull request.
-If you've found a fix, describing it in the issue is very welcome.
+External code contributions are currently closed.
+If you have a fix, describe it in the issue so a maintainer can review it.
 
 ## AI-assisted development
 
