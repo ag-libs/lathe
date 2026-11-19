@@ -10509,19 +10509,20 @@ Maven's session end (a lifecycle participant's `afterSessionEnd`, in the extensi
 
 ### Resolution
 
-The extension records the POMs once the build has ended: `LatheLifecycleParticipant.afterSessionEnd` fingerprints the manifest's build files again and rewrites the changed entries (`WorkspaceManifestData.withBuildFiles`), so the manifest holds what the POMs contain after a build that rewrote them.
-It does so only when this build wrote the manifest (its mtime moved since the lock was taken): a build that ran no sync, as `mvn compile`, leaves a POM edited since the last sync differing, and the server still asks for a sync.
-A file watched by touch (no fingerprint) and one that is gone keep their entries; the step is best-effort and never fails the build.
-The server needs no change: while the build holds the lock the watcher does not poll, and the rewrite lands before the lock is released, so the server reloads once.
-Checked on jdbi: after the same POM edit and one sync (sortpom rewrote `core/pom.xml`), all 44 build files match the manifest.
+The extension records a POM the build only reformatted: at session end (`LatheLifecycleParticipant.afterSessionEnd`), a build file whose content moved since the sync is given its new fingerprint (`WorkspaceManifestData.withBuildFiles`) when two things hold.
+The manifest's fingerprint is the one Maven read when this build started (taken in `afterProjectsRead`), so an older sync's entry, from before a POM was edited, is never replaced.
+And the POM read now, written back by Maven's own model writer, equals the model Maven read (`MavenProject.getOriginalModel()`): the writer orders the elements and drops whitespace and comments, so sortpom's order and layout drop out, while an added dependency or a changed version does not.
+A POM whose model changed during the build, by hand, by a `git pull` or by a plugin, keeps the synced fingerprint and still asks for a sync; one whose lists sortpom reordered (dependencies) does too, as the conservative answer.
+It does not need the build lock, so the first sync of a fresh checkout, which takes none, is covered; the step is best-effort and never fails the build.
+The server needs no change: while the build holds the lock the watcher does not poll, and the rewrite lands before the lock is released, so it reloads once.
 
-A POM edited by hand while a sync runs is taken as the build's, so it raises no prompt; the next edit does.
+Checked on jdbi with the fix: after adding a dependency at the top of `core/pom.xml` and one sync, sortpom expanded it onto several lines, the extension logged `build-file fingerprints updated for reformatted POMs 31ms`, all 44 build files match the manifest, and MCP `verify_change` answers "No errors" (before: "Verification deferred").
 
 ### Regression targets
 
-- `LatheLifecycleParticipantTest.refreshBuildFiles_pomRewrittenAfterTheSync_recordsItsContentNow`
-- `LatheLifecycleParticipantTest.refreshBuildFiles_manifestNotWrittenByThisBuild_leftAsTheSyncWroteIt`
-- `LatheLifecycleParticipantTest.afterSessionEnd_syncWroteTheManifestThenThePomChanged_fingerprintUpdated`
+- `LatheLifecycleParticipantTest.refreshBuildFiles_pomReformattedDuringTheBuild_recordedNowAndAChangedModelKept`
+- `LatheLifecycleParticipantTest.refreshBuildFiles_syncedFingerprintIsNotWhatMavenRead_kept`
+- `LatheLifecycleParticipantTest.afterSessionEnd_firstSyncOfAFreshCheckout_reformattedPomRecorded`
 
 ---
 

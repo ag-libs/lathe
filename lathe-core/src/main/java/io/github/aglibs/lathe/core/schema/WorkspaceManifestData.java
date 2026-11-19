@@ -62,7 +62,6 @@ public record WorkspaceManifestData(
         Map.of());
   }
 
-  // The same manifest with other build files: their fingerprints taken again after the build.
   public WorkspaceManifestData withBuildFiles(final List<BuildFileData> files) {
     return new WorkspaceManifestData(
         schemaVersion,
