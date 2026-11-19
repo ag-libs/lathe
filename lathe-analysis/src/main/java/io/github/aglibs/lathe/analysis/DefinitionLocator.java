@@ -78,17 +78,15 @@ public final class DefinitionLocator {
       final var cu = path.getCompilationUnit();
       // Reconstruct the target's real workspace file: its compilation unit may be the compiler's
       // temp overlay copy of an open buffer (/tmp/lathe-.../...), which opens detached with no
-      // language features. The file asked about is that file even when its package is not its
-      // directory, where the package names no file. Fall back to the compilation unit only for
-      // generated/external sources.
+      // language features. A declaration in the file asked about is in that file, first: when its
+      // package is not its directory, the package names no file, or another one. Fall back to the
+      // compilation unit only for generated/external sources.
       final String targetUri =
-          findSourceFile(element, sourceRoots)
-              .map(LatheUri::fromPath)
-              .orElseGet(
-                  () ->
-                      cu == current
-                          ? sourceUri
-                          : LatheUri.canonical(cu.getSourceFile().toUri().toString()));
+          cu == current
+              ? sourceUri
+              : findSourceFile(element, sourceRoots)
+                  .map(LatheUri::fromPath)
+                  .orElseGet(() -> LatheUri.canonical(cu.getSourceFile().toUri().toString()));
       try {
         final Optional<Position> position =
             DeclarationNames.declarationNamePosition(

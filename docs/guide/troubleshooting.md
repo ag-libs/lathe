@@ -99,7 +99,9 @@ This affects tests using `getResource(...).getFile()` or `getProtectionDomain().
 To run the test with its original layout, use `mvn -pl module test -Dtest=SomeTest` or `./gradlew :module:test --tests 'com.example.SomeTest'`.
 To make the test work in both environments, use one of these paths.
 
-- Resolve a path such as `Path.of("src", "test", "java")` from the working directory when the build uses the module folder.
+- Resolve the path from the test’s working directory.
+  Gradle and Surefire default to the module directory, so `Path.of("src", "test", "java")` points to the test sources.
+  If your build sets a different working directory, Lathe uses that directory too.
 - Pass the directory explicitly and read it with `System.getProperty("test.sourceDir")`.
   In Gradle, use `test { systemProperty 'test.sourceDir', file('src/test/java').absolutePath }`.
   In Maven Surefire, use `<argLine>-Dtest.sourceDir=${project.basedir}/src/test/java</argLine>` so the option reaches the JVM launch Lathe captures. [Test capture limits](test-capture.md#requirements-and-current-limits)

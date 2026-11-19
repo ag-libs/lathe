@@ -60,6 +60,22 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".jar");
   }
 
+  // The version in a repository jar's name, artifactId-version.jar, as Maven and Gradle name the
+  // jars they resolve; none for another artifact's jar. A version starts with a digit, so
+  // junit-platform-commons-extra-1.0.jar is not junit-platform-commons at version extra-1.0.
+  public static Optional<String> jarVersion(final Path jar, final String artifactId) {
+    final String name = jar.getFileName().toString();
+    final String prefix = "%s-".formatted(artifactId);
+    if (!name.startsWith(prefix) || !isJarFile(jar)) {
+      return Optional.empty();
+    }
+
+    final String version = name.substring(prefix.length(), name.length() - ".jar".length());
+    return !version.isEmpty() && Character.isDigit(version.charAt(0))
+        ? Optional.of(version)
+        : Optional.empty();
+  }
+
   public static ContentFingerprint fingerprint(final Path file) throws IOException {
     return ContentFingerprint.of(Files.readAllBytes(file));
   }

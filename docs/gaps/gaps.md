@@ -298,8 +298,16 @@ decompiles too.
 
 ### Fix direction
 
-A decompiler fallback (for example an embedded Vineflower) writing a read-only source into the cache
-for a class with no source; mark such answers as decompiled.
+Write a stub source tree for each dependency without sources at sync time, and record it as that dependency's sources directory, so search, definition, hover and references reach it through the existing source paths.
+javac prints a type from its class file as Java-shaped source (`Elements.printElements`): the package, every member's signature with generics, `throws` and annotations, and nested types, without bodies or Javadoc (Guava's `Joiner`: 115 lines in 92 ms, checked 2026-11-18).
+Parameters are `arg0` unless the jar was compiled with `-parameters`.
+A decompiler (an embedded Vineflower) would add bodies, at the cost of a dependency.
+
+Each stub says in a header that it was generated from the class file of `g:a:v` and is not the source.
+The debugger must not take a stub for source: its lines do not match the class file's.
+The cost is a javac pass over each sourceless jar in the sync, and its disk in the cache.
+
+Since EG-112 (2026-11-18), `search_symbols` lists such a type with its dependency and definition names the dependency; stubs would replace the search part, and let the editor's workspace symbols list these types too.
 
 ### Regression targets
 
@@ -336,7 +344,7 @@ None yet.
 
 ## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow
 
-**Status: accepted** (triaged 2026-11-17: it ends the server, and the fix is a stack size on the worker threads)
+**Status: deferred** (2026-11-18: deferred by decision; such code is rare outside generated sources)
 
 **Kind: bug**
 
@@ -379,13 +387,13 @@ None yet.
 
 ---
 
-## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
+## EG-071 — In `module-info.java`, a module or package name highlights nothing, or only its last segment
 
-**Status: deferred** (triaged 2026-11-17: the symptom changed; a live probe should confirm what is left)
+**Status: deferred** (probed 2026-11-19: the per-segment highlights are gone; an `exports` package and the module name now find nothing, and a `requires` name highlights only its last segment; references on a package need a package reference target, a design of its own)
 
 **Kind: bug**
 
-**Value: low — Size: S**
+**Value: low — Size: M**
 
 **Affects: the editor.**
 
@@ -393,21 +401,20 @@ Found by the pre-release test rounds (2026-10-29/30) on Helidon.
 
 ### Observed behaviour
 
-Document highlight on a package name in an `exports` clause highlights each dotted segment on its own,
-also inside another package's `exports` (a `…type.spi` beside `…type`) and in the module's own name.
-0.1.24 behaves the same.
+Probed 2026-11-19 on the server built from `eabe332c` (main `d2a58562` without NV-9, which does not touch this), in the `multi-module` invoker fixture's `jpms/src/main/java/module-info.java`, through `documentHighlight`, `references` and `hover` on every segment:
+
+- `exports com.example.jpms`: no highlight and no references on any segment; hover shows the qualified name.
+- The module's own name (`module com.example.jpms`): no highlight and no references.
+- `requires io.github.aglibs.validcheck`: one reference, but the highlight covers only `validcheck`, not the whole name.
+
+`CursorElements.elementAt` skips package elements, so a cursor on an `exports` segment resolves to the enclosing module, whose search finds nothing.
+
+History: before `5c85a747` (2026-11-08), which replaced a walk that matched every member-select segment with `trees.getElement`, highlight marked each dotted segment on its own, also inside another package's `exports` (a `…type.spi` beside `…type`) and in the module's own name, and `find_references` on an `exports` segment returned every segment of the module and package names (EqualsVerifier, Helidon `exports io.helidon.webserver.spi`).
 
 ### Fix direction
 
-Highlight a qualified package name as one unit, and only where the same package is named.
-
-Also (exploratory round, 2026-11-04): `find_references` on a package segment in `exports` returns every segment of the module and package names (EqualsVerifier, Helidon `exports io.helidon.webserver.spi`); the rename form is FR-027.
-
-### Re-checked against the code (2026-11-17)
-
-Commit `5c85a747` (2026-11-08) replaced the walk that matched every member-select segment with `trees.getElement`, so every segment is no longer highlighted.
-The target is still wrong: `CursorElements.elementAt` skips package elements, so a cursor on an `exports` segment resolves to the module, and highlight and `find_references` there most likely find nothing now.
-Probe: `documentHighlight` on an `exports` segment.
+Highlight a module or package name in `module-info.java` as one qualified unit, wherever the same name is used; the `requires` case and the module name need only the span.
+`find_references` on an exported package needs a package reference target, which `ReferenceTarget` and the search do not have, so it can be split off; no gap tracks renaming a package.
 
 ### Regression targets
 
@@ -468,7 +475,7 @@ Requested in daily use (2026-10-31), as IntelliJ's Navigate → Test (`Ctrl+Shif
 ### Gap
 
 From a main class there is no quick way to open its test.
-`:LatheNew` → Test creates one through the full new-type dialog (and lists the main location first, see [NV-9](#nv-9--lathenew--test-from-a-main-source-file-lists-the-main-location-first)),
+`:LatheNew` → Test creates one through the full new-type dialog,
 but nothing finds an existing test, and nothing goes from a test back to the class it tests.
 
 ### Wanted behaviour
@@ -715,60 +722,25 @@ None yet.
 
 ---
 
-## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type
+## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
 
-**Status: accepted** (triaged 2026-11-17)
+**Status: deferred** (triaged 2026-11-18: a feature, and the feature freeze holds)
 
-**Kind: bug**
+**Kind: feature**
 
-**Value: low — Size: S**
+**Affects: `format_file`, `:LatheFormat` and the editor's formatting on Maven builds.**
 
-**Affects: go to definition on a parameter type inside a Javadoc member reference (`@see #m(Type)`, `{@link #m(Type)}`).**
-
-Found by the editor exploratory round on jdbi (2026-11-17).
+Found by the exploratory round on Spring Petclinic and Quarkus (2026-11-17).
 
 ### Observed behaviour
 
-In jdbi's `Jdbi.java`, line 362 reads `@see #withHandle(HandleCallback)`.
-Definition with the cursor on `HandleCallback` lands on `Jdbi.java:410`, the `withHandle` method, as it does on `withHandle` itself.
-The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `HandleCallback.java:22`.
+Petclinic formats with `spring-javaformat-maven-plugin`, Quarkus with `formatter-maven-plugin` (net.revelc) and `impsort-maven-plugin`.
+On both, `format_file` answers "No formatter for this workspace: the project pins none (no Spotless Java step)": `MavenStyle` reads only `spotless-maven-plugin`.
+Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
 
 ### Fix direction
 
-Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-112 — A type from a dependency without sources is reported as not existing
-
-**Status: accepted** (triaged 2026-11-17: an agent concludes the type does not exist)
-
-**Kind: bug**
-
-**Value: high — Size: S–M**
-
-**Affects: `search_symbols` and `get_definition` (MCP), and the editor's workspace symbols, which run the same search, on a type whose dependency publishes no sources jar or has an unreadable one ([WS-39](gaps-archive.md#ws-39--a-dependencys-sources-jar-that-is-not-a-zip-fails-the-whole-sync--done)).**
-
-Found while verifying WS-39 end to end (2026-11-17).
-
-### Observed behaviour
-
-In a project using the DB2 driver's `com.ibm.db2.jcc.DB2SimpleDataSource` (its dependency synced as one without sources):
-
-- `describe_symbol` answers the declaration from the class file, `source: com.ibm.db2:jcc:12.1.4.0`, and `find_references` finds the 3 uses.
-- `search_symbols DB2SimpleDataSource` answers `No symbols matching 'DB2SimpleDataSource'`, though the dependency's type index lists it.
-- `get_definition` on it answers `No definition found.`
-
-`WorkspaceSymbolResolver.toSymbolInformation` keeps only a type whose source file it can locate, and drops the rest without a word.
-An agent concludes the type does not exist and searches elsewhere.
-
-### Fix direction
-
-Short of a decompiler ([EG-063](#eg-063--a-dependency-without-a-sources-jar-has-no-source-to-navigate-to)), say what is known: list the type with its dependency instead of a file (`DB2SimpleDataSource (Class) — com.ibm.db2.jcc  com.ibm.db2:jcc:12.1.4.0, no sources`), and answer a definition with the dependency that declares it and a pointer to `describe_symbol`.
+Read those plugins' configuration as a Spotless step is read: spring-javaformat as its own engine, formatter-maven-plugin's Eclipse configuration through the existing Eclipse engine.
 
 ### Regression targets
 
@@ -1004,6 +976,36 @@ None yet.
 
 ---
 
+## FR-036 — Renaming a getter leaves its property name in templates and message files unreported
+
+**Status: deferred** (triaged 2026-11-18: still on main `cdf57f1`; the review list is advisory, and listing property names needs a rule for which accessors count)
+
+**Kind: bug**
+
+
+**Affects: MCP `rename_symbol` and `verify_change`, and the editor's rename.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-17).
+
+### Observed behaviour
+
+`rename_symbol` on `Person.getFirstName` → `getGivenName` edits 4 places in 3 files and lists no place to review.
+Petclinic's Thymeleaf templates use the JavaBean property, not the method: `${owner.firstName}` in `ownersList.html`, `*{firstName + ' ' + lastName}` in `ownerDetails.html`, and two more; the message bundles key `firstName` too.
+"Not renamed — review" lists only the old method name as text, so none of them is named, and `verify_change` says clean.
+The application then fails at runtime, on the first page that renders an owner.
+The same holds for a property Jackson serializes or a JPQL query names: any framework that reads accessors as properties.
+
+### Fix direction
+
+When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
+A field renamed with its accessors is the same case.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -1052,7 +1054,7 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ## CA-18 — Extract method's compile check runs no javac plugins, so it can offer a refactor that fails Error Prone
 
-**Status: accepted** (triaged 2026-11-17: keeping `var` is small and removes the case seen)
+**Status: deferred** (triaged 2026-11-19: keeping the caller's `var` does not remove the warning, which is on the extracted method's return type; no simple fix picks the type a plugin would accept)
 
 **Kind: bug**
 
@@ -1077,8 +1079,9 @@ The return type is the local's inferred concrete type, and the caller's `var` be
 
 ### Fix direction
 
-Keep the caller's `var` when the selection declared the local with `var`.
-Only a `var` local carries the inferred type: an explicitly typed local's `asType()` already is its declared type, so keeping `var` is the whole fix.
+Keeping the caller's `var` when the selection declared the local with `var` tidies the call site only.
+`[NonApiType]` flags the extracted method's return type, which is the local's inferred type (`ExtractMethodProvider` takes it from `asType()`), so the method still returns `ArrayList<Class<?>>`.
+Avoiding the warning needs a return type the plugin accepts (`List`, `Collection`, …), and nothing in the analysis compile says which one.
 A check through the build's plugins is out of reach of the analysis compile.
 
 ### Regression targets
@@ -1198,39 +1201,6 @@ None yet.
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-A `workspace.json` that is not UTF-8 or not readable (chmod 000) makes `WorkspaceWatcher.readManifest` throw; the editor gets no message, the watcher does not start, and a fixed file is never re-read, so outside changes go unnoticed until a restart.
-A missing file or one with no modules is silent.
-An empty file is fixed: `Json.read` turns it into a load problem the editor is shown (re-checked 2026-11-17).
-
-### Root cause
-
-`WorkspaceManifest.load` already turns a read error into a load problem that `showWorkspaceStatus` would show,
-but `loadWorkspace` constructs the `WorkspaceWatcher` first, and its `readManifest` throws, so the warning is never sent.
-
-### Fix direction
-
-Report a broken manifest to the client with the remedy (a sync), keep watching, and reload once it is readable.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-27 — On Gradle, included builds are not covered
 
 **Status: deferred** (2026-11-15: feature freeze)
@@ -1252,39 +1222,6 @@ root build is left out with a `[lathe] … left out` line.
 ### Fix direction
 
 Capture included builds that hold Java projects as more modules of the same workspace.
-
-### Regression targets
-
-None yet.
-
----
-
-## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
-
-**Status: deferred** (triaged 2026-11-16: seen once, not reproduced; probe: re-sync Caffeine with `LATHE_DEBUG=1` and look for a reload between the two writes; close if it does not recur)
-
-**Kind: bug**
-
-**Value: low — Size: unknown**
-
-**Affects: MCP and editor answers right after a sync, on a module with many generated sources.**
-
-Found by the pre-release Gradle round (2026-11-15) on Caffeine.
-
-### Observed behaviour
-
-After `.lathe/lathe-sync.sh caffeine`, the MCP server recompiled the module's 493 generated sources twice in a row
-(28 s, then 22 s), and a `get_diagnostics` asked meanwhile answered after 43.8 s.
-Two reduced attempts (add a file, sync, delete it, sync) did not repeat it.
-
-### Fix direction
-
-Reproduce first: find what made the pass write the generated sources twice (a reload landing mid-pass, or stamps the sync
-rewrote after the first write).
-
-Both are possible in the code (checked 2026-11-16): `WritePass.onReload` bumps the pass generation, but `writeLevels` checks it only between dependency levels, so a level already compiling finishes and the next pass may write it again;
-the stamps guess would sit in `stableSources`/`pendingStale` and the stamp map.
-No commit since the report targets either.
 
 ### Regression targets
 
@@ -1360,6 +1297,41 @@ Two ways to need no exclusion are open:
   The mirror must stay outside `target/` and `build/`: it outlives a clean and a failed build (`lathe-gradle-support.md`).
   This is the [External Content Directory](../potential/lathe-external-content-dir.md) design, which covers every
   scanner, not only nohttp: the proper fix, taken up if more users hit this.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-44 — `:LatheInit` builds a Maven project to `test`, though `lathe.sync.phase` asks for a later phase
+
+**Status: deferred** (triaged 2026-11-18: it needs a build that cannot reach `test` without packaging, as Quarkus, and `lathe.sync.phase` set; the fix is clear when such builds come up)
+
+**Kind: bug**
+
+**Affects: Maven setup with `:LatheInit` on a build that cannot reach `test` without packaging some of its modules (Quarkus, a shading build); the Neovim client.**
+
+Found testing the WS-41 fix on Quarkus (2026-11-18), with that fix applied (`main` `2c9804d` plus #381).
+
+### Observed behaviour
+
+`:LatheInit`'s first Maven build is fixed: `clean test`, capture only (`MAVEN_FIRST_BUILD` in `lathe-neovim/runtime/lua/lathe/latheinit.lua`).
+On Quarkus' whole reactor, that build passes WS-41's module and stops at the third: `maven-dependency-plugin:3.8.1:copy-dependencies (copy-porting-pkg) on project arc-cdi-tck-runner: Artifact 'io.quarkus.arc:arc-cdi-tck-porting-pkg:jar:999-SNAPSHOT:compile' has not been packaged`.
+The module copies another reactor module's jar, which only `package` makes; plain `mvn clean test` fails the same way.
+The build stops before `lathe:sync`, so no `.lathe/workspace.json` or sync script is written.
+
+`lathe.sync.phase` is the setting for such a build: in `.mvn/maven.config` (`-Dlathe.sync.phase=package`) or as a root POM property, it makes the sync script build to that phase, skipping the tests on the way.
+`:LatheInit` does not read it, so a project that sets it still gets a `test` build, which fails before any sync script exists to use it.
+The build's warning to set it covers only shaded modules (`SyncCoordinator`), so a build like Quarkus' is not told about it.
+
+The same first build run to `package` instead (`clean package -Dlathe.sync.phase=package`, capture only, `-DskipITs` as the sync script adds past `test`) gets past `arc-cdi-tck-runner`: stopped by hand after 58 of the reactor's 1,435 modules (it was still fetching dependencies), it had met no failure and captured 62 test launches.
+Whether the whole setup then completes and writes the workspace files was not checked.
+
+### Fix direction
+
+Have `:LatheInit` build a Maven project to the phase `lathe.sync.phase` names, read from `.mvn/maven.config` or the root POM as `MavenSyncScript.phase` reads it, with the capture-only flags the sync script adds past `test` (`-DskipITs`), and `test` when it names none.
+Then consider pointing at the setting when a build fails on an artifact that "has not been packaged", as the shading warning does for shading.
 
 ### Regression targets
 
@@ -1491,41 +1463,6 @@ None yet.
 
 ---
 
-## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word
-
-**Status: accepted** (triaged 2026-11-17: the cause is not known; the first step is the sync naming the modules it captured nothing for, and the listener saying why)
-
-**Kind: bug**
-
-**Value: high — Size: M**
-
-**Affects: Maven modules whose capture-only test run reports `Tests run: 0` (seen on jdbi: `core`, `sqlobject`, `postgres`, `spring` and others); `run_test`, neotest and `:LatheRun` on their tests.**
-
-Found by the editor exploratory round on jdbi (2026-11-17).
-
-### Observed behaviour
-
-`:LatheInit` on jdbi succeeds and captures 21 modules' test launches, but not `core`, `sqlobject` and other modules with tests; nothing in the output says so.
-Running `TestJdbi` then answers `blocked: no captured test launch for core; run .lathe/lathe-sync.sh --tests core`, and that command again reports `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0` and writes no `.lathe/core/test-launch.json`.
-`lathe-junit` is on the fork's test classpath (`-X`), Surefire uses the JUnit Platform provider with `forkCount=4`, and no fork reports a test class.
-`vavr`, with the same Surefire settings, captures (its dry run reports 3 skipped tests).
-`-Dtest=TestJdbi -Dlathe.capture.only=true` on `core` captures the launch (8 skipped).
-`CaptureLauncherSessionListener` swallows every `Throwable`, so a failed capture leaves no trace.
-[EG-067](gaps-archive.md#eg-067--the-first-build-floods-the-log-with-warnings--non-goal) saw `Tests run: 0, Skipped: 0` on EqualsVerifier's `equalsverifier-core` and `equalsverifier-test`; whether those were captured is not recorded.
-
-Probe: on jdbi `core`, `mvn -pl core test -Dlathe.capture.only=true -X` with a stack trace printed from the listener's catch, and a log of whether `launcherSessionOpened` runs and in which working directory.
-The warning in the fix direction does not wait on it.
-
-### Fix direction
-
-Find why the whole-module dry run starts no test class in these modules; whatever the cause, have the sync say which modules ran tests but captured no launch, and have the listener print why a capture failed instead of nothing.
-
-### Regression targets
-
-None yet.
-
----
-
 ## TE-20 — A Gradle source set beyond `test` has no package, folder or module runs
 
 **Status: deferred** (2026-11-15: feature freeze)
@@ -1553,6 +1490,97 @@ A module run covering several source sets needs one launch per source set.
 ### Regression targets
 
 `LatheWorkspaceServiceTest.executeCommand_listRunnables_sourceSetFile_noPackageRun` (the package run is not offered).
+
+---
+
+## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry
+
+**Status: deferred** (triaged 2026-11-18: custom test annotations built on `@Testable` are mostly in large projects like Kafka; the fix is small and clear when it is picked)
+
+**Kind: bug**
+
+**Affects: the editor's runnables of a test file (run and debug entries, neotest) and MCP `run_test` on a file, for tests a project marks with its own annotation: Apache Kafka's `@ClusterTest`, `@ClusterTests` and `@ClusterTemplate` (about 150 files).**
+
+Found evaluating Lathe on Apache Kafka (2026-11-18), from the code; not run live, as Kafka's `@ClusterTest` files are in `clients-integration-tests`, which needs the Scala `core` built.
+
+### Observed behaviour
+
+Kafka's `@ClusterTest` is annotated `@TestTemplate`, `@Tag("integration")` and `@Timeout(60)`; JUnit runs each such method as a test template.
+`RunnableScanner.isTestAnnotation` takes a method as a test only by its annotation's simple name (`Test`, `ParameterizedTest`, `TestFactory`, `RepeatedTest`), so these methods get no run entry, and a file holding only them has no test to run.
+A module run, through JUnit's own discovery of the captured launch, should still run them; not checked.
+
+### Fix direction
+
+Take a method as a test when one of its annotations is, or is itself annotated with, JUnit Platform's `org.junit.platform.commons.annotation.Testable`, which `@Test`, `@TestTemplate` and `@TestFactory` carry, keeping the names for JUnit 4's `org.junit.Test`, which does not.
+That covers any custom test annotation built on JUnit's own; ArchUnit's `@ArchTest` (TE-18), on fields, likely carries `@Testable` too (to check).
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-25 — A module that publishes a shaded jar at its jar's path runs its tests on the last build's classes
+
+**Status: deferred** (triaged 2026-11-18: a module that replaces its jar with a shaded one is rare, the answer already says what runs, and the fix needs a design)
+
+**Kind: bug**
+
+**Affects: MCP `run_test` and editor test runs of a Gradle module whose jar task is replaced by a Shadow jar at the jar's path (Apache Kafka's `clients`), after an edit to the module's main code.**
+
+Found evaluating Lathe on Apache Kafka (2026-11-18), with the WS-43 branch: the first module checked end to end.
+
+### Observed behaviour
+
+Kafka's `clients` disables its `jar` task and publishes `shadowJar` at the jar's path, relocating `protobuf`, `opentelemetry-proto` and `commons-net`.
+Its captured test launch holds no `build/classes/java/main`: its own classes reach its tests only in `kafka-clients-4.5.0-SNAPSHOT.jar`, which Lathe records as `shaded: true`, and replay keeps.
+`run_test` on `BytesTest` passes (9 tests) with the note `clients/build/libs/kafka-clients-4.5.0-SNAPSHOT.jar runs as the last build left it, not from .lathe: it may not hold your latest edits`.
+An edit to `clients`' main code reaches its tests only at the next Gradle build.
+
+### Cause
+
+By design (WS-31, and `LatheSyncTaskFunctionalTest.sync_jarTaskDisabled_marksTheJarAtItsPathShaded`): the mirror lacks the relocated classes, and its own classes name the original packages, which the shaded build leaves off the runtime classpath, so the mirror cannot stand in for the jar.
+
+### Fix direction
+
+Needs a design: the mirror ahead of the shaded jar would make the module's own classes fresh while the jar still supplies the relocated ones, but a fresh class that uses a relocated package by its original name would then fail to load.
+Until then, the note says what runs.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-27 — Tests a JUnit 4 runner selects by name (Lucene's `testXxx`) get no run entry
+
+**Status: deferred** (triaged 2026-11-18: it affects projects built on randomizedtesting (Lucene, Solr, Elasticsearch, OpenSearch), where a class with one `@Test` method still runs all its tests; the fix direction is clear when it is picked)
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on projects whose tests run under randomizedtesting's `RandomizedRunner` (Apache Lucene, Solr, Elasticsearch, OpenSearch), or another JUnit 4 runner that picks its own methods.**
+
+Found checking the TE-23 fix on Apache Lucene (2026-11-18, main `7e748f89` plus #398).
+
+### Observed behaviour
+
+`run_test` on `lucene/core/src/test/org/apache/lucene/search/TestTermQuery.java` answers "no test in TestTermQuery.java", and the editor shows no run entry on its methods.
+Lucene's tests are `public void testXxx()` methods without `@Test`, in classes extending `LuceneTestCase`, which declares `@RunWith(RandomizedRunner.class)` and `@TestMethodProviders({LuceneJUnit3MethodProvider.class, JUnit4MethodProvider.class})`: the runner takes a method as a test by its name, as JUnit 3 did, or by `@Test`.
+It is not JUnit 3 (`LuceneTestCase` extends `Assert`, not `junit.framework.TestCase`), and not the build tool: Gradle, as Surefire would, hands the class to the vintage engine, which runs the class's runner, and the runner picks the methods.
+Lathe's source scan (`RunnableScanner`) takes a method as a test by `@Test`/`@Testable`, or by its `test` prefix only in a `TestCase` subclass, so it finds none here.
+A class with at least one `@Test` method is found, and its replay then runs every test the runner picks (`TestDocValuesQueries`: 41 passed), so the run itself works.
+
+### Fix direction
+
+Ask the runner, rather than guess from the source: Lathe already has a discover-mode launch, a JVM on the module's captured test launch that asks the JUnit Platform for the tests a run would execute (`RunCoordinator.discoverTestsFuture`, `lathe.tests.discover`), where the vintage engine asks the runner for its description, which runs the method providers.
+Only the client's test tree uses it today; `run_test` and the editor's run entries use the source scan alone.
+Use a discovery's tests for a file the scan finds none in (and for the methods a class with some `@Test` methods also has), so whatever any runner selects becomes runnable, at the cost of one discovery JVM per module, run one at a time and kept until the module's test classes change.
+A source-only alternative, `test*` methods in a class whose hierarchy carries `@TestMethodProviders` with a JUnit 3-style provider, covers randomizedtesting alone.
+Related: TE-24, the same gap for custom annotations built on `@Testable`, which discovery would close too.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -1717,37 +1745,6 @@ python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.ja
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
-
-## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: Neovim.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-From a file under `src/main/java`, `:LatheNew` → Test offers the buffer's package twice, and the main-source row comes first.
-Accepting the top row is the natural move, yet a test belongs in the test root.
-
-### Fix direction
-
-`SourceLayout.destinations` now owns the ranking (moved from `lathe-neovim/runtime/lua/lathe/new.lua` in `6d40d341`).
-Its unfiltered list ranks both scopes equally within the buffer's package and module,
-so the alphabetical tie-break (`main` < `test`) still decides.
-The typed-package path already prefers the kind's scope; that partial improvement does not fix the unfiltered list.
-Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
-
-### Regression targets
-
-None yet.
-
----
 
 # MCP / Agent Facade Gaps (MC)
 
@@ -2254,196 +2251,25 @@ None yet.
 
 ---
 
-## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op
+## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results
 
-**Status: accepted** (triaged 2026-11-17: an agent is told a file that never compiled is clean, and a rename it believes was done; a live probe should confirm the silent rename comes from the same lookup)
+**Status: deferred** (triaged 2026-11-18: low; the count is right, only the first lines are)
 
 **Kind: bug**
 
-**Value: high — Size: M**
+**Affects: MCP `find_implementations` and the other capped lists.**
 
-**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
-
-The lookups are in `lathe-analysis`, so the editor's definition and rename probably fail the same way; the editor was not checked.
-
-Not to be confused with commit `fa56ea2d` (`Refs: MC-90`), which fixed MC-98: that gap was numbered MC-90 before it was renumbered.
-
-Found by the MCP exploratory round (2026-11-16).
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
 
 ### Observed behaviour
 
-javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
-Lathe answers, for that file:
-
-- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
-- `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
-- `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
-
-A file with no `package` line behaves the same, including the silent rename.
-A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
-`find_references` maps every case back to the real file.
-An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
-
-### Cause (verified against the code, 2026-11-17)
-
-`DefinitionLocator.findSourceFile`, and its twin `TypeSourceLocator.findSourceFile` that rename uses, build a source path from the declared package, so they miss a file whose directory names another package.
-`DefinitionLocator.locate` then falls back to the compile copy, which `ServerFiles.tempSourceFile` places by directory.
-"no class was written" is `WritePass.failedWrite`'s default when javac reported no error.
+`find_implementations` of `GenericVisitor` with `maxResults: 5` answers "33 implementations (showing first 5)", all anonymous classes in tests of `javaparser-core-testing` and `javaparser-core-testing-bdd`; `GenericVisitorAdapter` itself is not among them.
+The list is in path order, and `javaparser-core-testing/…` sorts before `javaparser-core/…` because `-` sorts before `/`.
 
 ### Fix direction
 
-Map the compile copy back to the source file whatever package javac reads, as `find_references` already does; compile a file whose package differs from its directory as the build does, or say plainly that Lathe needs them to match.
-A rename that finds the symbol must never answer "no references".
+Order a capped list by module and source tree (main before test, the declaring module first), then by path.
 
 ### Regression targets
 
 None yet.
-
----
-
-## MC-91 — Tool columns are UTF-16 code units, and nothing says so
-
-**Status: accepted** (triaged 2026-11-17: state the unit in every position tool's description; converting to code points waits, as it needs every line's text)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-On `\tString label = "😀😀"; int after = count;`, `count` is at character column 35.
-`get_definition` at column 35 answers `Line 9 has no symbol at column 35`; column 37 (UTF-16, two units per emoji) works.
-`outline` lists `after` at `9:29` (character 27) and `find_references` reports `count` at `9:37`.
-The tool descriptions say only "1-based column".
-The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, `McpText.toWire`).
-`symbol` avoids the problem, and edits on such a line are exact.
-
-### Fix direction
-
-Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
-Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-92 — `run_test` runs a test whose dependency no longer compiles
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S–M**
-
-**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
-`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
-When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
-A dependency whose own compile fails is already caught: it is a failed compile of the test's module or one upstream, and the run is refused (`ChangeVerifier.failingInModule`).
-What gets through, verified against the code (2026-11-17): a deleted dependency, which only removes class outputs (`WritePass.reconcileDeletedSourcesIn`), and a dependency change that still compiles but breaks the unchanged test, as nothing recompiles an unchanged dependent.
-Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
-
-### Fix direction
-
-Refuse the run with the same "does not compile" answer when the test file would no longer compile against the current classes, not only when its own text changed.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-94 — A `file://` URI as a tool's `file` is read as a relative path
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: every file tool given a `file://` URI instead of a path.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-`outline` with `file="file:///…/Edge.java"` answers `/<workspace>/file:/…/Edge.java does not exist`.
-Agents that also drive an LSP carry URIs and may pass one.
-
-### Fix direction
-
-Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
-`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
-
-Found by the MCP exploratory round (2026-11-16).
-
-### Observed behaviour
-
-On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
-`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
-The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
-
-### Fix direction
-
-Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: `verify_change` while the project's own `.lathe/lathe-sync.sh` (or any build Lathe sees writing `.lathe/`) runs.**
-
-Found by the MCP exploratory round on resilience4j (2026-11-17).
-
-### Observed behaviour
-
-During a `latheSync`, every `verify_change` answers at once ``Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.``; the first call after the build ends checks normally.
-Not stalling is right, but the advice is to start a second build while the first runs; an agent following it doubles the wait.
-`LatheEngine.verifyChange` sets the sync command for every deferral but another server writing, a build in progress included, and `McpText` prints it.
-The `LatheVerifyChange` javadoc also tells a caller to run `suggestedSync` for a running build.
-
-### Fix direction
-
-For a build in progress, say to wait for it to finish and re-check; name the sync only when what is missing is one, and correct the javadoc.
-
-### Regression targets
-
-None yet.
-

@@ -207,4 +207,25 @@ final class RunOverlayTest {
 
     assertThat(resolved.env()).containsEntry("X", "1");
   }
+
+  // A test replay makes the directory its build ran the tests in, which a clean removes (Lucene's
+  // build/tests-cwd); a run configuration's own cwd is never made, so a mistyped one fails to
+  // start.
+  @Test
+  void makeCapturedWorkingDir_capturedOrConfiguredCwd_onlyTheCapturedOneMade() throws IOException {
+    final Path captured = tmp.resolve("app/build/tests-cwd");
+    final Path configured = tmp.resolve("run-dri");
+    final var item = RunItem.empty("app", RunKind.TEST);
+    final var configuredItem =
+        new RunItem(
+            null, "app", RunKind.TEST, null, null, null, null, null, null, "run-dri", null, null);
+
+    RunOverlay.makeCapturedWorkingDir(
+        new ResolvedLaunch(List.of(), Map.of(), List.of(), captured), item);
+    RunOverlay.makeCapturedWorkingDir(
+        new ResolvedLaunch(List.of(), Map.of(), List.of(), configured), configuredItem);
+
+    assertThat(captured).isDirectory();
+    assertThat(configured).doesNotExist();
+  }
 }

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -9,10 +10,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class WorkspaceWatcherTest {
@@ -107,6 +112,61 @@ class WorkspaceWatcherTest {
     Files.writeString(pom, "<project>updated</project>");
 
     assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
+  }
+
+  // A manifest that is not UTF-8 starts the watcher instead of failing the load, and is no change
+  // while it stays so, touched or not (no reactor refresh for nothing); rewritten, it is one.
+  @Test
+  void poll_unreadableManifestRewritten_workspaceChanged() throws IOException {
+    writeUnreadable(PAST);
+
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+    writeUnreadable(later(1));
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+    Files.writeString(manifest(), "{}");
+    Files.setLastModifiedTime(manifest(), later(2));
+    assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+  }
+
+  // A manifest that stops reading mid-session (a sync replacing it on Windows, a broken write) is
+  // no
+  // change: the last content stands, and the next content it reads is compared with that.
+  @Test
+  void poll_readableManifestTurnsUnreadable_noChangeUntilItReadsAgain() throws IOException {
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+
+    writeUnreadable(later(1));
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+    Files.writeString(manifest(), "{}");
+    Files.setLastModifiedTime(manifest(), later(2));
+    assertThat(watcher.poll()).isEqualTo(PollResult.REACTOR_REFRESH);
+    Files.writeString(manifest(), "{updated}");
+    Files.setLastModifiedTime(manifest(), later(3));
+    assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
+  }
+
+  // A manifest without read permission is read again on every poll: restoring the permission leaves
+  // its mtime as it was. Permissions are POSIX's; root reads the file anyway.
+  @Test
+  @DisabledOnOs(OS.WINDOWS)
+  void poll_unreadableManifestPermissionRestored_workspaceChanged() throws IOException {
+    Files.writeString(manifest(), "{\"modules\": []}");
+    Files.setLastModifiedTime(manifest(), PAST);
+    final Set<PosixFilePermission> readable = Files.getPosixFilePermissions(manifest());
+    Files.setPosixFilePermissions(manifest(), Set.of(PosixFilePermission.OWNER_WRITE));
+    assumeFalse(Files.isReadable(manifest()), "the file is readable without its permission");
+    try {
+      final var watcher = new WorkspaceWatcher(workspaceRoot);
+
+      assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+      Files.setPosixFilePermissions(manifest(), readable);
+      assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
+    } finally {
+      Files.setPosixFilePermissions(manifest(), readable);
+    }
   }
 
   @Test
@@ -246,6 +306,15 @@ class WorkspaceWatcherTest {
 
   private Path manifest() {
     return latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+  }
+
+  private void writeUnreadable(final FileTime mtime) throws IOException {
+    Files.write(manifest(), new byte[] {(byte) 0xC3, (byte) 0x28});
+    Files.setLastModifiedTime(manifest(), mtime);
+  }
+
+  private static FileTime later(final int steps) {
+    return FileTime.fromMillis(PAST.toMillis() + steps * 10_000L);
   }
 
   private void touchManifest() throws IOException {

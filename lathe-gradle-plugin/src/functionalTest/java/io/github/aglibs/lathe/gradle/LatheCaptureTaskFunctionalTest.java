@@ -356,6 +356,90 @@ class LatheCaptureTaskFunctionalTest {
             fixture.path("lib/build/libs/lib.jar"));
   }
 
+  // A build that gives javac the module path as an argument, with an empty compile classpath, as
+  // Lucene's plugin does: the capture moves it into the params' module path, where the server maps
+  // the sibling's jar to its mirror, and passes javac no path as text.
+  @Test
+  void capture_modulePathAsCompilerArgument_movesItIntoTheModulePath() throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file(
+                "settings.gradle",
+                "%sinclude(\"lib\", \"app\")\n%s"
+                    .formatted(SETTINGS, GradleFixture.latheRepositories()))
+            .file("lib/build.gradle", "plugins { id 'java-library' }\n")
+            .file(
+                "lib/src/main/java/module-info.java",
+                "module com.example.lib { exports com.example.lib; }\n")
+            .file(
+                "lib/src/main/java/com/example/lib/Lib.java",
+                "package com.example.lib; public class Lib {}\n")
+            // Through `..`: the capture normalizes it to the jar the build lists as lib's output.
+            .file(
+                "app/build.gradle",
+                """
+                plugins { id 'java' }
+                tasks.named('compileJava') {
+                  dependsOn ':lib:jar'
+                  classpath = files()
+                  def libJar = "${rootDir}/app/../lib/build/libs/lib.jar"
+                  options.compilerArgumentProviders.add({ ['--module-path', libJar] } as CommandLineArgumentProvider)
+                }
+                """)
+            .file(
+                "app/src/main/java/module-info.java",
+                "module com.example.app { requires com.example.lib; }\n")
+            .file(
+                "app/src/main/java/com/example/app/App.java",
+                "package com.example.app; class App { com.example.lib.Lib lib; }\n");
+
+    fixture.runner(":app:classes").build();
+
+    final var app = params("app", LatheLayout.CLASSES_DIR);
+    assertThat(app.modulepath()).containsExactly(fixture.path("lib/build/libs/lib.jar"));
+    assertThat(app.classpath()).isEmpty();
+    assertThat(app.compilerArgs()).doesNotContain("--module-path");
+  }
+
+  // A build that runs its tests in another directory than the project's, as Lucene's runs them in
+  // build/tests-cwd: the launch is still the module's, and replays in that directory.
+  @Test
+  void capture_testsRunOutsideTheProjectDirectory_launchIsTheModulesAndKeepsTheDirectory()
+      throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file(
+                "settings.gradle",
+                "%sinclude(\"app\")\n%s".formatted(SETTINGS, GradleFixture.latheRepositories()))
+            .file(
+                "app/build.gradle",
+                """
+                plugins { id 'java' }
+                dependencies {
+                  testImplementation platform('org.junit:junit-bom:5.11.4')
+                  testImplementation 'org.junit.jupiter:junit-jupiter'
+                  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+                }
+                test {
+                  useJUnitPlatform()
+                  def testsCwd = layout.buildDirectory.dir('tests-cwd').get().asFile
+                  workingDir = testsCwd
+                  doFirst { testsCwd.mkdirs() }
+                }
+                """)
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                "package com.example.app; class AppTest { @org.junit.jupiter.api.Test void runs() {} }\n");
+
+    fixture.runner(":app:test").build();
+
+    final TestLaunchData tests =
+        Json.read(
+            dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE), TestLaunchData.class);
+    assertThat(tests.workingDir()).isEqualTo("app/build/tests-cwd");
+    assertThat(dir.resolve(".lathe/app/build")).doesNotExist();
+  }
+
   private ModuleConfigData params(final String module, final String sourceTree) throws IOException {
     return Json.read(
         dir.resolve(".lathe").resolve(module).resolve(LatheLayout.paramsFileName(sourceTree)),

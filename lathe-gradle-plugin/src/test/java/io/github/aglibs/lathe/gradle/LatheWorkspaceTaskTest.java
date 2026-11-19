@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -53,6 +54,30 @@ class LatheWorkspaceTaskTest {
             LatheWorkspaceTask.runnerClasspath(
                 List.of(facts("app", javaHome, 21, List.of(gone))), module -> {}))
         .isEmpty();
+  }
+
+  // TE-21: each project's runner goes under its launcher's version, its JUnit platform's, so a
+  // build on JUnit 5 and 6 at once replays each module on its own; a runner since deleted is left
+  // out, as for the single runner.
+  @Test
+  void runnerClasspaths_projectsOnJUnit5And6_eachRunnerByItsLauncherVersion() throws IOException {
+    final Path javaHome = jdk("jdk-21", "21");
+    final String runner = Files.writeString(tmp.resolve("runner.jar"), "jar").toString();
+    final String launcher5 =
+        Files.writeString(tmp.resolve("junit-platform-launcher-1.14.4.jar"), "jar").toString();
+    final String launcher6 =
+        Files.writeString(tmp.resolve("junit-platform-launcher-6.1.3.jar"), "jar").toString();
+    final String gone = tmp.resolve("deleted/junit-platform-launcher-1.13.0.jar").toString();
+
+    assertThat(
+            LatheWorkspaceTask.runnerClasspaths(
+                List.of(
+                    facts("old", javaHome, 21, List.of(runner, launcher5)),
+                    facts("new", javaHome, 21, List.of(runner, launcher6)),
+                    facts("gone", javaHome, 21, List.of(runner, gone)))))
+        .containsOnly(
+            Map.entry("1.14.4", List.of(runner, launcher5)),
+            Map.entry("6.1.3", List.of(runner, launcher6)));
   }
 
   private Path jdk(final String name, final String version) throws IOException {

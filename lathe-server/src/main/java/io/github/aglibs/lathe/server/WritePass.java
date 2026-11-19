@@ -193,6 +193,12 @@ final class WritePass {
     return lombokChangedSources.contains(source);
   }
 
+  // What a run's check before it launches reads, leaving verify_change's record as it is.
+  List<Path> writtenSinceVerify() {
+    eventLoop.checkOnLoop();
+    return List.copyOf(writtenSinceVerify);
+  }
+
   List<Path> takeWrittenSinceVerify() {
     eventLoop.checkOnLoop();
     final List<Path> taken = List.copyOf(writtenSinceVerify);
@@ -626,7 +632,7 @@ final class WritePass {
     return diagnostic.getCode() != null && WERROR_CODE.equals(diagnostic.getCode().getLeft());
   }
 
-  private static String errorLine(final Diagnostic diagnostic) {
+  static String errorLine(final Diagnostic diagnostic) {
     return "%d: %s"
         .formatted(
             diagnostic.getRange().getStart().getLine() + 1,

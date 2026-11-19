@@ -1,9 +1,11 @@
 package io.github.aglibs.lathe.server;
 
+import static io.github.aglibs.lathe.server.ServiceTestBase.TIMEOUT_S;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,6 +28,8 @@ import org.junit.jupiter.api.io.TempDir;
 // The index refresh after a build scans every tree off the event loop: requests meanwhile answer
 // from the index a build behind, and newer state on the loop wins over the scan.
 class ReactorTypeIndexTest {
+
+  private static final long SCAN_WAIT_MS = 50;
 
   @TempDir Path tmp;
 
@@ -64,7 +68,7 @@ class ReactorTypeIndexTest {
     assertThat(scans.held()).as("the two asked for meanwhile, as one").isEqualTo(1);
     assertThat(rebuilt).as("waits on the refresh asked for meanwhile").isNotDone();
     scans.releaseOne();
-    rebuilt.get(ServiceTestBase.TIMEOUT_S, TimeUnit.SECONDS);
+    rebuilt.get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(scans.held()).isZero();
   }
 
@@ -192,14 +196,17 @@ class ReactorTypeIndexTest {
   }
 
   // Releases every scan the refresh, and one it asks for meanwhile, hands over, and waits for it.
+  // The index rebuild after the last scan runs on the common pool with no scan held, so each wait
+  // for a scan is short: a full-timeout wait there held every such test for 30s.
   private void awaitRefresh(final ReactorTypeIndex index) throws Exception {
     final CompletableFuture<Void> rebuilt = loop.call(index::rebuilt);
-    while (!rebuilt.isDone()) {
-      scans.releaseOne();
+    final var waiting = Stopwatch.start();
+    while (!rebuilt.isDone() && waiting.elapsedMs() < TimeUnit.SECONDS.toMillis(TIMEOUT_S)) {
+      scans.releaseWithin(SCAN_WAIT_MS);
       loop.run(() -> {});
     }
 
-    rebuilt.get(ServiceTestBase.TIMEOUT_S, TimeUnit.SECONDS);
+    rebuilt.get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // A class a build put in the module's mirror, from a source outside the module's roots.
@@ -238,7 +245,11 @@ class ReactorTypeIndexTest {
     }
 
     void releaseOne() throws Exception {
-      final Runnable task = held.poll(ServiceTestBase.TIMEOUT_S, TimeUnit.SECONDS);
+      releaseWithin(TimeUnit.SECONDS.toMillis(TIMEOUT_S));
+    }
+
+    void releaseWithin(final long millis) throws Exception {
+      final Runnable task = held.poll(millis, TimeUnit.MILLISECONDS);
       if (task != null) {
         task.run();
       }

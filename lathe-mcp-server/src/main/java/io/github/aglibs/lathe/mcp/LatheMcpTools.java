@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
@@ -25,6 +26,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -68,12 +70,13 @@ final class LatheMcpTools {
   private LatheMcpTools() {}
 
   // The symbol-at-a-position input every position tool takes: a column, or the symbol's name on
-  // the line, which agents give more reliably than a counted column.
+  // the line, which agents give more reliably than a counted column. Columns are LSP's, UTF-16 code
+  // units, both ways: converting to characters needs each line's text, for every column printed.
   private static final String POSITION_PROPERTIES =
       """
       "file":{"type":"string","description":"Absolute path to a .java file."},
       "line":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based line of the symbol."},
-      "column":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based column of the symbol; optional with 'symbol'."},
+      "column":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based column of the symbol, in UTF-16 code units as every column the tools report: a character outside the Basic Multilingual Plane (an emoji) counts as two. Optional with 'symbol', which needs no counting."},
       "symbol":{"type":"string","description":"The symbol's name as written on that line (a method, field, type or variable name); finds its column, so 'column' may be left out."}\
       """;
 
@@ -183,9 +186,9 @@ final class LatheMcpTools {
                  "properties":{
                    "file":{"type":"string","description":"Absolute path to a test .java file."},
                    "scope":{"type":"string","enum":["class","method","package"],
-                     "description":"What to run (default class)."},
+                     "description":"What to run (default class, or method when 'method' is given)."},
                    "method":{"type":"string",
-                     "description":"Test method name (required when scope=method)."}}}\
+                     "description":"Test method name; runs that method (scope=method)."}}}\
                 """,
             RUNS_CODE,
             """
@@ -277,12 +280,13 @@ final class LatheMcpTools {
             positionSchema(
                 """
                     ,"maxResults":{"type":"integer","minimum":1,"maximum":2147483647,
-                     "description":"Max members of each override-family list to show (default 50); the counts are of all."}\
+                     "description":"Max members of each family list (overrides, subtypes) to show (default 50); the counts are of all."}\
                     """),
             READ_ONLY,
             """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
-                the methods it overrides and those that override or redeclare it, how many \
+                the methods it overrides and those that override or redeclare it, or a type's \
+                subtypes (a field or variable has no family), how many \
                 production vs test references it has, \
                 which reactor modules use or implement it, and the relevant test classes. Use it to scope a rename \
                 or signature change before making it.""",
@@ -548,14 +552,22 @@ final class LatheMcpTools {
 
   private static CallToolResult handleRunTest(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
-    final TestScope scope = testScope(stringArg(request, "scope"));
+    // A client may fill an unset optional string with "": that names no method.
+    final String methodArg = stringArg(request, "method");
+    final String method = methodArg == null || methodArg.isBlank() ? null : methodArg;
+    final TestScope scope = testScope(stringArg(request, "scope"), method);
     if (scope == null) {
       return McpText.error("run_test 'scope' must be one of class, method, package");
     }
 
-    final String method = stringArg(request, "method");
     if (scope == TestScope.METHOD && method == null) {
       return McpText.error("run_test with scope=method requires a 'method' argument");
+    }
+
+    if (scope != TestScope.METHOD && method != null) {
+      return McpText.error(
+          "run_test 'method' runs one method: leave out 'scope' or set it to method, not %s"
+              .formatted(scope.name().toLowerCase(Locale.ROOT)));
     }
 
     return atFile(
@@ -642,9 +654,14 @@ final class LatheMcpTools {
         .findFirst();
   }
 
-  // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
-  private static TestScope testScope(final String scope) {
-    return scope == null ? TestScope.CLASS : enumArg(TestScope.class, scope).orElse(null);
+  // Optional, case-insensitive; absent means method when one is named, else class; unknown means
+  // null (caller errors on it).
+  static TestScope testScope(final String scope, final String method) {
+    if (scope == null) {
+      return method == null ? TestScope.CLASS : TestScope.METHOD;
+    }
+
+    return enumArg(TestScope.class, scope).orElse(null);
   }
 
   // Optional, case-insensitive; absent means the tool's default, unknown means null.
@@ -818,7 +835,8 @@ final class LatheMcpTools {
     final String where =
         symbol != null
             ? "no symbol named '%s'".formatted(symbol)
-            : "no symbol at column %d: the position must be on a name".formatted(column);
+            : "no symbol at column %d (columns count UTF-16 code units): the position must be on a name"
+                .formatted(column);
     return "Line %d has %s. Line %d reads: %s".formatted(line, where, line, text.strip());
   }
 
@@ -882,7 +900,23 @@ final class LatheMcpTools {
 
   private static Path filePath(final CallToolRequest request) {
     final String file = stringArg(request, "file");
-    return file == null ? null : FileUtil.absolute(file);
+    return file == null ? null : toPath(file);
+  }
+
+  // A path as given, or a file: URI, which an agent that also drives an LSP may pass, as the path
+  // it
+  // names. A URI no path stands for (one naming a host) is taken as given, so it is reported as a
+  // file that does not exist.
+  private static Path toPath(final String file) {
+    if (!LatheUri.isFileUri(file)) {
+      return FileUtil.absolute(file);
+    }
+
+    try {
+      return LatheUri.toPath(file).normalize();
+    } catch (final IllegalArgumentException e) {
+      return FileUtil.absolute(file);
+    }
   }
 
   private static String stringArg(final CallToolRequest request, final String name) {
@@ -910,6 +944,6 @@ final class LatheMcpTools {
       return List.of();
     }
 
-    return files.stream().map(String::valueOf).map(FileUtil::absolute).toList();
+    return files.stream().map(String::valueOf).map(LatheMcpTools::toPath).toList();
   }
 }

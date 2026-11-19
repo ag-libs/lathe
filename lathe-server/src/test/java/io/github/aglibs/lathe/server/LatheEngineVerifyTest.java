@@ -6,8 +6,10 @@ import static org.assertj.core.api.Assertions.tuple;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact.Family;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
@@ -58,7 +60,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         engine.analyzeChange(greeter.impl(), implPos.getLine(), implPos.getCharacter(), 50).value();
 
     assertThat(impact.signature()).contains("greet");
-    assertThat(impact.method()).isTrue();
+    assertThat(impact.family()).isEqualTo(Family.METHOD);
     assertThat(impact.overrides()).isEmpty();
     assertThat(impact.overriddenBy())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"))
@@ -78,6 +80,32 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         .isEqualTo(1);
     assertThat(impact.testRefs()).isZero();
     assertThat(impact.affectedModules()).containsExactly("module");
+  }
+
+  // A type's family is its subtypes; a field, which nothing can override, has none.
+  @Test
+  void analyzeChange_typeAndField_typeListsSubtypesFieldHasNoFamily() throws Exception {
+    final GreeterFixture greeter = greeterFixture();
+    final String holderSource = "package com.example;\nclass Holder {\n  int count;\n}\n";
+    final Path holder =
+        TestCompiler.writeModuleSource(tmp, "com/example/Holder.java", holderSource);
+    compileIntoMirror(greeter.iface(), greeter.impl(), holder);
+    engine = new LatheEngine(tmp);
+    final var typePos = positionOf(greeter.ifaceSource(), "Greeter");
+    final var fieldPos = positionOf(holderSource, "count");
+
+    final LatheChangeImpact type =
+        engine
+            .analyzeChange(greeter.iface(), typePos.getLine(), typePos.getCharacter(), 50)
+            .value();
+    final LatheChangeImpact field =
+        engine.analyzeChange(holder, fieldPos.getLine(), fieldPos.getCharacter(), 50).value();
+
+    assertThat(type.family()).isEqualTo(Family.TYPE);
+    assertThat(type.overriddenBy())
+        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
+    assertThat(field.family()).isEqualTo(Family.NONE);
+    assertThat(field.overrides()).isEmpty();
   }
 
   // The family lists show the first maxResults members; their counts are of all.
@@ -153,6 +181,27 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(impact.relevantTests())
         .as("a test implementing it breaks too")
         .contains("FakeWiring");
+  }
+
+  // A build running (here this process holding the reactor's build lock) defers the check, and
+  // names no sync: a second build would only add one to wait for.
+  @Test
+  void verifyChange_buildInProgress_defersWithoutNamingTheSync() throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    engine = new LatheEngine(tmp);
+    final Path lock = LatheLayout.reactorLockFile(tmp.resolve(LatheLayout.LATHE_DIR));
+    LatheLock.acquire(lock);
+    try {
+      final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+      assertThat(verify.deferral()).isEqualTo(ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS);
+      assertThat(verify.suggestedSync()).isNull();
+    } finally {
+      LatheLock.release(lock);
+    }
+
+    assertThat(engine.verifyChange(List.of()).deferral()).as("once it ends").isNull();
   }
 
   @Test

@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -181,6 +182,7 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
                             "[lathe] {}: the test runner its last build recorded is gone, so it is"
                                 + " not used; build that project again to refresh it",
                             module.isEmpty() ? "the root project" : module)),
+            runnerClasspaths(facts),
             buildFiles(root),
             resourceRoots,
             outputs,
@@ -387,6 +389,26 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
 
   private static boolean runnerInPlace(final ProjectFacts fact) {
     return fact.runnerClasspath().stream().map(Path::of).allMatch(Files::exists);
+  }
+
+  // Each project's runner, already aligned with its own JUnit, by the version of its launcher,
+  // which is its JUnit platform's: a module replays on the runner of the platform it tests on.
+  static Map<String, List<String>> runnerClasspaths(final List<ProjectFacts> facts) {
+    final var runners = new LinkedHashMap<String, List<String>>();
+    for (final ProjectFacts fact : facts) {
+      if (!runnerInPlace(fact)) {
+        continue;
+      }
+
+      fact.runnerClasspath().stream()
+          .flatMap(
+              entry ->
+                  FileUtil.jarVersion(Path.of(entry), LatheLayout.JUNIT_PLATFORM_LAUNCHER).stream())
+          .findFirst()
+          .ifPresent(version -> runners.putIfAbsent(version, fact.runnerClasspath()));
+    }
+
+    return Map.copyOf(runners);
   }
 
   // The newest JDK any project compiles with, as the server's: the server then parses what every

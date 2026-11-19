@@ -107,6 +107,10 @@ public final class LatheLayout {
   public static final String STYLE_SHARED_FILE = "lathe-style.json";
   public static final String TEST_RUNNER_MAIN_CLASS =
       "io.github.aglibs.lathe.runner.LatheTestRunner";
+  // JUnit's platform artifacts, whose jars name a test runner's platform version: the launcher a
+  // sync resolves for it, and the commons every JUnit Platform test classpath holds.
+  public static final String JUNIT_PLATFORM_LAUNCHER = "junit-platform-launcher";
+  public static final String JUNIT_PLATFORM_COMMONS = "junit-platform-commons";
 
   // What users and agents run to refresh an already-synced workspace: the script the build wrote,
   // which knows the build tool. Every remediation below and the MCP instructions compose it.
@@ -165,6 +169,13 @@ public final class LatheLayout {
   // The remaining %s is the error's root cause.
   public static final String MANIFEST_UNREADABLE_REMEDIATION =
       "%s/%s could not be read (%%s); dependency sources and cross-module features are off. Run `%s` to regenerate it, and report it with the server log if it persists."
+          .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
+
+  // Every front-end writes the manifest, so a workspace with modules and no manifest comes from a
+  // sync of part of the build (Maven's -pl writes none; Gradle and OpenJDK always write it), or one
+  // that stopped before writing it, on any build tool.
+  public static final String MANIFEST_MISSING_REMEDIATION =
+      "%s/%s is missing: the last sync covered only part of the build (Maven's `-pl`) or stopped before writing it, so cross-module answers cover only each file's own module. Sync the whole build to write it: `%s`, or set Lathe up again where that script is missing."
           .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}

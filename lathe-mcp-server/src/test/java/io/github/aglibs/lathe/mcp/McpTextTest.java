@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact.Family;
 import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
@@ -270,13 +271,14 @@ class McpTextTest {
         .isEqualTo("No import added to a/Foo.java.");
   }
 
+  // A running build is not a sync to start: the agent re-checks once it ends.
   @Test
   void verifyChangeResult_deferred_namesTheSyncOnlyWhenOneHelps() {
     assertThat(
             text(
                 McpText.verifyChangeResult(
                     new LatheVerifyChange(
-                        ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS,
+                        ReconcileOutcome.DeferReason.BUILD_FILES_PENDING,
                         List.of(),
                         List.of(),
                         ".lathe/lathe-sync.sh",
@@ -284,7 +286,19 @@ class McpTextTest {
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
-            "Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.");
+            "Verification deferred: a pending build-file or dependency change needs a sync. Run `.lathe/lathe-sync.sh`, then re-check.");
+    assertThat(
+            text(
+                McpText.verifyChangeResult(
+                    new LatheVerifyChange(
+                        ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS,
+                        List.of(),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of()),
+                    McpText.NO_NOTES)))
+        .isEqualTo("Verification deferred: a build is in progress. Re-check once it ends.");
     assertThat(
             text(
                 McpText.verifyChangeResult(
@@ -297,7 +311,7 @@ class McpTextTest {
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
-            "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check in a moment.");
+            "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check once it ends.");
   }
 
   // The Kotlin modules are no note of their own: only an answer about uses names them.
@@ -309,6 +323,7 @@ class McpTextTest {
                 new LatheNotes(
                     List.of("a/A.java:3: cannot find symbol", "b/B.java:1: ';' expected"),
                     List.of("build files changed — run `.lathe/lathe-sync.sh`"),
+                    false,
                     List.of("x/X.java is outside the modules the last build compiled"),
                     true,
                     List.of(new UnreadSources("Kotlin", List.of("app-kotlin"))))))
@@ -460,6 +475,43 @@ class McpTextTest {
                     LatheLocation.Origin.EXTERNAL,
                     "void connect() {")))
         .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412:9 [EXTERNAL]: void connect() {");
+  }
+
+  // Without the module graph (its manifest missing, say) a search saw one module: the answer drops
+  // the grep advice and says what the sync fixes. A build-file change needs a sync too, but leaves
+  // the search whole.
+  @Test
+  void
+      referencesResult_moduleGraphMissingOrBuildFilesChanged_dropsTheGrepAdviceOnlyWithoutTheGraph() {
+    final var use =
+        new LatheLocation(
+            "file:///w/app/App.java", "app/App.java", 3, 4, LatheLocation.Origin.REACTOR, "run();");
+    final var noGraph =
+        new LatheNotes(
+            List.of(),
+            List.of(".lathe/workspace.json is missing"),
+            true,
+            List.of(),
+            false,
+            List.of());
+    final var buildFilesChanged =
+        new LatheNotes(
+            List.of(),
+            List.of("build files changed — run `.lathe/lathe-sync.sh`"),
+            false,
+            List.of(),
+            false,
+            List.of());
+
+    assertThat(text(McpText.referencesResult(new LatheReferences(1, false, uses(use), 0), noGraph)))
+        .doesNotContain("no need to re-verify")
+        .endsWith("Sync required: .lathe/workspace.json is missing");
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(1, false, uses(use), 0), buildFilesChanged)))
+        .contains("no need to re-verify with grep.")
+        .endsWith("Sync required: build files changed — run `.lathe/lathe-sync.sh`");
   }
 
   // Lathe reads no Kotlin or Groovy: where there is some, an answer about uses no longer says grep
@@ -813,7 +865,7 @@ class McpTextTest {
   }
 
   // A method's family both ways: what it overrides by name, what overrides it, and apart what
-  // redeclares it abstract. Anything else, and no symbol, keeps the one neutral family line.
+  // redeclares it abstract. A type lists its subtypes; a field, or no symbol, has no family line.
   @Test
   void analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty() {
     final var base = location("app/Base.java", 4, "abstract int sell(int count);");
@@ -825,7 +877,7 @@ class McpTextTest {
                 McpText.analyzeResult(
                     new LatheChangeImpact(
                         "int sell(int count)",
-                        true,
+                        Family.METHOD,
                         List.of("app.Seller#sell(int)"),
                         List.of(base, override),
                         5,
@@ -852,7 +904,16 @@ class McpTextTest {
             text(
                 McpText.analyzeResult(
                     new LatheChangeImpact(
-                        "", false, List.of(), List.of(), 0, List.of(), 0, 0, 0, List.of(),
+                        "",
+                        Family.NONE,
+                        List.of(),
+                        List.of(),
+                        0,
+                        List.of(),
+                        0,
+                        0,
+                        0,
+                        List.of(),
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
@@ -860,8 +921,31 @@ class McpTextTest {
                 "(no symbol at that position)",
                 "references: 0 production, 0 test",
                 "affected modules: none",
+                "relevant tests: none"));
+    assertThat(
+            text(
+                McpText.analyzeResult(
+                    new LatheChangeImpact(
+                        "class Shop",
+                        Family.TYPE,
+                        List.of(),
+                        List.of(location("app/BigShop.java", 2, "class BigShop extends Shop {")),
+                        1,
+                        List.of(),
+                        0,
+                        3,
+                        0,
+                        List.of("app"),
+                        List.of()),
+                    McpText.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "class Shop",
+                "references: 3 production, 0 test",
+                "affected modules: app",
                 "relevant tests: none",
-                "override family: none"));
+                "subtypes: 1",
+                "app/BigShop.java:2:1: class BigShop extends Shop {"));
   }
 
   // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.
@@ -959,6 +1043,6 @@ class McpTextTest {
   }
 
   private static LatheNotes withUnread(final UnreadSources... unread) {
-    return new LatheNotes(List.of(), List.of(), List.of(), false, List.of(unread));
+    return new LatheNotes(List.of(), List.of(), false, List.of(), false, List.of(unread));
   }
 }

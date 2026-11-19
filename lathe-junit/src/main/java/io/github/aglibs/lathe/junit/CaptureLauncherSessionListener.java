@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.junit;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.io.PrintStream;
 import org.junit.platform.launcher.LauncherSession;
 import org.junit.platform.launcher.LauncherSessionListener;
 
@@ -20,18 +21,38 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
 
       final int javaVersion = featureVersion(System.getProperty("java.specification.version"));
       if (javaVersion < LatheLayout.MIN_JAVA_VERSION) {
-        // In the build's test output: the reason these tests can't be run from the editor.
-        System.err.printf(
-            "[lathe] test launch not captured: this test JVM runs Java %d; Lathe captures on Java"
-                + " %d or newer%n",
-            javaVersion, LatheLayout.MIN_JAVA_VERSION);
+        notCaptured(
+            System.err,
+            String.format(
+                "this test JVM runs Java %d; Lathe captures on Java %d or newer",
+                javaVersion, LatheLayout.MIN_JAVA_VERSION));
         return;
       }
 
       LaunchCapture.capture();
-    } catch (final Throwable ignored) {
-      // Capture must never change the user's test result.
+    } catch (final Throwable e) {
+      // Capture must never change the user's test result; it says why in the build's test output.
+      notCaptured(System.err, e);
     }
+  }
+
+  // A failed capture, by the exception and where it was thrown. The report is guarded too: an
+  // exception whose toString() throws must not fail the tests either.
+  static void notCaptured(final PrintStream err, final Throwable cause) {
+    try {
+      final StackTraceElement[] frames = cause.getStackTrace();
+      notCaptured(
+          err,
+          frames.length == 0 ? String.valueOf(cause) : String.format("%s at %s", cause, frames[0]));
+    } catch (final Throwable ignored) {
+      // Nothing left to say it with.
+    }
+  }
+
+  // The one line a capture that did not happen leaves in the build's test output: the reason the
+  // editor cannot run these tests.
+  static void notCaptured(final PrintStream err, final String reason) {
+    err.printf("[lathe] test launch not captured: %s%n", reason);
   }
 
   // "1.8" up to Java 8, then "9", "11", "17".

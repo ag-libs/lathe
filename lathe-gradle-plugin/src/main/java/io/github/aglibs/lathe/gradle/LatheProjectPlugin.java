@@ -78,7 +78,6 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static final String MCP_SERVER = "latheMcpServer";
   private static final String BUILD_LOCK_SERVICE = "latheBuildLock";
   static final String ROOT_PATH = ":";
-  private static final String LIBRARY_SOURCES = "latheLibrarySources";
   private static final String CAPTURE_VERB = "latheCapture";
   private static final String TEST_NAME = "test";
 
@@ -490,11 +489,13 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final ArtifactCollection mainLibraries =
         external(
             project.getConfigurations().getByName(main.getCompileClasspathConfigurationName()));
-    final Configuration sources = configuration(project, LIBRARY_SOURCES, true);
+    // Detached, so no build script reaches it: one that reads every configuration's dependencies
+    // while the build is configured (Apache Kafka's, looking for Mockito) would otherwise run the
+    // action below and resolve the test classpath then, while the projects it needs may still be
+    // configured. Its dependencies are added as the facts' sources resolve, not before: a provider
+    // would be forced by any such read too.
+    final Configuration sources = project.getConfigurations().detachedConfiguration();
     sources.setTransitive(false);
-    // As the sources resolve, not before: a provider would be forced by a build script walking
-    // every configuration's dependencies, resolving the test classpath while the build is still
-    // configured, when the script may yet change it.
     final DependencyFactory dependencies = project.getDependencyFactory();
     sources.withDependencies(
         added -> {
@@ -693,8 +694,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
   // The args Gradle lists, and what it passes javac apart from them: the -source and -target, and
   // the JDK of the compile's toolchain they are compiled against.
   private static List<String> compilerArgs(final JavaCompile javac) {
+    // A Groovy build's argument provider may return GStrings, which Gradle 8 hands javac as they
+    // are, typed String only by erasure; read as objects, a cast would fail.
+    final List<?> args = javac.getOptions().getAllCompilerArgs();
     return CompileCapture.withCompileJdk(
-        javac.getOptions().getAllCompilerArgs(),
+        args.stream().map(String::valueOf).toList(),
         javac.getJavaCompiler().get().getMetadata().getInstallationPath().getAsFile().toPath(),
         javac.getSourceCompatibility(),
         javac.getTargetCompatibility(),

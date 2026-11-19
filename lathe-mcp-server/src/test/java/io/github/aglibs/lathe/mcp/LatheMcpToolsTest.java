@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine;
+import io.github.aglibs.lathe.server.LatheEngine.TestScope;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -89,6 +90,23 @@ class LatheMcpToolsTest {
     assertThat(tool("format_file").tool().inputSchema().toString()).contains("file");
     assertThat(tool("fix_imports").tool().inputSchema().toString()).contains("file");
     assertThat(tool("outline").tool().inputSchema().toString()).contains("file", "type");
+  }
+
+  // A column is LSP's, in UTF-16 code units, which an agent counting characters gets wrong past an
+  // emoji: every tool that takes one, whatever its schema, says so.
+  @Test
+  void all_columnInputs_nameTheirUnit() {
+    final List<String> withColumn =
+        specs.stream()
+            .map(spec -> spec.tool())
+            .filter(tool -> tool.inputSchema().toString().contains("column"))
+            .map(tool -> tool.name())
+            .toList();
+
+    assertThat(withColumn).contains("get_definition", "rename_symbol", "call_hierarchy");
+    for (final String name : withColumn) {
+      assertThat(tool(name).tool().inputSchema().toString()).as(name).contains("UTF-16 code units");
+    }
   }
 
   @Test
@@ -250,6 +268,39 @@ class LatheMcpToolsTest {
   }
 
   @Test
+  void runTest_methodWithAnotherScope_returnsErrorNamingTheConflict() {
+    final String file = tmp.resolve("FooTest.java").toString();
+
+    for (final String scope : List.of("class", "package")) {
+      final CallToolResult result =
+          call("run_test", Map.of("file", file, "scope", scope, "method", "m"));
+
+      assertThat(result.isError()).as(scope).isTrue();
+      assertThat(text(result))
+          .isEqualTo(
+              "run_test 'method' runs one method: leave out 'scope' or set it to method, not %s"
+                  .formatted(scope));
+    }
+
+    assertThat(
+            List.of(
+                call("run_test", Map.of("file", file, "method", "m")),
+                call("run_test", Map.of("file", file, "scope", "class", "method", " "))))
+        .as("a method alone, a blank method beside a scope")
+        .allSatisfy(result -> assertThat(text(result)).doesNotContain("runs one method"));
+    assertThat(text(call("run_test", Map.of("file", file, "scope", "method", "method", ""))))
+        .isEqualTo("run_test with scope=method requires a 'method' argument");
+  }
+
+  @Test
+  void testScope_noScope_methodWhenOneIsNamedElseClass() {
+    assertThat(LatheMcpTools.testScope(null, "m")).isEqualTo(TestScope.METHOD);
+    assertThat(LatheMcpTools.testScope(null, null)).isEqualTo(TestScope.CLASS);
+    assertThat(LatheMcpTools.testScope("Package", "m")).isEqualTo(TestScope.PACKAGE);
+    assertThat(LatheMcpTools.testScope("nope", null)).isNull();
+  }
+
+  @Test
   void renameSymbol_invalidIdentifier_returnsTheReasonAsAnError() throws Exception {
     final Path file = tmp.resolve("A.java");
     Files.writeString(file, "class A {\n  int count;\n}\n");
@@ -278,6 +329,7 @@ class LatheMcpToolsTest {
             result -> {
               assertThat(result.isError()).isTrue();
               assertThat(text(result))
+                  .contains("(columns count UTF-16 code units)")
                   .contains("must be on a name. Line 2 reads: public void run() {}");
             });
     assertThat(text(describe(file, 9, 1))).isEqualTo("No symbol at line 9: the file is shorter.");
@@ -368,6 +420,20 @@ class LatheMcpToolsTest {
 
     assertThat(result.isError()).isFalse();
     assertThat(text(result)).doesNotContain("No type");
+  }
+
+  // An agent that also drives an LSP may pass a file: URI: it is the file it names, not a path
+  // relative to the workspace. A URI naming a host stands for no local file.
+  @Test
+  void outline_fileUri_outlinesTheFileItNames_hostUriNotFound() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final CallToolResult byUri = call("outline", Map.of("file", file.toUri().toString()));
+    final CallToolResult byHost = call("outline", Map.of("file", "file://server/share/Loose.java"));
+
+    assertThat(byUri.isError()).isFalse();
+    assertThat(text(byUri)).contains("Loose");
+    assertThat(byHost.isError()).isTrue();
   }
 
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the

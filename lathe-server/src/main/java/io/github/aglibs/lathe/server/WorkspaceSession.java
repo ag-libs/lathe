@@ -145,8 +145,10 @@ final class WorkspaceSession {
                 () -> renameTransaction.memberPaths()),
             resourceMirror);
     this.queries = new WorkspaceQueries(state, writePass);
-    this.verifier = new ChangeVerifier(state, router, writePass);
-    this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex, verifier);
+    this.verifier = new ChangeVerifier(state, router, writePass, features);
+    this.runs =
+        new RunCoordinator(
+            client, eventLoop, state, reactorIndex, verifier, this::reconcileForVerify);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
 
@@ -612,7 +614,8 @@ final class WorkspaceSession {
   // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
   // a build file the agent just edited is seen now rather than on the next tick, then an eager
   // pass. If its result can't be trusted (a build-file sync pending, or a running build) it
-  // carries a DeferReason so verify_change falls back to the build. The outcome lists every stale
+  // carries a DeferReason so verify_change waits: for the sync it names, or for the build to end.
+  // The outcome lists every stale
   // source, including one that failed unchanged since and so was not recompiled. Runs on the
   // event loop.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
@@ -882,20 +885,19 @@ final class WorkspaceSession {
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
 
-  // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
+  // A workspace.json that is missing, from another schema, or unreadable loads as empty, so say why
   // instead of "ready". The problem text is shared with the agent's notes, which carry no prefix.
   // A workspace without a module most often comes from a build that found every module up to date
-  // and so compiled none through Lathe; each file would only say it is outside every module.
+  // and so compiled none through Lathe; each file would only say it is outside every module, and
+  // that, not the missing manifest, is what the user must fix.
   private void showWorkspaceStatus(final String okText) {
+    final boolean noModule = state.registry().allConfigs().isEmpty();
     final Optional<String> problem =
         state
             .manifest()
             .loadProblem()
-            .or(
-                () ->
-                    state.registry().allConfigs().isEmpty()
-                        ? Optional.of(NO_MODULE)
-                        : Optional.empty());
+            .filter(text -> !(noModule && state.manifest().missing()))
+            .or(() -> noModule ? Optional.of(NO_MODULE) : Optional.empty());
     client.showMessage(
         problem
             .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))

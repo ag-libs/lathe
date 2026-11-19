@@ -7,6 +7,169 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: go to definition on a parameter type inside a Javadoc member reference (`@see #m(Type)`, `{@link #m(Type)}`).**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+In jdbi's `Jdbi.java`, line 362 reads `@see #withHandle(HandleCallback)`.
+Definition with the cursor on `HandleCallback` lands on `Jdbi.java:410`, the `withHandle` method, as it does on `withHandle` itself.
+The same type in code (`withHandle(HandleCallback<R, X> callback)`) goes to `HandleCallback.java:22`.
+
+### Fix direction
+
+Inside a reference's parameter list, resolve the type under the cursor, as for a type in code.
+Still on main `dbbdabf1` (2026-11-19): `JavadocReferences.visitReference` reports the whole reference as one span resolved to the member, so no offset inside it reaches a parameter type.
+
+### Resolution
+
+`JavadocReferences` reports a span for the type before `#` and for each parameter type of a member reference, ahead of the reference itself, so the narrowest span under the cursor wins.
+Each element is javac's: the type before `#` is resolved as a reference of its own in the same comment, so `Sub#inherited` reaches `Sub`, not the member's owner, and keeps its span when the member does not resolve; a parameter type is the resolved method's parameter, through any array and a type variable's erasure, and a primitive gets no span and still reaches the member.
+The public DocTree API gives these parts no position, so each span is the element's simple name, found as an identifier in the signature text, as `ReferenceLocator` finds every Javadoc mention; the parameter types are found one after the other after `(`.
+A qualifier of a parameter type (`Test.Payload`) or a parameter name (`#take(Payload payload)`) stays the member's, and a reference wrapped over comment lines, whose signature text no longer matches its source span, is left out.
+References, highlight and rename of these types now include the mentions too.
+
+### Regression targets
+
+- `DefinitionLocatorTest.definition_javadocReferenceSignature_reachesTheNameUnderTheCursor`
+- `ReferenceLocatorTest.javadocLinkMentions_parameterTypeOfAMember_includedForTheTypeAndTheMember`
+- `ReferenceLocatorTest.javadocLinkMentions_qualifiedArrayParameterType_matchesOnlyTheSimpleName`
+- `ReferenceLocatorTest.javadocLinkMentions_typeBeforeTheMember_includedForThatTypeOnly`
+
+---
+
+## FR-035 — A rename started outside a file whose package is not its directory misses the declaration in it — non-goal
+
+**Status: non-goal** (2026-11-18: not reproduced; the probe's rename edits the declaration in the misplaced file too)
+
+**Kind: bug**
+
+**Affects: the editor's rename and MCP `rename_symbol`, on a member declared in a file whose package names another directory.**
+
+Found reviewing the MC-90 fix (#373, follow-up #375, 2026-11-18); suspected from the code, not reproduced.
+
+### Suspected behaviour
+
+MC-90 refuses a rename started in such a file, for any target searched beyond it, since Lathe finds a declaration's file from its package.
+A rename started elsewhere is not refused.
+`Right.java`, correctly placed, uses `wrong.count`, declared in `com/example/Wrong.java` with `package com.example.other;`: renaming `count` from `Right.java` resolves the declaration to `com.example.other.Wrong`, whose file `TypeSourceLocator.findSourceFile` does not find at `com/example/other/Wrong.java`.
+The reactor index still knows the type, so `RenameService.requireRenameable` does not refuse, and the rename would edit the uses and leave the declaration, breaking the build.
+The obvious refusal, a reactor type with no file at its package's path, cannot tell this from a secondary top-level class, which has no file of its own name either.
+
+Related, from the same review: in a file whose package is not its directory, every compile-checked code action now finds an error after its edit (the mismatch), so it always compiles the original too to compare, doubling its resolve time there.
+
+### Probe
+
+The two files above, compiled into the mirror; `rename_symbol` on `count` at its use in `Right.java`: the answer should refuse, naming the misplaced file, and leave both files unchanged.
+
+### Fix direction
+
+Refuse when a declaration the rename must edit has no file at its package's path and is not a secondary top-level class.
+The type index records no file name, but the class file's `SourceFile` attribute (`ClassSourceFile`) tells the two apart: a secondary top-level class names the file it shares, while a misplaced class names a file of its own name, which is just not where its package says.
+
+### Probe result (2026-11-18, main `4838f70`)
+
+The probe above, as an engine test: `rename_symbol` on `count` at its use in `Right.java` answered 2 edits in 2 files, `wrong.total` in `Right.java` and `public int total;` in `Wrong.java`, the misplaced file.
+The rename finds the declaration in the file, though not at its package's path, so the build is not broken and nothing needs refusing.
+The related note on code actions (a misplaced file's compile check compiles the original too) is a cost on a rare file, not a defect.
+
+### Regression targets
+
+None: closed without a change.
+
+---
+
+## FR-037 — Without a workspace manifest, cross-module answers stay in one module and claim to be complete — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: MCP `find_references`, `call_hierarchy`, `rename_symbol`, `verify_change`, and the editor's references and rename.**
+
+Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Keycloak was set up with the first build Lathe runs, sliced with `-pl services -am` (16 modules, all captured).
+A sync under `-pl` writes no `workspace.json`, by design, so the server ran without the module graph.
+`find_references` on `RealmModel.getName` then answered 7 references, all in `server-spi`; `rename_symbol` of `RealmModel.getDisplayNameHtml` edited its declaration alone, though `analyze_change` had just listed three overrides in other modules; and `verify_change` said "No errors".
+Every answer still ended "All javac-resolved references to this exact declaration ... no need to re-verify with grep".
+With the manifest written by a whole-reactor sync, the same calls answer 430 references and a rename of 11 edits in 8 files, overrides included, and `verify_change` checks the dependent modules.
+`find_implementations` was right in both setups (718 implementers of `ProviderFactory`): it reads the type index.
+
+### Resolution
+
+A missing `workspace.json` is now a load problem, as one from another schema or one that cannot be read already was: `LatheLayout.MANIFEST_MISSING_REMEDIATION` says the answers cover each file's own module and names the sync that writes it.
+Every MCP answer carries it as "Sync required:", `verify_change`'s too, and while the manifest has a load problem (`LatheNotes.moduleGraphMissing`) an answer about uses or implementations no longer says "no need to re-verify with grep"; a build-file change, which leaves the search whole, keeps it.
+The editor shows it as a warning on load, unless the workspace has no module at all (`WorkspaceManifest.missing`), whose own message stays.
+`rename_symbol` and the editor's rename refuse while the manifest has a load problem, however few modules the server has (a `-pl` sync of one module leaves one), and `run_test` says the runner is missing and why.
+Re-checked on Keycloak sliced with `-pl`: references carry the note, the rename of `getDisplayNameHtml` is refused and edits nothing, and `run_test` names the missing manifest.
+
+### Regression targets
+
+- `LatheEngineNotesTest.notes_workspaceWithoutTheManifest_syncRequiredNamingIt_untilWritten`
+- `LatheEngineRenameTest.rename_withoutTheManifest_refusesNamingItAndEditsNothing`
+- `McpTextTest.referencesResult_moduleGraphMissingOrBuildFilesChanged_dropsTheGrepAdviceOnlyWithoutTheGraph`
+- `LatheTextDocumentServiceTest.runTestFuture_freshWorkspace_returnsBlockedOnMissingRunnerJar`
+- `LatheWorkspaceServiceTest.executeCommand_runTestFreshWorkspace_returnsBlockedOnMissingRunnerJar`
+
+---
+
+## EG-112 — A type from a dependency without sources is reported as not existing — done
+
+**Status: done** (2026-11-18, PR #372)
+
+**Kind: bug**
+
+
+**Affects: `search_symbols` and `get_definition` (MCP), and the editor's workspace symbols, which run the same search, on a type whose dependency publishes no sources jar or has an unreadable one ([WS-39](gaps-archive.md#ws-39--a-dependencys-sources-jar-that-is-not-a-zip-fails-the-whole-sync--done)).**
+
+Found while verifying WS-39 end to end (2026-11-17).
+
+### Observed behaviour
+
+In a project using the DB2 driver's `com.ibm.db2.jcc.DB2SimpleDataSource` (its dependency synced as one without sources):
+
+- `describe_symbol` answers the declaration from the class file, `source: com.ibm.db2:jcc:12.1.4.0`, and `find_references` finds the 3 uses.
+- `search_symbols DB2SimpleDataSource` answers `No symbols matching 'DB2SimpleDataSource'`, though the dependency's type index lists it.
+- `get_definition` on it answers `No definition found.`
+
+`WorkspaceSymbolResolver.toSymbolInformation` keeps only a type whose source file it can locate, and drops the rest without a word.
+An agent concludes the type does not exist and searches elsewhere.
+
+### Fix direction
+
+Short of a decompiler ([EG-063](gaps.md#eg-063--a-dependency-without-a-sources-jar-has-no-source-to-navigate-to)), say what is known: list the type with its dependency instead of a file (`DB2SimpleDataSource (Class) — com.ibm.db2.jcc  com.ibm.db2:jcc:12.1.4.0, no sources`), and answer a definition with the dependency that declares it and a pointer to `describe_symbol`.
+
+### Resolution
+
+Go to definition on such a type says which dependency declares it: the editor once per dependency, MCP's `get_definition` with every answer, pointing to `describe_symbol`, which reads the class file.
+`search_symbols` lists such types after the other dependency types, with the dependency in place of a file; the manifest names the type-index shards of the dependencies without sources (by a jar's first entry), and the type index maps only their types to the GAV.
+The editor's workspace symbols still leave them out, as an LSP symbol needs a file the client can open: [EG-063](gaps.md#eg-063--a-dependency-without-a-sources-jar-has-no-source-to-navigate-to)'s stubs would give them one.
+
+### Regression targets
+
+- `LibrarySourcesTest.sourcelessDeclaration_jarWithoutSources_namesTypeAndDependency_otherwiseEmpty`
+- `LatheEngineNavigationTest.definition_typeFromADependencyWithoutSources_namesItsDependency`
+- `LatheTextDocumentServiceTest.definition_typeFromADependencyWithoutSources_saysWhereItIsDeclaredOnce`
+- `WorkspaceSymbolResolverTest.sourceless_typeOfADependencyWithoutSources_namesItsDependency_otherDependencyNot`
+- `WorkspaceSymbolResolverTest.sourceless_moreTypesWithSourcesMatchFirst_stillFindsTheSourcelessOne`
+- `LatheEngineNavigationTest.searchSymbols_typeFromADependencyWithoutSources_listedWithItsDependency`
+- `WorkspaceManifestTest.load_jarListedTwice_sourcelessShardByTheFirstEntry`
+- `McpTextTest.searchResult_typeFromADependencyWithoutSources_namesTheDependency`
+
+---
+
 ## EG-067 — The first build floods the log with warnings — non-goal
 
 **Status: non-goal** (2026-11-17: both warnings are documented as expected in the [test-capture guide](../guide/test-capture.md) and the README; reopen if users report them)
@@ -10320,6 +10483,194 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s — non-goal
+
+**Status: non-goal** (2026-11-19: not reproduced; three forced re-syncs of Caffeine each wrote the module once, with no reload)
+
+**Kind: bug**
+
+**Affects: MCP and editor answers right after a sync, on a module with many generated sources.**
+
+Found by the pre-release Gradle round (2026-11-15) on Caffeine.
+
+### Observed behaviour
+
+After `.lathe/lathe-sync.sh caffeine`, the MCP server recompiled the module's 493 generated sources twice in a row
+(28 s, then 22 s), and a `get_diagnostics` asked meanwhile answered after 43.8 s.
+Two reduced attempts (add a file, sync, delete it, sync) did not repeat it.
+
+### Fix direction
+
+Reproduce first: find what made the pass write the generated sources twice (a reload landing mid-pass, or stamps the sync
+rewrote after the first write).
+
+Both are possible in the code (checked 2026-11-16): `WritePass.onReload` bumps the pass generation, but `writeLevels` checks it only between dependency levels, so a level already compiling finishes and the next pass may write it again;
+the stamps guess would sit in `stableSources`/`pendingStale` and the stamp map.
+No commit since the report targets either.
+
+### Probe result (2026-11-19, main `6803a4b6`)
+
+Caffeine (`10646b0`) synced with the Gradle plugin built from main, an MCP server running with `LATHE_DEBUG=1`, then `latheSync --module caffeine` three times as a no-op and three times with `--rerun-tasks`, which regenerates and recompiles the module.
+The no-op syncs wrote nothing.
+Each forced sync started one write pass, `[react] recompiling 592 changed file(s)`, compiled once in 3–4 s; no second pass and no `[reload]` followed.
+`get_diagnostics` on `BoundedLocalCache.java` asked right after each sync answered in 3.6–5.0 s.
+The race the fix direction names (a reload landing mid-pass) stays possible in the code, but nothing in a sync triggered it.
+
+### Regression targets
+
+None: closed without a change.
+
+---
+
+## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+A `workspace.json` that is not UTF-8 or not readable (chmod 000) makes `WorkspaceWatcher.readManifest` throw; the editor gets no message, the watcher does not start, and a fixed file is never re-read, so outside changes go unnoticed until a restart.
+A missing file or one with no modules is silent.
+An empty file is fixed: `Json.read` turns it into a load problem the editor is shown (re-checked 2026-11-17).
+
+### Root cause
+
+`WorkspaceManifest.load` already turns a read error into a load problem that `showWorkspaceStatus` would show,
+but `loadWorkspace` constructs the `WorkspaceWatcher` first, and its `readManifest` throws, so the warning is never sent.
+
+### Fix direction
+
+Report a broken manifest to the client with the remedy (a sync), keep watching, and reload once it is readable.
+
+### Resolution
+
+`WorkspaceWatcher` no longer throws on a manifest that exists but cannot be read: a failed read is no change, and the last content stands (at startup, none), so the load continues and `showWorkspaceStatus` reports the manifest's load problem with its remedy.
+The read is tried again when the file is rewritten (not UTF-8), or on every poll after an access failure (a permission, a lock while a sync replaces it), as restoring a permission leaves the mtime as it was; a file that reads again is compared with the last content.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.initialize_unreadableWorkspaceJson_warnsWithTheRemedy`
+- `WorkspaceWatcherTest.poll_unreadableManifestRewritten_workspaceChanged`
+- `WorkspaceWatcherTest.poll_readableManifestTurnsUnreadable_noChangeUntilItReadsAgain`
+- `WorkspaceWatcherTest.poll_unreadableManifestPermissionRestored_workspaceChanged`
+
+---
+
+## WS-41 — Setup fails when the project declares `maven-compiler-plugin` with `<extensions>true</extensions>` — done
+
+**Status: done** (2026-11-18, PR #381)
+
+**Kind: bug**
+
+
+**Affects: Maven setup (`:LatheInit`, the sync); every module of such a build.**
+
+Found by the exploratory round on Quarkus (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Quarkus' `independent-projects/parent/pom.xml`, the parent of its whole reactor, declares the compiler plugin with `<extensions>true</extensions>`.
+The first build Lathe runs fails at the first module that compiles (`quarkus-ide-config`): `Failed to execute goal maven-compiler-plugin:3.16.0:compile ... No such compiler 'lathe'` (`NoSuchCompilerException`).
+The extension selects the compiler with `maven.compiler.compilerId=lathe` and adds `lathe-compiler` to the plugin's dependencies in `afterProjectsRead`, but Maven builds the class realm of a plugin with extensions before that, so the added dependency never reaches it.
+With the flag removed from that one POM, the module builds and is captured.
+
+### Fix direction
+
+Reproduce with an invoker fixture whose compiler plugin has `<extensions>true</extensions>`.
+Either add `lathe-compiler` where Maven still reads it for an extensions plugin (the model, before the realm is built), or leave such a project's compiler alone and say why instead of failing the build.
+
+### Resolution
+
+The Maven extension turns `<extensions>true</extensions>` off for `maven-compiler-plugin` in the in-memory model, and says so once per build: Maven then builds an ordinary plugin realm when the plugin first runs, with `lathe-compiler` in it, rather than an extension realm while it reads the projects, before the extension adds the compiler.
+The compiler plugin contributes nothing as an extension, and the POM is not touched.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectProject_compilerAsBuildExtension_loadedAsPlainPluginWithTheShim`
+- invoker fixture `compiler-extensions`
+
+---
+
+## WS-42 — A Gradle module path passed as a compiler argument gives no module dependencies — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: references, callers, rename and `verify_change` across modules, on Gradle builds that set the module path themselves.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1).
+
+### Observed behaviour
+
+Lucene's build plugin compiles each module with `--module-path` as a compiler argument, naming the dependency's packaged jar (`lucene/core/build/libs/lucene-core-12.0.0-SNAPSHOT.jar`), and leaves the task's classpath empty.
+The capture keeps the argument as it is: `lucene/analysis/common`'s params have an empty `classpath` and `modulepath`, and `workspace_summary` lists no dependency for most modules.
+Files there still compile (the argument reaches javac), but the module graph lacks the edges, so `find_references` on `TermQuery.getTerm` answers 10 references, all in `lucene/core`, while `highlighter` (`FieldQuery.java`, four calls) and `queries` use it too; the answer still says "no need to re-verify with grep".
+Analysis of a dependent module also reads the dependency's jar from the last build, not its sources.
+On main the Gradle capture still takes the module path only from the classpath (`ModulePathSplit.split(classpath)`).
+
+### Resolution
+
+The capture takes `--module-path`/`-p` and `--class-path`/`-classpath`/`-cp` (also in their `=` forms) out of the compiler arguments it records and adds their entries to the params' module path and classpath (`CompilerPathArgs`), after the compile task's own.
+The server needed no change: Lucene's manifest already lists `lucene-core-12.0.0-SNAPSHOT.jar` as an output of `lucene/core`, so the entry maps to its mirror, which is the module-graph edge, and a dependent module reads the dependency's sources, not the last built jar.
+Re-checked on Lucene: `lucene/analysis/common` now depends on `lucene/core`, and `find_references` on `TermQuery.getTerm` reaches `highlighter`, `queries` and `facet` besides `core`.
+
+### Regression targets
+
+- `CompilerPathArgsTest.extract_eachPathOptionForm_movesItsEntriesAndKeepsTheRest`
+- `CompilerPathArgsTest.extract_noPathOptionOrNoValue_leavesTheArgumentsAsTheyAre`
+- `CompilerPathArgsTest.extract_entryThroughParentSegment_normalized`
+- `LatheCaptureTaskFunctionalTest.capture_modulePathAsCompilerArgument_movesItIntoTheModulePath`
+
+---
+
+## WS-43 — Lathe's Gradle plugin breaks a build that reads every configuration's dependencies while configuring — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+
+**Affects: Gradle setup (`:LatheInit`, `latheSync`) and every build of the project with Lathe's plugin applied.**
+
+Found by the exploratory round on Apache Kafka (2026-11-18), on 0.3.1 and on main `cdf57f1`.
+
+### Observed behaviour
+
+Kafka's `build.gradle` (line 536), in `afterEvaluate`, walks every resolvable configuration's `incoming.dependencies` to look for Mockito.
+That runs the `withDependencies` callback of Lathe's sources configuration (`LatheProjectPlugin.registerLibraries`, line 510), which resolves the test compile classpath at once, while other projects are still being configured.
+Kafka then fails to configure: `Could not resolve all dependencies for configuration ':coordinator-common:compileClasspath'` … `Value for :server-common project components has not been calculated yet`.
+Without Lathe's init script, `./gradlew :clients:dependencies` succeeds.
+
+### Fix direction
+
+Do not resolve anything when the sources configuration's dependencies are only listed: add the source dependencies when the facts task resolves them (a detached configuration in the task, or a provider the task forces), not in `withDependencies`.
+A TestKit fixture whose build reads every configuration's `incoming.dependencies` in `afterEvaluate`.
+
+### Cause (found 2026-11-18)
+
+Reading `incoming.dependencies` runs a configuration's `withDependencies` actions, and Lathe's sources configuration was in each project's container, so Kafka's walk ran its action, which resolves the test classpath.
+Under Kafka's consistent resolution (`useCompileClasspathVersions()`), that first resolves `coordinator-common`'s compile classpath, which configures `server-common` on demand.
+`server-common`'s own walk then resolves its test classpath, which holds its own test fixtures, while its components are still being calculated.
+
+### Resolution
+
+The sources configuration is detached (`detachedConfiguration()`), outside the project's configurations: no build script reaches it, and the facts task resolves it when it needs the sources, after every project is configured.
+A detached configuration does not get rules a build adds through `configurations.all`; its `-sources` coordinates come from the already resolved compile classpath, where they applied.
+Checked on Kafka with the branch's plugin: `:clients:dependencies` succeeds, and a `latheSync` dry run configures every project and stores its configuration cache entry, which resolves every facts task's inputs.
+
+### Regression targets
+
+- `LatheSyncTaskFunctionalTest.sync_buildReadsEveryConfigurationsDependenciesInAfterEvaluate_configuresAndFindsSources` (fails on the code before the fix with Kafka's error)
+
+---
+
 ## WS-35 — Lombok in the analysis compile reads a `lombok.config` up to 2 seconds old — non-goal
 
 **Status: non-goal** (2026-11-17: documented in the [troubleshooting guide](../guide/troubleshooting.md); reopen if Lombok users ask)
@@ -12032,6 +12383,208 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-26 — A run that only some of its code fails to compile still runs on the old classes — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: the editor's runs (`:LatheRun`, neotest, debug), `run_test` with `scope: package`, and a test that still compiles while code it calls no longer does.**
+
+Split from MC-92 (2026-11-18), whose fix covers `run_test` on the test file itself.
+
+### Observed behaviour
+
+`run_test` now refuses a test file whose own compile has an error ("code it runs does not compile"), as when a class it uses was deleted or changed under it.
+What still runs on the last good classes, and fails with `NoClassDefFoundError` or a changed signature at run time, found from the code:
+
+- the editor's runs, through `RunCoordinator.failingUnder`, which checks failed build compiles only;
+- the other test files of a `scope: package` run, as only the file asked about is compiled first;
+- a test that compiles while an unchanged helper it calls uses a deleted class: the helper keeps its old class, and nothing recompiles it.
+
+### Fix direction
+
+Mark the unchanged dependents of a deleted or changed source as failing where the write pass handles the change (`WritePass.reconcileDeletedSourcesIn` and the write levels), so the existing check (`ChangeVerifier.failingInModule`) refuses every run path at once; or compile each file a run selects before it runs.
+
+### Resolution
+
+Every launch, the editor's runs and debugs and `run_test` alike, is checked first, as `verify_change` checks a change (`ChangeVerifier.failingForRun`): after the write pass has caught up, the changes since the build in the run's module and the modules it depends on, the files that use them, and the generated callers a rename left are compiled, and a launch whose code has an error is blocked, `code it runs does not compile: <file>:<line>: <error>`.
+Nothing changed since the build: nothing is compiled.
+`verify_change`'s compile step moved from `LatheEngine` into `ChangeVerifier` for it, and `verify_change` answers as before.
+Checked on javaparser: with the helper `ExtractingVisitors.java` deleted, a package run through `JavaTokenTest.java` ran 3,070 tests on old classes on main; it is now blocked naming `ExpectedTokensTest.java:30: cannot find symbol`.
+
+Left as they are: no cache between runs, so a large unbuilt change is compiled again before each run; a cancel during the check still starts the JVM, then kills it, as a cancel before the JVM exists does; a debug run's port is taken before the check.
+
+### Regression targets
+
+- `LatheWorkspaceServiceTest.executeCommand_runWhileAHelperUsesADeletedClass_blockedNamingTheHelper`
+- `LatheWorkspaceServiceTest.executeCommand_runWhileModuleDoesNotCompile_blockedNamingTheFailure`
+- `LatheEngineRunTest.runTest_classItUsesDeleted_notRunNamingItsError`
+
+---
+
+## TE-21 — A JUnit 6 build's tests replay on the JUnit 5 runner and fail before any test runs — done
+
+**Status: done** (2026-11-18, PR #385)
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on a build that uses JUnit 6.**
+
+Found by the exploratory round on Keycloak (2026-11-17, Lathe 0.3.1).
+
+### Observed behaviour
+
+Keycloak's `services` tests run on JUnit 6.1.3 (its captured class path lists `junit-platform-commons-6.1.3.jar` and `junit-jupiter-api-6.1.3.jar`).
+The workspace's `runnerClasspath` names `junit-platform-launcher-1.10.3.jar` and `junit-jupiter-engine-5.10.3.jar`, the fallback versions.
+`run_test` on `VaultTranscriberTest` then fails in discovery, after 76 s: `NoSuchMethodError: 'boolean org.junit.platform.commons.util.ReflectionUtils.returnsVoid(java.lang.reflect.Method)'`, the 5.10 engine calling into the 6.1 platform commons.
+The manifest came from a whole-reactor sync stopped after the root project's sync, which is the step that writes it in a full build too.
+
+### Fix direction
+
+Likely cause, unconfirmed: the runner's versions are read from the reactor's external artifacts when the root project syncs, and those do not include the modules' test-scoped JUnit.
+Take the platform and Jupiter versions from the captured test class paths, per module if they differ, and never pair a launcher and engine of another major version with the project's platform.
+
+### Resolution
+
+The sync resolves a test runner for each JUnit platform version the reactor's test classpaths hold: the launcher, and the engine of the newest Jupiter of its generation (1.x for Jupiter 5, the same version from 6 on), or the launcher alone for the vintage engine.
+`workspace.json` records them by version, and each module replays on the runner of the platform its own test classpath names, so a reactor on JUnit 5 and 6 at once runs both; Gradle files each project's aligned runner under its launcher's version.
+The first fix alone (the newest version, compared as a version, rather than the first by name) broke a JUnit 5 module beside JUnit 6 ones, which the per-version runners fix.
+
+### Regression targets
+
+- `ServerInstallerTest.resolveRunnerClasspath_severalJUnitVersions_resolvesTheHighest`
+- `ServerInstallerTest.resolveRunnerClasspath_newerPlatformThanJupiter_launcherOfJupitersGeneration`
+- `ServerInstallerTest.resolveRunnerClasspath_versionThatDoesNotParse_stillResolved`
+- `ServerInstallerTest.resolveRunnerClasspaths_platformWithoutJupiter_launcherAlone`
+- `RunCoordinatorTest.runnerFor_moduleOnEitherPlatform_itsOwnRunnerElseTheWorkspaces`
+- `FileUtilTest.jarVersion_repositoryJarOrOther_versionOrNone`
+
+---
+
+## TE-23 — A test JVM run outside its module's directory writes its capture under the wrong module — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: editor test runs and MCP `run_test` on a build whose test JVM runs in another directory than its module's (Apache Lucene; any Gradle `test { workingDir }`); the setup build ran every such test in full.**
+
+Found by the exploratory round on Apache Lucene (2026-11-18, Lathe 0.3.1); cause found on main `e2af3ade`.
+
+### Observed behaviour
+
+The capture-only setup ran every Lucene test task (31 in the first report, 37 on main `e2af3ade`), and the Gradle plugin reported for each `:lucene:core:test captured no test launch: its test JVM did not load lathe-junit, so its tests ran in full`, suggesting a plugin like Develocity's test selection, which Lucene does not use.
+lathe-junit did load, and every test JVM captured, but at `.lathe/lucene/core/build/tests-cwd/test-launch.json` and the like, where the plugin does not look.
+The capture took its module from the JVM's working directory, and Lucene runs each module's tests in `<module>/build/tests-cwd`.
+
+### Resolution
+
+The Gradle plugin names the module directory of every test task it captures in `LATHE_CAPTURE_MODULE` (`LatheFlags.CAPTURE_MODULE_ENV`), an environment variable, so no task input changes.
+The capture writes its launch for that module when the tests run inside it, and otherwise for the working directory, as on Maven, whose Surefire runs in the module: a nested build the tests start in a temporary directory inherits the variable, and must not write over the module's launch.
+A build that turns Lathe off (`lathe.disabled`, or on CI) still captures nothing.
+The launch keeps the JVM's own working directory, since the build ran the tests there and they may read files from it, and the server makes that directory before a test replay when a `clean` removed it, never a run configuration's own `cwd`.
+Re-checked on Lucene: all 37 captures are at their modules' paths with no "captured no test launch" message, and `run_test` on `TestDocValuesQueries` passes 41 tests after `build/tests-cwd` was deleted.
+
+### Regression targets
+
+- `LaunchCaptureTest.site_moduleNamedOrNot_capturesForTheNamedModuleKeepingTheWorkingDirectory`
+- `LaunchCaptureTest.site_workingOutsideTheNamedModule_theWorkingDirectoryDecides`
+- `RunOverlayTest.makeCapturedWorkingDir_capturedOrConfiguredCwd_onlyTheCapturedOneMade`
+- `LatheCaptureTaskFunctionalTest.capture_testsRunOutsideTheProjectDirectory_launchIsTheModulesAndKeepsTheDirectory`
+
+---
+
+## TE-22 — The capture-only sync fails on a module whose POM sets `<failIfNoTests>true</failIfNoTests>` — done
+
+**Status: done** (2026-11-18, by TE-19's fix, PR #376)
+
+**Kind: bug**
+
+
+**Affects: Maven setup (`:LatheInit`) and `.lathe/lathe-sync.sh --tests`.**
+
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
+
+### Observed behaviour
+
+A capture-only build narrows Surefire to the first type of the module's test sources in name order (`LatheModelInjector.injectCaptureClass`).
+In `javaparser-core-testing` that type has no tests, so Surefire runs none ("Tests run: 0"), and the module's own `<failIfNoTests>true</failIfNoTests>` fails the build: "No tests were executed!".
+The `-DfailIfNoTests=false` the setup passes loses to the POM's explicit value, so 2 of 10 trees are captured and the rest of the reactor is skipped.
+The Maven guide says the setting matters only on JUnit older than 5.10; javaparser is on JUnit 5.14.
+
+### Fix direction
+
+Pick a type that holds a test (a name Surefire's default includes match, `*Test`/`Test*`/`*Tests`/`*TestCase`), or keep the narrowing off for a module whose Surefire configuration sets `failIfNoTests`.
+
+### Resolution
+
+The cause is TE-19's: the capture-only run narrowed Surefire to the first test source in name order, here the abstract `AbstractLexicalPreservingTest`.
+TE-19's fix selects up to five sources, the names Surefire's default includes match first and abstract bases by name after them, so a runnable class starts the test JVM and its tests count as run (skipped by the dry run), which `failIfNoTests` accepts.
+Checked on javaparser with an extension built from main `d27bf8b`: `javaparser-core-testing` reports `Tests run: 38, Skipped: 38`, the build succeeds, and its test launch is captured.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsRunnableTestNamesFirst`
+- `LatheModelInjectorTest.injectCaptureClass_otherNamesInSeveralRoots_selectedAfterTheTestNames`
+
+---
+
+## TE-19 — A capture-only sync leaves some Surefire modules uncaptured, without a word — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+
+**Affects: Maven modules whose capture-only test run reports `Tests run: 0` (seen on jdbi: `core`, `sqlobject`, `postgres`, `spring` and others); `run_test`, neotest and `:LatheRun` on their tests.**
+
+Found by the editor exploratory round on jdbi (2026-11-17).
+
+### Observed behaviour
+
+`:LatheInit` on jdbi succeeds and captures 21 modules' test launches, but not `core`, `sqlobject` and other modules with tests; nothing in the output says so.
+Running `TestJdbi` then answers `blocked: no captured test launch for core; run .lathe/lathe-sync.sh --tests core`, and that command again reports `Tests run: 0, Failures: 0, Errors: 0, Skipped: 0` and writes no `.lathe/core/test-launch.json`.
+`lathe-junit` is on the fork's test classpath (`-X`), Surefire uses the JUnit Platform provider with `forkCount=4`, and no fork reports a test class.
+`vavr`, with the same Surefire settings, captures (its dry run reports 3 skipped tests).
+`-Dtest=TestJdbi -Dlathe.capture.only=true` on `core` captures the launch (8 skipped).
+`CaptureLauncherSessionListener` swallows every `Throwable`, so a failed capture leaves no trace.
+[EG-067](#eg-067--the-first-build-floods-the-log-with-warnings--non-goal) saw `Tests run: 0, Skipped: 0` on EqualsVerifier's `equalsverifier-core` and `equalsverifier-test`; whether those were captured is not recorded.
+
+Probe: on jdbi `core`, `mvn -pl core test -Dlathe.capture.only=true -X` with a stack trace printed from the listener's catch, and a log of whether `launcherSessionOpened` runs and in which working directory.
+The warning in the fix direction does not wait on it.
+
+### Fix direction
+
+Find why the whole-module dry run starts no test class in these modules; whatever the cause, have the sync say which modules ran tests but captured no launch, and have the listener print why a capture failed instead of nothing.
+
+### Cause (found 2026-11-18)
+
+The Maven extension narrows a capture-only run to one class, the first test source in name order (`LatheModelInjector.injectCaptureClass`), to start the test JVM without discovering every class.
+When that class is one Surefire does not run, Surefire starts no test JVM at all: nothing is captured, and the build passes with `Tests run: 0`.
+Every jdbi module left uncaptured started from an abstract base or a helper (`core`: `AbstractJavaTimeArrayTests`, `json`: `AbstractIssue2395Test`, `guice`: `GuiceTestSupport`, `postgres`: `FooBarPGType`, `spring`: `Callback`), and every captured one from a test class.
+`mysql` and `postgis` exclude every test in their default profile, so they have nothing to capture.
+The listener was not at fault: it never ran.
+
+### Resolution
+
+A capture-only run selects up to five test sources: the names Surefire's default includes match, then abstract bases by name (`Abstract*`), then the rest, each in name order. One runnable class among them starts the JVM, and a module's own includes (a `@Suite`) keep their classes in the selection.
+A module with Kotlin, Groovy or Scala test sources, in a test root or beside a `src/<set>/java` one (jdbi's `src/test/kotlin`, a root only later in the build), is not narrowed: its Java sources may be only helpers.
+A capture that fails in the test JVM now prints `[lathe] test launch not captured: <cause> at <frame>` to the build's test output; the report itself cannot fail the tests.
+Checked on jdbi with the branch's extension: all ten modules left uncaptured now capture (`core`, `sqlobject`, `json`, `guice`, `kotlin`, `kotlin-sqlobject`, `postgres`, `spring`, `spring5`, `opentelemetry`); the `capture-only-suite` invoker fixture still discovers its suite.
+The sync still cannot list the modules that captured nothing: it runs at the root's `process-test-classes`, before any module's tests.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectCaptureClass_helpersAndAbstractBasesSortFirst_selectsRunnableTestNamesFirst`
+- `LatheModelInjectorTest.injectCaptureClass_otherNamesInSeveralRoots_selectedAfterTheTestNames`
+- `LatheModelInjectorTest.injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection`
+- `CaptureLauncherSessionListenerTest.notCaptured_failure_printsOneLineNamingTheCauseAndWhere`
+- `CaptureLauncherSessionListenerTest.notCaptured_causeWhoseToStringThrows_returnsQuietly`
+- invoker fixture `capture-only-suite`
+
+---
+
 ## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first — done
 
 **Status: done.**
@@ -12864,6 +13417,44 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: Neovim.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+From a file under `src/main/java`, `:LatheNew` → Test offers the buffer's package twice, and the main-source row comes first.
+Accepting the top row is the natural move, yet a test belongs in the test root.
+
+### Fix direction
+
+`SourceLayout.destinations` now owns the ranking (moved from `lathe-neovim/runtime/lua/lathe/new.lua` in `6d40d341`).
+Its unfiltered list ranks both scopes equally within the buffer's package and module,
+so the alphabetical tie-break (`main` < `test`) still decides.
+The typed-package path already prefers the kind's scope; that partial improvement does not fix the unfiltered list.
+Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
+Still on main `dbbdabf1` (2026-11-19): `SourceLayout.rank` gives both scopes of the buffer's package rank 0, and the client keeps the server's order.
+
+### Resolution
+
+The unfiltered list orders each rank by the kind's scope before the module, package and scope tie-break, so Test from a main file leads with the test row of the buffer's package, then the rest of the module's test packages.
+The scope check that ranked the other modules moved into that key.
+For Class, the module's main packages now come before its test-only packages, where the package order alone used to mix them.
+
+### Regression targets
+
+- `SourceLayoutTest.destinations_testOnlyPackageInModule_kindsScopeLeadsEachRank`
+
+---
+
 ## NV-11 — The Java indenter still disagrees with google-java-format on 1% of lines — non-goal
 
 **Status: non-goal** (2026-11-17: stopped on purpose on 2026-11-12, to keep the indenter simple)
@@ -13358,6 +13949,276 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-95 — `analyze_change` prints an `override family` line for symbols that cannot be overridden — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: `analyze_change` on any symbol that is not a method: a field, local variable, parameter or type.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On a lambda parameter, `analyze_change` ends with `override family: none`; on a method it prints `overrides:` and `overridden by:`.
+`McpText.analyzeResult` prints `override family:` for every symbol that is not a method, by design rather than as a leftover.
+The line is meaningless for a field or variable, and an agent parsing the answer sees two formats.
+
+### Fix direction
+
+Leave the override lines out for a field or variable, which nothing can override, and decide what a type's line should say.
+
+### Resolution
+
+`LatheChangeImpact` says what kind of family it holds (`Family`: `METHOD`, `TYPE`, `NONE`), read in the same worker request that finds a method's overrides, so `analyze_change` prints one line format per kind.
+A method keeps `overrides:`, `overridden by:` and `redeclared by:`; a type lists its subtypes as `subtypes:`; a field, variable or parameter, and no symbol, get no family line.
+
+### Regression targets
+
+- `McpTextTest.analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty`
+- `LatheEngineVerifyTest.analyzeChange_typeAndField_typeListsSubtypesFieldHasNoFamily`
+
+---
+
+## MC-99 — `run_test` with a `method` but no `scope` runs the whole class — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: MCP `run_test`.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-17).
+
+### Observed behaviour
+
+`run_test` with `file` `OwnerTests.java` and `method` `addPetAddsPersistedPet`, without `scope`, answers "PASS — 2 passed": it ran the class.
+The schema says `method` is required when `scope` is `method`, but an agent that names a method means that method, and nothing says it was ignored.
+
+### Fix direction
+
+A `method` with no `scope` means `scope=method`; a `method` with another scope is refused, naming the conflict.
+
+### Resolution
+
+A `method` with no `scope` now runs that method: `run_test` reads it as `scope=method`.
+A `method` with `scope` `class` or `package` is refused, `run_test 'method' runs one method: leave out 'scope' or set it to method, not class`, instead of being dropped.
+A blank `method`, as a client may send for an unset field, counts as none.
+The schema says so on both arguments.
+
+### Regression targets
+
+- `LatheMcpToolsTest.runTest_methodWithAnotherScope_returnsErrorNamingTheConflict`
+- `LatheMcpToolsTest.testScope_noScope_methodWhenOneIsNamedElseClass`
+- `McpSmokeTest.runTest_methodWithoutScope_runsOnlyThatMethod` (invoker `multi-module`)
+
+---
+
+## MC-94 — A `file://` URI as a tool's `file` is read as a relative path — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: every file tool given a `file://` URI instead of a path.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+`outline` with `file="file:///…/Edge.java"` answers `/<workspace>/file:/…/Edge.java does not exist`.
+Agents that also drive an LSP carry URIs and may pass one.
+
+### Fix direction
+
+Accept a `file://` URI by converting it to a path (`LatheUri.toPath`) before resolving against the workspace, or refuse it saying a path is expected.
+`LatheUri.canonical` only normalizes a URI, and the file tools need a path.
+
+### Resolution
+
+Every file argument (`file`, and `verify_change`'s `files`) takes a `file:` URI as the path it names (`LatheUri.toPath`), and a path as before.
+A URI no local path stands for (one naming a host) is taken as given, and so answered as a file that does not exist.
+
+### Regression targets
+
+- `LatheMcpToolsTest.outline_fileUri_outlinesTheFileItNames_hostUriNotFound`
+
+---
+
+## MC-92 — `run_test` runs a test whose dependency no longer compiles — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: `run_test` after a class the test uses is deleted or broken, while the test file itself is unchanged.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+After `Edge.java` is deleted, `verify_change` reports `EdgeTest.java:10:25: Error: cannot find symbol class Edge`.
+`run_test` on `EdgeTest` still runs it on the old classes and reports `java.lang.NoClassDefFoundError: com/example/core/Edge` for each test.
+When the test's own code does not compile, `run_test` refuses: `EdgeTest.java was not run: code it runs does not compile: …`.
+A dependency whose own compile fails is already caught: it is a failed compile of the test's module or one upstream, and the run is refused (`ChangeVerifier.failingInModule`).
+What gets through, verified against the code (2026-11-17): a deleted dependency, which only removes class outputs (`WritePass.reconcileDeletedSourcesIn`), and a dependency change that still compiles but breaks the unchanged test, as nothing recompiles an unchanged dependent.
+Not checked: whether the editor's runs (`:LatheRun`, neotest) behave the same.
+
+### Fix direction
+
+Refuse the run with the same "does not compile" answer when the test file would no longer compile against the current classes, not only when its own text changed.
+
+### Resolution
+
+`run_test` already compiled the test file as it is on disk before running it, and now refuses when that compile has an error, with the same "code it runs does not compile" answer, naming the error: a class the test uses may be gone or changed while the test is not, which no build compile failed.
+It covers the test file itself, by its earliest error, and skips Lathe's own package-directory error (MC-90), which the build does not have.
+The other test classes a package run runs, a helper the test calls that no longer compiles, and the editor's runs (`:LatheRun`, neotest), which go through `RunCoordinator`, are [TE-26](gaps.md#te-26--a-run-that-only-some-of-its-code-fails-to-compile-still-runs-on-the-old-classes).
+Checked on javaparser: with `ExtractingVisitors.java` deleted, main ran `ExpectedTokensTest` and failed with `NoClassDefFoundError`; the fix answers `ExpectedTokensTest.java was not run: code it runs does not compile: …ExpectedTokensTest.java:30: cannot find symbol`.
+
+### Regression targets
+
+- `LatheEngineRunTest.runTest_classItUsesDeleted_notRunNamingItsError`
+- `LatheEngineRunTest.runTest_classItUsesChangedUnderIt_notRunNamingItsError`
+- `LatheEngineRunTest.runTest_packageNotItsDirectory_notRefused`
+
+---
+
+## MC-97 — A deferred `verify_change` tells the agent to run the sync that is already running — done
+
+**Status: done** (2026-11-18)
+
+**Kind: bug**
+
+**Affects: `verify_change` while the project's own `.lathe/lathe-sync.sh` (or any build Lathe sees writing `.lathe/`) runs.**
+
+Found by the MCP exploratory round on resilience4j (2026-11-17).
+
+### Observed behaviour
+
+During a `latheSync`, every `verify_change` answers at once ``Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.``; the first call after the build ends checks normally.
+Not stalling is right, but the advice is to start a second build while the first runs; an agent following it doubles the wait.
+`LatheEngine.verifyChange` sets the sync command for every deferral but another server writing, a build in progress included, and `McpText` prints it.
+The `LatheVerifyChange` javadoc also tells a caller to run `suggestedSync` for a running build.
+
+### Fix direction
+
+For a build in progress, say to wait for it to finish and re-check; name the sync only when what is missing is one, and correct the javadoc.
+
+### Resolution
+
+`LatheEngine.verifyChange` names the sync only for pending build files, the one deferral a sync resolves; a running build and another server updating `.lathe/` end on their own.
+The answer then says ``Verification deferred: a build is in progress. Re-check once it ends.``, and the `LatheVerifyChange` javadoc says the same.
+
+### Regression targets
+
+- `LatheEngineVerifyTest.verifyChange_buildInProgress_defersWithoutNamingTheSync`
+- `McpTextTest.verifyChangeResult_deferred_namesTheSyncOnlyWhenOneHelps`
+
+---
+
+## MC-91 — Tool columns are UTF-16 code units, and nothing says so — done
+
+**Status: done** (2026-11-18, PR #390: the unit is stated; converting to characters is not done)
+
+**Kind: bug**
+
+**Affects: every position tool's `column` input and every `line:column` it reports, on a line with a character outside the Basic Multilingual Plane (an emoji) before the position.**
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+On `\tString label = "😀😀"; int after = count;`, `count` is at character column 35.
+`get_definition` at column 35 answers `Line 9 has no symbol at column 35`; column 37 (UTF-16, two units per emoji) works.
+`outline` lists `after` at `9:29` (character 27) and `find_references` reports `count` at `9:37`.
+The tool descriptions say only "1-based column".
+The MCP layer passes LSP positions through unchanged (`LatheMcpTools.fromWire`, `McpText.toWire`).
+`symbol` avoids the problem, and edits on such a line are exact.
+
+### Fix direction
+
+Agents count characters (code points), as the files they read show them: convert at the MCP boundary both ways, or state the unit in every position tool's description.
+Converting needs each line's text, for the column an agent gives (`fromWire`) and for every column `McpText` prints, including on files no client has open; a conversion that sees only some lines mixes the two units.
+
+### Resolution
+
+Every position tool's `column` input now says it counts UTF-16 code units, as every column the tools report does, and that a character outside the Basic Multilingual Plane counts as two; `symbol` needs no counting.
+The agent guide says the same.
+Converting to characters at the MCP boundary, as triaged on 2026-11-17, is not done: it needs each line's text for every column printed, files no client has open included; a request for it would be a feature.
+
+### Regression targets
+
+- `LatheMcpToolsTest.all_columnInputs_nameTheirUnit`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound` (the error names the unit)
+
+---
+
+## MC-90 — A file whose package does not match its directory is reported clean and not compiled, and rename is a silent no-op — done
+
+**Status: done** (2026-11-18, PRs #373 and #375)
+
+**Kind: bug**
+
+
+**Affects: `get_diagnostics`, `get_definition` and `rename_symbol` on a `.java` file with no `package` line, a `package` line naming another directory, or an illegal character before the `package` line.**
+
+The lookups are in `lathe-analysis`, so the editor's definition and rename probably fail the same way; the editor was not checked.
+
+Not to be confused with commit `fa56ea2d` (`Refs: MC-90`), which fixed MC-98: that gap was numbered MC-90 before it was renumbered.
+
+Found by the MCP exploratory round (2026-11-16).
+
+### Observed behaviour
+
+javac and the Maven build compile `core/src/main/java/com/example/core/WrongPkg.java` declaring `package com.example.other;`.
+Lathe answers, for that file:
+
+- `get_diagnostics`: `No errors or warnings in WrongPkg.java.` followed by `Not compiled: …WrongPkg.java:no class was written — fix the code; cross-module answers use their last good classes.`, naming nothing to fix.
+- `get_definition` of a field: `/tmp/lathe-compile-<pid>-<n>/com/example/core/WrongPkg.java:4:7 [EXTERNAL]`, a temporary compile copy instead of the file.
+- `rename_symbol` of that field: `No references to rename.`, not an error, and nothing changes on disk.
+
+A file with no `package` line behaves the same, including the silent rename.
+A byte-order mark or a stray `#` before the `package` line hides the package from javac (`illegal character`): `get_definition` answers the temporary copy, and `rename_symbol` refuses with `` `f` is declared, or overrides a method declared, outside the project (JDK or a dependency) ``.
+`find_references` maps every case back to the real file.
+An agent that writes a new file with a wrong or missing package gets a contradictory answer, and a rename it believes was done.
+
+### Cause (verified against the code, 2026-11-17)
+
+`DefinitionLocator.findSourceFile`, and its twin `TypeSourceLocator.findSourceFile` that rename uses, build a source path from the declared package, so they miss a file whose directory names another package.
+`DefinitionLocator.locate` then falls back to the compile copy, which `ServerFiles.tempSourceFile` places by directory.
+"no class was written" is `WritePass.failedWrite`'s default when javac reported no error.
+
+### Fix direction
+
+Map the compile copy back to the source file whatever package javac reads, as `find_references` already does; compile a file whose package differs from its directory as the build does, or say plainly that Lathe needs them to match.
+A rename that finds the symbol must never answer "no references".
+
+### Resolution
+
+A file whose package names another directory is reported as an error on its package line, as Eclipse does, where every compile's diagnostics are mapped, so the editor, `get_diagnostics` and `verify_change` all show it.
+A rename that finds its target by its package (a type or a member searched beyond its declaring file) is refused there with the same reason; a local, a parameter, a type parameter or a private member is renamed in the file as before.
+Definition answers the file asked about before any file its package names.
+
+### Regression targets
+
+- `PackageDirectoryTest.mismatch_packageNamesTheDirectory_none`
+- `PackageDirectoryTest.mismatch_packageNamesAnotherDirectory_errorOnThePackageLine`
+- `PackageDirectoryTest.mismatch_noPackageInASubdirectory_errorNamingTheDirectorysPackage`
+- `PackageDirectoryTest.mismatch_defaultPackageAtTheSourceRoot_none`
+- `PackageDirectoryTest.mismatch_innermostRootHoldingTheFile_isTheOneChecked`
+- `PackageDirectoryTest.mismatch_fileInNoSourceRoot_none`
+- `DefinitionLocatorTest.locate_sameFileWhosePackageIsNotItsDirectory_returnsTheFileAskedAbout`
+- `PackageDirectoryEngineTest.diagnostics_packageNotItsDirectory_errorNamingBoth_matchingFileClean`
+- `PackageDirectoryEngineTest.rename_inFileWhosePackageIsNotItsDirectory_refusesSayingWhy`
+- `PackageDirectoryEngineTest.definition_inFileWhosePackageIsNotItsDirectory_answersTheFileItself`
+- `PackageDirectoryEngineTest.verifyChange_fileWhosePackageIsNotItsDirectory_reportsTheMismatch`
+- `PackageDirectoryEngineTest.rename_inFileWhosePackageIsNotItsDirectory_localsRenamedMemberRefused`
+- `PackageDirectoryEngineTest.rename_inFileWhosePackageIsNotItsDirectory_fileScopedRenamedMemberRefused`
+- `LatheTextDocumentServiceTest.prepareRename_fileWhosePackageIsNotItsDirectory_parameterAcceptedFieldRefused`
+
+---
 
 ## MC-93 — `find_references` with `access` on a method answers "No references found" — done
 

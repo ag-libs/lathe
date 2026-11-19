@@ -62,8 +62,10 @@ Claude Code also supports a [verification hook](../../examples/agents/verify-bef
 
 - **Claude Code can’t find the launcher.** Start it from the directory containing `.lathe/`.
   If the launcher is missing there, run the first build.
-- **Lathe reports `Sync required`.** Run the command in the result to pick up changed dependencies or build settings.
-  Lathe picks up saved Java edits automatically.
+- **Lathe reports `Sync required`.** Run the suggested command from the build root to refresh the workspace.
+  A partial Maven build (for example, with `-pl`) can leave `.lathe/workspace.json` missing.
+  Until a full sync records the module graph, Lathe can only check the file’s own module and refuses project-wide renames.
+- **Another build or Lathe server is updating `.lathe/`.** Wait for the update to finish, then ask the agent to check your changes again.
 - **Lathe reports `Not compiled`.** Fix the compiler error it reports and ask again.
   Until then, callers may still see the last version that compiled.
 

@@ -523,7 +523,8 @@ class WritePassTest extends ServiceTestBase {
     assertThat(reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
         .isEqualTo(ReconcileOutcome.DeferReason.NONE);
 
-    assertThat(timer.elapsedMs()).as("well before the next tick").isLessThan(1_000L);
+    // Under the 2 s tick with room for a slow CI runner, where the pass alone once took 1,008 ms.
+    assertThat(timer.elapsedMs()).as("well before the next tick").isLessThan(1_500L);
     assertThat(tickPass).isDone();
     assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
   }

@@ -512,7 +512,7 @@ the GradleX run showed the test classes directory on the classpath as well as pa
 `latheSync` replaces `SyncCoordinator`:
 
 - **`-sources` jars, by classifier (*decided 2026-10-24*, slice 2b).** Each Java project resolves a lenient
-  `latheLibrarySources` configuration holding `group:name:version:sources` for every external module of its test
+  detached configuration holding `group:name:version:sources` for every external module of its test
   compile classpath (which includes main's): the same classifier lookup as Maven, and the one that found Guava's
   sources where Gradle's documentation variant (`DocsType.SOURCES`) did not (*spiked*: the artifact view skipped
   Guava 33.4.0, whose module metadata declares no sources variant). A library without sources is simply missing.
@@ -522,6 +522,7 @@ the GradleX run showed the test classes directory on the classpath as well as pa
     those artifacts before the tasks run.
   - **The facts task takes plain `coordinates → path` maps**: Gradle 8.x cannot store resolved artifact results in
     the configuration cache (9.x can).
+  - **The configuration is detached** (WS-43), outside the project's configurations: a build script that reads every configuration's dependencies while it is configured (Apache Kafka's, looking for Mockito) would otherwise run its dependency action, which resolves the test classpath, while the projects that classpath needs are still configured.
   Probed on Caffeine: 127 libraries, all with sources, Guava included; a definition lands in Guava's extracted source.
 - **JDK sources, dependency source extraction, type-index shards, server install:** the build-neutral code
   slice 0 moves into `lathe-install` (it lives in `lathe-maven-plugin` today).

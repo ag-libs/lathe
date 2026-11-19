@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.github.aglibs.lathe.server.engine.UnreadSources;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,6 +45,27 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
             new UnreadSources("Groovy", List.of("module")));
   }
 
+  // Without workspace.json (a sync of part of the build) the server has no module graph, so every
+  // answer says a sync of the whole build is needed; once the manifest is there, none does.
+  @Test
+  void notes_workspaceWithoutTheManifest_syncRequiredNamingIt_untilWritten() throws Exception {
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Sample.java", "package com.example; class Sample { int n = 1; }");
+    Files.delete(tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.diagnostics(source).notes().syncRequired())
+        .containsExactly(LatheLayout.MANIFEST_MISSING_REMEDIATION);
+    assertThat(engine.diagnostics(source).notes().moduleGraphMissing()).isTrue();
+
+    engine.close();
+    TestCompiler.recordBuildFiles(tmp, List.of());
+    engine = new LatheEngine(tmp);
+    assertThat(engine.diagnostics(source).notes().syncRequired()).isEmpty();
+    assertThat(engine.diagnostics(source).notes().moduleGraphMissing()).isFalse();
+  }
+
   @Test
   void notes_agentEditDoesNotCompile_notCompiledWithItsError_noSyncSuggested_untilFixed()
       throws Exception {
@@ -53,7 +75,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
     // Each answer carries the notes its own request read, after its compile.
     assertThat(engine.diagnostics(source).notes())
-        .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false, List.of()));
+        .isEqualTo(new LatheNotes(List.of(), List.of(), false, List.of(), false, List.of()));
 
     Files.writeString(source, "package com.example; class Sample { Missing m; }");
     final LatheNotes broken = engine.diagnostics(source).notes();
@@ -263,8 +285,11 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
         .as("the agent's edits are still compiled while the sync is pending")
         .anyMatch(d -> d.message().contains("greet"));
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
-    assertThat(engine.verifyChange(List.of()).deferral())
-        .isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
+    final LatheVerifyChange deferred = engine.verifyChange(List.of());
+    assertThat(deferred.deferral()).isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
+    assertThat(deferred.suggestedSync())
+        .as("a sync is what the check waits for")
+        .isEqualTo(LatheLayout.SYNC_SCRIPT_COMMAND);
 
     Files.writeString(pom, "<project/>");
     engine.diagnostics(fx.caller()).value();

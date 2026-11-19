@@ -84,18 +84,22 @@ final class SyncCoordinator {
           projects.stream()
               .map(p -> FileUtil.slashed(workspaceRoot.relativize(p.getFile().toPath())))
               .toList();
+      final List<String> coordinates = externalJars.stream().map(ResolvedJar::gav).toList();
       final List<String> runnerClasspath =
-          serverInstaller
-              .resolveRunnerClasspath(externalJars.stream().map(ResolvedJar::gav).toList())
-              .stream()
-              .map(Path::toString)
-              .toList();
+          serverInstaller.resolveRunnerClasspath(coordinates).stream().map(Path::toString).toList();
+      final Map<String, List<String>> runnerClasspaths =
+          serverInstaller.resolveRunnerClasspaths(coordinates).entrySet().stream()
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      Map.Entry::getKey,
+                      entry -> entry.getValue().stream().map(Path::toString).toList()));
       WorkspaceSync.write(
           new WorkspaceSync.Inputs(
               workspaceRoot,
               caches,
               PluginProps.version(),
               runnerClasspath,
+              runnerClasspaths,
               buildFiles,
               ModuleResourcesReader.read(workspaceRoot, projects),
               ReactorProjects.outputs(workspaceRoot, projects),

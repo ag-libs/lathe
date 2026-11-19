@@ -162,6 +162,7 @@ reaction and reports its result, plus a precise `mvn` recommendation Lathe never
 
 > **Since 2026-10-11** ([One Write Pass](../done/lathe-recompile-simplification.md)): the bulk gate is gone — `reconcileForVerify` requests an eager write pass and waits for it, whatever the change set's size.
 > It still defers on a pending build-file sync and a running build (`BUILD_FILES_PENDING`, `BUILD_IN_PROGRESS`); `DeferReason.BULK_CHANGE` and `BULK_CHANGE_THRESHOLD` no longer exist.
+> **Since 2026-11-18** (MC-97): only a pending build-file sync is handed to the sync; a running build, or another server updating `.lathe/`, says to re-check once it ends (`DeferReason.resolvedBySync`).
 > The text below is the original design.
 
 The shipped `reconcileNow(eager)` is unusable as-is by an agent: it returns `void`, is package-private

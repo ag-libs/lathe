@@ -117,8 +117,12 @@ final class McpText {
         vouched(IMPLEMENTATIONS_AUTHORITY, notes));
   }
 
+  // A search vouches for the whole reactor only when it read every source and had the module graph:
+  // without the manifest it searched its file's module only.
   static String vouched(final String authority, final LatheNotes notes) {
-    return notes.unreadSources().isEmpty() ? authority + NO_GREP_NEEDED : authority + ".";
+    return notes.unreadSources().isEmpty() && !notes.moduleGraphMissing()
+        ? authority + NO_GREP_NEEDED
+        : authority + ".";
   }
 
   // An answer about a symbol's uses: in a workspace with sources Lathe does not read (Kotlin,
@@ -648,32 +652,37 @@ final class McpText {
   }
 
   // A method's family both ways: what it overrides, by name, as a JDK or dependency method has no
-  // location in the answer, then what overrides it, and apart what redeclares it abstract. Any
-  // other symbol keeps one neutral line: a type's subtypes override nothing.
+  // location in the answer, then what overrides it, and apart what redeclares it abstract. A type's
+  // family is its subtypes; a field or variable, which nothing can override, has no family line.
   static CallToolResult analyzeResult(final LatheChangeImpact impact, final LatheNotes notes) {
-    final String family =
-        impact.method()
-            ? "overrides: %s%noverridden by: %s%s"
-                .formatted(
-                    joinOrNone(impact.overrides()),
-                    familyLines(impact.overriddenBy(), impact.overriddenByCount()),
-                    impact.redeclaredBy().isEmpty()
-                        ? ""
-                        : "%nredeclared by: %s"
-                            .formatted(
-                                familyLines(impact.redeclaredBy(), impact.redeclaredByCount())))
-            : "override family: %s"
-                .formatted(familyLines(impact.overriddenBy(), impact.overriddenByCount()));
-    final String text =
-        String.join(
-            System.lineSeparator(),
-            impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
-            "references: %d production, %d test"
-                .formatted(impact.productionRefs(), impact.testRefs()),
-            "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
-            "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
-            family);
-    return usesResult(text, notes);
+    final var lines =
+        new ArrayList<>(
+            List.of(
+                impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
+                "references: %d production, %d test"
+                    .formatted(impact.productionRefs(), impact.testRefs()),
+                "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
+                "relevant tests: %s".formatted(joinOrNone(impact.relevantTests()))));
+    switch (impact.family()) {
+      case METHOD -> {
+        lines.add("overrides: %s".formatted(joinOrNone(impact.overrides())));
+        lines.add(
+            "overridden by: %s"
+                .formatted(familyLines(impact.overriddenBy(), impact.overriddenByCount())));
+        if (!impact.redeclaredBy().isEmpty()) {
+          lines.add(
+              "redeclared by: %s"
+                  .formatted(familyLines(impact.redeclaredBy(), impact.redeclaredByCount())));
+        }
+      }
+      case TYPE ->
+          lines.add(
+              "subtypes: %s"
+                  .formatted(familyLines(impact.overriddenBy(), impact.overriddenByCount())));
+      case NONE -> {}
+    }
+
+    return usesResult(String.join(System.lineSeparator(), lines), notes);
   }
 
   private static String familyLines(final List<LatheLocation> members, final int count) {
@@ -694,10 +703,10 @@ final class McpText {
 
   static CallToolResult verifyChangeResult(final LatheVerifyChange verify, final LatheNotes notes) {
     if (verify.deferral() != null) {
-      // Another server writing .lathe/ ends on its own, so no sync is named then.
+      // A running build and another server writing .lathe/ end on their own: no sync is named.
       final String next =
           verify.suggestedSync() == null
-              ? "Re-check in a moment."
+              ? "Re-check once it ends."
               : "Run `%s`, then re-check.".formatted(verify.suggestedSync());
       return usesResult(
           "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next), notes);

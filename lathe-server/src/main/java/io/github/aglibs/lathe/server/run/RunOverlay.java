@@ -89,6 +89,17 @@ public final class RunOverlay {
         resolveCwd(item, workspaceRoot, template.workingDir()));
   }
 
+  // The build makes the directory it runs its tests in before them (Lucene's build/tests-cwd), so a
+  // replay of its tests makes it too, as after a clean. A run configuration's own cwd is never
+  // made:
+  // a mistyped one fails to start instead of running in a new, empty directory.
+  public static void makeCapturedWorkingDir(final ResolvedLaunch launch, final RunItem item)
+      throws IOException {
+    if (item.cwd() == null && launch.cwd() != null) {
+      Files.createDirectories(launch.cwd());
+    }
+  }
+
   private static LaunchOverlay launchOverlay(final RunItem item, final Path workspaceRoot) {
     return new LaunchOverlay(
         item.jvmArgs(),

@@ -152,7 +152,8 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(result).isInstanceOf(LaunchOutcome.class);
     final var outcome = (LaunchOutcome) result;
     assertThat(outcome.launched()).isFalse();
-    assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
+    assertThat(outcome.blockedReasons())
+        .anyMatch(reason -> reason.startsWith("no lathe-test-runner jar recorded"));
   }
 
   // Replaying the last good classes would run code that is no longer on disk; once the source
@@ -190,6 +191,40 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     writeReported(Set.of(fixture.shop())).get(TIMEOUT_S, TimeUnit.SECONDS);
     final var fixed = (LaunchOutcome) command(LatheCommands.RUN_MAIN, main);
     assertThat(fixed.blockedReasons()).containsExactly("no derived main-launch.json for module");
+  }
+
+  // A class deleted under unchanged code fails no build compile: the run still replays the old
+  // classes unless the code it runs is checked first. Entry compiles without Shop, but Use, the
+  // helper it calls, does not, so running Entry is blocked naming Use; with Shop back, it is not.
+  @Test
+  void executeCommand_runWhileAHelperUsesADeletedClass_blockedNamingTheHelper() throws Exception {
+    final ShopFixture fixture = openShop();
+    final String shop = Files.readString(fixture.shop());
+    final Path entry =
+        TestCompiler.writeAt(
+            fixture.use().resolveSibling("Entry.java"),
+            "package com.example;\nclass Entry {\n  int run() { return new Use().run(); }\n}\n",
+            2_000L);
+    writeReported(Set.of(entry)).get(TIMEOUT_S, TimeUnit.SECONDS);
+    final JsonObject main = json("moduleRel", "module", "mainClass", "com.example.Entry");
+    assertThat(((LaunchOutcome) command(LatheCommands.RUN_MAIN, main)).blockedReasons())
+        .as("nothing broken yet")
+        .containsExactly("no derived main-launch.json for module");
+
+    Files.delete(fixture.shop());
+    writeReported(Set.of(fixture.shop())).get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    final var blocked = (LaunchOutcome) command(LatheCommands.RUN_MAIN, main);
+    assertThat(blocked.launched()).isFalse();
+    assertThat(blocked.blockedReasons())
+        .singleElement(InstanceOfAssertFactories.STRING)
+        .startsWith("code it runs does not compile: module/src/main/java/com/example/Use.java:")
+        .contains("cannot find symbol");
+
+    Files.writeString(fixture.shop(), shop);
+    writeReported(Set.of(fixture.shop())).get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(((LaunchOutcome) command(LatheCommands.RUN_MAIN, main)).blockedReasons())
+        .containsExactly("no derived main-launch.json for module");
   }
 
   @Test

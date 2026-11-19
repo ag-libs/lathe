@@ -8,9 +8,14 @@ import java.util.List;
 // its command), the asked-about files no module compiles (and whether a sync would), whether a
 // build holds the reactor lock, and the modules with sources Lathe does not read (Kotlin, Groovy),
 // by language: answers about a symbol's uses and the workspace summary show those, no other answer.
+// moduleGraphMissing: the manifest did not load (missing, another schema, unreadable), so the
+// server
+// has no module graph and an answer that spans modules covered only its file's module; syncRequired
+// says why.
 public record LatheNotes(
     List<String> notCompiled,
     List<String> syncRequired,
+    boolean moduleGraphMissing,
     List<String> notChecked,
     boolean buildInProgress,
     List<UnreadSources> unreadSources) {
@@ -29,11 +34,18 @@ public record LatheNotes(
 
   // Only the asked-about files no module checks, for an answer that reports the rest itself.
   public static LatheNotes ofNotChecked(final List<String> notChecked) {
-    return new LatheNotes(List.of(), List.of(), notChecked, false, List.of());
+    return new LatheNotes(List.of(), List.of(), false, notChecked, false, List.of());
   }
 
-  // What verify_change does not report itself: the files no module checks and the unread sources.
+  // What verify_change does not report itself: the files no module checks, the unread sources, and
+  // a missing module graph, which leaves the callers in other modules unchecked.
   public LatheNotes forVerify() {
-    return new LatheNotes(List.of(), List.of(), notChecked, false, unreadSources);
+    return new LatheNotes(
+        List.of(),
+        moduleGraphMissing ? syncRequired : List.of(),
+        moduleGraphMissing,
+        notChecked,
+        false,
+        unreadSources);
   }
 }

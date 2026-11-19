@@ -581,6 +581,28 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .hasMessageContaining("outside the project");
   }
 
+  // MC-90: in a file whose package is not its directory, a parameter is still renamed from the
+  // file's own code, while a field, which a rename finds by its package, is refused with the
+  // reason.
+  @Test
+  void prepareRename_fileWhosePackageIsNotItsDirectory_parameterAcceptedFieldRefused()
+      throws Exception {
+    final Path source = writeWorkspaceSource();
+    final var content = "package com.other; class Foo { int field; void set(int value) {} }";
+    Files.writeString(source, content);
+    host.initialize(tmp);
+    openDoc(source, content);
+
+    assertThat(prepareRename(source, content, "value").get(TIMEOUT_S, TimeUnit.SECONDS))
+        .isNotNull();
+    assertThatThrownBy(
+            () -> prepareRename(source, content, "field").get(TIMEOUT_S, TimeUnit.SECONDS))
+        .cause()
+        .isInstanceOf(ResponseErrorException.class)
+        .hasMessageContaining("`field` cannot be renamed")
+        .hasMessageContaining("com.other");
+  }
+
   private CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
       prepareRename(final Path source, final String content, final String symbol) {
     return service.prepareRename(
@@ -733,7 +755,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(outcome.launched()).isFalse();
-    assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
+    assertThat(outcome.blockedReasons())
+        .anyMatch(reason -> reason.startsWith("no lathe-test-runner jar recorded"));
   }
 
   @Test
@@ -908,6 +931,29 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                     m.getType() == MessageType.Warning
                         && m.getMessage()
                             .startsWith("Lathe: .lathe/ was written by another Lathe version")));
+  }
+
+  // A workspace.json that cannot be read (here not UTF-8) is reported with its remedy, rather than
+  // failing the load before the editor is told anything.
+  @Test
+  void initialize_unreadableWorkspaceJson_warnsWithTheRemedy() throws Exception {
+    Files.write(
+        Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR))
+            .resolve(LatheLayout.WORKSPACE_JSON),
+        new byte[] {(byte) 0xC3, (byte) 0x28});
+
+    host.initialize(tmp);
+
+    verify(client, timeout(5_000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage()
+                            .startsWith(
+                                "Lathe: %s/%s could not be read"
+                                    .formatted(LatheLayout.LATHE_DIR, LatheLayout.WORKSPACE_JSON))
+                        && m.getMessage().contains(LatheLayout.SYNC_SCRIPT_COMMAND)));
   }
 
   // A build that found every module up to date compiled none through Lathe: each file would only

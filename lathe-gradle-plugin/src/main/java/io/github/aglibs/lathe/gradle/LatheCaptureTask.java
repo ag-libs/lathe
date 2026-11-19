@@ -233,8 +233,9 @@ public abstract class LatheCaptureTask extends DefaultTask {
         isModular(sourceRoots)
             ? ModulePathSplit.split(classpath)
             : Map.of(true, List.of(), false, classpath);
+    final CompilerPathArgs.Extracted fromArgs = CompilerPathArgs.extract(getCompilerArgs().get());
     final List<String> processorPath = GradleFiles.paths(getProcessorPath());
-    final List<String> compilerArgs = getCompilerArgs().get();
+    final List<String> compilerArgs = fromArgs.otherArgs();
     // Gradle runs no processor when the processor path is empty, and passes -proc:none to say so;
     // without it the server's javac would look for processors on the classpath.
     final boolean noProcessors =
@@ -244,8 +245,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
         getClassesDir().get().getAsFile().getPath(),
         getGeneratedSourcesDir().map(dir -> dir.getAsFile().getPath()).getOrNull(),
         sourceRoots,
-        split.get(false),
-        split.get(true),
+        joined(split.get(false), fromArgs.classpath()),
+        joined(split.get(true), fromArgs.modulepath()),
         processorPath,
         getRelease().getOrNull(),
         getEncoding().getOrNull(),
@@ -259,6 +260,12 @@ public abstract class LatheCaptureTask extends DefaultTask {
         false,
         getTestCode().get(),
         getBuildDir().get().getAsFile().getPath());
+  }
+
+  // The task's entries keep their place ahead of the arguments', as javac searches the classpath in
+  // order; an entry both name is listed once.
+  private static List<String> joined(final List<String> fromTask, final List<String> fromArgs) {
+    return Stream.concat(fromTask.stream(), fromArgs.stream()).distinct().toList();
   }
 
   private boolean isModular(final List<String> sourceRoots) {
