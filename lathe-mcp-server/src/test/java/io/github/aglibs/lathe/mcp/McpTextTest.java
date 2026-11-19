@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.ReconcileOutcome;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact.Family;
 import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
@@ -864,7 +865,7 @@ class McpTextTest {
   }
 
   // A method's family both ways: what it overrides by name, what overrides it, and apart what
-  // redeclares it abstract. Anything else, and no symbol, keeps the one neutral family line.
+  // redeclares it abstract. A type lists its subtypes; a field, or no symbol, has no family line.
   @Test
   void analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty() {
     final var base = location("app/Base.java", 4, "abstract int sell(int count);");
@@ -876,7 +877,7 @@ class McpTextTest {
                 McpText.analyzeResult(
                     new LatheChangeImpact(
                         "int sell(int count)",
-                        true,
+                        Family.METHOD,
                         List.of("app.Seller#sell(int)"),
                         List.of(base, override),
                         5,
@@ -903,7 +904,16 @@ class McpTextTest {
             text(
                 McpText.analyzeResult(
                     new LatheChangeImpact(
-                        "", false, List.of(), List.of(), 0, List.of(), 0, 0, 0, List.of(),
+                        "",
+                        Family.NONE,
+                        List.of(),
+                        List.of(),
+                        0,
+                        List.of(),
+                        0,
+                        0,
+                        0,
+                        List.of(),
                         List.of()),
                     McpText.NO_NOTES)))
         .isEqualTo(
@@ -911,8 +921,31 @@ class McpTextTest {
                 "(no symbol at that position)",
                 "references: 0 production, 0 test",
                 "affected modules: none",
+                "relevant tests: none"));
+    assertThat(
+            text(
+                McpText.analyzeResult(
+                    new LatheChangeImpact(
+                        "class Shop",
+                        Family.TYPE,
+                        List.of(),
+                        List.of(location("app/BigShop.java", 2, "class BigShop extends Shop {")),
+                        1,
+                        List.of(),
+                        0,
+                        3,
+                        0,
+                        List.of("app"),
+                        List.of()),
+                    McpText.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "class Shop",
+                "references: 3 production, 0 test",
+                "affected modules: app",
                 "relevant tests: none",
-                "override family: none"));
+                "subtypes: 1",
+                "app/BigShop.java:2:1: class BigShop extends Shop {"));
   }
 
   // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.
