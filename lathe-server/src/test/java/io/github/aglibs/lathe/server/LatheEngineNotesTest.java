@@ -202,6 +202,51 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     assertThat(notes.syncRequired()).isEmpty();
   }
 
+  // MC-103: a file the build's annotation processing wrote is not checked where the build put it;
+  // the note names Lathe's copy of it, the test tree's for a test file, or says a sync makes one.
+  @Test
+  void notes_buildsProcessorOutput_namesLathesCopy() throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        Map.of("com/example/A.java", "package com.example; class A {}"),
+        List.of(),
+        1_000L);
+    final Path mainOutput = tmp.resolve("module/target/generated-sources/annotations");
+    final Path testOutput = tmp.resolve("module/target/generated-test-sources/test-annotations");
+    TestCompiler.writeModuleParams(tmp, "module", tmp.resolve("module/src/main/java"), mainOutput);
+    TestCompiler.writeTestTreeParams(
+        tmp, "module", tmp.resolve("module/src/test/java"), testOutput);
+    final Path latheModule = tmp.resolve(LatheLayout.LATHE_DIR).resolve("module");
+    final Path built = generated(mainOutput, "Gen");
+    final Path copy =
+        generated(
+            latheModule.resolve(LatheLayout.generatedSourcesDir(LatheLayout.CLASSES_DIR)), "Gen");
+    final Path builtTest = generated(testOutput, "GenTest");
+    final Path testCopy =
+        generated(
+            latheModule.resolve(LatheLayout.generatedSourcesDir(LatheLayout.TEST_CLASSES_DIR)),
+            "GenTest");
+    final Path noCopy = generated(mainOutput, "Fresh");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of(built, builtTest, noCopy)).notChecked())
+        .containsExactly(
+            "%s is processor output the build writes; Lathe checks its copy %s — pass that path"
+                .formatted(tmp.relativize(built), tmp.relativize(copy)),
+            "%s is processor output the build writes; Lathe checks its copy %s — pass that path"
+                .formatted(tmp.relativize(builtTest), tmp.relativize(testCopy)),
+            "%s is processor output the build writes, and Lathe has no copy of it yet — run `%s`"
+                .formatted(tmp.relativize(noCopy), LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  private static Path generated(final Path dir, final String name) throws Exception {
+    return TestCompiler.writeAt(
+        dir.resolve("com/example/%s.java".formatted(name)),
+        "package com.example; class %s {}".formatted(name),
+        1_000L);
+  }
+
   // A deleted source is a change verify_change checks; a path the build never had is a typo, and
   // must not pass as "no change".
   @Test

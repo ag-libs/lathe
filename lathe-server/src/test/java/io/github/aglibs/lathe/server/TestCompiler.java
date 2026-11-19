@@ -482,6 +482,28 @@ public final class TestCompiler {
         null);
   }
 
+  // A module's test tree, with its annotation-processor output, as a sync writes its params.
+  public static void writeTestTreeParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Path sourceRoot,
+      final Path generatedSourcesDir)
+      throws IOException {
+    writeTreeParams(
+        workspaceRoot,
+        moduleName,
+        LatheLayout.TEST_CLASSES_DIR,
+        List.of(sourceRoot),
+        generatedSourcesDir,
+        List.of(),
+        List.of(),
+        List.of(),
+        true,
+        null,
+        false,
+        null);
+  }
+
   // A Gradle source set's tree beyond main and test, as a sync writes its params.
   public static void writeSourceSetParams(
       final Path workspaceRoot,
