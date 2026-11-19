@@ -58,9 +58,6 @@ every resolved project — including modules with their own compiler configurati
 POM. All injected artifacts use the extension's own version, so they stay in lockstep with the version
 you register, and a stale Lathe version already in a POM is overwritten.
 
-Upgrading a project from 0.1.15 or earlier also needs a one-time editor-side step; see
-[Upgrading from Lathe 0.1.15 or earlier](editors/neovim.md#upgrading-from-lathe-0115-or-earlier).
-
 ## Initialize
 
 Run this command at the root of the build after registering Lathe.
@@ -172,60 +169,20 @@ there too.
 
 ## What the build writes to `.lathe/`
 
-- `lathe:init` creates `.lathe/` at the workspace root on the first build, at the `initialize` phase.
-- The compiler shim writes compilation-parameter files (`<module>/lsp-params-*.json`) under `.lathe/`
-  as each module compiles — the classpath, module path, source roots, generated-source locations,
-  annotation-processor settings, and other `javac` inputs the language server needs — plus
-  per-source compile stamps (`lsp-stamps-*.json`) the server uses to tell which sources are stale.
-- `lathe:sync` writes `workspace.json` and each module's derived `main-launch.json`. The write is
-  skipped when the content is unchanged, so a no-op build does not trigger a server reload.
-- `lathe:sync` also writes `lathe-sync.sh` (`.cmd` on Windows), which re-runs the same build tool and JDK
-  that ran this build, so the editor's "sync" matches the command line you use.
-  It runs `process-test-classes` (with `--tests <module>`, a capture-only `test` run that writes test
-  launches without executing tests), without the `-D` properties or `-P` profiles you passed on the
-  command line.
-  If your build always needs a flag (say, to skip a check that does not run on your JDK), put it in
-  `.mvn/maven.config`, which Maven reads on every run, or in a profile activated by the JDK version.
-- **A module that shades its main jar.** When `maven-shade-plugin` replaces a module's jar with a
-  shaded one (no `shadedArtifactAttached`, no `outputFile`), the modules that depend on it compile
-  against the classes it relocated, which only that jar holds.
-  The editor gives them the module's latest classes and then the shaded jar, for the relocated classes,
-  after a `package` build.
-  A run, test or debug uses the shaded jar alone, as its classes call the relocated ones, so it runs the
-  module's own code as the last `package` left it.
-  Only `package` makes that jar, so `process-test-classes` cannot compile the dependents, and the build
-  warns when it sees such a module: set the phase the sync builds to with `lathe.sync.phase`, in
-  `.mvn/maven.config` (`-Dlathe.sync.phase=package`) or as a root POM property
-  (`<lathe.sync.phase>package</lathe.sync.phase>`).
-  The sync then skips the tests on its way there, and `--tests` captures them without running them.
-  It accepts any phase from `process-test-classes` to `install`, never `deploy`.
-- `lathe:sync` also writes `lathe-launcher.sh` and `lathe-mcp-launcher.sh` (`.cmd` on Windows) here, with the argfiles
-  they read (`lathe-server.args`, `lathe-mcp.args`) — copies of the launchers in the machine cache's
-  `servers/<version>/` for the server version this project pins. These are what every
-  editor client and the MCP agent launch; being version-pinned per workspace, two projects on
-  different Lathe versions each resolve the right server.
-- `lathe:sync` also writes `java-home` (the build JDK the launcher runs the server on), `jvm.args`
-  (module grants for the server JVM; see [tuning the server JVM](installation.md#tuning-the-server-jvm-lathe_jvm_opts)), and each
-  module's `test-filter.json` (the Surefire include/exclude patterns, applied to package and module
-  test runs).
-- `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
-  `spotless-maven-plugin`, or when a `lathe-style.json` at the root declares a formatter: a declared
-  `google`, `aosp`, `palantir` or `eclipse` engine takes precedence over Spotless and is resolved the
-  same way, so a project without Spotless gets one too.
-  For `googleJavaFormat`, `palantirJavaFormat`, and `eclipse` it records the formatter release the
-  project's Spotless pins, its options, and the resolved jars (`classpath`, paths into the local Maven
-  repository), which the server loads in-process.
-  For google-java-format and palantir it also adds the javac grants they need to `jvm.args`.
-  Any other Spotless formatter writes `none`.
-  See [Choosing, overriding, or opting out of the formatter](installation.md#choosing-overriding-or-opting-out-of-the-formatter)
-  and [Declaring it](installation.md#declaring-it),
-  and [lathe-pinned-formatters.md](../done/lathe-pinned-formatters.md).
-- `lathe-junit` writes each module's `test-launch.json` from inside the Surefire fork during the `test`
-  phase — so test run/debug needs a build that reaches `test` (see the table above and
-  [test-capture.md](test-capture.md)).
+| Build step | What Lathe records |
+| --- | --- |
+| A module compiles | Its compiler arguments, classes, generated sources, and resources. |
+| The root project runs `lathe:sync` | The module list, dependency and JDK sources, project launchers, and main-method launch settings. Sync also resolves the project’s formatter. |
+| Surefire starts a supported test JVM | The module’s test launch, including the JVM arguments and classpath needed to rerun it. |
 
-[Installing Lathe](installation.md#what-and-where-lathe-writes) covers what the server reads from these, and the
-machine-wide cache in `~/.cache/lathe/`.
+If a shaded module supplies relocated classes, build through `package` so downstream modules can use the shaded JAR.
+Use `-Dlathe.sync.phase=package` in `.mvn/maven.config` to repeat that phase on sync.
+The sync phase can range from `process-test-classes` through `install`. [Shaded-module troubleshooting](troubleshooting.md#build-checks-and-compiler-settings)
+
+The generated sync script repeats the build with the recorded Maven and JDK.
+Put required `-D` properties or `-P` profiles in `.mvn/maven.config` so they also apply when the editor starts a sync.
+
+See [workspace files](installation.md#what-and-where-lathe-writes), [formatter setup](installation.md#choosing-overriding-or-opting-out-of-the-formatter), and [test capture](test-capture.md) for details.
 
 ## Coexisting with jdtls: keep Lathe out of its Maven import
 

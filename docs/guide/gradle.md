@@ -99,26 +99,18 @@ a Lathe-enabled build takes the same cache entries as one without Lathe.
 
 ## Syncing
 
-The editor's sync runs `.lathe/lathe-sync.sh` (`.cmd` on Windows), a script each build writes, so it needs one
-build first: after a fresh clone or a wiped `.lathe/`, run the first build above from the command line.
-The script re-runs the Gradle distribution and the JDK that ran that build, with the `--init-script` arguments you
-passed, and one of:
+After the [first build](#run-the-first-build), run the generated script from the project root to sync again.
+It uses the same Gradle distribution, JDK, and init scripts as that build.
 
 ```sh
-latheSync                                # a plain sync
-latheSync -Plathe.capture.only=true      # a sync with tests, which also captures the test launches
-latheSync --module app                   # one project (its directory), and what it depends on
+.lathe/lathe-sync.sh                # refresh the workspace
+.lathe/lathe-sync.sh app            # refresh app and the projects it depends on
+.lathe/lathe-sync.sh --tests        # also record test launches without executing tests
 ```
 
-`latheSync` compiles what is out of date and writes the workspace files; with `-Plathe.capture.only=true` it also
-starts each test task with every test skipped, which is all capture needs.
-The test tasks start only after every project's workspace files are written, so a build that rejects skipped tests
-(a test listener that fails the task, as Caffeine's does) fails the sync, but the workspace is complete,
-and the launch of each test task that ran is captured.
-Gradle starts no other task after the first failure, so the editor's sync with tests adds `--continue` to capture
-every project's test launch; add it yourself when you run the command by hand.
-It does not replay the `-P` or `-D` properties you passed on the command line: put a property every build needs
-in `gradle.properties`.
+On Windows, use `.lathe\lathe-sync.cmd`.
+The script does not replay arbitrary `-P` or `-D` arguments from the original build.
+Put properties every build needs in `gradle.properties`.
 
 ## Turning it off
 

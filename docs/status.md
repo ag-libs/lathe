@@ -12,31 +12,26 @@ The [editor support table](#editor-support) lists the available clients.
 Coding agents use the same analysis through the [MCP tools](#ai-agent-integration-mcp).
 Maintainers publish signed artifacts from release tags. [Release procedure](../RELEASING.md)
 
-## Build and Workspace Lifecycle
+## Editor Support
 
-| Capability | Status | Notes |
-|---|---|---|
-| Compiler parameter capture | Implemented | Plexus compiler shim delegates to javac and writes JSON params. |
-| Maven lifecycle integration | Implemented | `lathe:init` and `lathe:sync` have default lifecycle phases. Both run only when the build is rooted at the true multi-module root (`getTopLevelProject().getBasedir()` == the request's multi-module project directory), so a `mvn -pl <module>` build — whose reactor top-level shifts to the selected module — no longer drops a stray `.lathe` into a submodule (which would mis-root the editor). Single-module builds from their root still run. |
-| Automatic build wiring | Implemented | A Maven core extension (`.mvn/extensions.xml`) injects the compiler shim, `init`/`sync` goals, and the capture dependency into the effective model in memory — no `pom.xml` edits. Manual POM setup is also supported. A committed `<lathe.disabled>true</lathe.disabled>` in the reactor POM opts the whole team out (an empty `.lathe/` at the root opts a developer back in); `-Dlathe.disabled=true` is absolute. |
-| Reactor output mirroring | Implemented | Classes, test classes, and generated sources are mirrored under `.lathe/`. |
-| Dependency/JDK source sync | Implemented | Sources are extracted under `~/.cache/lathe/`. |
-| Type-index shards | Implemented | Dependency, JDK, and reactor type candidates are available. |
-| Workspace manifest | Implemented | Server version, source roots, type indexes, build-file fingerprints (`buildFiles`), and a front-end-written `outputs` map (where each sibling module's classes live) are recorded; `workspace.json` versions all of `.lathe/`. The full file contract is in [lathe-workspace-contract.md](lathe-workspace-contract.md). |
-| OpenJDK front-end | Implemented (code intelligence) | `lathe-openjdk-maven-plugin` `sync` reads the JDK make build's own per-module compile descriptors and writes the same `.lathe/` contract, so a JDK developer gets diagnostics, navigation, completion, hover, and symbols for built modules and the `make/` build tools. jtreg run/test is deferred. See [the guide](guide/openjdk.md). |
-| Gradle front-end | Implemented | The `io.github.ag-libs.lathe` settings plugin (or a personal init script) captures each compile, refreshes the workspace files on every build that compiles tests, and captures each test run's launch in the test JVM, leaving the build's cache keys alone; `latheSync` is the editor's sync. Gradle 8.8+. Every Java source set is a tree of its own with its own classpath (test fixtures, JVM test suites, `jmh`); each source set's test task captures its own launch (class and method runs; package and module runs take `test`'s); no included builds; the formatter is declared in `lathe-style.json`, not detected from Spotless; Develocity-launched tests do not replay. See [the guide](guide/gradle.md) and [the design](done/lathe-gradle-support.md). |
-| Platforms and build floors | Implemented | JDK 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+; an older build stops at once, saying why and how to fix it. Linux, macOS and Windows 10/11, with CI on all three (Windows: VS Code/Cursor and Zed; Neovim and Emacs are Linux/macOS only); on Windows the launchers and sync script are `.cmd` files. See [Multi-OS](done/lathe-multi-os.md). |
-| Server launcher installation | Implemented | The build front-end (Maven, Gradle or OpenJDK) installs versioned launchers under `servers/<version>/` and copies them into each workspace's `.lathe/` (plain files, no symlinks) at the pinned version; `latest/` holds copies of the newest for user-global MCP. |
-| Sync launcher | Implemented (Maven, OpenJDK, Gradle, Neovim, server/MCP texts) | `lathe:sync` (and the OpenJDK `sync`, and Gradle's `latheWorkspace`) writes `.lathe/lathe-sync.sh [--tests] [module ...]` (`.cmd` on Windows), which re-runs the build with the tool and JDK that ran the last one with the build cache off and prints the full command first; on Maven it builds to the project's `lathe.sync.phase` (`process-test-classes` by default, `package` for a module compiling against a sibling's shaded jar). The Neovim client runs it for the `lathe/sync` prompt and `:LatheSync` / `:LatheSyncCaptureTest`; server and MCP texts name it (`Sync required:` notes, `verify_change`'s `suggestedSync`), keeping `mvn clean test -Dlathe.capture.only=true` only for the first build. See `lathe-sync-launcher.md`. |
-| Project setup (`:LatheInit`) | Implemented on `main` after v0.3.1 (Neovim) | `:LatheInit [maven\|gradle\|openjdk]` finds the build's root from the current file, confirms it in a prompt, and runs the first Lathe build: Maven and Gradle builds that do not register Lathe get it from outside (`-Dmaven.ext.class.path` with the extension's jars fetched through a bootstrap POM; a Gradle init script), with compile errors kept from stopping it, so the project's files are not changed; a build that registers Lathe just builds; an OpenJDK checkout runs the OpenJDK goal once the JDK is built. The server attaches when the build ends. A root set up already (registered, or at this version) builds nothing and names `:LatheSync`; `:LatheInit!` builds anyway. Plain Java folders and team modes are not yet covered. See `potential/lathe-init.md`. |
-| Build-file staleness detection | Implemented | Clients receive a sync prompt after a build-file / project-structure change (POMs on Maven; build scripts, version catalogs and build logic on Gradle) (only Neovim acts on it by running `.lathe/lathe-sync.sh`; in other editors run it yourself); source changes of any size, a branch switch included, are compiled in-process instead. |
-| In-process workspace sync | Implemented | One write pass serves saves, outside changes (a git pull, branch switch, or agent), rename commits, startup, and MCP queries: changed files are compiled into the `.lathe/` mirror one source tree per javac task, a dependency level at a time, deletions remove their mirrored classes, and the affected open files are re-analyzed once — any number of files, no Maven round trip. A file that fails keeps its last good classes and is retried with its tree's next write. See [the design](done/lathe-recompile-simplification.md). |
-| Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); the launcher routes JVM startup errors to stderr so they reach that log; `:LatheStart` starts the server for a directory with no Java file open. |
-| Javac-plugin JVM access | Implemented | `lathe:sync` copies the build's `--add-exports`/`--add-opens` (forked `-J` flags, `.mvn/jvm.config`, `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args`, which the launcher passes to the server JVM, so Error Prone and similar plugins run on save. |
-| Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
-| Maven Central distribution | Published | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Releases are live on Maven Central. |
+| Editor | What you can use |
+|---|---|
+| [Neovim](guide/editors/neovim.md) | The standalone `ag-libs/lathe.nvim` plugin supports navigation, refactoring, running and debugging code, and type scaffolding on Linux and macOS. |
+| [VS Code and Cursor](guide/editors/vscode.md) | The preview extension installs from a release `.vsix` on Linux, macOS, or Windows. It provides completion, diagnostics, navigation, code actions, and rename. |
+| [Emacs](guide/editors/emacs.md) | Eglot provides standard Java language features on Linux and macOS. |
+| [Zed](guide/editors/zed.md) | The Java extension can start Lathe on Linux, macOS, or Windows. |
+
+Other LSP clients may work but have not been qualified.
+In VS Code and Cursor, use one Lathe project per window.
+The whole-file missing-imports action is a known gap there. [VS Code limitations](guide/editors/vscode.md#known-issues)
 
 ## LSP Capability Matrix
+
+Navigation, completion, references, rename, diagnostics, code actions, and project formatting are implemented.
+Inlay hints and on-type formatting are deferred. Selection ranges and code lenses are unimplemented. [Using these features](guide/features.md)
+
+<details>
+<summary>Feature-by-feature behavior and known gaps</summary>
 
 | Area | Status | Current behavior and gaps |
 |---|---|---|
@@ -71,44 +66,65 @@ Maintainers publish signed artifacts from release tags. [Release procedure](../R
 | New-type scaffold | Implemented (Neovim) | `:LatheNew` creates a class/interface/record/enum/annotation/test, `package-info`, or `module-info` through the server: pick the kind, then a destination package (ranked by the server for the current file: its package, its module, then the kind's scope), name it; the server resolves placement, writes the skeleton, compiles it (so the new type never reads as unbuilt) and returns the caret, while the thin client only opens the file. A module-info is named after the module's base package. Works from any Java file (current package preselected) or with nothing open; main/test comes from the chosen destination. Server commands: `lathe.types.destinations`, `lathe.types.create`, `lathe.workspace.modules`, `lathe.workspace.context`. |
 | Resource finder | Implemented (Neovim) | `:LatheResourceFind` finds a resource by name across reactor resource roots and dependency jars (rows tagged `reactor:<module>` / `dep:<gav>`), listing jar entries from their central directories and extracting only the entry you open; reactor resources open editable, dependency ones read-only. Content search is deferred. |
 
-## Editor Support
+</details>
 
-| Editor | What you can use |
-|---|---|
-| [Neovim](guide/editors/neovim.md) | The standalone `ag-libs/lathe.nvim` plugin supports navigation, refactoring, running and debugging code, and type scaffolding on Linux and macOS. |
-| [VS Code and Cursor](guide/editors/vscode.md) | The preview extension installs from a release `.vsix` on Linux, macOS, or Windows. It provides completion, diagnostics, navigation, code actions, and rename. |
-| [Emacs](guide/editors/emacs.md) | Eglot provides standard Java language features on Linux and macOS. |
-| [Zed](guide/editors/zed.md) | The Java extension can start Lathe on Linux, macOS, or Windows. |
+## Build and Workspace Lifecycle
 
-Other LSP clients may work but have not been qualified.
-In VS Code and Cursor, use one Lathe project per window.
-The whole-file missing-imports action is a known gap there. [VS Code limitations](guide/editors/vscode.md#known-issues)
+Maven and Gradle capture how each module compiles and runs tests.
+For OpenJDK, Lathe reads the output of the JDK build. [Setup by build tool](../README.md#first-build)
+
+<details>
+<summary>Build and workspace implementation details</summary>
+
+| Capability | Status | Notes |
+|---|---|---|
+| Compiler parameter capture | Implemented | Plexus compiler shim delegates to javac and writes JSON params. |
+| Maven lifecycle integration | Implemented | `lathe:init` and `lathe:sync` have default lifecycle phases. Both run only when the build is rooted at the true multi-module root (`getTopLevelProject().getBasedir()` == the request's multi-module project directory), so a `mvn -pl <module>` build — whose reactor top-level shifts to the selected module — no longer drops a stray `.lathe` into a submodule (which would mis-root the editor). Single-module builds from their root still run. |
+| Automatic build wiring | Implemented | A Maven core extension (`.mvn/extensions.xml`) injects the compiler shim, `init`/`sync` goals, and the capture dependency into the effective model in memory — no `pom.xml` edits. Manual POM setup is also supported. A committed `<lathe.disabled>true</lathe.disabled>` in the reactor POM opts the whole team out (an empty `.lathe/` at the root opts a developer back in); `-Dlathe.disabled=true` is absolute. |
+| Reactor output mirroring | Implemented | Classes, test classes, and generated sources are mirrored under `.lathe/`. |
+| Dependency/JDK source sync | Implemented | Sources are extracted under `~/.cache/lathe/`. |
+| Type-index shards | Implemented | Dependency, JDK, and reactor type candidates are available. |
+| Workspace manifest | Implemented | Server version, source roots, type indexes, build-file fingerprints (`buildFiles`), and a front-end-written `outputs` map (where each sibling module's classes live) are recorded; `workspace.json` versions all of `.lathe/`. The full file contract is in [lathe-workspace-contract.md](lathe-workspace-contract.md). |
+| OpenJDK front-end | Implemented (code intelligence) | `lathe-openjdk-maven-plugin` `sync` reads the JDK make build's own per-module compile descriptors and writes the same `.lathe/` contract, so a JDK developer gets diagnostics, navigation, completion, hover, and symbols for built modules and the `make/` build tools. jtreg run/test is deferred. See [the guide](guide/openjdk.md). |
+| Gradle front-end | Implemented | The `io.github.ag-libs.lathe` settings plugin (or a personal init script) captures each compile, refreshes the workspace files on every build that compiles tests, and captures each test run's launch in the test JVM, leaving the build's cache keys alone; `latheSync` is the editor's sync. Gradle 8.8+. Every Java source set is a tree of its own with its own classpath (test fixtures, JVM test suites, `jmh`); each source set's test task captures its own launch (class and method runs; package and module runs take `test`'s); no included builds; the formatter is declared in `lathe-style.json`, not detected from Spotless; Develocity-launched tests do not replay. See [the guide](guide/gradle.md) and [the design](done/lathe-gradle-support.md). |
+| Platforms and build floors | Implemented | JDK 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+; an older build stops at once, saying why and how to fix it. Linux, macOS and Windows 10/11, with CI on all three (Windows: VS Code/Cursor and Zed; Neovim and Emacs are Linux/macOS only); on Windows the launchers and sync script are `.cmd` files. See [Multi-OS](done/lathe-multi-os.md). |
+| Server launcher installation | Implemented | The build front-end (Maven, Gradle or OpenJDK) installs versioned launchers under `servers/<version>/` and copies them into each workspace's `.lathe/` (plain files, no symlinks) at the pinned version; `latest/` holds copies of the newest for user-global MCP. |
+| Sync launcher | Implemented (Maven, OpenJDK, Gradle, Neovim, server/MCP texts) | `lathe:sync` (and the OpenJDK `sync`, and Gradle's `latheWorkspace`) writes `.lathe/lathe-sync.sh [--tests] [module ...]` (`.cmd` on Windows), which re-runs the build with the tool and JDK that ran the last one with the build cache off and prints the full command first; on Maven it builds to the project's `lathe.sync.phase` (`process-test-classes` by default, `package` for a module compiling against a sibling's shaded jar). The Neovim client runs it for the `lathe/sync` prompt and `:LatheSync` / `:LatheSyncCaptureTest`; server and MCP texts name it (`Sync required:` notes, `verify_change`'s `suggestedSync`), keeping `mvn clean test -Dlathe.capture.only=true` only for the first build. See `lathe-sync-launcher.md`. |
+| Project setup (`:LatheInit`) | Implemented on `main` after v0.3.1 (Neovim) | `:LatheInit [maven\|gradle\|openjdk]` finds the build's root from the current file, confirms it in a prompt, and runs the first Lathe build: Maven and Gradle builds that do not register Lathe get it from outside (`-Dmaven.ext.class.path` with the extension's jars fetched through a bootstrap POM; a Gradle init script), with compile errors kept from stopping it, so the project's files are not changed; a build that registers Lathe just builds; an OpenJDK checkout runs the OpenJDK goal once the JDK is built. The server attaches when the build ends. A root set up already (registered, or at this version) builds nothing and names `:LatheSync`; `:LatheInit!` builds anyway. Plain Java folders and team modes are not yet covered. See `potential/lathe-init.md`. |
+| Build-file staleness detection | Implemented | Clients receive a sync prompt after a build-file / project-structure change (POMs on Maven; build scripts, version catalogs and build logic on Gradle) (only Neovim acts on it by running `.lathe/lathe-sync.sh`; in other editors run it yourself); source changes of any size, a branch switch included, are compiled in-process instead. |
+| In-process workspace sync | Implemented | One write pass serves saves, outside changes (a git pull, branch switch, or agent), rename commits, startup, and MCP queries: changed files are compiled into the `.lathe/` mirror one source tree per javac task, a dependency level at a time, deletions remove their mirrored classes, and the affected open files are re-analyzed once — any number of files, no Maven round trip. A file that fails keeps its last good classes and is retried with its tree's next write. See [the design](done/lathe-recompile-simplification.md). |
+| Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); the launcher routes JVM startup errors to stderr so they reach that log; `:LatheStart` starts the server for a directory with no Java file open. |
+| Javac-plugin JVM access | Implemented | `lathe:sync` copies the build's `--add-exports`/`--add-opens` (forked `-J` flags, `.mvn/jvm.config`, `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args`, which the launcher passes to the server JVM, so Error Prone and similar plugins run on save. |
+| Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
+| Maven Central distribution | Published | Tag-driven CI (GPG signing + `central-publishing-maven-plugin`), `versions:set` stamping, `release.sh`, and `RELEASING.md` are in place. Releases are live on Maven Central. |
+
+</details>
 
 ## AI Agent Integration (MCP)
 
-Each agent session starts one process through the MCP launcher installed in `.lathe/`.
-It runs the same analysis engine as the editor and finds the project from its working directory.
-If the workspace has yet to be built, the tools report where they looked and how to set it up. [Connect an agent](guide/ai-agents.md)
+The agent discovers these tools when it connects to the project’s MCP launcher. [Connect an agent](guide/ai-agents.md)
 
-| Tool | Status | Notes |
-|---|---|---|
-| `workspace_summary` | Implemented | Every reactor module, the reactor modules on its classpath, which with Maven includes transitive ones (the first ten named, then a count), and, for a module with tests, whether its test launch is captured; with the sync command, the scoped one, and the command that captures a module's tests, and the notes every tool carries (a `.lathe/` written by another Lathe version, a pending build-file sync). The routing instructions say to call it first. Read-only. |
-| `get_diagnostics` | Implemented | Single-file compiler diagnostics, plus unused-code hints, on the captured build classpath — no build. |
-| `get_definition` | Implemented | Resolves into reactor, dependency, JDK, and generated sources. |
-| `find_references` | Implemented | Reactor-wide, javac-accurate; resolves overloads/inheritance. |
-| `find_implementations` | Implemented | Interface implementers / method overrides across the reactor. |
-| `call_hierarchy` | Implemented | Incoming (callers) and outgoing (callees) calls across modules. Reactor calls only by default (`scope: all` adds the JDK and dependencies); outgoing calls are listed at each call site in source order. |
-| `search_symbols` | Implemented | Type lookup by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across reactor, dependencies, and JDK; CamelHumps for reactor types. Reactor types rank first and JDK-internal (non-exported) types last; `scope: reactor` keeps only the project's; a leading or trailing `*` is ignored. |
-| `outline` | Implemented | A file's types, fields, constructors and methods (the editor's document symbols) in source order, indented by nesting, each with the line and column of its name and its declaration line; the path once in the header. Read-only. |
-| `describe_symbol` | Implemented | Rendered signature, type, and Javadoc (hover) as Markdown. |
-| `rename_symbol` | Implemented | Reactor-wide rename applied to disk, including renaming a public type's file; the changed files are compiled into the mirror before it returns; refuses to touch non-reactor files, and refuses a symbol declared (or a method overriding one declared) in the JDK, a dependency, or generated source, a method with an override that also overrides an unrelated method, a Lombok field or generated member, one member of a statically imported name that also brings in others, an interface method a reactor class implements through a superclass outside the reactor, a new name that collides with an existing declaration, and a rename that would change what a name means (naming the file and line). The rename also updates matching Javadoc `@param` names. The answer lists remaining string literals in the declaring syntax scope for local symbols; members and types retain reactor-wide review of string literals and qualified resource mentions, which the rename leaves alone. |
-| `run_test` | Implemented | Replays a test method/class/package from captured bytecode — no reactor build. A file runs every top-level test class in it, and the answer names the classes that ran. A failing test shows the last lines it printed; a run that starts no test says so with the exit code; code that does not compile is refused rather than replayed from stale classes. |
-| `verify_change` | Implemented | After edits, recompiles the changed set in-process (with no `files`: everything the server wrote or dropped since the last check — outside edits and deletions, including ones an earlier query already compiled, and what the tools wrote themselves, e.g. a rename; a file back to the content the last build compiled counts as unchanged, and an edited `lombok.config` counts as a change to every source below it) and its callers in its own and in dependent modules (all of them; each call logs `[verify] <files> in <modules> <ms>`, so a costly one shows), reports errors first, one grep-style `path:line:column:` line each, led by the error count (the changed files' errors and warnings, the callers' errors only; unused-code hints excluded; the first ten dependent modules named, then a count), and emits the sync that builds the dependent modules with a file naming a changed type, none for a test-only change (e.g. `.lathe/lathe-sync.sh app`; the full sync when they are more than half the reactor; called optional when no errors were found) — no build run. A build records the content it compiled for every module it completed, also the ones Maven found up to date, so a touch or a full revert there is no change. |
-| `format_file` | Implemented | Formats a file in place with the formatter the project pins (the one the editor's format-on-save runs), written like a rename (reactor files only, under the reactor lock, compiled into the mirror before it returns); answers with the rewritten line range or "already formatted", and with an error when no formatter is pinned or it fails (a file that does not parse). |
-| `fix_imports` | Implemented | Adds every missing import with exactly one candidate (reactor, dependencies, JDK, and static imports the file's scope already uses — the candidates of the editor's "Add missing imports…"), each at its sorted place in its group, written like a rename; lists the ambiguous names with their candidates and the names with none. |
-| `analyze_change` | Implemented | Pre-edit impact of a symbol: override/implementation family, production vs test reference counts, affected reactor modules, and relevant test classes. Read-only. |
+| Tool | What it does |
+| --- | --- |
+| `workspace_summary` | Lists modules, dependencies, captured test launches, and the command to sync the workspace. |
+| `search_symbols` | Finds types in the project, dependencies, or JDK by name. |
+| `outline` | Lists declarations in a file with their locations and signatures. |
+| `describe_symbol` | Shows a declaration’s signature, type, and Javadoc. |
+| `get_definition` | Finds the location of a declaration, including generated or library sources when available. |
+| `find_references` | Finds uses of the selected symbol across modules. |
+| `find_implementations` | Finds implementations of an interface or overrides of a method. |
+| `call_hierarchy` | Lists incoming or outgoing calls. |
+| `get_diagnostics` | Checks one Java file for errors, warnings, and unused declarations. |
+| `analyze_change` | Identifies affected modules, overrides, references, and relevant tests before an edit. |
+| `verify_change` | Recompiles changed files and their callers and reports the errors that remain. |
+| `rename_symbol` | Renames the symbol and updates references on disk. |
+| `fix_imports` | Adds unambiguous missing imports to the file and reports names that need a choice. |
+| `format_file` | Rewrites a file using the formatter selected by the project. |
+| `run_test` | Runs a captured JUnit test and reports the result and failure output. |
 
-Cross-cutting: every located result is one grep-style line, `path:line:column: code` (workspace-relative; a dependency, JDK or generated result tagged with its origin); a position is given by line and the symbol's name on it (`symbol`), with a counted `column` optional; every tool first compiles the agent's changed files, and a result ends with a `Not compiled:` note (files with compile errors, fix the code), a `Sync required:` note (build files changed, a foreign `.lathe/` version, with the command) or a `Not checked:` note (a file no module compiles, with the sync that adds it only when its module is one the build compiles) when it cannot vouch for itself; the file tools reject a path that is not an existing `.java` file, and the position tools answer only on a name (otherwise an error shows the line); `run_test` names the command that captures a missing test launch; task→tool routing instructions are served at connection time; every tool declares MCP annotations (`readOnlyHint` on the queries and `verify_change`, `destructiveHint` on `rename_symbol`, neither on `run_test`, `format_file` and `fix_imports`, the last two `idempotentHint`); and each tool call is logged (`[tool] <name> <args> <ms> <outcome>`) to stderr and to a per-session file, `~/.cache/lathe/logs/mcp-<timestamp>-<pid>.log`, for usage analysis (ISO-8601 timestamps with the zone offset; the startup line names the file; the newest 100 session files are kept).
+Results identify files and line numbers.
+If a module needs a sync or a file could not be checked, the result explains what happened.
+Each session writes its tool log under `~/.cache/lathe/logs/`.
 
 ## Implemented Architecture
 
@@ -127,28 +143,7 @@ Cross-cutting: every located result is one grep-style line, `path:line:column: c
 
 See [lathe-server-data-flow-recipe.md](done/lathe-server-data-flow-recipe.md) for the threading and data-flow recipe.
 
-## Implemented Feature Highlights
-
-- Completion contexts, typed-slot filtering, type-index discovery, import insertion, and JDT-style presentation.
-- Exact javac-backed references with scope tightening, indexed candidate discovery, bounded transient closed-file
-  analysis, work-done progress, and optional cancellation.
-- Missing-import, add-throws, try/catch wrapping, variable declaration, and missing-method quick fixes.
-- Rich AST-backed Markdown Javadoc for hover, completion, and signature help.
-- Workspace/document symbols, folding ranges, formatting, import optimization, and unused-code diagnostics.
-- Server-driven new-type scaffold (`:LatheNew`): the server owns module/source-root/package resolution, skeleton
-  rendering, and caret placement; the Neovim client is a thin picker shell that writes the returned file.
-- Build-managed server distribution (Maven, Gradle, OpenJDK), unified JDK cache keys, POM staleness prompts, and the standalone `lathe.nvim` plugin.
-- Consolidated compiler and filesystem test fixtures plus the Maven invoker verification module.
-
-Detailed implementation designs and historical decisions are indexed under
-[Completed Designs](design-index.md#completed-designs).
-
 ## Known Blockers
 
-- None outstanding. CA-4 (missing-import actions for not-yet-synced reactor types) is resolved for
-  the common cases — types from a prior sync and types declared in an open, already-compiled file.
-- Sources changed outside the editor (a git pull, branch switch, or agent) are recompiled in-process
-  into the `.lathe/` mirror on the idle tick — the changed files in dependency order, deletions
-  removing their mirrored classes, plus a refresh of open dependents (WS-1). Types created or renamed
-  in closed files appear without a sync; the Maven prompt fires only for a POM/structure change — a
-  branch switch of any size is compiled in-process.
+For current limitations by feature, see the [capability matrix](#lsp-capability-matrix).
+The [gap registry](gaps/gaps.md) tracks open work items.

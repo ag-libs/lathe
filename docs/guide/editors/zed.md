@@ -29,8 +29,7 @@ Complete the [first build](../../../README.md#first-build) so the project has a 
    }
    ```
 
-   On Windows, start the `cmd` launcher instead, through `cmd.exe` (`/d` skips the user's AutoRun,
-   whose output would corrupt the protocol):
+   On Windows, replace the `binary` entry in the example above with this entry.
 
    ```json
    "binary": {

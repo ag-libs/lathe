@@ -21,103 +21,42 @@ Lathe keeps project-specific data under `.lathe/` at the root of the build.
 Keep that directory out of version control.
 Several projects can share downloaded sources and installed server versions under `~/.cache/lathe/`.
 
-**Project files.** The build writes the following as it compiles and tests.
-The build guides describe which tasks refresh them. [Maven phases](maven.md#what-the-build-writes-to-lathe) · [Gradle tasks](gradle.md#what-the-build-keeps-current)
+| Location | What you’ll find |
+| --- | --- |
+| `.lathe/workspace.json` | The modules, their sources and dependencies, and the version of the server that reads them. |
+| `.lathe/<module>/` | Compiler inputs, classes, generated sources, and launch settings for running mains and tests. |
+| `.lathe/lathe-launcher.sh` and `lathe-mcp-launcher.sh` | Launchers for the editor and coding agent, pinned to this project’s server. On Windows the files end in `.cmd`. |
+| `.lathe/lathe-sync.sh` | Repeats the sync with the build tool and JDK that set up the workspace. On Windows use `lathe-sync.cmd`. |
+| `.lathe/java-home` and `.lathe/jvm.args` | The JDK and JVM options the launcher uses. |
+| `~/.cache/lathe/` | Installed server versions, extracted library and JDK sources, type indexes, and MCP session logs. |
 
-- per module, the `javac` inputs the language server replays (`lsp-params-*.json`), per-source compile
-  stamps (`lsp-stamps-*.json`), the compiled classes and resources, and the launch templates for
-  running and debugging a `main` (`main-launch.json`) and the tests (`test-launch.json`);
-- `workspace.json`: the modules, what they depend on, their library sources, and the JDK;
-- `lathe-sync.sh` (`.cmd` on Windows), which re-runs the same build tool and JDK for the editor's sync;
-- `lathe-launcher.sh` and `lathe-mcp-launcher.sh` (`.cmd` on Windows), with their argfiles: copies of the
-  launchers for the server version the project pins, which every editor client and the MCP agent start;
-- `java-home`, the JDK the server runs on ([below](#choosing-the-server-jdk-lathe_java_home)), and
-  `jvm.args`, module grants for the server JVM ([below](#tuning-the-server-jvm-lathe_jvm_opts));
-- from a Maven build also each module's `test-filter.json` (the classes its test run includes) and the
-  detected formatter, `style.json` ([below](#choosing-overriding-or-opting-out-of-the-formatter)).
-- the language server's own writes: it compiles saved and outside-changed sources into each module's
-  mirrored `classes/`, `test-classes/` and `generated-sources/`, saves each module's discovered tests in
-  `test-discovery.json`, and takes `write.lock` so that several Lathe servers on one workspace (an editor's
-  and an agent's) take turns writing.
-
-**On the machine — `~/.cache/lathe/`** (machine-wide, regenerable):
-
-To move it on Maven, pass `-Dlathe.cache=<dir>` to the build, which relocates what sync writes (`servers/`,
-`latest/`, `deps/`, `jdks/`, `type-index/`); Gradle has no such setting yet.
-The property is not forwarded to the launchers, so MCP session logs stay in `~/.cache/lathe/logs/`;
-set `LATHE_CACHE=<dir>` for the Neovim client so it still treats the moved cache as read-only
-dependency sources.
-
-- `servers/<version>/` — the launcher scripts and argfiles for that version (the jars themselves stay
-  in the build's own cache, `~/.m2` for Maven, which the argfiles name), shared across every workspace that pins it. Each project's `.lathe/lathe-launcher.sh` (`.cmd` on Windows) is a copy of the matching version's launcher;
-  version-correct discovery is per-workspace, not through any machine-global pointer.
-- `latest/` — copies of the newest installed server version's launchers. Not used by version-correct clients;
-  it exists only for a user-global MCP registration that has no project context (see
-  [ai-agents.md](ai-agents.md)).
-- `deps/` and `jdks/` — dependency and JDK **source** trees. The build resolves each dependency's
-  `-sources` JAR through its own repositories and extracts it to `deps/<groupId>/<artifactId>/<version>/` (the
-  `~/.m2` layout, without the JAR's `META-INF/maven/` build metadata), and extracts the JDK's sources when available;
-  these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR
-  is recorded as missing and simply not navigable.
-- `type-index/` — the symbol index behind workspace symbol search.
-- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`, tagged with the agent's session when it names one); a starting server keeps the newest 100.
-
-Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
-it needs.
+The project’s launcher starts the server version selected by its build.
+The `latest/` launcher in the machine cache is available for a [user-wide MCP registration](ai-agents.md).
+A dependency needs a published sources JAR for navigation to open its source. [Troubleshoot navigation](troubleshooting.md#navigation)
 
 ## Tuning the server JVM (`LATHE_JVM_OPTS`)
 
-The language server analyzes your code with an **in-process** javac, so it replays the javac options
-your build captured.
+To limit the server’s heap, set `LATHE_JVM_OPTS` in the environment you start the editor or agent from.
+This example caps each server process at 4 GB.
 
-**Maven: forked-compiler `-J` flags are dropped.** `-J` options (for example `-J--add-exports=…` or `-J-Xmx…`) only reach a **forked** `javac`
-executable, which Maven uses when a module sets `<fork>true</fork>` on `maven-compiler-plugin` — often
-to run Error Prone. The in-process javac API has no launcher to receive them and would reject them as
-`invalid flag`, so Lathe drops them (just as Maven's own non-forked compiler ignores them). When this
-happens the server logs one line per module naming what it dropped.
-
-The module grants your build gives its javac plugins (Error Prone, NullAway, ...) still reach the
-server: the build copies them into `.lathe/jvm.args`, which the launcher passes to the server JVM.
-On Maven those are every `--add-exports`/`--add-opens` from forked `-J` options and from
-`.mvn/jvm.config`, and the `jdk.compiler` grants in `MAVEN_OPTS` (the same under `mvn` and `mvnd`);
-on Gradle, the ones in `org.gradle.jvmargs`, which reach a compile running in the Gradle daemon, and in a forked
-compile's JVM arguments (`options.forkOptions.jvmArgs` of `compileJava` and `compileTestJava`).
-Sync also adds the grants the project's pinned google-java-format or palantir-java-format needs, even when the build
-declares none (see [formatting](#choosing-overriding-or-opting-out-of-the-formatter)).
-Other Maven `-J` flags (such as `-J-Xmx…`, sized for a short-lived compiler) are not carried over.
-The server reads `.lathe/jvm.args` only at startup, so restart it (`:lsp restart` in Neovim) after a sync changes the file.
-
-If an annotation processor or javac plugin needs JVM access your build does not declare — or you
-simply want to tune heap or GC — set `LATHE_JVM_OPTS` in the environment your editor launches from.
-It is expanded after `.lathe/jvm.args` and ahead of Lathe's own arguments:
-
-```bash
+```sh
 export LATHE_JVM_OPTS="-Xmx4g"
-# or grant access the build does not declare:
-export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```
 
-**Memory.** Lathe sets no heap limit, so the JVM takes its default maximum: a quarter of the machine's memory.
-On a large reactor its heap grows with use rather than collecting early: before Lathe released idle module sessions,
-an MCP session on Helidon reached 9.6 GB after three `verify_change` calls on a widely used type, and ran the same work at the same speed capped at 2 GB.
-Lathe now releases a module's session after 5 idle minutes, and earlier when the heap runs short, so a capped server completes such work.
-If memory matters, cap it, and let an idle server return what it no longer uses (the same variable reaches the editor's and the MCP launcher):
+Each editor or agent session starts its own JVM.
+The same variable can supply additional JVM options, including module grants an annotation processor needs.
+If you enable JVM logging, send it to stderr or a file because the editor uses stdout to communicate with the server.
 
-```bash
-export LATHE_JVM_OPTS="-Xmx4g -XX:G1PeriodicGCInterval=60000"
-```
-
-The server talks to the editor over stdout, so the launcher sends the JVM's own output (startup failures, `-Xlog` warnings) to stderr, where it lands in the editor's LSP log (`:LspLog` in Neovim).
-If you add an `-Xlog` option, give it a `stderr` or file output (e.g. `-Xlog:gc:stderr`); the JVM's default `stdout` target would corrupt the protocol stream.
+The build records the module grants it already declares in `.lathe/jvm.args`.
+Syncing also adds the grants required by the project’s formatter.
+Restart the server after those settings change. [Compiler plugin JVM settings](troubleshooting.md#build-checks-and-compiler-settings)
 
 ## Choosing the server JDK (`LATHE_JAVA_HOME`)
 
-The server's in-process javac must be at least as new as the Java version your project targets — open a
-Java 26 module under a Java 21 `java` and every file shows parse errors. So Lathe does **not** just use
-whatever `java` is on `PATH`: the build records a JDK in `.lathe/java-home`, and the launcher runs
-the server under it. On Maven that is the JDK Maven ran on; on Gradle, the newest JDK any project
-compiles with (17 or newer), else the one Gradle runs on. No configuration is needed — build your
-project and the server matches it.
+The build records the server JDK in `.lathe/java-home`.
+Maven records the JDK running Maven.
+Gradle records the newest compilation JDK at or above 17, falling back to the daemon JDK.
+An OpenJDK sync records the JDK you built.
 
 The launcher chooses the JDK in this order:
 
@@ -130,9 +69,8 @@ The launcher chooses the JDK in this order:
 export LATHE_JAVA_HOME="$HOME/.sdkman/candidates/java/26-tem"
 ```
 
-For a multi-module reactor the one server JVM runs the highest JDK the build used, which down-compiles
-the lower-release modules via `--release`. (The launcher reads `.lathe/java-home` from the nearest `.lathe/`
-in its working directory or above it, so a client that starts it in a module directory gets the root's JDK.)
+Choose a JDK at least as new as the highest Java release your modules target.
+The server uses the captured compile options for modules targeting older releases.
 
 ## Choosing, overriding, or opting out of the formatter
 

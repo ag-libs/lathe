@@ -4,8 +4,31 @@ To rerun one JUnit test from Neovim or an AI agent, Lathe needs to know how your
 A Lathe-enabled Maven or Gradle build records the launch once, so you can rerun the method with the same JDK and flags.
 
 The [first build](../../README.md#first-build) captures supported JUnit Platform launches without executing the tests.
-If you skip the test task entirely, or the module has no tests to discover, there is no launch to replay.
+Skipping the test task or building a module with no discoverable tests records no new launch.
 See the [requirements](#requirements-and-current-limits) for supported JDKs, test engines, and build tasks.
+
+## Capture without running tests
+
+To refresh a captured launch, run the command for your build from the project root.
+
+```bash
+mvn test -Dlathe.capture.only=true                        # Maven
+./gradlew latheSync -Plathe.capture.only=true --continue  # Gradle
+```
+
+Each module with supported tests starts a test JVM so Lathe can record its launch.
+JUnit 5.10 and later reports the selected tests as skipped.
+On older JUnit, Lathe filters them out.
+
+**Maven.** Add `clean` for the first capture so every module compiles with Lathe.
+A build with `-DskipTests` skips the JVM that records the launch.
+If older JUnit and `failIfNoTests` cause the build to fail, add `-DfailIfNoTests=false`.
+Skipped-test warnings are expected.
+During a multi-module build, Maven can also warn that a dependency belongs to the reactor while the root sync is waiting for that module to build.
+
+**Gradle.** A capture-only run starts the default test JVM even if the task is up to date.
+To capture tests from another source set, run its own task once, for example `./gradlew integrationTest -Plathe.capture.only=true`.
+An editor sync captures the default tests. [Gradle test limits](gradle.md#known-limits)
 
 ## What Lathe records
 
@@ -40,42 +63,6 @@ The [Gradle plugin](gradle.md) loads `lathe-junit` into each project's `test` ta
 the `JDK_JAVA_OPTIONS` environment variable, which leaves the task's cache key alone.
 `test`, `check` and `build` capture; Gradle passes the task's `jvmArgs` and `systemProperty` values to the test
 JVM as real arguments, so they are captured too.
-
-## Capture without running tests
-
-To refresh the launch templates without paying for a test run, set `lathe.capture.only`: each module still
-starts its test JVM and writes its `test-launch.json`, but no test runs.
-The launch is the same whichever tests run, so Lathe gives the run a single test class, the first in name order,
-and each module starts one test JVM that discovers that class only, instead of a JVM per fork discovering every class.
-On Maven the class comes from the test sources, and a `-Dtest` you pass is kept;
-a module whose test sources are not Java (or are all generated) runs every class, as before.
-On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the class's tests are discovered as usual
-(a `@Suite`'s included) and reported as skipped.
-On older JUnit, a post-discovery filter excludes every test instead.
-
-```bash
-mvn test -Dlathe.capture.only=true                    # Maven
-./gradlew latheSync -Plathe.capture.only=true         # Gradle
-```
-
-- **Maven:** for the [first run](maven.md#initialize), add `clean` (`mvn clean test -Dlathe.capture.only=true`)
-  so every module compiles through Lathe rather than reusing up-to-date output.
-  `-DskipTests` is **not** a substitute: it skips the fork entirely, so nothing is captured.
-  On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add
-  `-DfailIfNoTests=false` so the test-free run stays green.
-  Such a run prints two kinds of `[WARNING]` lines, both expected:
-  Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, as each module starts one test class
-  and its tests are skipped, not run;
-  and `The following dependencies could not be resolved at this point of the build but seem to be part of
-  the reactor`, as the sync, which runs on the root project, resolves the modules before they are built.
-  The sync still completes.
-- **Gradle:** a capture-only run always starts the test JVM, never serving the task from the build cache or as
-  up to date, and does not fail for running no tests. `-Plathe.capture.only=true` works on a plain test run
-  too (`./gradlew test -Plathe.capture.only=true`).
-  The test task of another source set (an `integrationTest`, a JVM test suite) captures into a launch of its own
-  whenever it runs, and runs the same way when run capture-only (`./gradlew integrationTest -Plathe.capture.only=true`);
-  the editor's sync with tests does not start it, as its dependencies (a database it starts, say) would run on every
-  sync. A capture-only run skips a test task of no source set Lathe captures (a second task on `test`'s classes).
 
 ## Resources
 

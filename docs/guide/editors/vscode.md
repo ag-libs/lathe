@@ -48,23 +48,15 @@ Nothing to configure, unless you moved the cache with `-Dlathe.cache=<dir>`: the
 
 ## If the wrong JDK is picked
 
-The extension runs the launcher from the workspace root (the nearest `.lathe/` at or above the folder), so it reads
-`.lathe/java-home` automatically — no configuration needed, an [OpenJDK](../openjdk.md) checkout
-included (its sync records the JDK it built). To override it, set `LATHE_JAVA_HOME` in the environment
-VS Code is launched from. To point at a working-tree server build, set `LATHE_SERVER_DIR` the same way.
-
-## Windows and Cursor
-
-The extension works the same on Windows, in VS Code and in Cursor (install the `.vsix` with *Extensions → ⋯ → Install from VSIX…*).
-Build the project once (with `mvnw.cmd`, `mvn`, or `gradlew.bat`); the build writes `.lathe\lathe-launcher.cmd`, and the extension starts it through `cmd.exe`, so there is nothing to configure.
-Set `LATHE_JAVA_HOME` or `LATHE_SERVER_DIR` as Windows environment variables, or with `set` in the `cmd` window you start `code` or `cursor` from.
+The extension reads the JDK recorded by the build in `.lathe/java-home`.
+To choose another JDK, set `LATHE_JAVA_HOME` in the environment you start VS Code or Cursor from. [Choosing the server JDK](../installation.md#choosing-the-server-jdk-lathe_java_home)
 
 ## Build-file changes
 
-After a build-file or module-structure change, the server shows a prompt to sync.
-The extension cannot run the sync for you yet: choosing *Sync* does nothing, so run
-`.lathe/lathe-sync.sh` (`.lathe\lathe-sync.cmd` on Windows) or your build in a terminal.
-Source changes made outside the editor need no sync; the server compiles them in-process.
+If the editor prompts for a sync after you change dependencies, modules, or build settings, run the project’s sync script from a terminal.
+Use `.lathe/lathe-sync.sh` on Linux or macOS and `.lathe\lathe-sync.cmd` on Windows.
+The preview extension’s **Sync** action cannot run the script.
+Lathe picks up changes to Java sources automatically.
 
 ## Known issues
 

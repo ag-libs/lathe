@@ -37,14 +37,9 @@ Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or n
 
 ## What you get
 
-- Diagnostics matching the build — the real module graph and compiler flags.
-- Go-to-definition and find-references across all ~66 modules and into the JDK's own source (incl.
-  `sun.*` internals and generated sources), resolving to real files.
-- Completion, hover, and signature help over the module graph.
-- Workspace symbol search, including types in just-created, not-yet-built files.
-- The `make/` build tools, not only the modules.
-- Constant per-keystroke cost regardless of JDK size — dependencies come from the build's compiled
-  output, not re-parsed source.
+Lathe provides diagnostics, completion, hover, and workspace symbol search for the modules you built and the Java tools under `make/`.
+Navigation and references work across module boundaries, including internal packages and generated sources.
+The server uses the module graph and compiler flags from your chosen build.
 
 ## Re-syncing
 
@@ -56,24 +51,11 @@ Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or n
 
 Lathe never runs `make`.
 
-## Compared to IntelliJ IDEA / Eclipse
+## Current limits
 
-The IDEs are full environments and run and debug jtreg tests, which Lathe does not yet. Lathe is
-lighter, editor-agnostic, and reads the build directly:
-
-| | IntelliJ / Eclipse | Lathe |
-|---|---|---|
-| Analysis engine | Each IDE's own front-end | The build's `javac` |
-| Preview / new syntax | Can trail the in-tree compiler | Tracks the build's compiler |
-| Module flags | Worked out by the IDE | Taken from the build |
-| Setup | Project import | One `sync` over the `make` output |
-| Run / debug jtreg | Supported | Not yet |
-
-## Not supported yet
-
-- jtreg tests — running, debugging, and `test/` analysis. Planned: derive a test's config from its
-  `@test` / `@library` / `@modules` tags on open.
-- Other-platform source overlays, and modules that were not built.
+Run jtreg tests with the OpenJDK build.
+Lathe currently provides code intelligence for built modules and their platform sources.
+Editing jtreg tests, debugging them, and analyzing source overlays for other platforms are outside that support.
 
 ## See also
 

@@ -1,76 +1,84 @@
 # Lathe features
 
-Use your editor's Java navigation, completion, rename, and code actions with the compiler settings from your build.
-Most features use the Language Server Protocol (LSP).
-Neovim also supports Lathe commands for running and debugging code, creating types, and finding resources. [Editor setup](../../README.md#editors)
+Lathe uses your build’s compiler settings for navigation, completion, refactoring, and diagnostics.
+The editor guides show how to invoke these actions. [Choose your editor](../../README.md#editors)
 
 ## Code intelligence
 
-Use **Go to definition** on a method call to open the overload the compiler selected.
-Use **Go to declaration** on its implementation to find the interface or abstract method it implements.
-To change a name across modules, use **Rename** on the declaration or one of its references.
+| To find… | Use |
+| --- | --- |
+| The method or constructor a call resolves to | **Go to Definition** opens the declaration of the selected overload or constructor. It can open dependency and JDK sources when available. |
+| The contract a method implements | **Go to Declaration** opens the overridden interface or abstract method. |
+| The type of a variable or a method’s return value | **Go to Type Definition** |
+| Implementations of a method or subtypes of a class | **Go to Implementation** |
+| Every use of a declaration | **Find References** searches across modules. **Document Highlight** marks reads and writes in the open file. |
+| The methods that call a method, or the ones it calls | **Call Hierarchy** |
+| Supertypes and subtypes | **Type Hierarchy** |
+| A declaration by name | **Document Symbols** lists declarations in the file. **Workspace Symbols** searches types across the project. |
 
-| Feature                      | What it does                                                                                      | LSP method                                        |
-|------------------------------|---------------------------------------------------------------------------------------------------|---------------------------------------------------|
-| Go to definition             | jumps to local sources, unpacked dependency JAR sources, and JDK sources; on `new X(...)`, selects the invoked constructor overload; on a call whose arguments match no overload, offers every method it can name | `textDocument/definition`                         |
-| Go to declaration            | navigates to the overridden interface or abstract-method contract                                 | `textDocument/declaration`                        |
-| Go to type definition        | jumps to the type of the symbol under the cursor: a variable's type, a method's return type, an array's element type | `textDocument/typeDefinition`                     |
-| Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace; on a functional interface's method, also the lambdas and method references that implement it | `textDocument/implementation`                     |
-| Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
-| Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
-| Rename                       | renames a symbol and every reference **across every module of the build** — as one atomic edit (locals, fields, methods incl. the override family, record components, constructors); refuses, naming the place, a rename that would change what a name means (a shadowed field, a call captured by the renamed overload) | `textDocument/rename` · `textDocument/prepareRename` |
-| Instantiation sites          | where a type's constructors are called (`new AppServer(...)`, and a subclass constructor's `super(...)`), from the type under the cursor | `workspace/executeCommand` · `lathe.types.instantiations` |
-| Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
-| Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
-| Completion                   | types, methods, and variables, with automatic import insertion (a nested type is written from its top-level type, `Map.Entry`, never imported itself); static members the project already imports statically elsewhere in the same scope (test or main), with their `import static` | `textDocument/completion`                         |
-| Document / workspace symbols | file outline; workspace search by name prefix, simple or qualified (`java.util.Map.Entry`), with CamelCase-hump matching for the project's types (`ASF` finds `AbstractServerFactory`) | `textDocument/documentSymbol`, `workspace/symbol` |
-| Type hierarchy               | supertypes and subtypes of the symbol under the cursor, one level at a time                        | `textDocument/prepareTypeHierarchy`               |
-| Full type hierarchy          | all transitive supertypes and subtypes of the type under the cursor at once, tagged by relation    | `workspace/executeCommand` · `lathe.types.hierarchy` |
-| Add missing imports          | resolve every unimported type in the file in one pass, and every unresolved call the scope statically imports elsewhere — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.imports.missing`, `lathe.imports.edits` |
-| Call hierarchy               | incoming and outgoing calls of a method; an override's callers include calls through the method it overrides, from any module, when the receiver can hold the override | `textDocument/prepareCallHierarchy`               |
-| Resource finder              | find a resource by name across the project's resource roots and dependency JARs; dependency entries open read-only | `workspace/executeCommand` · `lathe.resources.list`, `lathe.resources.open` |
-| Semantic tokens              | highlights static/deprecated members, enum constants, type parameters, annotations                | `textDocument/semanticTokens/full`                |
-| Folding                      | the imports (one range), module, classes, methods, and Javadoc comments                           | `textDocument/foldingRange`                       |
-
-In a Lombok project, what Lombok generates is part of the analysis and leads back to its field; see [Lombok](how-it-works.md#lombok).
+**Hover** shows the declaration and its Javadoc.
+**Signature Help** shows the parameters of methods and constructors as you type.
+Completion suggests types, methods, and variables and can insert their imports.
+It also suggests static members already imported by other files in the same scope (main or test).
+In a Lombok project, navigating to a generated accessor takes you back to its field. [Lombok support](how-it-works.md#lombok)
 
 ## Diagnostics & formatting
 
-| Feature             | What it does                                                                                 | LSP method                        |
-|---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
-| Diagnostics         | `javac` errors and warnings exactly as your build configures them, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | quick fixes and refactors: missing imports (including `import static` for members the scope imports elsewhere; a nested type such as `Map.Entry` is written qualified from its top-level type, which is imported, never imported itself), add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type and back (convert a declaration to `var`), extract variable / constant / field / method (an expression or statements; one value used afterwards or a `return` on every path becomes the call's value, and copies elsewhere in the class can be replaced too), add a `final` field as a constructor parameter, stub a missing method, surround with try-with-resources | `textDocument/codeAction`         |
-| Formatting          | the project's own formatter, detected on Maven from its Spotless setup or declared in `lathe-style.json` on any build — google-java-format, palantir-java-format, or Eclipse at the exact version it pins — run in-process in milliseconds, selections included; a formatter command works too ([formatter](installation.md#choosing-overriding-or-opting-out-of-the-formatter)) | `textDocument/formatting`, `rangeFormatting`, `rangesFormatting` |
-
-Lathe applies the formatter step only, not other Spotless steps such as import order or license headers.
-A `lathe-style.json` declares the formatter where Spotless can't be read (Gradle, Maven without Spotless), or picks another one, an external command, or none; see
-[choosing the formatter](installation.md#choosing-overriding-or-opting-out-of-the-formatter).
+- **Read compiler errors.** Syntax and type errors appear as you edit. Saving also runs the module’s compiler plugins and annotation processors. [Live and save diagnostics](how-it-works.md#diagnostics-live-vs-on-save)
+- **Fix or refactor code.** Open **Code Actions** to add an import, handle an exception, implement a missing method, or extract a variable, constant, field, or method. Lathe offers the actions that apply to your selection.
+- **Rename a symbol.** Use **Rename** on a declaration or reference. Lathe follows uses and overrides across modules and reports a conflict if the new name would change what a use refers to.
+- **Format a file or selection.** Lathe uses the project’s formatter. On Maven, sync reads the supported Java formatter from Spotless. On Gradle or Maven without Spotless, declare it in `lathe-style.json`. External formatter commands support whole files. [Formatter setup](installation.md#choosing-overriding-or-opting-out-of-the-formatter)
 
 ## Run, test & debug
 
-With the cursor in a `main` method, run `:LatheRun` to see its output in Neovim.
-To run one JUnit method, add Lathe's adapter to neotest and run the nearest test.
-To stop at a breakpoint, install nvim-dap before Lathe loads and use `:LatheDebug`. [Test setup](editors/neovim.md#tests-neotest) · [Debugger setup](editors/neovim.md#debug-nvim-dap)
+In Neovim, use `:LatheRun` inside a `main` method to run the compiled class.
+With neotest, you can rerun one JUnit method and jump from a failure to its source.
+With nvim-dap, you can stop at a breakpoint and inspect variables. [Test setup](editors/neovim.md#tests-neotest) · [Debugger setup](editors/neovim.md#debug-nvim-dap)
 
-| Feature                                              | What it does                                                                                                                                                | LSP method                                                            |
-|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
-| Run a `main`                                         | replays a `main` from captured `.lathe/` bytecode — no rebuild, live output                                                                 | `workspace/executeCommand` · `lathe.run.main`                         |
-| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output (each test's own output attributed to it), a diagnostic on the failing assertion, expected/actual diffs, and class-level failures | `workspace/executeCommand` · `lathe.runnables.file`, `lathe.tests.discover`, `lathe.run.test` |
-| Debug                                                | conditional breakpoints, stepping, variable inspection, and REPL expression evaluation over DAP                                                                         | `workspace/executeCommand` · `lathe.debug.*`, then DAP                |
-| [Run configuration](run-configuration.md) | auto-applied overlays (JVM/program args, env, cwd, class-/module-path) plus named, selectable run configs (`:LatheRun {name}`, saved from the cursor)         | `lathe.run.named` · `lathe.runConfigs.list` · `lathe.runConfigs.save`  |
-
-Run, test, and debug are Lathe extensions exposed through `workspace/executeCommand` (and the Debug
-Adapter Protocol for debugging), not standard LSP methods. The Neovim commands (`:LatheRun`,
-`:LatheDebug`, save/last/stop, the config picker) are in the
-[Neovim cheatsheet](editors/neovim.md) and [run configuration](run-configuration.md).
+Lathe uses the launch settings from your build.
+To add program arguments, environment variables, or a named launch target, see [Run configuration](run-configuration.md).
 
 ## Scaffolding
 
-| Feature  | What it does                                                                                                      | Command                                                   |
-|----------|------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
-| New type | scaffolds a `class` / `interface` / `record` / `enum` / `annotation` / `test`, plus `package-info` and `module-info` — pick the kind, fuzzy-pick the destination package, and name it; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
-| Go to test | from a class to its test (`FooTest`, `FooIT`, … in any module; several picked from), from a test back to its class; no test offers to create one | Neovim `:LatheGoToTest` · `lathe.tests.counterparts` |
+Use `:LatheNew` in Neovim to create a class, interface, record, enum, annotation, or JUnit test in the module and package you choose.
+Use `:LatheGoToTest` to switch between a class and its test. [Create a new type](editors/neovim.md#create-a-new-type)
 
-`:LatheNew <kind>` adds a type in the current package; bare `:LatheNew` runs a guided module/package
-picker. The server owns placement — module, source root, package, and skeleton.
-[Walkthrough →](editors/neovim.md#create-a-new-type).
+For the implementation status of individual features, including semantic highlighting and folding, see the [capability matrix](../status.md#lsp-capability-matrix).
+
+<details>
+<summary>Custom LSP commands for editor integrations</summary>
+
+An editor can invoke these commands through `workspace/executeCommand`.
+Pass the argument object as the sole entry in `arguments` for commands that take one.
+
+| User surface | `executeCommand` | Argument object |
+|---|---|---|
+| `:LatheTypeHierarchy` | `lathe.types.hierarchy` | position params |
+| `:LatheInstances` | `lathe.types.instantiations` | position params |
+| `:LatheGoToTest` | `lathe.tests.counterparts` | `{ uri }` |
+| `:LatheMissingImports` (and the "Add missing imports…" code action) | `lathe.imports.missing` | `{ uri }` |
+| `:LatheMissingImports` — the edits for the chosen imports, placed by the server | `lathe.imports.edits` | `{ uri, imports }` (the chosen candidates) |
+| `:LatheRun` / neotest / `:LatheDebug` — runnables of a file | `lathe.runnables.file` | `{ uri }` |
+| neotest — runnables of a directory (package run) | `lathe.runnables.dir` | `{ uri }` |
+| neotest — a module's tests (JUnit Platform discovery) | `lathe.tests.discover` | `{ moduleRel }` |
+| neotest — source files of test classes | `lathe.tests.sources` | `{ moduleRel, classNames }` |
+| `:LatheRun` | `lathe.run.main` | `{ moduleRel, mainClass, token }` |
+| neotest run | `lathe.run.test` | `{ moduleRel, selections, token }` |
+| `:LatheRun {name}` / `:LatheDebug {name}` | `lathe.run.named` / `lathe.debug.named` | `{ name, token }` |
+| `:LatheRunStop` / neotest stop | `lathe.run.cancel` | `{ token }` |
+| `:LatheDebug` (a `main`) | `lathe.debug.main` | `{ moduleRel, mainClass, token }` |
+| `:LatheDebug` (a test) | `lathe.debug.test` | `{ moduleRel, selections, token }` |
+| run-config completion and picker | `lathe.runConfigs.list` | none |
+| `:LatheRunSave[!]` | `lathe.runConfigs.save` | `{ name?, moduleRel, kind, mainClass?, selectors?, overwrite? }` |
+| `:LatheNew` — module list / current context | `lathe.workspace.modules` / `lathe.workspace.context` | none / `{ uri }` |
+| `:LatheNew` — where a new type may go, ranked for the buffer | `lathe.types.destinations` | `{ uri?, kind, pkg? }` |
+| `:LatheNew` — write, compile and open the file | `lathe.types.create` | `{ moduleRel, kind, pkg, type, name }` (a module-info's `name` may be empty: the server names it) |
+| run output — the stack frames among its lines, resolved to their sources | `lathe.stack.resolve` | `{ lines }` |
+| `:LatheResourceFind` — list / open a dependency entry | `lathe.resources.list` / `lathe.resources.open` | none / `{ jar, entry }` |
+| non-Java save inside a workspace | `lathe.resources.refresh` | `{ uri }` |
+
+Position parameters identify the document URI and the line and character of the symbol.
+`moduleRel` is a module path relative to the build root.
+For a run or debug request, `token` is the client’s identifier for cancelling that run.
+
+</details>

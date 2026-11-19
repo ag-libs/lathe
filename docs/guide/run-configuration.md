@@ -1,17 +1,12 @@
 # Run configuration
 
-Lathe launches your test runs and `main`-class runs from the captured or derived launch templates,
-with generated defaults.
-Configuration lives in an optional, hand-authored file with two parts:
+Run a main method or a captured JUnit test with its build settings first.
+Save a named configuration when you want to reuse arguments, change the working directory, or set environment variables.
 
-- **`defaults`** — baseline overlays applied automatically to every cursor/gutter run (extra JVM
-  flags, environment, and so on);
-- **`configs`** — **named** run configurations you select explicitly (`:LatheRun {name}`), each
-  pinning a target (a `main` class or a test selector) plus its own overlay.
-
-Configuration is applied by the language server, so it behaves the same regardless of which editor or
-client triggered the run.
-When no file exists, runs use the built-in defaults, so **no configuration is required**.
+In Neovim, place the cursor in a `main` method and run `:LatheRunSave dev`.
+Lathe opens `.lathe/run.json` with the target filled in.
+Add `"args": ["--port", "8080"]` to the `dev` entry, save the file, and run `:LatheRun dev` from any buffer in the project.
+Use `:LatheDebug dev` to launch the same target in the debugger.
 
 ## Files
 
@@ -38,7 +33,8 @@ warning in the server log.
 
 ## File shape
 
-Each file is a JSON object with two optional keys:
+Use `defaults` for settings that apply when you run from the cursor, and `configs` for targets you select by name.
+Both keys are optional.
 
 ```json
 {
@@ -64,7 +60,7 @@ Each file is a JSON object with two optional keys:
 }
 ```
 
-An absent file, or `{}`, means every run uses the built-in defaults. Either key may be omitted.
+If neither file defines settings, runs use the defaults from the build.
 
 ### `defaults` — automatic baselines
 
