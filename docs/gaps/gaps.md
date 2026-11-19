@@ -1229,39 +1229,6 @@ None yet.
 
 ---
 
-## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s
-
-**Status: deferred** (triaged 2026-11-16: seen once, not reproduced; probe: re-sync Caffeine with `LATHE_DEBUG=1` and look for a reload between the two writes; close if it does not recur)
-
-**Kind: bug**
-
-**Value: low — Size: unknown**
-
-**Affects: MCP and editor answers right after a sync, on a module with many generated sources.**
-
-Found by the pre-release Gradle round (2026-11-15) on Caffeine.
-
-### Observed behaviour
-
-After `.lathe/lathe-sync.sh caffeine`, the MCP server recompiled the module's 493 generated sources twice in a row
-(28 s, then 22 s), and a `get_diagnostics` asked meanwhile answered after 43.8 s.
-Two reduced attempts (add a file, sync, delete it, sync) did not repeat it.
-
-### Fix direction
-
-Reproduce first: find what made the pass write the generated sources twice (a reload landing mid-pass, or stamps the sync
-rewrote after the first write).
-
-Both are possible in the code (checked 2026-11-16): `WritePass.onReload` bumps the pass generation, but `writeLevels` checks it only between dependency levels, so a level already compiling finishes and the next pass may write it again;
-the stamps guess would sit in `stableSources`/`pendingStale` and the stamp map.
-No commit since the report targets either.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-37 — Java that Groovy compiles jointly, under `src/<source set>/groovy`, is in no module
 
 **Status: deferred** (triaged 2026-11-16: a feature, deferred under the feature freeze)

@@ -10483,6 +10483,45 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s — non-goal
+
+**Status: non-goal** (2026-11-19: not reproduced; three forced re-syncs of Caffeine each wrote the module once, with no reload)
+
+**Kind: bug**
+
+**Affects: MCP and editor answers right after a sync, on a module with many generated sources.**
+
+Found by the pre-release Gradle round (2026-11-15) on Caffeine.
+
+### Observed behaviour
+
+After `.lathe/lathe-sync.sh caffeine`, the MCP server recompiled the module's 493 generated sources twice in a row
+(28 s, then 22 s), and a `get_diagnostics` asked meanwhile answered after 43.8 s.
+Two reduced attempts (add a file, sync, delete it, sync) did not repeat it.
+
+### Fix direction
+
+Reproduce first: find what made the pass write the generated sources twice (a reload landing mid-pass, or stamps the sync
+rewrote after the first write).
+
+Both are possible in the code (checked 2026-11-16): `WritePass.onReload` bumps the pass generation, but `writeLevels` checks it only between dependency levels, so a level already compiling finishes and the next pass may write it again;
+the stamps guess would sit in `stableSources`/`pendingStale` and the stamp map.
+No commit since the report targets either.
+
+### Probe result (2026-11-19, main `6803a4b6`)
+
+Caffeine (`10646b0`) synced with the Gradle plugin built from main, an MCP server running with `LATHE_DEBUG=1`, then `latheSync --module caffeine` three times as a no-op and three times with `--rerun-tasks`, which regenerates and recompiles the module.
+The no-op syncs wrote nothing.
+Each forced sync started one write pass, `[react] recompiling 592 changed file(s)`, compiled once in 3–4 s; no second pass and no `[reload]` followed.
+`get_diagnostics` on `BoundedLocalCache.java` asked right after each sync answered in 3.6–5.0 s.
+The race the fix direction names (a reload landing mid-pass) stays possible in the code, but nothing in a sync triggered it.
+
+### Regression targets
+
+None: closed without a change.
+
+---
+
 ## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read — done
 
 **Status: done** (2026-11-18)
