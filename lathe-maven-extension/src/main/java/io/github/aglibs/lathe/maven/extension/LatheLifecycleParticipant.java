@@ -7,19 +7,30 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.BuildSuccess;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Model;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
+import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +49,10 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   // it in afterSessionEnd; null when this build holds none. An in-JVM forked build is the only
   // overlap, and the staleness TTL is its backstop.
   private BuildLock buildLock;
+  // The reactor root and what Maven read of its POMs, for the session end; null and empty when
+  // Lathe is off for this build. Set even without a lock: the first sync creates .lathe/.
+  private Path workspaceRoot;
+  private Map<Path, ContentFingerprint> pomsAtStart = Map.of();
 
   @Override
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
@@ -74,6 +89,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     }
 
     injector.injectRootExecutions(session.getTopLevelProject());
+    readReactor(reactorRoot(session), session.getProjects());
     startReactorLock(latheDir);
   }
 
@@ -86,7 +102,13 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
         mirrorLateOutputs(buildLock.latheDir().getParent());
         recordBuilt(buildLock.latheDir().getParent(), succeeded(session));
       }
+
+      if (workspaceRoot != null) {
+        refreshBuildFiles(workspaceRoot, session.getProjects(), pomsAtStart);
+      }
     } finally {
+      workspaceRoot = null;
+      pomsAtStart = Map.of();
       stopReactorLock();
     }
   }
@@ -109,6 +131,120 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
       // must never fail the build.
       LOG.debug("[mirror] late build output not copied under {}", workspaceRoot, e);
     }
+  }
+
+  // A build can rewrite a POM after the sync fingerprinted it, as sortpom does when each module
+  // builds, and the server would then ask for a sync that changes nothing. A POM whose model is
+  // still the one Maven read (only its order, whitespace or comments moved) is recorded as it is
+  // now; one whose model changed, by hand or by a plugin, keeps the synced fingerprint and still
+  // asks for a sync. Best-effort, like the late outputs.
+  static void refreshBuildFiles(
+      final Path workspaceRoot,
+      final List<MavenProject> projects,
+      final Map<Path, ContentFingerprint> readAtStart) {
+    final var t = Stopwatch.start();
+    final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    final Path manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+    if (!Files.isRegularFile(manifestPath)) {
+      return;
+    }
+
+    try {
+      final WorkspaceManifestData manifest = Json.read(manifestPath, WorkspaceManifestData.class);
+      final Map<Path, Model> readModels = readModels(projects);
+      final List<BuildFileData> current =
+          manifest.buildFiles().stream()
+              .map(file -> reformatted(workspaceRoot, file, readModels, readAtStart))
+              .toList();
+      if (current.equals(manifest.buildFiles())) {
+        return;
+      }
+
+      FileUtil.writeIfChanged(
+          latheDir, manifestPath, Json.toJson(manifest.withBuildFiles(current)), false);
+      LOG.info(
+          "[sync] {} build-file fingerprints updated for reformatted POMs {}ms",
+          manifestPath,
+          t.elapsedMs());
+    } catch (final IOException | RuntimeException e) {
+      LOG.debug("[sync] {} build-file fingerprints not updated", manifestPath, e);
+    }
+  }
+
+  // The model each reactor POM had when Maven read it, before the build could rewrite one.
+  private static Map<Path, Model> readModels(final List<MavenProject> projects) {
+    return projects.stream()
+        .filter(project -> project.getFile() != null && project.getOriginalModel() != null)
+        .collect(
+            Collectors.toUnmodifiableMap(
+                project -> pomPath(project.getFile().toPath()),
+                MavenProject::getOriginalModel,
+                (first, second) -> first));
+  }
+
+  // Only a POM the sync recorded as Maven read it: an older sync's fingerprint says nothing about
+  // what this build saw.
+  private static BuildFileData reformatted(
+      final Path workspaceRoot,
+      final BuildFileData file,
+      final Map<Path, Model> readModels,
+      final Map<Path, ContentFingerprint> readAtStart) {
+    final Path pom = pomPath(workspaceRoot.resolve(file.path()));
+    final Model read = readModels.get(pom);
+    if (file.fingerprint() == null
+        || read == null
+        || !file.fingerprint().equals(readAtStart.get(pom))
+        || !Files.isRegularFile(pom)) {
+      return file;
+    }
+
+    final ContentFingerprint now = IOUtil.unchecked(() -> FileUtil.fingerprint(pom));
+    if (now.equals(file.fingerprint()) || !sameModel(read, pom)) {
+      return file;
+    }
+
+    return new BuildFileData(file.path(), now);
+  }
+
+  // The writer orders the elements and drops whitespace and comments, so two POMs it writes alike
+  // hold the same model. A POM that no longer parses is not the same.
+  private static boolean sameModel(final Model read, final Path pom) {
+    try (final var in = Files.newInputStream(pom)) {
+      return written(read).equals(written(new MavenXpp3Reader().read(in, false)));
+    } catch (final IOException | XmlPullParserException e) {
+      LOG.debug("[sync] {} not compared with the model Maven read", pom, e);
+      return false;
+    }
+  }
+
+  private static String written(final Model model) throws IOException {
+    final var out = new StringWriter();
+    new MavenXpp3Writer().write(out, model);
+    return out.toString();
+  }
+
+  // What Maven read of each POM, taken before the build runs. A POM not read here keeps the
+  // fingerprint the sync gives it.
+  private static Map<Path, ContentFingerprint> readFingerprints(final List<MavenProject> projects) {
+    final var read = new HashMap<Path, ContentFingerprint>();
+    for (final MavenProject project : projects) {
+      if (project.getFile() == null) {
+        continue;
+      }
+
+      final Path pom = pomPath(project.getFile().toPath());
+      try {
+        read.put(pom, FileUtil.fingerprint(pom));
+      } catch (final IOException | RuntimeException e) {
+        LOG.debug("[sync] {} not fingerprinted at the build's start", pom, e);
+      }
+    }
+
+    return Map.copyOf(read);
+  }
+
+  private static Path pomPath(final Path file) {
+    return file.toAbsolutePath().normalize();
   }
 
   private static List<Path> succeeded(final MavenSession session) {
@@ -163,6 +299,11 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   static boolean isPomOptOut(final MavenProject topLevelProject, final Path latheDir) {
     return "true".equals(topLevelProject.getProperties().getProperty(LatheFlags.DISABLED))
         && !Files.isDirectory(latheDir);
+  }
+
+  void readReactor(final Path root, final List<MavenProject> projects) {
+    workspaceRoot = root;
+    pomsAtStart = readFingerprints(projects);
   }
 
   void startReactorLock(final Path latheDir) {

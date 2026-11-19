@@ -61,4 +61,19 @@ public record WorkspaceManifestData(
         buildTool,
         Map.of());
   }
+
+  public WorkspaceManifestData withBuildFiles(final List<BuildFileData> files) {
+    return new WorkspaceManifestData(
+        schemaVersion,
+        workspaceRoot,
+        serverVersion,
+        runnerClasspath,
+        jdk,
+        dependencySources,
+        files,
+        resourceRoots,
+        outputs,
+        buildTool,
+        runnerClasspaths);
+  }
 }

@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
@@ -23,6 +24,7 @@ import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.DefaultMavenExecutionResult;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Model;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -104,6 +106,7 @@ class LatheLifecycleParticipantTest {
     Files.writeString(neverCompiled.resolve("notes.txt"), "notes");
     writeManifest(
         root,
+        List.of(),
         new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR),
         new OutputData("docs/target/classes", "docs", LatheLayout.CLASSES_DIR));
 
@@ -141,7 +144,8 @@ class LatheLifecycleParticipantTest {
     final Path latheDir = Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR));
     Files.createDirectories(latheDir.resolve("apt/classes"));
     final Path unreadable = Files.createDirectories(root.resolve("apt/target/classes/sub"));
-    writeManifest(root, new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR));
+    writeManifest(
+        root, List.of(), new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR));
     participant.startReactorLock(latheDir);
     final var session =
         new MavenSession(
@@ -155,6 +159,145 @@ class LatheLifecycleParticipantTest {
     }
 
     assertThat(lockFile(latheDir)).doesNotExist();
+  }
+
+  private static final String CORE_POM =
+      """
+      <project>
+        <modelVersion>4.0.0</modelVersion>
+        <artifactId>core</artifactId>
+        <dependencies>
+          <dependency><groupId>org.example</groupId><artifactId>lib</artifactId></dependency>
+        </dependencies>
+      </project>
+      """;
+
+  // sortpom sorts core's POM when core builds, after the root project's sync fingerprinted it: the
+  // model is the one Maven read. app gained a dependency during the build, which needs a sync. The
+  // parent is as synced, and a batch marker is watched by touch, with no fingerprint.
+  @Test
+  void refreshBuildFiles_pomReformattedDuringTheBuild_recordedNowAndAChangedModelKept(
+      @TempDir final Path root) throws Exception {
+    final Path parentPom =
+        pom(root, "pom.xml", "<project><artifactId>parent</artifactId></project>");
+    final Path corePom = pom(root, "core/pom.xml", CORE_POM);
+    final Path appPom = pom(root, "app/pom.xml", CORE_POM.replace(">core<", ">app<"));
+    final List<MavenProject> projects =
+        List.of(project(parentPom), project(corePom), project(appPom));
+    final List<BuildFileData> synced =
+        List.of(
+            new BuildFileData("pom.xml", FileUtil.fingerprint(parentPom)),
+            new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)),
+            new BuildFileData("app/pom.xml", FileUtil.fingerprint(appPom)),
+            new BuildFileData("make/_the.core_batch", null));
+    writeManifest(root, synced);
+    final var participant = new LatheLifecycleParticipant();
+    participant.readReactor(root, projects);
+    Files.writeString(
+        corePom,
+        """
+        <project>
+          <!-- sorted -->
+          <artifactId>core</artifactId>
+          <dependencies>
+            <dependency>
+              <artifactId>lib</artifactId>
+              <groupId>org.example</groupId>
+            </dependency>
+          </dependencies>
+          <modelVersion>4.0.0</modelVersion>
+        </project>
+        """);
+    Files.writeString(
+        appPom,
+        CORE_POM
+            .replace(">core<", ">app<")
+            .replace(
+                "</dependencies>",
+                "<dependency><groupId>org.example</groupId><artifactId>more</artifactId></dependency></dependencies>"));
+
+    participant.afterSessionEnd(session(projects));
+
+    assertThat(manifest(root).buildFiles())
+        .containsExactly(
+            synced.get(0),
+            new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)),
+            synced.get(2),
+            synced.get(3));
+  }
+
+  // A build that ran no sync: the manifest is an older sync's, from before core was edited, so it
+  // says nothing about what this build read, and core still asks for a sync.
+  @Test
+  void refreshBuildFiles_syncedFingerprintIsNotWhatMavenRead_kept(@TempDir final Path root)
+      throws Exception {
+    final Path corePom = pom(root, "core/pom.xml", CORE_POM);
+    final List<BuildFileData> synced =
+        List.of(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)));
+    writeManifest(root, synced);
+    Files.writeString(corePom, CORE_POM.replace("lib", "edited"));
+    final List<MavenProject> projects = List.of(project(corePom));
+    final var participant = new LatheLifecycleParticipant();
+    participant.readReactor(root, projects);
+    Files.writeString(corePom, CORE_POM.replace("lib", "edited").replace("  ", "\t"));
+
+    participant.afterSessionEnd(session(projects));
+
+    assertThat(manifest(root).buildFiles()).isEqualTo(synced);
+  }
+
+  // A fresh checkout has no .lathe/ when the build starts, so it takes no lock; its first sync
+  // writes the manifest, and a POM the build reformatted is recorded all the same.
+  @Test
+  void afterSessionEnd_firstSyncOfAFreshCheckout_reformattedPomRecorded(@TempDir final Path root)
+      throws Exception {
+    final Path corePom = pom(root, "core/pom.xml", CORE_POM);
+    final List<MavenProject> projects = List.of(project(corePom));
+    final var participant = new LatheLifecycleParticipant();
+    participant.readReactor(root, projects);
+    participant.startReactorLock(root.resolve(LatheLayout.LATHE_DIR));
+    writeManifest(root, List.of(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom))));
+    Files.writeString(corePom, CORE_POM.replace("  ", "    "));
+
+    participant.afterSessionEnd(session(projects));
+
+    assertThat(manifest(root).buildFiles())
+        .containsExactly(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)));
+    assertThat(lockFile(root.resolve(LatheLayout.LATHE_DIR))).doesNotExist();
+  }
+
+  // As Maven reads a reactor project: its file, and the model it held then.
+  private static MavenProject project(final Path pom) throws Exception {
+    try (final var in = Files.newInputStream(pom)) {
+      final Model model = new MavenXpp3Reader().read(in);
+      final var project = new MavenProject(model.clone());
+      project.setFile(pom.toFile());
+      project.setOriginalModel(model);
+      return project;
+    }
+  }
+
+  // Maven 3.6.3, the API floor, has no session constructor left undeprecated.
+  @SuppressWarnings("deprecation")
+  private static MavenSession session(final List<MavenProject> projects) {
+    final var session =
+        new MavenSession(
+            null, null, new DefaultMavenExecutionRequest(), new DefaultMavenExecutionResult());
+    session.setProjects(projects);
+    return session;
+  }
+
+  private static Path pom(final Path root, final String rel, final String content)
+      throws IOException {
+    final Path file = root.resolve(rel);
+    Files.createDirectories(file.getParent());
+    return Files.writeString(file, content);
+  }
+
+  private static WorkspaceManifestData manifest(final Path root) throws IOException {
+    return Json.read(
+        root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+        WorkspaceManifestData.class);
   }
 
   // Maven found app up to date, so its stamps lack what the build compiled; lib has its record from
@@ -200,7 +343,8 @@ class LatheLifecycleParticipantTest {
     return moduleDir;
   }
 
-  private static void writeManifest(final Path root, final OutputData... outputs)
+  private static void writeManifest(
+      final Path root, final List<BuildFileData> buildFiles, final OutputData... outputs)
       throws IOException {
     Json.write(
         new WorkspaceManifestData(
@@ -210,7 +354,7 @@ class LatheLifecycleParticipantTest {
             List.of(),
             null,
             List.of(),
-            List.of(),
+            buildFiles,
             List.of(),
             List.of(outputs),
             null),
