@@ -8,11 +8,13 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Optional;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
@@ -38,6 +40,8 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   // it in afterSessionEnd; null when this build holds none. An in-JVM forked build is the only
   // overlap, and the staleness TTL is its backstop.
   private BuildLock buildLock;
+  // The manifest's mtime when the lock was taken: a later one means this build's sync wrote it.
+  private FileTime manifestAtStart = FileTime.fromMillis(0);
 
   @Override
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
@@ -84,6 +88,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     try {
       if (buildLock != null) {
         mirrorLateOutputs(buildLock.latheDir().getParent());
+        refreshBuildFiles(buildLock.latheDir().getParent(), manifestAtStart);
         recordBuilt(buildLock.latheDir().getParent(), succeeded(session));
       }
     } finally {
@@ -109,6 +114,47 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
       // must never fail the build.
       LOG.debug("[mirror] late build output not copied under {}", workspaceRoot, e);
     }
+  }
+
+  // A build can rewrite a POM after the sync fingerprinted it, as sortpom does when each module
+  // builds, and the server would then ask for a sync that changes nothing. When this build wrote
+  // the manifest, it records what the POMs hold once the build has ended; a POM edited by hand
+  // meanwhile is taken as the build's too. Best-effort, like the late outputs.
+  static void refreshBuildFiles(final Path workspaceRoot, final FileTime manifestAtStart) {
+    final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    final Path manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+    try {
+      if (!Files.isRegularFile(manifestPath)
+          || Files.getLastModifiedTime(manifestPath).compareTo(manifestAtStart) <= 0) {
+        return;
+      }
+
+      final WorkspaceManifestData manifest = Json.read(manifestPath, WorkspaceManifestData.class);
+      final List<BuildFileData> current =
+          manifest.buildFiles().stream()
+              .map(file -> fingerprintedNow(workspaceRoot, file))
+              .toList();
+      if (current.equals(manifest.buildFiles())) {
+        return;
+      }
+
+      FileUtil.writeIfChanged(
+          latheDir, manifestPath, Json.toJson(manifest.withBuildFiles(current)), false);
+      LOG.info("[sync] build files the build rewrote — fingerprints updated in {}", manifestPath);
+    } catch (final IOException | RuntimeException e) {
+      LOG.debug("[sync] build-file fingerprints not updated in {}", manifestPath, e);
+    }
+  }
+
+  // A file watched by touch (no fingerprint), or one gone, keeps its entry.
+  private static BuildFileData fingerprintedNow(
+      final Path workspaceRoot, final BuildFileData file) {
+    final Path path = workspaceRoot.resolve(file.path());
+    if (file.fingerprint() == null || !Files.isRegularFile(path)) {
+      return file;
+    }
+
+    return new BuildFileData(file.path(), IOUtil.unchecked(() -> FileUtil.fingerprint(path)));
   }
 
   private static List<Path> succeeded(final MavenSession session) {
@@ -167,6 +213,16 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   void startReactorLock(final Path latheDir) {
     buildLock = BuildLock.hold(latheDir).orElse(null);
+    manifestAtStart = modifiedTime(latheDir.resolve(LatheLayout.WORKSPACE_JSON));
+  }
+
+  // The epoch for a manifest not written yet: any the build writes is newer.
+  private static FileTime modifiedTime(final Path file) {
+    if (!Files.isRegularFile(file)) {
+      return FileTime.fromMillis(0);
+    }
+
+    return IOUtil.unchecked(() -> Files.getLastModifiedTime(file));
   }
 
   void stopReactorLock() {

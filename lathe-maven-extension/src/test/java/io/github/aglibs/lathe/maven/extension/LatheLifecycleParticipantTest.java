@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
@@ -15,6 +16,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Map;
@@ -104,6 +106,7 @@ class LatheLifecycleParticipantTest {
     Files.writeString(neverCompiled.resolve("notes.txt"), "notes");
     writeManifest(
         root,
+        List.of(),
         new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR),
         new OutputData("docs/target/classes", "docs", LatheLayout.CLASSES_DIR));
 
@@ -141,7 +144,8 @@ class LatheLifecycleParticipantTest {
     final Path latheDir = Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR));
     Files.createDirectories(latheDir.resolve("apt/classes"));
     final Path unreadable = Files.createDirectories(root.resolve("apt/target/classes/sub"));
-    writeManifest(root, new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR));
+    writeManifest(
+        root, List.of(), new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR));
     participant.startReactorLock(latheDir);
     final var session =
         new MavenSession(
@@ -155,6 +159,88 @@ class LatheLifecycleParticipantTest {
     }
 
     assertThat(lockFile(latheDir)).doesNotExist();
+  }
+
+  // sortpom sorts core's POM when core builds, after the root project's sync fingerprinted it;
+  // the parent POM stays as synced, and a batch marker is watched by touch, with no fingerprint.
+  @Test
+  void refreshBuildFiles_pomRewrittenAfterTheSync_recordsItsContentNow(@TempDir final Path root)
+      throws IOException {
+    final Path corePom = pom(root, "core/pom.xml", "<project><dependencies/></project>");
+    final Path parentPom = pom(root, "pom.xml", "<project/>");
+    final var synced =
+        List.of(
+            new BuildFileData("pom.xml", FileUtil.fingerprint(parentPom)),
+            new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)),
+            new BuildFileData("make/_the.core_batch", null));
+    writeManifest(root, synced);
+    Files.writeString(corePom, "<project><dependencies></dependencies></project>");
+
+    LatheLifecycleParticipant.refreshBuildFiles(root, FileTime.fromMillis(0));
+
+    assertThat(manifest(root).buildFiles())
+        .containsExactly(
+            synced.get(0),
+            new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)),
+            synced.get(2));
+  }
+
+  // A build that ran no sync (mvn compile) wrote no manifest: a POM edited since the last sync
+  // still differs from it, so the server still asks for one.
+  @Test
+  void refreshBuildFiles_manifestNotWrittenByThisBuild_leftAsTheSyncWroteIt(
+      @TempDir final Path root) throws IOException {
+    final Path corePom = pom(root, "core/pom.xml", "<project/>");
+    final var synced = List.of(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)));
+    writeManifest(root, synced);
+    final FileTime written =
+        Files.getLastModifiedTime(
+            root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    Files.writeString(corePom, "<project><edited/></project>");
+
+    LatheLifecycleParticipant.refreshBuildFiles(root, written);
+    LatheLifecycleParticipant.refreshBuildFiles(
+        root.resolve("never-synced"), FileTime.fromMillis(0));
+
+    assertThat(manifest(root).buildFiles()).isEqualTo(synced);
+  }
+
+  // The lock is taken before the build syncs: the manifest the sync writes then is newer.
+  @SuppressWarnings("deprecation")
+  @Test
+  void afterSessionEnd_syncWroteTheManifestThenThePomChanged_fingerprintUpdated(
+      @TempDir final Path root) throws IOException {
+    final Path latheDir = Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR));
+    final Path corePom = pom(root, "core/pom.xml", "<project/>");
+    final Path manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+    writeManifest(root, List.of(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom))));
+    Files.setLastModifiedTime(manifestPath, FileTime.fromMillis(1_000));
+    participant.startReactorLock(latheDir);
+    writeManifest(root, List.of(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom))));
+    Files.writeString(corePom, "<project><sorted/></project>");
+    final var session =
+        new MavenSession(
+            null, null, new DefaultMavenExecutionRequest(), new DefaultMavenExecutionResult());
+    session.setProjects(List.of());
+
+    participant.afterSessionEnd(session);
+
+    assertThat(manifest(root).buildFiles())
+        .containsExactly(new BuildFileData("core/pom.xml", FileUtil.fingerprint(corePom)));
+    assertThat(lockFile(latheDir)).doesNotExist();
+  }
+
+  private static Path pom(final Path root, final String rel, final String content)
+      throws IOException {
+    final Path file = root.resolve(rel);
+    Files.createDirectories(file.getParent());
+    return Files.writeString(file, content);
+  }
+
+  private static WorkspaceManifestData manifest(final Path root) throws IOException {
+    return Json.read(
+        root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+        WorkspaceManifestData.class);
   }
 
   // Maven found app up to date, so its stamps lack what the build compiled; lib has its record from
@@ -200,7 +286,8 @@ class LatheLifecycleParticipantTest {
     return moduleDir;
   }
 
-  private static void writeManifest(final Path root, final OutputData... outputs)
+  private static void writeManifest(
+      final Path root, final List<BuildFileData> buildFiles, final OutputData... outputs)
       throws IOException {
     Json.write(
         new WorkspaceManifestData(
@@ -210,7 +297,7 @@ class LatheLifecycleParticipantTest {
             List.of(),
             null,
             List.of(),
-            List.of(),
+            buildFiles,
             List.of(),
             List.of(outputs),
             null),
