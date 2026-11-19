@@ -321,8 +321,28 @@ final class WritePass {
     }
 
     final StaleScan scan = withReported(staleModules(trees));
-    // A failed write keeps its source stale; once a build compiled the source, the failure is gone.
-    failedCompiles.keySet().retainAll(Set.copyOf(scan.staleFiles()));
+    // A failed write keeps its source stale; once a build compiled the source, the failure is gone,
+    // and the open files that showed it are analyzed again, or they keep showing it until a save.
+    // A build's mirror and classpath are half written, so the first pass after it does this.
+    if (!building) {
+      final Set<Path> stale = Set.copyOf(scan.staleFiles());
+      final Set<Path> built =
+          failedCompiles.keySet().stream()
+              .filter(source -> !stale.contains(source))
+              .collect(Collectors.toUnmodifiableSet());
+      if (!built.isEmpty()) {
+        failedCompiles.keySet().removeAll(built);
+        refreshLater(
+            trees.stream()
+                .filter(
+                    tree ->
+                        tree.sourcesByRoot().values().stream()
+                            .anyMatch(sources -> !Collections.disjoint(sources.keySet(), built)))
+                .map(tree -> tree.config().moduleDir())
+                .collect(Collectors.toUnmodifiableSet()));
+      }
+    }
+
     final long sourcesMs = scanned.elapsedMs();
     // By mtime, not stamp: the MCP engine stamps the files it writes, so an editor's server on the
     // same workspace never finds them stale.

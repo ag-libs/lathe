@@ -12,8 +12,12 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import java.io.Closeable;
 import java.net.URI;
 import java.nio.file.Files;
@@ -76,6 +80,82 @@ class SaveTest extends ServiceTestBase {
         .publishDiagnostics(argThat(p -> isFor(p, note) && !hasMessage(p, "noted by processor")));
     verify(client, never())
         .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
+  }
+
+  // A saved file uses a library its module does not have yet, so its write fails. The sync that
+  // adds the library compiles the file and reloads the workspace: the failure is gone, and the open
+  // file, unchanged since the save, must not keep showing it until the next save.
+  @Test
+  void didSave_writeFailsThenSyncCompilesItWithTheLibrary_failureGoneFromThePublish()
+      throws Exception {
+    final Path helper =
+        TestCompiler.writeAt(
+            tmp.resolve("library-src/lib/Helper.java"),
+            "package lib; public class Helper {}",
+            1_000L);
+    final Path library = tmp.resolve("library");
+    TestJavac.compileToDir(library, helper);
+    final Path user =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/User.java", "package com.example; class User {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(user, Files.readString(user));
+    awaitWorkerIdle();
+
+    final String usesHelper = "package com.example; class User { lib.Helper helper; }";
+    change(user, usesHelper, 2);
+    TestCompiler.writeAt(user, usesHelper, 5_000L);
+    save(user);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    verify(client, timeout(TIMEOUT_MS))
+        .publishDiagnostics(argThat(p -> isFor(p, user) && hasMessage(p, "package lib")));
+    clearInvocations(client);
+
+    // As after a real sync: the scan tick reloads the workspace and the open file is compiled
+    // again before the next write pass scans the sources.
+    syncWithLibrary(user, library);
+    verify(client, timeout(TIMEOUT_MS))
+        .showMessage(argThat(m -> m.getMessage().contains("workspace reloaded")));
+    awaitWorkerIdle();
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    verify(client, timeout(TIMEOUT_MS))
+        .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
+    awaitWorkerIdle();
+    final List<PublishDiagnosticsParams> published =
+        mockingDetails(client).getInvocations().stream()
+            .filter(call -> call.getMethod().getName().equals("publishDiagnostics"))
+            .map(call -> call.<PublishDiagnosticsParams>getArgument(0))
+            .filter(params -> isFor(params, user))
+            .toList();
+    assertThat(published.get(published.size() - 1).getDiagnostics()).isEmpty();
+  }
+
+  // What a sync that adds the library does: the build compiles the source into the module's mirror
+  // and stamps it, writes the module's new classpath and records the changed build file.
+  private void syncWithLibrary(final Path source, final Path library) throws Exception {
+    final Path moduleDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("module");
+    TestJavac.compileToDir(moduleDir.resolve(LatheLayout.CLASSES_DIR), List.of(library), source);
+    final Path rel = Path.of("com/example/User.java");
+    final SourceStamp stamp = TestCompiler.buildStamp(source);
+    CompiledStamps.writeAll(
+        moduleDir, LatheLayout.CLASSES_DIR, Map.of(rel, stamp), Map.of(rel, stamp.content()));
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        List.of(tmp.resolve("module/src/main/java")),
+        null,
+        List.of(library),
+        List.of(),
+        List.of());
+    TestCompiler.recordBuildFiles(
+        tmp, List.of(Files.writeString(tmp.resolve("pom.xml"), "<project/>")));
   }
 
   // Under -Werror the write fails on the processor's warning: the saved file shows it once, as the
