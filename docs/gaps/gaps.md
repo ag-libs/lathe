@@ -2343,34 +2343,6 @@ None yet.
 
 ---
 
-## MC-99 — `run_test` with a `method` but no `scope` runs the whole class
-
-**Status: accepted** (triaged 2026-11-18: still on main `cdf57f1`; small, and the answer misleads)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP `run_test`.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-17).
-
-### Observed behaviour
-
-`run_test` with `file` `OwnerTests.java` and `method` `addPetAddsPersistedPet`, without `scope`, answers "PASS — 2 passed": it ran the class.
-The schema says `method` is required when `scope` is `method`, but an agent that names a method means that method, and nothing says it was ignored.
-
-### Fix direction
-
-A `method` with no `scope` means `scope=method`; a `method` with another scope is refused, naming the conflict.
-Still on main `dbbdabf1` (2026-11-19): `LatheMcpTools.testScope` defaults to `CLASS`, and `LatheEngine` filters by `method` only for `METHOD`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results
 
 **Status: deferred** (triaged 2026-11-18: low; the count is right, only the first lines are)

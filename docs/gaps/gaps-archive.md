@@ -13871,6 +13871,40 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-99 — `run_test` with a `method` but no `scope` runs the whole class — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: MCP `run_test`.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-17).
+
+### Observed behaviour
+
+`run_test` with `file` `OwnerTests.java` and `method` `addPetAddsPersistedPet`, without `scope`, answers "PASS — 2 passed": it ran the class.
+The schema says `method` is required when `scope` is `method`, but an agent that names a method means that method, and nothing says it was ignored.
+
+### Fix direction
+
+A `method` with no `scope` means `scope=method`; a `method` with another scope is refused, naming the conflict.
+
+### Resolution
+
+A `method` with no `scope` now runs that method: `run_test` reads it as `scope=method`.
+A `method` with `scope` `class` or `package` is refused, `run_test 'method' runs one method: leave out 'scope' or set it to method, not class`, instead of being dropped.
+A blank `method`, as a client may send for an unset field, counts as none.
+The schema says so on both arguments.
+
+### Regression targets
+
+- `LatheMcpToolsTest.runTest_methodWithAnotherScope_returnsErrorNamingTheConflict`
+- `LatheMcpToolsTest.testScope_noScope_methodWhenOneIsNamedElseClass`
+- `McpSmokeTest.runTest_methodWithoutScope_runsOnlyThatMethod` (invoker `multi-module`)
+
+---
+
 ## MC-94 — A `file://` URI as a tool's `file` is read as a relative path — done
 
 **Status: done** (2026-11-18)

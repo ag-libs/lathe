@@ -153,4 +153,20 @@ class McpSmokeTest {
         .contains("Ran: com.example.jpms.HelloTest")
         .doesNotContain("\"isError\":true");
   }
+
+  @Test
+  void runTest_methodWithoutScope_runsOnlyThatMethod() throws Exception {
+    final Path helloTest = ROOT.resolve("jpms/src/test/java/com/example/jpms/HelloTest.java");
+
+    final String response =
+        mcp.callTool(
+            "run_test",
+            "{\"file\":\"%s\",\"method\":\"greet_returnsExpectedMessage\"}"
+                .formatted(Os.json(helloTest)));
+
+    assertThat(response)
+        .containsPattern("\\b1 passed, 0 failed")
+        .contains("greet_returnsExpectedMessage")
+        .doesNotContain("\"isError\":true");
+  }
 }

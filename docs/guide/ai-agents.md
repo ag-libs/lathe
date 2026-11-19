@@ -119,7 +119,7 @@ Answers are text only, with any notes after the result, so every MCP client show
 | `outline` | `file, type` (optional) | a file's types, fields, constructors and methods in source order, indented by nesting, each with its name's line:column and declaration — the structure without reading the file, also for a file no module compiles; a file of more than 200 declarations answers its types with their member counts, and `type` outlines one of them |
 | `describe_symbol` | `file, line, symbol or column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, symbol or column, newName` | rename a symbol across the whole project and **apply the edits to disk**, including its Javadoc `@param` name; then lists, without editing, where the old name is still text (for locals, literals in the declaring scope; for members and types, literals and qualified resource mentions across the reactor), and the Java files outside every synced source root that name it |
-| `run_test` | `file, scope` (optional), `method` (with `scope=method`) | replay a test method / class / package from captured bytecode — no build; each failure comes with the last 40 lines the test printed, and a test file that does not compile is not run |
+| `run_test` | `file, scope` (optional), `method` (optional; alone it means `scope=method`) | replay a test method / class / package from captured bytecode — no build; each failure comes with the last 40 lines the test printed, and a test file that does not compile is not run |
 | `analyze_change` | `file, line, symbol or column`, optional `maxResults` | before an edit: the methods a symbol overrides and those that override or redeclare it (the first `maxResults` of each listed, all counted), production vs test reference counts, the modules that use or implement it, and the relevant tests |
 | `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step on Maven, or its `lathe-style.json`), so edits pass the build's formatting check; answers with the lines it rewrote |
 | `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match, plus static imports the file's scope already uses elsewhere; the ambiguous ones are listed with their candidates for you to pick, and names with no match are listed too, with any nested type of that name (`Map.Entry`) to write qualified, since a nested type is never imported |
@@ -135,7 +135,7 @@ occurrence nearest the column wins. `outline` gives each declaration's `line:col
 Columns, given and reported, count UTF-16 code units, as LSP does: a character outside the Basic Multilingual Plane (an emoji) before the position counts as two.
 `find_references`, `find_implementations`, `call_hierarchy`, and
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
-(`class` — default — / `method` / `package`).
+(`class` — default — / `method` / `package`); a `method` without `scope` runs that method.
 
 Each tool declares the MCP annotations that say whether it writes:
 the query tools (`outline` and `workspace_summary` included) and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
