@@ -56,8 +56,9 @@ class SourceLayoutTest {
         .containsExactly("com.verify");
   }
 
-  // The user's package leads, then the rest of their module, then the kind's scope; a typed
-  // package keeps only its rows, the user's module first, then the kind's scope.
+  // The user's package leads, then the rest of their module, then the other modules, the kind's
+  // scope first in each; a typed package keeps only its rows, the user's module first, then the
+  // kind's scope.
   @Test
   void destinations_rankedForTheUsersFileAndKind_typedPackageFiltered() throws Exception {
     final List<ModuleSourceConfig> configs = twoModules();
@@ -83,6 +84,34 @@ class SourceLayoutTest {
     assertThat(layout.destinations(context, TypeKind.TEST, "com.shared").get(0))
         .isEqualTo(new TypeDestination("app", "test", "com.shared"));
     assertThat(layout.destinations(context, TypeKind.CLASS, "com.none")).isEmpty();
+  }
+
+  // A test-only package in the user's module shows the scope ordering the rest of the module:
+  // package order alone would put it between the main and test rows of com.shared.
+  @Test
+  void destinations_testOnlyPackageInModule_kindsScopeLeadsEachRank() throws Exception {
+    source("app/src/test/java/com/app/it/AppIT.java");
+    final var layout = new SourceLayout(twoModules(), tmp);
+    final var context = new ContextInfo("app", "main", "com.app");
+
+    assertThat(layout.destinations(context, TypeKind.TEST, ""))
+        .containsExactly(
+            new TypeDestination("app", "test", "com.app"),
+            new TypeDestination("app", "main", "com.app"),
+            new TypeDestination("app", "test", "com.app.it"),
+            new TypeDestination("app", "test", "com.shared"),
+            new TypeDestination("app", "main", "com.shared"),
+            new TypeDestination("core", "main", "com.core"),
+            new TypeDestination("core", "main", "com.shared"));
+    assertThat(layout.destinations(context, TypeKind.CLASS, ""))
+        .containsExactly(
+            new TypeDestination("app", "main", "com.app"),
+            new TypeDestination("app", "test", "com.app"),
+            new TypeDestination("app", "main", "com.shared"),
+            new TypeDestination("app", "test", "com.app.it"),
+            new TypeDestination("app", "test", "com.shared"),
+            new TypeDestination("core", "main", "com.core"),
+            new TypeDestination("core", "main", "com.shared"));
   }
 
   @Test

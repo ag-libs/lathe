@@ -476,7 +476,7 @@ Requested in daily use (2026-10-31), as IntelliJ's Navigate → Test (`Ctrl+Shif
 ### Gap
 
 From a main class there is no quick way to open its test.
-`:LatheNew` → Test creates one through the full new-type dialog (and lists the main location first, see [NV-9](#nv-9--lathenew--test-from-a-main-source-file-lists-the-main-location-first)),
+`:LatheNew` → Test creates one through the full new-type dialog,
 but nothing finds an existing test, and nothing goes from a test back to the class it tests.
 
 ### Wanted behaviour
@@ -1808,38 +1808,6 @@ python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.ja
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
-
-## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
-
-**Status: accepted** (triaged 2026-11-17)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: Neovim.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-From a file under `src/main/java`, `:LatheNew` → Test offers the buffer's package twice, and the main-source row comes first.
-Accepting the top row is the natural move, yet a test belongs in the test root.
-
-### Fix direction
-
-`SourceLayout.destinations` now owns the ranking (moved from `lathe-neovim/runtime/lua/lathe/new.lua` in `6d40d341`).
-Its unfiltered list ranks both scopes equally within the buffer's package and module,
-so the alphabetical tie-break (`main` < `test`) still decides.
-The typed-package path already prefers the kind's scope; that partial improvement does not fix the unfiltered list.
-Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
-Still on main `dbbdabf1` (2026-11-19): `SourceLayout.rank` gives both scopes of the buffer's package rank 0, and the client keeps the server's order.
-
-### Regression targets
-
-None yet.
-
----
 
 # MCP / Agent Facade Gaps (MC)
 
