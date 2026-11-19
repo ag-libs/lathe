@@ -77,7 +77,7 @@ final class LatheMcpTools {
       "file":{"type":"string","description":"Absolute path to a .java file."},
       "line":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based line of the symbol."},
       "column":{"type":"integer","minimum":1,"maximum":2147483647,"description":"1-based column of the symbol, in UTF-16 code units as every column the tools report: a character outside the Basic Multilingual Plane (an emoji) counts as two. Optional with 'symbol', which needs no counting."},
-      "symbol":{"type":"string","description":"The symbol's name as written on that line (a method, field, type or variable name); finds its column, so 'column' may be left out."}\
+      "symbol":{"type":"string","description":"The symbol's name as written on that line (a method, field, type or variable name, or a qualified name as an import or a requires spells it); finds its column, so 'column' may be left out."}\
       """;
 
   // The position input plus a tool's own properties (each starting with a comma).
