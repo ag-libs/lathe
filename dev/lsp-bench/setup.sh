@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepares what the benchmark runs, into .work/ (README.md, Servers and Projects):
-#   - jdtls at the pinned version;
+#   - jdtls at the pinned version, and the java-debug bundle it loads for debugging;
 #   - the Lathe Gradle plugin and the Lathe jars it resolves, from a Lathe build of the pinned commit;
 #   - a clone of each project at its pinned commit, from the local clone where there is one.
 # The pinned Lathe build itself is installed into ~/.m2 beforehand, from a clean checkout:
@@ -23,6 +23,17 @@ if [ ! -d "$WORK/servers/jdtls/plugins" ]; then
   [ -f "$WORK/servers/$JDTLS_TARBALL" ] || curl -fsSL -o "$WORK/servers/$JDTLS_TARBALL" "$JDTLS_URL"
   mkdir -p "$WORK/servers/jdtls"
   tar xzf "$WORK/servers/$JDTLS_TARBALL" -C "$WORK/servers/jdtls"
+fi
+
+echo "== java-debug"
+JAVA_DEBUG_VSIX=vscjava.vscode-java-debug-0.60.0.vsix
+JAVA_DEBUG_URL=https://open-vsx.org/api/vscjava/vscode-java-debug/0.60.0/file/$JAVA_DEBUG_VSIX
+if [ ! -d "$WORK/servers/java-debug/extension/server" ]; then
+  [ -f "$WORK/servers/$JAVA_DEBUG_VSIX" ] || curl -fsSL -o "$WORK/servers/$JAVA_DEBUG_VSIX" "$JAVA_DEBUG_URL"
+  mkdir -p "$WORK/servers/java-debug"
+  # The plugin jar only, as Mason's java-debug-adapter package takes it from the extension.
+  python3 -I -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); z.extractall(sys.argv[2], [n for n in z.namelist() if n.startswith('extension/server/')])" \
+    "$WORK/servers/$JAVA_DEBUG_VSIX" "$WORK/servers/java-debug"
 fi
 
 echo "== Lathe Gradle plugin and jars"

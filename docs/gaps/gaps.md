@@ -968,7 +968,7 @@ and after (the machine was partly loaded, load average 3–15):
 
 ### Fix direction
 
-Batching (stage 3 of the [comparison plan](../planned/lathe-jdtls-comparison.md)) is done (#158).
+Batching (a fix the [comparison plan](../planned/lathe-jdtls-comparison.md)'s first runs called for) is done (#158).
 Verified against the code (2026-11-16): implementations of a method still compile every subtype file and every lambda or method-reference file (`ReferenceSearch.implementationsIn`), and incoming calls the reference candidates, in batches of 32 run one after another on the module's worker; only implementations of a type answer from the type index.
 What is left is FR-029's directions 2 and 3: a module's batches in parallel, and cached answers.
 

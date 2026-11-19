@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Writes report.md for one results directory of bench.py: medians per server, latency and
-correctness per query, and every set-valued answer compared between the servers.
+correctness per query, and every set-valued answer compared between the servers. With --headline,
+the five headline items (the 2026-11-19 amendment) per project from every session given.
 
     python3 dev/lsp-bench/report.py dev/lsp-bench/results/<run>
+    python3 dev/lsp-bench/report.py --headline dev/lsp-bench/results/*    # writes results/headline.md
 """
 import json
 import statistics
@@ -22,11 +24,12 @@ EXAMPLES = 10
 def load(out_dir):
     runs = {}
     for path in sorted(out_dir.glob("*.json")):
-        if path.name in ("environment.json", "baseline.json"):
+        if path.name in ("environment.json", "baseline.json", "build_truth.json"):
             continue
         result = json.loads(path.read_text())
         runs.setdefault(result["server"], []).append(result)
-    return runs
+    # Lathe first, as every table reads: files sort jdtls before lathe.
+    return {server: runs[server] for server in sorted(runs, key=lambda s: (s != "lathe", s))}
 
 
 def median(values):
@@ -224,6 +227,24 @@ def diff_section(runs):
     return lines
 
 
+def errors_lines(runs):
+    """Errors against the build, per server, from an errors session."""
+    rows = []
+    for server, results in runs.items():
+        for r in results:
+            c = (r.get("errors_vs_build") or {}).get("compare")
+            if c:
+                rows.append("| %s | %d | %d | %d of %d | %d | %d / %d | %s |" % (
+                    server, c["false_errors"], c["missed_clean_errors"], c["missed_injected"], c["injected"],
+                    c["extra_injected_errors"], c["extra_warnings"], c["missed_warnings"],
+                    ", ".join("`%s`" % u for u in c["unsettled"]) or "-"))
+    if not rows:
+        return []
+    return ["", "## Errors against the build (the build's javac, clean and with an error injected per file)", "",
+            "| Server | False errors | Build's errors missed | Injected missed | Other errors in injected files "
+            "| Warnings extra / missed | No settled answer |", "|---|---|---|---|---|---|---|"] + rows
+
+
 def failures(runs):
     lines = []
     for server, results in runs.items():
@@ -240,7 +261,227 @@ def failures(runs):
     return ["## Failures", ""] + sorted(set(lines)) if lines else []
 
 
+# -- The headline (the 2026-11-19 amendment) ---------------------------------------------------------
+
+SETUP = Path(__file__).resolve().parent / "setup"
+DEFAULT_HEAP = "2G"
+SERVERS = ("lathe", "jdtls")
+
+
+def spread(values, unit="", scale=1.0, digits=0):
+    """The median with its minimum and maximum, as every headline value is given."""
+    present = sorted(v for v in values if v is not None)
+    if not present:
+        return "-"
+    med = fmt(statistics.median(present), unit, scale, digits)
+    if len(present) == 1:
+        return med
+    return "%s (%s–%s)" % (med, fmt(present[0], "", scale, digits), fmt(present[-1], "", scale, digits))
+
+
+def with_never(values, unit, scale, digits):
+    """A spread of the runs that got there, and how many never did."""
+    never = sum(1 for v in values if v is None)
+    shown = spread(values, unit, scale, digits) if never < len(values) else "never"
+    return shown + (" (never in %d of %d)" % (never, len(values)) if 0 < never < len(values) else "")
+
+
+def setup_counts(server, debug=False):
+    """Lines, downloads and commands of a setup file (setup/README.md)."""
+    path = SETUP / ("%s%s.lua" % (server, "-debug" if debug else ""))
+    if not path.exists():
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return {"lines": sum(1 for line in lines if line.strip() and not line.strip().startswith("--")),
+            "downloads": sum(1 for line in lines if line.startswith("-- download:")),
+            "commands": sum(1 for line in lines if line.startswith("-- run:"))}
+
+
+def setup_cell(server):
+    plain, debug = setup_counts(server), setup_counts(server, debug=True)
+    if not plain:
+        return "-"
+    cell = "%d lines, %d downloads, %d commands" % (plain["lines"], plain["downloads"], plain["commands"])
+    if debug:
+        cell += "; with debugging %d, %d, %d" % (debug["lines"], debug["downloads"], debug["commands"])
+    return cell
+
+
+def sessions(dirs):
+    """{project: [(dir, environment, {server: [result]})]} of the results directories given."""
+    found = {}
+    for out_dir in dirs:
+        env_file = out_dir / "environment.json"
+        if not env_file.exists() or "-prime" in out_dir.name:
+            continue
+        env = json.loads(env_file.read_text())
+        # A labelled variant (another heap, changed jdtls settings) is reported apart, never folded in.
+        if env.get("heap", DEFAULT_HEAP) != DEFAULT_HEAP or env.get("jdtls_settings"):
+            continue
+        found.setdefault(env["project"], []).append((out_dir, env, load(out_dir)))
+    return found
+
+
+def results_of(project_sessions, server, plans, failed=False):
+    """A server's runs of those plans; with failed, the runs that ended in an error too."""
+    return [(out_dir, r) for out_dir, _env, runs in project_sessions for r in runs.get(server, [])
+            if r.get("plan") in plans and (failed or not r.get("error"))]
+
+
+def run_values(project_sessions, server, plans, value):
+    """A value of every run of those plans, None for a run the server failed: what with_never counts.
+    A run the harness never started (a busy machine, a wrong checkout) is no answer either way."""
+    return [None if r.get("error") else value(r) for _d, r in results_of(project_sessions, server, plans, failed=True)
+            if not r.get("not_started")]
+
+
+def case_times(results, name):
+    """Every timed run of a scenario row (a typed error), across the runs given."""
+    return [t for _d, r in results for t in (r["cases"].get(name) or {}).get("times", [])]
+
+
+def branch_right_ms(switch):
+    """A branch switch's time until every answer it changed was right; None if one never was."""
+    times = [switch[k] for k, changed in zip(("added_type_ms", "deleted_type_ms", "references_ms", "diagnostics_ms"),
+                                             switch.get("changed", [True] * 4)) if changed]
+    return None if any(t is None for t in times) else max(times, default=0)
+
+
+def parity(project_sessions):
+    """{row: {server: (supported, correct)}} from each server's parity run, and the set-valued rows'
+    agreement between the servers."""
+    rows, answers = {}, {}
+    for server in SERVERS:
+        for _d, r in results_of(project_sessions, server, ("parity",))[:1]:
+            for name, case in r["cases"].items():
+                rows.setdefault(name, {})[server] = (case.get("supported", False), bool(case.get("correct")))
+                if case.get("supported") and case.get("method") in SET_METHODS and case.get("answer"):
+                    answers.setdefault(name, {})[server] = set(keys(case["answer"]))
+    agree = {name: a["lathe"] == a["jdtls"] for name, a in answers.items() if set(a) == set(SERVERS)}
+    return rows, agree
+
+
+def headline_rows(project, project_sessions):
+    """The headline table of one project: each row (label, {server: cell}, sources)."""
+    def per_server(fn):
+        return {server: fn(server) for server in SERVERS}
+
+    def sources(plans):
+        files = sorted({"%s/%s-*.json" % (d.name, server) for server in SERVERS
+                        for d, _r in results_of(project_sessions, server, plans)})
+        return files
+
+    cold = lambda server: results_of(project_sessions, server, ("ready",))
+    # Memory from the warm runs that answer the queries only: the parity run also debugs a main method,
+    # whose JVM is the server's child and counts in its memory.
+    memory = lambda server: results_of(project_sessions, server, ("start",))
+    errors = lambda server: results_of(project_sessions, server, ("errors",))
+    branch = lambda server: [r["branch_switch"] for _d, r in results_of(project_sessions, server, ("branch",))
+                             if r.get("branch_switch")]
+    build = lambda server: [r["build_change"] for _d, r in results_of(project_sessions, server, ("build",))
+                            if r.get("build_change")]
+
+    def first_answer(server):
+        tried = [r for _d, _e, runs in project_sessions for r in runs.get(server, [])
+                 if r.get("plan") == "ready" and not r.get("not_started")]
+        runs = [r for _d, r in cold(server)]
+        if not tried:
+            return "-"
+        if not runs:
+            return "no answer (%s)" % tried[0].get("error")
+        parts = "build %s, ready %s" % (spread([r.get("build_ms") for r in runs], " s", 1000, 1),
+                                         spread([r.get("ready_ms") for r in runs], " s", 1000, 1))
+        if server == "jdtls":
+            parts += ", import %s" % spread([r.get("import_ms") for r in runs], " s", 1000, 1)
+        return "%s (%s)" % (with_never(run_values(project_sessions, server, ("ready",), first_answer_ms),
+                                       " s", 1000, 1), parts)
+
+    def compare(server, key):
+        found = [(r["errors_vs_build"]["compare"]) for _d, r in errors(server) if r.get("errors_vs_build")]
+        if not found:
+            return "-"
+        c = found[0]
+        if key == "missed_injected":
+            return "%d of %d" % (c[key], c["injected"])
+        return str(c[key])
+
+    def typed(server, name):
+        times = case_times(errors(server), name)
+        return with_never(times, " s", 1000, 2) if times else "-"
+
+    def parity_cell(server):
+        rows, _agree = parity(project_sessions)
+        right = sum(1 for r in rows.values() if r.get(server, (False, False))[1])
+        return "%d of %d" % (right, len(rows)) if rows else "-"
+
+    return [
+        ("Fresh checkout to first answer", per_server(first_answer), sources(("ready",))),
+        ("Reopening the project", per_server(lambda s: with_never(
+            run_values(project_sessions, s, ("start", "parity"), lambda r: r.get("ready_ms")), " s", 1000, 1)),
+         sources(("start", "parity"))),
+        ("Memory, peak / idle", per_server(lambda s: "%s / %s" % (
+            spread([r.get("peak_mb") for _d, r in memory(s)], " MB"), spread([r.get("idle_mb") for _d, r in memory(s)], " MB"))),
+         sources(("start",))),
+        ("False errors on a clean checkout", per_server(lambda s: compare(s, "false_errors")), sources(("errors",))),
+        ("Injected errors missed", per_server(lambda s: compare(s, "missed_injected")), sources(("errors",))),
+        ("Typed error shown after", per_server(lambda s: typed(s, "diagnostics: typing an error: shows")),
+         sources(("errors",))),
+        ("Typed error gone after the undo", per_server(lambda s: typed(s, "diagnostics: typing an error: settles without it")),
+         sources(("errors",))),
+        ("Right again after a branch switch", per_server(lambda s: with_never([branch_right_ms(b) for b in branch(s)],
+                                                                              " s", 1000, 1) if branch(s) else "-"),
+         sources(("branch",))),
+        ("Right again after a dependency is added", per_server(lambda s: with_never([b.get("fixed_ms") for b in build(s)],
+                                                                                    " s", 1000, 1) if build(s) else "-"),
+         sources(("build",))),
+        ("Features with the same answers", per_server(parity_cell), sources(("parity",))),
+    ]
+
+
+def parity_lines(project_sessions):
+    rows, agree = parity(project_sessions)
+    if not rows:
+        return []
+    mark = lambda cell: "-" if cell is None else ("✓" if cell[1] else ("✗ unsupported" if not cell[0] else "✗"))
+    lines = ["", "| Feature | Lathe | jdtls | Same locations |", "|---|---|---|---|"]
+    for name in sorted(rows):
+        lines.append("| %s | %s | %s | %s |" % (name, mark(rows[name].get("lathe")), mark(rows[name].get("jdtls")),
+                                               {True: "yes", False: "no"}.get(agree.get(name), "-")))
+    return lines
+
+
+def headline(dirs):
+    found = sessions(dirs)
+    lines = ["# Headline", "",
+             "Every value is the median, with its minimum and maximum, of the runs the sessions below hold "
+             "(the 2026-11-19 amendment); a server that never got there says so.", "",
+             "Setup in Neovim (setup/): Lathe %s; jdtls %s." % (setup_cell("lathe"), setup_cell("jdtls"))]
+    for project in sorted(found):
+        project_sessions = found[project]
+        envs = [env for _d, env, _r in project_sessions]
+        versions = sorted({"Lathe %s, jdtls %s" % (e["versions"]["lathe"], e["versions"]["jdtls"]) for e in envs})
+        lines += ["", "## %s" % project, "",
+                  "Commit `%s`; %s." % (envs[0]["project_commit"][:10], "; ".join(versions)), "",
+                  "| | Lathe | jdtls |", "|---|---|---|"]
+        rows = headline_rows(project, project_sessions)
+        for label, cells, _sources in rows:
+            lines.append("| %s | %s | %s |" % (label, cells["lathe"], cells["jdtls"]))
+        lines += parity_lines(project_sessions)
+        lines += ["", "Sources:", ""]
+        for label, _cells, files in rows:
+            lines.append("- %s: %s" % (label, ", ".join("`%s`" % f for f in files) or "none"))
+        lines += ["", "Commands:", ""] + sorted({"- `%s` (%s)" % (env["command"], d.name)
+                                                 for d, env, _r in project_sessions})
+    return lines
+
+
 def main():
+    if sys.argv[1] == "--headline":
+        dirs = [Path(a) for a in sys.argv[2:] if Path(a).is_dir()]
+        out = (dirs[0].parent if dirs else Path(".")) / "headline.md"
+        out.write_text("\n".join(headline(dirs)) + "\n", encoding="utf-8")
+        print("headline:", out)
+        return
     out_dir = Path(sys.argv[1])
     env = json.loads((out_dir / "environment.json").read_text())
     runs = load(out_dir)
@@ -268,7 +509,7 @@ def main():
         "",
         "## Queries (warm runs, medians)",
         "",
-    ] + query_table(runs) + [""] + diff_section(runs) + [""] + failures(runs)
+    ] + query_table(runs) + errors_lines(runs) + [""] + diff_section(runs) + [""] + failures(runs)
     (out_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("report:", out_dir / "report.md")
 
