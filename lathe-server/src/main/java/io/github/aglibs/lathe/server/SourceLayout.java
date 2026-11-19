@@ -72,7 +72,8 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
 
   // Where a new type of the kind may go: each package of each module, once per scope it exists in,
   // ranked for the file the user is in -- its own package, then the rest of its module, then the
-  // scope the kind targets (a test lands in the test root) -- then by module, package and scope.
+  // other modules -- with the scope the kind targets first in each rank (a test lands in the test
+  // root), then by module, package and scope.
   // With a package, only that package's destinations, best first. The context may be null. A
   // source set's own tree is left out, as from packages(). It walks every module's source trees, so
   // it is not for the event loop.
@@ -85,8 +86,8 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
             .thenComparing(TypeDestination::scope);
     final Comparator<TypeDestination> ranked =
         pkg.isEmpty()
-            ? Comparator.comparingInt(
-                    (TypeDestination destination) -> rank(destination, context, scope))
+            ? Comparator.comparingInt((TypeDestination destination) -> rank(destination, context))
+                .thenComparing(destination -> !destination.scope().equals(scope))
                 .thenComparing(order)
             : Comparator.comparingInt(
                     (TypeDestination destination) -> -preference(destination, context, scope))
@@ -106,8 +107,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
         .toList();
   }
 
-  private static int rank(
-      final TypeDestination destination, final ContextInfo context, final String scope) {
+  private static int rank(final TypeDestination destination, final ContextInfo context) {
     final boolean inModule = context != null && destination.module().equals(context.moduleRel());
     if (inModule && !context.pkg().isEmpty() && destination.pkg().equals(context.pkg())) {
       return 0;
@@ -117,7 +117,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
       return 1;
     }
 
-    return destination.scope().equals(scope) ? 2 : 3;
+    return 2;
   }
 
   // For a typed package: the user's module counts more than the kind's scope.
