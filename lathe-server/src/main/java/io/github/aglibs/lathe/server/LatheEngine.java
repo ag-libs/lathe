@@ -26,6 +26,7 @@ import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact.Family;
 import io.github.aglibs.lathe.server.engine.LatheDefinition;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
@@ -1259,8 +1260,8 @@ public final class LatheEngine {
                                     .search()
                                     .familyFuture(uri, pos)
                                     .thenCombine(
-                                        session.search().overriddenFuture(uri, pos),
-                                        (family, overrides) -> Map.entry(overrides, family))
+                                        session.search().symbolFamilyFuture(uri, pos),
+                                        (members, symbol) -> Map.entry(symbol, members))
                                     .thenCompose(
                                         found ->
                                             session
@@ -1272,21 +1273,21 @@ public final class LatheEngine {
                                                     references ->
                                                         new ChangeFacts(
                                                             hover,
-                                                            found.getKey().isPresent(),
-                                                            found.getKey().orElse(List.of()),
+                                                            found.getKey().family(),
+                                                            found.getKey().overrides(),
                                                             found.getValue(),
                                                             references))))));
     final ChangeFacts facts = read.value();
     final String signature = hoverText(facts.hover());
-    final CappedLocations overriddenBy = familyMembers(facts.family(), false, maxResults);
-    final CappedLocations redeclaredBy = familyMembers(facts.family(), true, maxResults);
+    final CappedLocations overriddenBy = familyMembers(facts.members(), false, maxResults);
+    final CappedLocations redeclaredBy = familyMembers(facts.members(), true, maxResults);
     // Every reference is counted: a count from a capped list would read as the whole.
     final List<Path> paths =
         facts.references().stream().map(ref -> LatheUri.toPath(ref.getUri())).toList();
     // A signature change breaks every implementation and redeclaration, in a module that never
     // calls it too.
     final List<Path> implementationPaths =
-        facts.family().stream().map(hit -> LatheUri.toPath(hit.location().getUri())).toList();
+        facts.members().stream().map(hit -> LatheUri.toPath(hit.location().getUri())).toList();
     final Map<Path, ModulePlacement> placements =
         query(
             session ->
@@ -1332,7 +1333,7 @@ public final class LatheEngine {
     return new Noted<>(
         new LatheChangeImpact(
             signature,
-            facts.method(),
+            facts.family(),
             facts.overrides(),
             overriddenBy.locations(),
             overriddenBy.total(),
@@ -1345,23 +1346,25 @@ public final class LatheEngine {
         read.notes());
   }
 
-  // What analyze_change reads about the symbol, in one request: its hover, whether it is a method,
-  // the methods it overrides, the family below it, and its references. The hover may be absent.
+  // What analyze_change reads about the symbol, in one request: its hover, what kind of family it
+  // has, the methods it overrides, the members below it, and its references. The hover may be
+  // absent.
   private record ChangeFacts(
       Hover hover,
-      boolean method,
+      Family family,
       List<String> overrides,
-      List<ImplementationHit> family,
+      List<ImplementationHit> members,
       List<? extends Location> references) {
 
     ChangeFacts {
       ValidCheck.check()
-          .notNull(overrides, "overrides")
           .notNull(family, "family")
+          .notNull(overrides, "overrides")
+          .notNull(members, "members")
           .notNull(references, "references")
           .validate();
       overrides = List.copyOf(overrides);
-      family = List.copyOf(family);
+      members = List.copyOf(members);
     }
   }
 

@@ -280,12 +280,13 @@ final class LatheMcpTools {
             positionSchema(
                 """
                     ,"maxResults":{"type":"integer","minimum":1,"maximum":2147483647,
-                     "description":"Max members of each override-family list to show (default 50); the counts are of all."}\
+                     "description":"Max members of each family list (overrides, subtypes) to show (default 50); the counts are of all."}\
                     """),
             READ_ONLY,
             """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
-                the methods it overrides and those that override or redeclare it, how many \
+                the methods it overrides and those that override or redeclare it, or a type's \
+                subtypes (a field or variable has no family), how many \
                 production vs test references it has, \
                 which reactor modules use or implement it, and the relevant test classes. Use it to scope a rename \
                 or signature change before making it.""",

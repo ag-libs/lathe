@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.CallHierarchyItemData;
 import io.github.aglibs.lathe.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.ImplementationHit;
 import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
+import io.github.aglibs.lathe.analysis.ReferenceFeatures;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceRole;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
@@ -22,6 +23,7 @@ import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact.Family;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -870,16 +872,36 @@ final class ReferenceSearch {
                     target, request, cursorWorker, indexSnapshot, lambdaSnapshot));
   }
 
-  // The methods the one at the position overrides, as Type#name(parameters), nearest first; empty
-  // when the position is on no method.
-  CompletableFuture<Optional<List<String>>> overriddenFuture(final String uri, final Position pos) {
+  // What kind of family the symbol at the position has and, for a method, the methods it
+  // overrides, as Type#name(parameters), nearest first.
+  CompletableFuture<SymbolFamily> symbolFamilyFuture(final String uri, final Position pos) {
     final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
     if (route.isEmpty()) {
-      return CompletableFuture.completedFuture(Optional.empty());
+      return CompletableFuture.completedFuture(new SymbolFamily(Family.NONE, List.of()));
     }
 
     final var request = router.featureRequest(route.get().doc(), pos);
-    return route.get().worker().submit(session -> session.references().overriddenMethods(request));
+    return route.get().worker().submit(session -> symbolFamily(session.references(), request));
+  }
+
+  private static SymbolFamily symbolFamily(
+      final ReferenceFeatures references, final SourceFeatureRequest request) {
+    final Optional<List<String>> overrides = references.overriddenMethods(request);
+    if (overrides.isPresent()) {
+      return new SymbolFamily(Family.METHOD, overrides.get());
+    }
+
+    final ReferenceTarget target = references.resolveTarget(request);
+    return new SymbolFamily(
+        target != null && target.isType() ? Family.TYPE : Family.NONE, List.of());
+  }
+
+  record SymbolFamily(Family family, List<String> overrides) {
+
+    SymbolFamily {
+      ValidCheck.check().notNull(family, "family").notNull(overrides, "overrides").validate();
+      overrides = List.copyOf(overrides);
+    }
   }
 
   private CompletableFuture<List<ImplementationHit>> implementationForTarget(
