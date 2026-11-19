@@ -1,6 +1,6 @@
 # Lathe and jdtls — LSP Benchmark Pre-Registration
 
-**Status: PRE-REGISTRATION, drafted 2026-11-06, revised 2026-11-07; first runs 2026-11-07/08; amended 2026-11-07, 2026-11-08 and 2026-11-11 (see [Amendments](#amendments)).**
+**Status: PRE-REGISTRATION, drafted 2026-11-06, revised 2026-11-07; first runs 2026-11-07/08; amended 2026-11-07, 2026-11-08, 2026-11-11 and 2026-11-19 (see [Amendments](#amendments)).**
 This file fixes the projects, servers, queries, metrics and fairness rules before any result exists, so none of them can be chosen after seeing the numbers.
 It is committed ahead of the first run; results go in `results/` and are reported against it unchanged.
 A change to this file after the first run is listed under [Amendments](#amendments) with its date and reason, and the runs before it are reported as such.
@@ -90,7 +90,7 @@ Before a run, `python3 -I selfcheck.py` checks the harness's scenario logic agai
 
 ## What is published
 
-Nothing until stage 4 of the design.
+Nothing until the design's comparison page is written.
 Then every row with its raw results and the command that reproduces it, the rows Lathe loses included.
 
 ## Amendments
@@ -167,3 +167,20 @@ Then every row with its raw results and the command that reproduces it, the rows
     9. **Disk and the project tree**: after the warm run, the size of jdtls's workspace data and configuration, and of the project's `.lathe/`; the servers' shared installs apart.
        Also every file each server writes into the project's tree outside the build's output, as `git status --ignored` shows them: Lathe's `.lathe/`, and any Eclipse metadata of jdtls's (`.project`, `.classpath`, `.settings/`), which vscode-java's `java.import.generatesMetadataFilesAtProjectRoot` keeps in the workspace data by default.
     10. **Setup in Neovim**: what a user installs and configures for each server, test running included (for jdtls the two bundles, for Lathe the test capture), in prose, not measured.
+- **2026-11-19, before any run of the round it changes (no measured round has run since the 2026-11-11 amendment; only trial runs):**
+  - **Five headline items.** The page leads with five items, fixed here, which replace the design's ten headline values:
+    1. a fresh checkout to the first right answer, with the warm ready time beside it (the build and ready rows);
+    2. peak and idle memory (the memory rows);
+    3. the errors against the build (measurement 4 of the 2026-11-11 amendment, the clean build and the injected errors) and the time from typing an error until it shows and until it is gone (measurement 2);
+    4. a branch switch and a build-file change (measurements 6 and 7), where a server that needs its workspace wiped or a restart to be right fails the item, with what it took;
+    5. feature parity: per feature, supported or not, and on the fixed queries whether the two servers agree location by location, a disagreement settled by compiling with the build; the [Queries](#queries), completion and rename and the import fix (measurements 1 and 5), and formatting, folding and running and debugging a main method checked once per project.
+    They were chosen where the architecture says Lathe should be stronger, and the page says so; every other value stays in the full report, the losses in "where jdtls is better".
+  - **Running a test leaves the round.** Measurement 8 is not built, and few users of either server run tests from Neovim; the page states that Lathe replays the build's own launch as a fact, without a number.
+  - **The projects** are spring-petclinic, Dropwizard and Helidon; Hibernate ORM and OpenMetadata keep their pinned queries but are not measured in this round.
+  - **Correctness once, timings repeated.** What is right or wrong (feature parity, errors against the build, whether a change ends right) is checked once, as it does not vary between runs; only timings are repeated, replacing the 3 cold and 3 warm runs:
+    2 cold runs (the build and the first start, jdtls's first start being its import, after its `mvn install` on Helidon), each giving the time to a first answer with its parts shown; 3 warm runs, giving the reopening time and peak and idle memory; a typed error 10 times; the branch switch and the build-file change 3 times each, with a 5-minute deadline (was 10).
+    The queries run once per server and project, for their answers, not repeated in every run.
+    Every timed value is the median with its minimum and maximum.
+    A run is discarded when the load average exceeds half the core count (was the core count), as the release battery marks a run.
+  - **Sessions of at most 45 minutes**, each one project and one or more whole groups (start and parity; errors and typing; outside changes), so the round fits around a working day; a group longer than that runs one server per session; an interrupted session is discarded and run again, never resumed.
+  - **Setup is counted**, not described (measurement 10): the lines of Neovim configuration, the files downloaded and the commands run before each server answers its first query.

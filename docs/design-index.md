@@ -264,11 +264,10 @@ reused):
   Lathe MCP), over a moat-curated Dropwizard/Helidon corpus, against a pre-registered hypothesis.
   **Pilot run (2026-10-03)** in `dev/bench/`: on a cross-module overload rename, grep-only missed a site
   in 3 of 4 weaker-model runs and Lathe none, at 0.24–0.48× the cost; the scaled headline run is next.
-- [Measured Comparison with jdtls](planned/lathe-jdtls-comparison.md) — **planned (2026-11-06).** How to
-  answer "why Lathe and not jdtls?" with evidence: no claim without a measurement anyone can rerun, and a fix
-  wherever Lathe loses before anything is published. Pre-registered projects, queries and metrics; an LSP
-  benchmark harness beside `dev/jdtls_diff.py`; a catalogue of where each server disagrees with the build;
-  fixes for Lathe's losses; the comparison page last.
+- [Measured Comparison with jdtls](planned/lathe-jdtls-comparison.md) — **in progress (narrowed 2026-11-19).**
+  How to answer "why Lathe and not jdtls?" with evidence: no claim without a measurement anyone can rerun, and a fix wherever Lathe loses before anything is published.
+  Five headline items (first answer, memory, errors against the build, staying right after outside changes, feature parity) on three projects, measured by the pre-registered harness in `dev/lsp-bench/`.
+  A trial round on the release candidate, the measured round on the release, the comparison page last.
 - [Search Speed on Large Codebases](planned/lathe-search-speed.md) — **in progress (2026-11-10).** FR-029 and
   FR-032 measured and profiled: class reading per javac task dominates and one module's worker carries a query.
   Done: the startup regression (#157), batches of 32, batched implementations and incoming calls. Next: following
