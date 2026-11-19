@@ -1,7 +1,8 @@
 # Lathe features
 
 Lathe uses your build’s compiler settings for navigation, completion, refactoring, and diagnostics.
-The editor guides show how to invoke these actions. [Choose your editor](../../README.md#editors)
+The editor guides show how to invoke these actions.
+[Choose your editor](../../README.md#editors)
 
 ## Code intelligence
 
@@ -20,20 +21,30 @@ The editor guides show how to invoke these actions. [Choose your editor](../../R
 **Signature Help** shows the parameters of methods and constructors as you type.
 Completion suggests types, methods, and variables and can insert their imports.
 It also suggests static members already imported by other files in the same scope (main or test).
-In a Lombok project, navigating to a generated accessor takes you back to its field. [Lombok support](how-it-works.md#lombok)
+In a Lombok project, navigating to a generated accessor takes you back to its field.
+[Lombok support](how-it-works.md#lombok)
 
 ## Diagnostics & formatting
 
-- **Read compiler errors.** Syntax and type errors appear as you edit. Saving also runs the module’s compiler plugins and annotation processors. [Live and save diagnostics](how-it-works.md#diagnostics-live-vs-on-save)
-- **Fix or refactor code.** Open **Code Actions** to add an import, handle an exception, implement a missing method, or extract a variable, constant, field, or method. Lathe offers the actions that apply to your selection.
-- **Rename a symbol.** Use **Rename** on a declaration or reference. Lathe follows uses and overrides across modules and reports a conflict if the new name would change what a use refers to.
-- **Format a file or selection.** Lathe uses the project’s formatter. On Maven, sync reads the supported Java formatter from Spotless. On Gradle or Maven without Spotless, declare it in `lathe-style.json`. External formatter commands support whole files. [Formatter setup](installation.md#choosing-overriding-or-opting-out-of-the-formatter)
+- **Read compiler errors.** Syntax and type errors appear as you edit.
+  Saving also runs the module’s compiler plugins and annotation processors.
+  [Live and save diagnostics](how-it-works.md#diagnostics-live-vs-on-save)
+- **Fix or refactor code.** Open **Code Actions** to add an import, handle an exception, implement a missing method, or extract a variable, constant, field, or method.
+  Lathe offers the actions that apply to your selection.
+- **Rename a symbol.** Use **Rename** on a declaration or reference.
+  Lathe follows uses and overrides across modules and reports a conflict if the new name would change what a use refers to.
+- **Format a file or selection.** Lathe uses the project’s formatter.
+  On Maven, sync reads the supported Java formatter from Spotless.
+  On Gradle or Maven without Spotless, declare it in `lathe-style.json`.
+  External formatter commands support whole files.
+  [Formatter setup](installation.md#choosing-overriding-or-opting-out-of-the-formatter)
 
 ## Run, test & debug
 
 In Neovim, use `:LatheRun` inside a `main` method to run the compiled class.
 With neotest, you can rerun one JUnit method and jump from a failure to its source.
-With nvim-dap, you can stop at a breakpoint and inspect variables. [Test setup](editors/neovim.md#tests-neotest) · [Debugger setup](editors/neovim.md#debug-nvim-dap)
+With nvim-dap, you can stop at a breakpoint and inspect variables.
+[Test setup](editors/neovim.md#tests-neotest) · [Debugger setup](editors/neovim.md#debug-nvim-dap)
 
 Lathe uses the launch settings from your build.
 To add program arguments, environment variables, or a named launch target, see [Run configuration](run-configuration.md).
@@ -41,7 +52,8 @@ To add program arguments, environment variables, or a named launch target, see [
 ## Scaffolding
 
 Use `:LatheNew` in Neovim to create a class, interface, record, enum, annotation, or JUnit test in the module and package you choose.
-Use `:LatheGoToTest` to switch between a class and its test. [Create a new type](editors/neovim.md#create-a-new-type)
+Use `:LatheGoToTest` to switch between a class and its test.
+[Create a new type](editors/neovim.md#create-a-new-type)
 
 For the implementation status of individual features, including semantic highlighting and folding, see the [capability matrix](../status.md#lsp-capability-matrix).
 

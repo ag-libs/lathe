@@ -53,15 +53,18 @@ For keymaps, test results, and debugging, see the [Neovim guide](https://github.
 ## Updating
 
 Update the client through your plugin manager.
-To update a server registered in the build, bump the Lathe version in Maven or Gradle and build again. [Updating Lathe](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md#updating)
+To update a server registered in the build, bump the Lathe version in Maven or Gradle and build again.
+[Updating Lathe](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md#updating)
 
 ## Feedback
 
 This repository is generated from the Neovim client in the main Lathe repository for each release.
-Each mirror commit identifies its source revision. [Lathe releases](https://github.com/ag-libs/lathe/releases)
+Each mirror commit identifies its source revision.
+[Lathe releases](https://github.com/ag-libs/lathe/releases)
 
 Please report bugs or suggest fixes in [Lathe issues](https://github.com/ag-libs/lathe/issues).
-External code contributions are currently closed. [Contributing policy](https://github.com/ag-libs/lathe/blob/main/CONTRIBUTING.md#pull-requests)
+External code contributions are currently closed.
+[Contributing policy](https://github.com/ag-libs/lathe/blob/main/CONTRIBUTING.md#pull-requests)
 
 ## License
 

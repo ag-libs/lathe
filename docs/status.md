@@ -10,7 +10,8 @@ Lathe is published to Maven Central.
 Maven and Gradle install the server through a build plugin, and the OpenJDK integration reads the output of a JDK build.
 The [editor support table](#editor-support) lists the available clients.
 Coding agents use the same analysis through the [MCP tools](#ai-agent-integration-mcp).
-Maintainers publish signed artifacts from release tags. [Release procedure](../RELEASING.md)
+Maintainers publish signed artifacts from release tags.
+[Release procedure](../RELEASING.md)
 
 ## Editor Support
 
@@ -23,12 +24,15 @@ Maintainers publish signed artifacts from release tags. [Release procedure](../R
 
 Other LSP clients may work but have not been qualified.
 In VS Code and Cursor, use one Lathe project per window.
-The whole-file missing-imports action is a known gap there. [VS Code limitations](guide/editors/vscode.md#known-issues)
+The whole-file missing-imports action is a known gap there.
+[VS Code limitations](guide/editors/vscode.md#known-issues)
 
 ## LSP Capability Matrix
 
 Navigation, completion, references, rename, diagnostics, code actions, and project formatting are implemented.
-Inlay hints and on-type formatting are deferred. Selection ranges and code lenses are unimplemented. [Using these features](guide/features.md)
+Inlay hints and on-type formatting are deferred.
+Selection ranges and code lenses are unimplemented.
+[Using these features](guide/features.md)
 
 <details>
 <summary>Feature-by-feature behavior and known gaps</summary>
@@ -71,7 +75,8 @@ Inlay hints and on-type formatting are deferred. Selection ranges and code lense
 ## Build and Workspace Lifecycle
 
 Maven and Gradle capture how each module compiles and runs tests.
-For OpenJDK, Lathe reads the output of the JDK build. [Setup by build tool](../README.md#first-build)
+For OpenJDK, Lathe reads the output of the JDK build.
+[Setup by build tool](../README.md#first-build)
 
 <details>
 <summary>Build and workspace implementation details</summary>
@@ -102,7 +107,8 @@ For OpenJDK, Lathe reads the output of the JDK build. [Setup by build tool](../R
 
 ## AI Agent Integration (MCP)
 
-The agent discovers these tools when it connects to the project’s MCP launcher. [Connect an agent](guide/ai-agents.md)
+The agent discovers these tools when it connects to the project’s MCP launcher.
+[Connect an agent](guide/ai-agents.md)
 
 | Tool | What it does |
 | --- | --- |

@@ -2,7 +2,8 @@
 
 Emacs 29 and later include Eglot, the client you can use to edit Java with Lathe.
 Use Xref on a method name to visit its definition or find its references.
-This setup works on Linux and macOS. [Windows editor options](../../../README.md#editors)
+This setup works on Linux and macOS.
+[Windows editor options](../../../README.md#editors)
 
 ![Lathe plugged into vanilla Emacs via Eglot — hover, cross-module nav, extract, rename, live diagnostics](../../emacs-tour-ebbbb6f4.gif)
 

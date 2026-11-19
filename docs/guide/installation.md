@@ -7,7 +7,7 @@ The client starts the server that belongs to the project you open.
 | Your build | First setup |
 |---|---|
 | Maven 3.6.3+ | [Register the extension](maven.md#method-1--maven-extension-recommended), then [run the first build](maven.md#initialize). |
-| Gradle 8.8+ | [Apply the settings plugin or use a personal init script](gradle.md#setup), then run `latheSync`. |
+| Gradle 8.8+ | [Apply the settings plugin or use a personal init script](gradle.md#setup), then [run the first build](gradle.md#run-the-first-build). |
 | OpenJDK | [Build the JDK and sync the checkout](openjdk.md#setup). |
 
 Choose your [Neovim](editors/neovim.md#install), [VS Code or Cursor](editors/vscode.md), [Emacs](editors/emacs.md), or [Zed](editors/zed.md) client.
@@ -18,7 +18,9 @@ Once your editor is running, use the sections below to [choose its JDK](#choosin
 ## What and where Lathe writes
 
 Lathe keeps project-specific data under `.lathe/` at the root of the build.
-Keep that directory out of version control.
+Lathe writes a `.gitignore` inside it, so git ignores the directory with no change to your project.
+Tools that scan the whole tree without reading `.gitignore` need their own exclusion.
+[Exclude `.lathe/` from checks](troubleshooting.md#build-checks-and-compiler-settings)
 Several projects can share downloaded sources and installed server versions under `~/.cache/lathe/`.
 
 | Location | What you’ll find |
@@ -30,9 +32,16 @@ Several projects can share downloaded sources and installed server versions unde
 | `.lathe/java-home` and `.lathe/jvm.args` | The JDK and JVM options the launcher uses. |
 | `~/.cache/lathe/` | Installed server versions, extracted library and JDK sources, type indexes, and MCP session logs. |
 
+To move the machine cache on Maven, pass `-Dlathe.cache=<dir>` to the build.
+MCP session logs stay in `~/.cache/lathe/logs/`.
+In Neovim, also start the editor with `LATHE_CACHE=<dir>` so dependency sources there still open read-only.
+In VS Code, add the directory to `files.readonlyInclude`.
+[Read-only sources in VS Code](editors/vscode.md#read-only-dependency-sources)
+
 The project’s launcher starts the server version selected by its build.
 The `latest/` launcher in the machine cache is available for a [user-wide MCP registration](ai-agents.md).
-A dependency needs a published sources JAR for navigation to open its source. [Troubleshoot navigation](troubleshooting.md#navigation)
+A dependency needs a published sources JAR for navigation to open its source.
+[Troubleshoot navigation](troubleshooting.md#navigation)
 
 ## Tuning the server JVM (`LATHE_JVM_OPTS`)
 
@@ -49,7 +58,8 @@ If you enable JVM logging, send it to stderr or a file because the editor uses s
 
 The build records the module grants it already declares in `.lathe/jvm.args`.
 Syncing also adds the grants required by the project’s formatter.
-Restart the server after those settings change. [Compiler plugin JVM settings](troubleshooting.md#build-checks-and-compiler-settings)
+Restart the server after those settings change.
+[Compiler plugin JVM settings](troubleshooting.md#build-checks-and-compiler-settings)
 
 ## Choosing the server JDK (`LATHE_JAVA_HOME`)
 

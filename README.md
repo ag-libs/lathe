@@ -19,7 +19,7 @@ When one module generates a class and another imports it, you can follow that im
 
 Choose the build for your project and run its commands from the project root.
 This installs the language server and creates the `.lathe/` workspace that your editor or coding agent uses.
-Keep that directory out of version control.
+Lathe writes a `.gitignore` inside it, so git ignores the directory with no change to your project.
 The Maven and Gradle commands below also capture supported JUnit test launches without running the tests.
 
 <details>
@@ -42,6 +42,8 @@ If the file already exists, add the `<extension>` entry inside its existing `<ex
 ```sh
 mvn clean test -Dlathe.capture.only=true
 ```
+
+In Windows PowerShell, quote the property: `mvn clean test '-Dlathe.capture.only=true'`.
 
 [Maven guide](docs/guide/maven.md)
 
@@ -84,6 +86,8 @@ mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
 ## Editors
 
 [Neovim](#neovim) · [VS Code and Cursor](#vs-code-and-cursor) · [Emacs](docs/guide/editors/emacs.md) · [Zed](docs/guide/editors/zed.md)
+
+On Windows, use VS Code, Cursor, or Zed; the Neovim and Emacs clients run on Linux and macOS.
 
 ### Neovim
 
@@ -128,11 +132,14 @@ After changing dependencies, compiler settings, or modules, run `:LatheSync` in 
 - **Indentation.** Install the Java Tree-sitter parser.
   With nvim-treesitter, run `:TSInstall java`.
 - **Completion menu and keymaps.** The demo uses blink.cmp for suggestions as you type and Telescope for navigation.
-  You can copy those pieces into your existing config. [Example init.lua](examples/nvim/init.lua) · [Try the example separately](examples/nvim/README.md#try-it)
+  You can copy those pieces into your existing config.
+  [Example init.lua](examples/nvim/init.lua) · [Try the example separately](examples/nvim/README.md#try-it)
 - **JUnit tests.** Install neotest and add `require("lathe.neotest")` to its `adapters` list.
-  The Maven and Gradle steps above capture the test launch for supported JUnit Platform projects. [Neotest setup](docs/guide/editors/neovim.md#tests-neotest) · [Test capture requirements](docs/guide/test-capture.md#requirements-and-current-limits)
+  The Maven and Gradle steps above capture the test launch for supported JUnit Platform projects.
+  [Neotest setup](docs/guide/editors/neovim.md#tests-neotest) · [Test capture requirements](docs/guide/test-capture.md#requirements-and-current-limits)
 - **Breakpoints.** Load nvim-dap before Lathe so the plugin can register `:LatheDebug`.
-  With lazy.nvim, add `dependencies = { "mfussenegger/nvim-dap" },` to the Lathe spec above. [Debugger setup and keymaps](docs/guide/editors/neovim.md#debug-nvim-dap)
+  With lazy.nvim, add `dependencies = { "mfussenegger/nvim-dap" },` to the Lathe spec above.
+  [Debugger setup and keymaps](docs/guide/editors/neovim.md#debug-nvim-dap)
 
 </details>
 
@@ -143,7 +150,8 @@ Use **Rename Symbol** on an interface method and Lathe updates its implementatio
 Lathe's run, test, and debug controls are currently available in Neovim.
 
 1. Complete the [first build](#first-build) to create the `.lathe/` directory that the extension looks for.
-2. Download the `.vsix` release asset and choose **Extensions → ⋯ → Install from VSIX…** in VS Code or Cursor. [Lathe releases](https://github.com/ag-libs/lathe/releases)
+2. Download the `.vsix` release asset and choose **Extensions → ⋯ → Install from VSIX…** in VS Code or Cursor.
+   [Lathe releases](https://github.com/ag-libs/lathe/releases)
 3. Open the project folder.
    If **Language Support for Java by Red Hat** is installed, disable it for this workspace so only one server handles your Java files.
 4. Open a Java file and choose **Go to Definition** on a method call.
@@ -156,7 +164,8 @@ Lathe's run, test, and debug controls are currently available in Neovim.
 An MCP server gives coding agents access to the same compiler and project information as your editor.
 After changing a method signature, ask your agent “Which callers in other modules still need updating?”
 Lathe can compile the affected callers and report the file and line of each error.
-The initial build installs the MCP launcher. [Connect your agent](docs/guide/ai-agents.md)
+The initial build installs the MCP launcher.
+[Connect your agent](docs/guide/ai-agents.md)
 
 ## Documentation
 
@@ -165,7 +174,8 @@ The initial build installs the MCP launcher. [Connect your agent](docs/guide/ai-
 ## Contributing
 
 We welcome questions, bug reports, and feedback through [GitHub issues](https://github.com/ag-libs/lathe/issues).
-Code contributions are currently closed. [Contributing policy](CONTRIBUTING.md)
+Code contributions are currently closed.
+[Contributing policy](CONTRIBUTING.md)
 
 Lathe is developed with AI coding tools, mainly Claude Code.
 A maintainer reviews every change and takes responsibility for it.

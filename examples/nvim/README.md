@@ -23,7 +23,8 @@ XDG_STATE_HOME=/tmp/lathe-demo/state \
 The first launch downloads lazy.nvim and the plugins listed in `init.lua`.
 Lathe starts the server installed by the project's build.
 If you are developing the client itself, set `LATHE_NVIM_DIR` to your checkout's `lathe-neovim/runtime` directory.
-To add breakpoints to this example, load nvim-dap before Lathe. [Debugger setup](../../docs/guide/editors/neovim.md#debug-nvim-dap)
+To add breakpoints to this example, load nvim-dap before Lathe.
+[Debugger setup](../../docs/guide/editors/neovim.md#debug-nvim-dap)
 
 ## Keymaps
 

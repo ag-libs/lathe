@@ -52,7 +52,8 @@ Add a server named `lathe`, choose the **stdio** transport, and set its working 
 - **After an edit**, ask “Check my Java changes and tell me which callers no longer compile.”
   Lathe checks saved files and their callers across modules and reports errors with file names and line numbers.
 - **For a failing test**, name a JUnit class or method and ask the agent to run it.
-  Lathe reuses the launch recorded by your build. [Test capture and supported tests](test-capture.md#requirements-and-current-limits)
+  Lathe reuses the launch recorded by your build.
+  [Test capture and supported tests](test-capture.md#requirements-and-current-limits)
 
 Asking the agent to rename a symbol, fix imports, or format a file changes project files on disk.
 To have the agent check Java edits before finishing, copy the [example project instructions](../../examples/agents/lathe-mcp.md) into your `AGENTS.md` or `CLAUDE.md`.

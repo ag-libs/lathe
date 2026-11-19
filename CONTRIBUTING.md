@@ -8,7 +8,8 @@ For a security concern, follow the private reporting instructions in the [securi
 Describe the action you took, what you expected, and what happened.
 Include your editor, Lathe version, JDK version, and Maven or Gradle version.
 For an editor issue, start the editor with `LATHE_DEBUG=1`, reproduce the problem, and include the relevant lines from the server log.
-A small project that reproduces the problem helps a maintainer try the same steps. [Troubleshooting](docs/guide/troubleshooting.md)
+A small project that reproduces the problem helps a maintainer try the same steps.
+[Troubleshooting](docs/guide/troubleshooting.md)
 
 ## Ideas and feature requests
 

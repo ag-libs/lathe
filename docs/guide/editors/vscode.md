@@ -49,7 +49,8 @@ Nothing to configure, unless you moved the cache with `-Dlathe.cache=<dir>`: the
 ## If the wrong JDK is picked
 
 The extension reads the JDK recorded by the build in `.lathe/java-home`.
-To choose another JDK, set `LATHE_JAVA_HOME` in the environment you start VS Code or Cursor from. [Choosing the server JDK](../installation.md#choosing-the-server-jdk-lathe_java_home)
+To choose another JDK, set `LATHE_JAVA_HOME` in the environment you start VS Code or Cursor from.
+[Choosing the server JDK](../installation.md#choosing-the-server-jdk-lathe_java_home)
 
 ## Build-file changes
 

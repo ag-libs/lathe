@@ -28,6 +28,7 @@ Maven and Gradle projects can use this setup without changing their build files.
 For OpenJDK, build the JDK first with `make jdk`.
 In a development checkout, set `LATHE_VERSION` to the version to install.
 See `:help :LatheInit` in clients that ship the command.
+With lazy.nvim, write `cmd = { "LatheStart", "LatheInit" }` in the spec so the command also works before a Java file is open.
 
 </details>
 
@@ -35,7 +36,8 @@ See `:help :LatheInit` in clients that ship the command.
 
 Use **Find References** on a method to see its callers, or **Rename** to update a declaration and its uses across modules.
 Compiler errors appear as you type.
-Saving also runs the checks your build applies through compiler plugins and annotation processors. [Live and save diagnostics](../how-it-works.md#diagnostics-live-vs-on-save)
+Saving also runs the checks your build applies through compiler plugins and annotation processors.
+[Live and save diagnostics](../how-it-works.md#diagnostics-live-vs-on-save)
 
 | When you want to… | Use |
 | --- | --- |
@@ -47,7 +49,8 @@ Saving also runs the checks your build applies through compiler plugins and anno
 
 For **Go to Definition**, Neovim 0.12 uses `Ctrl-]` with an attached language server.
 The demo maps `gd` to the same action through Telescope.
-For completion as you type, the demo uses blink.cmp. [Example config and keymaps](../../../examples/nvim/README.md#keymaps) · [Java features](../features.md)
+For completion as you type, the demo uses blink.cmp.
+[Example config and keymaps](../../../examples/nvim/README.md#keymaps) · [Java features](../features.md)
 
 ### Create a new type
 
@@ -62,7 +65,8 @@ Program output opens in a split at the bottom of the screen.
 Press Enter on a stack-trace frame in that split to open the source line.
 
 Use `:LatheRunStop` to stop a run or debug session and `:LatheRunOutput` to reopen its output.
-To reuse program arguments, JVM flags, or environment variables, save the target with `:LatheRunSave dev` and launch it again with `:LatheRun dev`. [Run configuration](../run-configuration.md)
+To reuse program arguments, JVM flags, or environment variables, save the target with `:LatheRunSave dev` and launch it again with `:LatheRun dev`.
+[Run configuration](../run-configuration.md)
 
 ## Tests (neotest)
 
@@ -84,7 +88,8 @@ To run one JUnit test, put the cursor inside its method and enter this command.
 The gutter shows whether it passed.
 Use `:lua require("neotest").summary.toggle()` to browse results or `:LatheRunOutput` to see what the test printed.
 If the module has no recorded test launch, run `:LatheSyncCaptureTest`, then try again.
-Maven Failsafe integration tests run through Maven. [Supported tests and build settings](../test-capture.md#requirements-and-current-limits)
+Maven Failsafe integration tests run through Maven.
+[Supported tests and build settings](../test-capture.md#requirements-and-current-limits)
 
 ## Debug (nvim-dap)
 
@@ -110,11 +115,29 @@ Lathe uses the project’s indentation settings when available and otherwise fol
 
 Run `:LatheFormat` to format the file with the project’s formatter.
 Maven projects can use the formatter from Spotless.
-Other projects can declare one in `lathe-style.json`. [Choose a project formatter](../installation.md#choosing-overriding-or-opting-out-of-the-formatter)
+Other projects can declare one in `lathe-style.json`.
+[Choose a project formatter](../installation.md#choosing-overriding-or-opting-out-of-the-formatter)
 
-To format on save, set `format_on_save = true` in your existing Lathe setup options.
-With lazy.nvim, that is `opts = { format_on_save = true }`.
-For a project that declares no indentation style, you can set a personal fallback with `style = { indent = { profile = "google" } }` in the same options.
+To format on save, set `format_on_save = true` in the [setup options](#setup-options).
+
+## Setup options
+
+Pass these to `require("lathe").setup()`, or as `opts` with lazy.nvim, for example `opts = { format_on_save = true }`.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `format_on_save` | `false` | Formats a Java file with the project’s formatter when you save it. |
+| `style.indent` | `{ profile = "editorconfig" }` | Indentation for a project that declares none. Use `profile = "editorconfig"` or `"google"`, and optionally `block` and `continuation` widths. |
+| `pom` | `{ validate = true, format = false }` | Checks `pom.xml` against the Maven schema as you edit. Set `format = true` to reformat it with `gq`. |
+
+A project’s own `lathe-style.json` takes precedence over `style.indent`.
+
+The `pom.xml` checks need `xmllint` on your `PATH`.
+To turn them off, pass `pom = { validate = false }`.
+With lazy.nvim, add `event = { "BufReadPre pom.xml", "BufNewFile pom.xml" }` to the spec so the plugin also loads for a `pom.xml`.
+
+If you moved the Lathe cache with `-Dlathe.cache=<dir>`, start Neovim with `LATHE_CACHE=<dir>`.
+Dependency sources under it then still open read-only.
 
 ## Updating
 
@@ -127,4 +150,5 @@ For a project set up only through `:LatheInit`, rerun that command after updatin
 If the server exits unexpectedly, use `:LatheStart` to restart it in the current buffer.
 For a missing launcher, rerun the [first build](../../../README.md#first-build) from the project root.
 To investigate a repeated failure, start Neovim with `LATHE_DEBUG=1` and reproduce the problem.
-Use `:lua print(vim.lsp.log.get_filename())` to find the log. [Troubleshooting](../troubleshooting.md)
+Use `:lua print(vim.lsp.log.get_filename())` to find the log.
+[Troubleshooting](../troubleshooting.md)

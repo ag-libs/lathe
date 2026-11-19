@@ -66,11 +66,18 @@ Run this command at the root of the build after registering Lathe.
 mvn clean test -Dlathe.capture.only=true
 ```
 
+In Windows PowerShell, quote the property so it reaches Maven in one piece.
+
+```powershell
+mvn clean test '-Dlathe.capture.only=true'
+```
+
 The clean build compiles every module so Lathe can record its settings.
 Surefire starts its test JVM and writes the launch that the editor will use to run a test.
 On JUnit 5.10 and later, tests appear as skipped.
 With older JUnit, capture filters out the tests.
-If the build then fails because `failIfNoTests` is enabled, add `-DfailIfNoTests=false`. [Test capture](test-capture.md#capture-without-running-tests)
+If the build then fails because `failIfNoTests` is enabled, add `-DfailIfNoTests=false`.
+[Test capture](test-capture.md#capture-without-running-tests)
 
 Open a source file in your [editor](../../README.md#editors).
 Subsequent builds refresh the workspace according to the last phase they reach.
@@ -81,8 +88,11 @@ Subsequent builds refresh the workspace according to the last phase they reach.
 | `mvn test`, `verify`, or `install` | The items above and each module's test launch when its test JVM starts |
 | `mvn test -Dlathe.capture.only=true` | The same information, skipping test execution |
 
-Keep `.lathe/` out of version control and exclude it from checks that scan the entire project tree. [Troubleshooting](troubleshooting.md)
+Git ignores `.lathe/` through the `.gitignore` that Lathe writes inside it.
+Exclude the directory from checks that scan the entire project tree.
+[Troubleshooting](troubleshooting.md#build-checks-and-compiler-settings)
 You can use the Maven Daemon (`mvnd`) in place of `mvn`.
+After upgrading Lathe, run `mvnd --stop` so the daemon loads the new extension.
 If your build uses the Maven build cache extension, pass `-Dmaven.build.cache.enabled=false` for capture.
 Modules restored from that cache skip the compilation Lathe needs to observe.
 
@@ -177,7 +187,8 @@ there too.
 
 If a shaded module supplies relocated classes, build through `package` so downstream modules can use the shaded JAR.
 Use `-Dlathe.sync.phase=package` in `.mvn/maven.config` to repeat that phase on sync.
-The sync phase can range from `process-test-classes` through `install`. [Shaded-module troubleshooting](troubleshooting.md#build-checks-and-compiler-settings)
+The sync phase can range from `process-test-classes` through `install`.
+[Shaded-module troubleshooting](troubleshooting.md#build-checks-and-compiler-settings)
 
 The generated sync script repeats the build with the recorded Maven and JDK.
 Put required `-D` properties or `-P` profiles in `.mvn/maven.config` so they also apply when the editor starts a sync.

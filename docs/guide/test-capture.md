@@ -16,6 +16,8 @@ mvn test -Dlathe.capture.only=true                        # Maven
 ./gradlew latheSync -Plathe.capture.only=true --continue  # Gradle
 ```
 
+In Windows PowerShell, quote the property: `'-Dlathe.capture.only=true'` or `'-Plathe.capture.only=true'`.
+
 Each module with supported tests starts a test JVM so Lathe can record its launch.
 JUnit 5.10 and later reports the selected tests as skipped.
 On older JUnit, Lathe filters them out.
@@ -28,7 +30,8 @@ During a multi-module build, Maven can also warn that a dependency belongs to th
 
 **Gradle.** A capture-only run starts the default test JVM even if the task is up to date.
 To capture tests from another source set, run its own task once, for example `./gradlew integrationTest -Plathe.capture.only=true`.
-An editor sync captures the default tests. [Gradle test limits](gradle.md#known-limits)
+An editor sync captures the default tests.
+[Gradle test limits](gradle.md#known-limits)
 
 ## What Lathe records
 

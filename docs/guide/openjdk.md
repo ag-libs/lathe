@@ -22,7 +22,8 @@ Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or n
    make jdk
    ```
 
-2. Add `.lathe/` to `.git/info/exclude` and run the sync from the checkout root.
+2. Run the sync from the checkout root.
+   Sync writes a `.gitignore` inside `.lathe/`, so git ignores the directory with no change to the checkout.
 
    ```sh
    mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
@@ -33,7 +34,8 @@ Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or n
 
 3. Open `src/java.base/share/classes/java/util/ArrayList.java` in your editor's Lathe client.
    Follow `AbstractList` to its declaration to start exploring.
-   Ordinary Java source edits are analyzed live. [When to sync again](#re-syncing)
+   Ordinary Java source edits are analyzed live.
+   [When to sync again](#re-syncing)
 
 ## What you get
 

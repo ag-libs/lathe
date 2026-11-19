@@ -66,12 +66,15 @@ On Windows, run the wrapper from PowerShell.
 ```
 
 Open a Java file in your [editor](../../README.md#editors).
-Keep the generated `.lathe/` directory out of version control and exclude it from whole-project checks. [Troubleshooting](troubleshooting.md)
+Git ignores the generated `.lathe/` directory through the `.gitignore` that Lathe writes inside it.
+Exclude the directory from whole-project checks.
+[Troubleshooting](troubleshooting.md#build-checks-and-compiler-settings)
 
 A build that rejects skipped tests (a test listener that fails the task, as Caffeine's does) ends this run with
 failed test tasks, but `.lathe/` is complete and every test task's launch is captured; see [Syncing](#syncing).
 
-Later builds refresh each source set they compile. [What the build keeps current](#what-the-build-keeps-current)
+Later builds refresh each source set they compile.
+[What the build keeps current](#what-the-build-keeps-current)
 
 If you configure `failOnError = false` so a failed compile can still sync, turn off incremental compilation for that task as well.
 Otherwise Gradle can omit class files even after you fix the error, and Lathe has to compile that source set itself against its last good capture.
