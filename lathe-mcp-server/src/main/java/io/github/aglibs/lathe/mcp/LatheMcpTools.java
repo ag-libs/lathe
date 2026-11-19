@@ -144,7 +144,9 @@ final class LatheMcpTools {
                 name a plain grep is fine. A field's or variable's uses are tagged [read] or \
                 [write] (assignments, increments, a generated setter's calls); `access` keeps one \
                 kind, e.g. write for where a field changes. To see which methods call a method, \
-                use call_hierarchy (incoming): one line per calling method.\
+                use call_hierarchy (incoming): one line per calling method. A declaration is not a \
+                use: the symbol's own and its overrides' are left out, which find_implementations \
+                and analyze_change list.\
                 """,
             LatheMcpTools::handleReferences),
         tool(

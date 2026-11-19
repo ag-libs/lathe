@@ -248,9 +248,11 @@ public final class LatheEngine {
   }
 
   /**
-   * References to the symbol at {@code line}/{@code column} (0-based) across the reactor that have
-   * one of the {@code kept} accesses, each enriched with a snippet, capped to {@code maxResults}
-   * with the true total for pagination.
+   * Uses of the symbol at {@code line}/{@code column} (0-based) across the reactor that have one of
+   * the {@code kept} accesses, each enriched with a snippet, capped to {@code maxResults} with the
+   * true total for pagination. A declaration is no use, neither the symbol's own nor an override's:
+   * an unused symbol has none, as {@link #analyzeChange} counts them, and is still told from a
+   * position that names no symbol.
    */
   public Noted<LatheReferences> references(
       final Path file,
@@ -273,22 +275,22 @@ public final class LatheEngine {
       final List<ReferenceMatch> matches,
       final Set<LatheReference.Access> kept,
       final int maxResults) {
+    // The declarations come too: a position naming a symbol is its declaration or one of its uses,
+    // so an empty search means no symbol, and an unused symbol finds only its declaration.
+    final List<ReferenceMatch> found =
+        matches.stream().filter(match -> match.role() != ReferenceRole.DECLARATION).toList();
     final List<ReferenceMatch> uses =
-        matches.stream()
+        found.stream()
             .filter(match -> kept.contains(access(match)))
             .sorted(Comparator.comparing(ReferenceMatch::toLocation, locationOrder()))
             .toList();
-    // The declaration is no use: an unused symbol must not read as having one.
-    final long filteredOut =
-        matches.stream()
-            .filter(match -> match.role() != ReferenceRole.DECLARATION)
-            .filter(match -> !kept.contains(access(match)))
-            .count();
+    final long filteredOut = found.stream().filter(match -> !kept.contains(access(match))).count();
     return new LatheReferences(
         uses.size(),
         uses.size() > maxResults,
         uses.stream().limit(maxResults).map(this::toLatheReference).toList(),
-        (int) filteredOut);
+        (int) filteredOut,
+        !matches.isEmpty());
   }
 
   private LatheReference toLatheReference(final ReferenceMatch match) {

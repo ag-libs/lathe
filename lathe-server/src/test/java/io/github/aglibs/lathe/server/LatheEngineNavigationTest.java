@@ -203,6 +203,57 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
                     && r.location().snippet().contains("greet"));
   }
 
+  // MC-101: a declaration is no use, neither the method's own nor an override's, so an unused
+  // method has none; a call through the override is a use (FR-006).
+  @Test
+  void references_overriddenMethod_listsTheCallNotTheDeclarations() throws Exception {
+    final String baseSource =
+        """
+        package com.example;
+        class Base {
+          void hook() {}
+          void idle() {}
+        }
+        """;
+    final Path base = TestCompiler.writeModuleSource(tmp, "com/example/Base.java", baseSource);
+    final Path sub =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Sub.java",
+            "package com.example; class Sub extends Base { @Override void hook() {} }");
+    final Path user =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/User.java",
+            "package com.example; class User { void use(Base b, Sub s) { b.hook(); s.hook(); } }");
+    compileIntoMirror(base, sub, user);
+    engine = new LatheEngine(tmp);
+    final var hook = positionOf(baseSource, "hook");
+    final var idle = positionOf(baseSource, "idle");
+
+    final LatheReferences references =
+        engine.references(base, hook.getLine(), hook.getCharacter(), 50, ANY_ACCESS).value();
+
+    assertThat(references.total()).isEqualTo(2);
+    assertThat(references.references())
+        .extracting(reference -> reference.location().uri())
+        .containsOnly(user.toUri().toString());
+    final LatheReferences unused =
+        engine.references(base, idle.getLine(), idle.getCharacter(), 50, ANY_ACCESS).value();
+    assertThat(unused.total()).isZero();
+    assertThat(unused.resolved()).as("an unused method is still a symbol").isTrue();
+    final String looseSource = "package com.example; class Loose { void idle() {} }";
+    final Path loose = TestCompiler.writeAt(tmp.resolve("scratch/Loose.java"), looseSource, 1_000L);
+    final var outside = positionOf(looseSource, "idle");
+    assertThat(
+            engine
+                .references(loose, outside.getLine(), outside.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .resolved())
+        .as("a file no module compiles names no symbol Lathe can search")
+        .isFalse();
+  }
+
   // An override's callers include calls through the method it overrides from upstream, where its
   // class is not on the classpath: in the base's own module, and in a module depending only on that
   // one; a call on a receiver that cannot hold the override (a sibling subclass) is left out.
@@ -288,7 +339,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final LatheReferences all =
         engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS).value();
     final LatheReferences capped =
-        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 2, ANY_ACCESS).value();
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 1, ANY_ACCESS).value();
     final LatheCallHierarchy callers =
         engine
             .callHierarchy(
@@ -302,11 +353,8 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     assertThat(all.references())
         .extracting(reference -> reference.location().uri())
-        .containsExactly(
-            fx.callee().toUri().toString(),
-            fx.caller().toUri().toString(),
-            generated.toUri().toString());
-    assertThat(capped.total()).isEqualTo(3);
+        .containsExactly(fx.caller().toUri().toString(), generated.toUri().toString());
+    assertThat(capped.total()).isEqualTo(2);
     assertThat(capped.references())
         .extracting(reference -> reference.location().origin())
         .containsOnly(LatheLocation.Origin.REACTOR);

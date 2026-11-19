@@ -75,7 +75,16 @@ final class McpText {
   // An access filter that left out every use must not read as an unused symbol (a method's calls
   // are neither reads nor writes): say how many uses there are and how to list them.
   static CallToolResult referencesResult(final LatheReferences refs, final LatheNotes notes) {
-    if (refs.total() == 0 && refs.filteredOut() > 0) {
+    if (!refs.resolved()) {
+      return usesResult("No symbol at that position.", notes);
+    }
+
+    if (refs.total() == 0 && refs.filteredOut() == 0) {
+      return usesResult(
+          "No uses: the symbol is declared, and nothing in the project uses it.", notes);
+    }
+
+    if (refs.total() == 0) {
       return usesResult(
           """
           No references with that access found. %d other use(s) are listed when `access` is \

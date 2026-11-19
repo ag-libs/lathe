@@ -503,13 +503,16 @@ class McpTextTest {
             false,
             List.of());
 
-    assertThat(text(McpText.referencesResult(new LatheReferences(1, false, uses(use), 0), noGraph)))
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(1, false, uses(use), 0, true), noGraph)))
         .doesNotContain("no need to re-verify")
         .endsWith("Sync required: .lathe/workspace.json is missing");
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(1, false, uses(use), 0), buildFilesChanged)))
+                    new LatheReferences(1, false, uses(use), 0, true), buildFilesChanged)))
         .contains("no need to re-verify with grep.")
         .endsWith("Sync required: build files changed — run `.lathe/lathe-sync.sh`");
   }
@@ -533,20 +536,26 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(1, false, uses(use), 0), McpText.NO_NOTES)))
+                    new LatheReferences(1, false, uses(use), 0, true), McpText.NO_NOTES)))
         .endsWith("no need to re-verify with grep.")
         .doesNotContain("Kotlin");
     assertThat(
-            text(McpText.referencesResult(new LatheReferences(1, false, uses(use), 0), withKotlin)))
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(1, false, uses(use), 0, true), withKotlin)))
         .endsWith(kotlinLine)
         .doesNotContain("no need to re-verify");
     assertThat(
-            text(McpText.referencesResult(new LatheReferences(0, false, List.of(), 0), withKotlin)))
-        .isEqualTo("No references found.%n%n%s".formatted(kotlinLine));
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(0, false, List.of(), 0, true), withKotlin)))
+        .isEqualTo(
+            "No uses: the symbol is declared, and nothing in the project uses it.%n%n%s"
+                .formatted(kotlinLine));
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(1, false, uses(use), 0), withGroovyToo)))
+                    new LatheReferences(1, false, uses(use), 0, true), withGroovyToo)))
         .endsWith(
             "Kotlin sources in app-kotlin and Groovy sources in specs, app-kotlin are not searched; check them with grep.")
         .doesNotContain("no need to re-verify");
@@ -610,7 +619,7 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(2, false, uses(first, second), 0), McpText.NO_NOTES)))
+                    new LatheReferences(2, false, uses(first, second), 0, true), McpText.NO_NOTES)))
         .startsWith(
             lines(
                 "2 reference(s):",
@@ -639,7 +648,8 @@ class McpTextTest {
                             new LatheReference(dependency, LatheReference.Access.OTHER),
                             new LatheReference(written, LatheReference.Access.WRITE),
                             new LatheReference(read, LatheReference.Access.READ)),
-                        0),
+                        0,
+                        true),
                     McpText.NO_NOTES)))
         .startsWith(
             lines(
@@ -663,20 +673,36 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(0, false, List.of(), 0), McpText.NO_NOTES)))
-        .isEqualTo("No references found.");
+                    new LatheReferences(0, false, List.of(), 0, true), McpText.NO_NOTES)))
+        .isEqualTo("No uses: the symbol is declared, and nothing in the project uses it.");
+  }
+
+  // MC-101: an unused symbol is told from a position that names none, where an agent could take a
+  // used symbol for dead code.
+  @Test
+  void referencesResult_noUsesOrNoSymbol_saysWhich() {
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(0, false, List.of(), 0, true), McpText.NO_NOTES)))
+        .startsWith("No uses: the symbol is declared");
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(0, false, List.of(), 0, false), McpText.NO_NOTES)))
+        .isEqualTo("No symbol at that position.");
   }
 
   // MC-93: an access filter that left out every use (a method's calls are neither reads nor
-  // writes) says the symbol has uses, never "No references found."
+  // writes) says the symbol has uses, never that it has none.
   @Test
   void referencesResult_accessFilterLeftOutEveryUse_saysHowManyUsesThereAre() {
     assertThat(
             text(
                 McpText.referencesResult(
-                    new LatheReferences(0, false, List.of(), 3), McpText.NO_NOTES)))
+                    new LatheReferences(0, false, List.of(), 3, true), McpText.NO_NOTES)))
         .startsWith("No references with that access found. 3 other use(s) are listed when")
-        .doesNotContain("No references found.");
+        .doesNotContain("No uses");
   }
 
   // The places where the old name is still text are listed for the agent to decide, never edited,
