@@ -387,13 +387,13 @@ None yet.
 
 ---
 
-## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
+## EG-071 — In `module-info.java`, a module or package name highlights nothing, or only its last segment
 
-**Status: deferred** (triaged 2026-11-17: the symptom changed; a live probe should confirm what is left)
+**Status: deferred** (probed 2026-11-19: the per-segment highlights are gone; an `exports` package and the module name now find nothing, and a `requires` name highlights only its last segment; references on a package need a package reference target, a design of its own)
 
 **Kind: bug**
 
-**Value: low — Size: S**
+**Value: low — Size: M**
 
 **Affects: the editor.**
 
@@ -401,21 +401,20 @@ Found by the pre-release test rounds (2026-10-29/30) on Helidon.
 
 ### Observed behaviour
 
-Document highlight on a package name in an `exports` clause highlights each dotted segment on its own,
-also inside another package's `exports` (a `…type.spi` beside `…type`) and in the module's own name.
-0.1.24 behaves the same.
+Probed 2026-11-19 on the server built from `eabe332c` (main `d2a58562` without NV-9, which does not touch this), in the `multi-module` invoker fixture's `jpms/src/main/java/module-info.java`, through `documentHighlight`, `references` and `hover` on every segment:
+
+- `exports com.example.jpms`: no highlight and no references on any segment; hover shows the qualified name.
+- The module's own name (`module com.example.jpms`): no highlight and no references.
+- `requires io.github.aglibs.validcheck`: one reference, but the highlight covers only `validcheck`, not the whole name.
+
+`CursorElements.elementAt` skips package elements, so a cursor on an `exports` segment resolves to the enclosing module, whose search finds nothing.
+
+History: before `5c85a747` (2026-11-08), which replaced a walk that matched every member-select segment with `trees.getElement`, highlight marked each dotted segment on its own, also inside another package's `exports` (a `…type.spi` beside `…type`) and in the module's own name, and `find_references` on an `exports` segment returned every segment of the module and package names (EqualsVerifier, Helidon `exports io.helidon.webserver.spi`).
 
 ### Fix direction
 
-Highlight a qualified package name as one unit, and only where the same package is named.
-
-Also (exploratory round, 2026-11-04): `find_references` on a package segment in `exports` returns every segment of the module and package names (EqualsVerifier, Helidon `exports io.helidon.webserver.spi`); the rename form is FR-027.
-
-### Re-checked against the code (2026-11-17)
-
-Commit `5c85a747` (2026-11-08) replaced the walk that matched every member-select segment with `trees.getElement`, so every segment is no longer highlighted.
-The target is still wrong: `CursorElements.elementAt` skips package elements, so a cursor on an `exports` segment resolves to the module, and highlight and `find_references` there most likely find nothing now.
-Probe: `documentHighlight` on an `exports` segment.
+Highlight a module or package name in `module-info.java` as one qualified unit, wherever the same name is used; the `requires` case and the module name need only the span.
+`find_references` on an exported package needs a package reference target, which `ReferenceTarget` and the search do not have, so it can be split off; no gap tracks renaming a package.
 
 ### Regression targets
 
