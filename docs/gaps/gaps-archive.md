@@ -10483,6 +10483,48 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-45 — A build that rewrites its own POMs leaves the sync's fingerprints stale, so the next reload prompts to sync again — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Affects: Maven syncs of a build that rewrites a POM while it runs (sortpom, as jdbi; a POM tidy or formatter step); the editor's sync prompt, and MCP `verify_change`, which defers until another sync.**
+
+Found by the pre-release round on jdbi (2026-11-19), main `8c099a5` (server, extension and `lathe:sync`).
+
+### Observed behaviour
+
+jdbi's build runs sortpom, which sorts each POM in place and saves it when the order changed ("Saved sorted pom file to …/core/pom.xml").
+`lathe:sync` writes `.lathe/workspace.json`, with each POM's content fingerprint (`buildFiles[].fingerprint`), while the root project `jdbi3-parent` builds, before the reactor reaches `core`, whose sortpom then rewrites `core/pom.xml`.
+After a dependency added at the top of `<dependencies>` in `core/pom.xml` and a sync (`.lathe/lathe-sync.sh`, 44 s, BUILD SUCCESS), the manifest was written at 22:13:07 and the build ended at 22:13:27; comparing the manifest with the files on disk, `core/pom.xml` differs (the other 43 match).
+In the editor, 2 s after the sync's reload the server logs `[watcher] build files changed — sync needed` and asks "Build files changed. Lathe will run a full refresh." again, though nothing changed since the sync.
+An agent is blocked the same way: right after that successful sync, MCP `verify_change` answers "Verification deferred: a pending build-file or dependency change needs a sync. Run `.lathe/lathe-sync.sh`, then re-check.", and `run_test` passes but ends "Sync required: build files changed".
+A second sync records the sorted POM and settles it (`verify_change`: "No errors"), so each such POM edit costs one extra sync, and an agent that trusts the first one cannot verify until it runs another.
+
+### Fix direction
+
+Fingerprint the POMs when the build ends rather than when the root project writes the manifest: a build that edits its own POMs has then finished doing so.
+Maven's session end (a lifecycle participant's `afterSessionEnd`, in the extension) is one place to re-fingerprint `buildFiles` and rewrite them in the manifest when any moved.
+
+### Resolution
+
+The extension records the POMs once the build has ended: `LatheLifecycleParticipant.afterSessionEnd` fingerprints the manifest's build files again and rewrites the changed entries (`WorkspaceManifestData.withBuildFiles`), so the manifest holds what the POMs contain after a build that rewrote them.
+It does so only when this build wrote the manifest (its mtime moved since the lock was taken): a build that ran no sync, as `mvn compile`, leaves a POM edited since the last sync differing, and the server still asks for a sync.
+A file watched by touch (no fingerprint) and one that is gone keep their entries; the step is best-effort and never fails the build.
+The server needs no change: while the build holds the lock the watcher does not poll, and the rewrite lands before the lock is released, so the server reloads once.
+Checked on jdbi: after the same POM edit and one sync (sortpom rewrote `core/pom.xml`), all 44 build files match the manifest.
+
+A POM edited by hand while a sync runs is taken as the build's, so it raises no prompt; the next edit does.
+
+### Regression targets
+
+- `LatheLifecycleParticipantTest.refreshBuildFiles_pomRewrittenAfterTheSync_recordsItsContentNow`
+- `LatheLifecycleParticipantTest.refreshBuildFiles_manifestNotWrittenByThisBuild_leftAsTheSyncWroteIt`
+- `LatheLifecycleParticipantTest.afterSessionEnd_syncWroteTheManifestThenThePomChanged_fingerprintUpdated`
+
+---
+
 ## WS-36 — A re-sync once recompiled a module's generated sources twice, holding a query for 44 s — non-goal
 
 **Status: non-goal** (2026-11-19: not reproduced; three forced re-syncs of Caffeine each wrote the module once, with no reload)
