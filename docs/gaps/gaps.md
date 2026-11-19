@@ -802,6 +802,8 @@ The annotation processor regenerates the builder from the renamed blueprint, so 
 A JPA metamodel attribute (`Foo_.name`) used by hand-written queries behaves the same.
 
 Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_change` called clean, was split out as MC-98 (done).
+Seen again on Helidon (2026-11-19, `8c099a5`): renaming `ListenerConfigBlueprint.port()` edits 3 places in 2 files, lists 5 places "Left to the generator", and breaks 34 hand-written calls of the generated `Builder.port(int)`, which `verify_change` reports.
+Before the rename, `analyze_change` on the option reports `references: 5 production, 0 test` and `relevant tests: none`: the derived setter's callers are not part of the blast radius it previews.
 
 ### Fix direction
 
@@ -2269,6 +2271,87 @@ The list is in path order, and `javaparser-core-testing/…` sorts before `javap
 ### Fix direction
 
 Order a capped list by module and source tree (main before test, the declaring module first), then by path.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-101 — `find_references` lists every override's declaration as a use
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP `find_references`.**
+
+Found by the exploratory MCP round on Dropwizard (2026-11-19, `8c099a5`).
+
+### Observed behaviour
+
+`find_references` on the abstract `Application.run(T, Environment)` answers "55 references": 4 calls and 1 Javadoc `{@link}` mention, the 49 subclass declarations that override it, and its own declaration.
+For the same method `analyze_change` counts 5 references (1 production, 4 test) and lists the 49 overrides separately, and `call_hierarchy` lists 4 callers.
+The tool's description promises "every real use", and the answer ends "All javac-resolved references to this exact declaration", so an agent asking who calls the method gets eleven times the answer.
+A method's own declaration is listed for every symbol (`Duration.toMilliseconds`, the field `Duration.count`).
+
+### Fix direction
+
+List uses only, as `analyze_change` counts them; leave the declaration and the overriding declarations out, or list them apart, as `analyze_change`'s `overridden by:` does.
+Uses made through an override (FR-006) stay.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-102 — A qualified name as `symbol` is refused on the line that reads it
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP position tools (`get_definition` seen; they share the `symbol` lookup).**
+
+Found by the exploratory MCP round on Helidon (2026-11-19, `8c099a5`).
+
+### Observed behaviour
+
+`get_definition` with `symbol` `java.net.InetSocketAddress` on `import java.net.InetSocketAddress;` answers "Line 19 has no symbol named 'java.net.InetSocketAddress'. Line 19 reads: import java.net.InetSocketAddress;".
+On `requires io.helidon.builder.api;` the module name is refused the same way.
+The simple name, any one segment (`api`, `builder`), or a column resolves at once, to `InetSocketAddress.java` and to the `io.helidon.builder.api` module.
+The answer contradicts itself, and the qualified name is what an agent copies from an import or a `requires`.
+
+### Fix direction
+
+Accept a dotted `symbol` that the line contains, and resolve it at its last segment.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-103 — A generated file at the build's own path is "not checked", without naming Lathe's copy
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP `get_diagnostics`, `find_references` (and the other file tools) on annotation-processor output under `target/`.**
+
+Found by the exploratory MCP round on Helidon (2026-11-19, `8c099a5`).
+
+### Observed behaviour
+
+On `webserver/webserver/target/generated-sources/annotations/io/helidon/webserver/WebServerConfig.java`, the file the build generated, `get_diagnostics` answers "WebServerConfig.java was not checked", and `find_references` "No references found", both noting that it "is in no source root of module webserver/webserver, so a sync does not add it".
+Lathe analyses the same generated file as `.lathe/webserver/webserver/generated-sources/io/helidon/webserver/WebServerConfig.java`, the path `search_symbols` and `get_definition` return; the answer does not say so.
+`outline` on the `target/` path works.
+
+### Fix direction
+
+Map a file under a module's generated-sources output to Lathe's mirror of it, or name the mirror path in the "not checked" note.
 
 ### Regression targets
 
