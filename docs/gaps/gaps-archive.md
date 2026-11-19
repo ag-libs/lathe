@@ -13338,6 +13338,44 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first — done
+
+**Status: done** (2026-11-19)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: Neovim.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+From a file under `src/main/java`, `:LatheNew` → Test offers the buffer's package twice, and the main-source row comes first.
+Accepting the top row is the natural move, yet a test belongs in the test root.
+
+### Fix direction
+
+`SourceLayout.destinations` now owns the ranking (moved from `lathe-neovim/runtime/lua/lathe/new.lua` in `6d40d341`).
+Its unfiltered list ranks both scopes equally within the buffer's package and module,
+so the alphabetical tie-break (`main` < `test`) still decides.
+The typed-package path already prefers the kind's scope; that partial improvement does not fix the unfiltered list.
+Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
+Still on main `dbbdabf1` (2026-11-19): `SourceLayout.rank` gives both scopes of the buffer's package rank 0, and the client keeps the server's order.
+
+### Resolution
+
+The unfiltered list orders each rank by the kind's scope before the module, package and scope tie-break, so Test from a main file leads with the test row of the buffer's package, then the rest of the module's test packages.
+The scope check that ranked the other modules moved into that key.
+For Class, the module's main packages now come before its test-only packages, where the package order alone used to mix them.
+
+### Regression targets
+
+- `SourceLayoutTest.destinations_testOnlyPackageInModule_kindsScopeLeadsEachRank`
+
+---
+
 ## NV-11 — The Java indenter still disagrees with google-java-format on 1% of lines — non-goal
 
 **Status: non-goal** (2026-11-17: stopped on purpose on 2026-11-12, to keep the indenter simple)
