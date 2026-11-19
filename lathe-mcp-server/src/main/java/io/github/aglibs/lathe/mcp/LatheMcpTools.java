@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -185,9 +186,9 @@ final class LatheMcpTools {
                  "properties":{
                    "file":{"type":"string","description":"Absolute path to a test .java file."},
                    "scope":{"type":"string","enum":["class","method","package"],
-                     "description":"What to run (default class)."},
+                     "description":"What to run (default class, or method when 'method' is given)."},
                    "method":{"type":"string",
-                     "description":"Test method name (required when scope=method)."}}}\
+                     "description":"Test method name; runs that method (scope=method)."}}}\
                 """,
             RUNS_CODE,
             """
@@ -550,14 +551,22 @@ final class LatheMcpTools {
 
   private static CallToolResult handleRunTest(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
-    final TestScope scope = testScope(stringArg(request, "scope"));
+    // A client may fill an unset optional string with "": that names no method.
+    final String methodArg = stringArg(request, "method");
+    final String method = methodArg == null || methodArg.isBlank() ? null : methodArg;
+    final TestScope scope = testScope(stringArg(request, "scope"), method);
     if (scope == null) {
       return McpText.error("run_test 'scope' must be one of class, method, package");
     }
 
-    final String method = stringArg(request, "method");
     if (scope == TestScope.METHOD && method == null) {
       return McpText.error("run_test with scope=method requires a 'method' argument");
+    }
+
+    if (scope != TestScope.METHOD && method != null) {
+      return McpText.error(
+          "run_test 'method' runs one method: leave out 'scope' or set it to method, not %s"
+              .formatted(scope.name().toLowerCase(Locale.ROOT)));
     }
 
     return atFile(
@@ -644,9 +653,14 @@ final class LatheMcpTools {
         .findFirst();
   }
 
-  // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
-  private static TestScope testScope(final String scope) {
-    return scope == null ? TestScope.CLASS : enumArg(TestScope.class, scope).orElse(null);
+  // Optional, case-insensitive; absent means method when one is named, else class; unknown means
+  // null (caller errors on it).
+  static TestScope testScope(final String scope, final String method) {
+    if (scope == null) {
+      return method == null ? TestScope.CLASS : TestScope.METHOD;
+    }
+
+    return enumArg(TestScope.class, scope).orElse(null);
   }
 
   // Optional, case-insensitive; absent means the tool's default, unknown means null.

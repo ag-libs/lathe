@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine;
+import io.github.aglibs.lathe.server.LatheEngine.TestScope;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -264,6 +265,39 @@ class LatheMcpToolsTest {
     assertThat(call("run_test", Map.of("file", file, "scope", "nope")).isError()).isTrue();
     assertThat(call("run_test", Map.of("file", file, "scope", "method")).isError())
         .isTrue(); // method scope without a method
+  }
+
+  @Test
+  void runTest_methodWithAnotherScope_returnsErrorNamingTheConflict() {
+    final String file = tmp.resolve("FooTest.java").toString();
+
+    for (final String scope : List.of("class", "package")) {
+      final CallToolResult result =
+          call("run_test", Map.of("file", file, "scope", scope, "method", "m"));
+
+      assertThat(result.isError()).as(scope).isTrue();
+      assertThat(text(result))
+          .isEqualTo(
+              "run_test 'method' runs one method: leave out 'scope' or set it to method, not %s"
+                  .formatted(scope));
+    }
+
+    assertThat(
+            List.of(
+                call("run_test", Map.of("file", file, "method", "m")),
+                call("run_test", Map.of("file", file, "scope", "class", "method", " "))))
+        .as("a method alone, a blank method beside a scope")
+        .allSatisfy(result -> assertThat(text(result)).doesNotContain("runs one method"));
+    assertThat(text(call("run_test", Map.of("file", file, "scope", "method", "method", ""))))
+        .isEqualTo("run_test with scope=method requires a 'method' argument");
+  }
+
+  @Test
+  void testScope_noScope_methodWhenOneIsNamedElseClass() {
+    assertThat(LatheMcpTools.testScope(null, "m")).isEqualTo(TestScope.METHOD);
+    assertThat(LatheMcpTools.testScope(null, null)).isEqualTo(TestScope.CLASS);
+    assertThat(LatheMcpTools.testScope("Package", "m")).isEqualTo(TestScope.PACKAGE);
+    assertThat(LatheMcpTools.testScope("nope", null)).isNull();
   }
 
   @Test
