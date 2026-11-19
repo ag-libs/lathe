@@ -2303,30 +2303,3 @@ Uses made through an override (FR-006) stay.
 ### Regression targets
 
 None yet.
-
----
-
-## MC-102 — A qualified name as `symbol` is refused on the line that reads it
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: MCP position tools (`get_definition` seen; they share the `symbol` lookup).**
-
-Found by the exploratory MCP round on Helidon (2026-11-19, `8c099a5`).
-
-### Observed behaviour
-
-`get_definition` with `symbol` `java.net.InetSocketAddress` on `import java.net.InetSocketAddress;` answers "Line 19 has no symbol named 'java.net.InetSocketAddress'. Line 19 reads: import java.net.InetSocketAddress;".
-On `requires io.helidon.builder.api;` the module name is refused the same way.
-The simple name, any one segment (`api`, `builder`), or a column resolves at once, to `InetSocketAddress.java` and to the `io.helidon.builder.api` module.
-The answer contradicts itself, and the qualified name is what an agent copies from an import or a `requires`.
-
-### Fix direction
-
-Accept a dotted `symbol` that the line contains, and resolve it at its last segment.
-
-### Regression targets
-
-None yet.

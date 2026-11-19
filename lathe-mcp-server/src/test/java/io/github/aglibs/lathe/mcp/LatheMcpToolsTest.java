@@ -349,6 +349,33 @@ class LatheMcpToolsTest {
     assertThat(text(describe(file, 2, 15))).doesNotContain("must be on a name");
   }
 
+  // MC-102: an agent copies a qualified name from an import or a requires; it stands at its last
+  // segment, where the line spells the whole name.
+  @Test
+  void describeSymbol_qualifiedName_resolvesAtItsLastSegment() throws Exception {
+    final Path file = tmp.resolve("B.java");
+    Files.writeString(
+        file, "import java.util.List;\nimport java.util.*;\nclass B { List<String> names; }\n");
+
+    assertThat(
+            List.of(
+                named(file, 1, "java.util.List", null),
+                named(file, 1, "util.List", null),
+                named(file, 2, "java.util.*", null)))
+        .as("the whole qualified name, a trailing part of it, a wildcard import")
+        .allSatisfy(result -> assertThat(text(result)).doesNotContain("has no symbol"));
+    assertThat(text(named(file, 1, "java.util.Map", null)))
+        .isEqualTo(
+            "Line 1 has no symbol named 'java.util.Map'. Line 1 reads: import java.util.List;");
+    assertThat(
+            List.of(
+                named(file, 1, "xjava.util.List", null),
+                named(file, 1, "java.util.Lis", null),
+                named(file, 1, "java.util.", null)))
+        .as("a longer qualifier, a cut-off last segment, no last segment")
+        .allSatisfy(result -> assertThat(text(result)).contains("has no symbol named"));
+  }
+
   // Every file tool reads a Java source: anything else would be answered about a file never
   // compiled.
   @Test

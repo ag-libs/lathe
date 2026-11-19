@@ -73,6 +73,7 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -464,10 +465,43 @@ public final class LatheEngine {
   }
 
   // Where name stands as a whole word on the line (0-based columns, left to right), for an agent
-  // that names the symbol instead of counting its column. The text only finds the candidates: javac
+  // that names the symbol instead of counting its column; a qualified name, as an import or a
+  // requires spells it, stands at its last segment that is a name (java.util.List at List,
+  // java.util.* at util, String.class at String). The text only finds the candidates: javac
   // resolves each, and refuses one inside a comment or a string (NotOnName).
   public List<Integer> nameColumns(final Path file, final int line, final String name) {
-    return TextMentions.wordStarts(sourceLine(file, line).orElse(""), name).boxed().toList();
+    final String text = sourceLine(file, line).orElse("");
+    if (name.indexOf('.') < 0) {
+      return TextMentions.wordStarts(text, name).boxed().toList();
+    }
+
+    int end = name.length();
+    int segment = -1;
+    while (end > 0 && segment < 0) {
+      final int start = name.lastIndexOf('.', end - 1) + 1;
+      final String part = name.substring(start, end);
+      if (SourceVersion.isIdentifier(part) && !SourceVersion.isKeyword(part)) {
+        segment = start;
+      }
+
+      end = start - 1;
+    }
+
+    if (segment < 0) {
+      return List.of();
+    }
+
+    final int offset = segment;
+    return IntStream.rangeClosed(0, text.length() - name.length())
+        .filter(at -> text.startsWith(name, at))
+        .filter(at -> DeclarationNames.identifierStart(text, at) == at)
+        .filter(
+            at ->
+                at + name.length() == text.length()
+                    || !Character.isJavaIdentifierPart(text.charAt(at + name.length())))
+        .map(at -> at + offset)
+        .boxed()
+        .toList();
   }
 
   /**

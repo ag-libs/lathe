@@ -165,6 +165,28 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     assertThat(target.snippet()).as("the target line alone").isEqualTo("void greet() {}");
   }
 
+  // MC-102: a qualified name stands at its last segment that is a name: a module name in a
+  // requires, a wildcard import, a class literal.
+  @Test
+  void nameColumns_qualifiedName_columnOfItsLastNamedSegment() throws Exception {
+    final Path moduleInfo =
+        Files.writeString(
+            tmp.resolve("module-info.java"),
+            "module app {\n  requires io.helidon.builder.api;\n}\n");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.nameColumns(moduleInfo, 1, "io.helidon.builder.api")).containsExactly(30);
+    assertThat(engine.nameColumns(moduleInfo, 1, "builder.api")).containsExactly(30);
+    assertThat(engine.nameColumns(moduleInfo, 1, "io.helidon.common.api")).isEmpty();
+    assertThat(engine.nameColumns(moduleInfo, 1, "helidon.builder.ap")).isEmpty();
+    final Path imports =
+        Files.writeString(
+            tmp.resolve("Imports.java"),
+            "import java.util.*;\nclass Imports { Class<?> type = String.class; }\n");
+    assertThat(engine.nameColumns(imports, 0, "java.util.*")).containsExactly(12);
+    assertThat(engine.nameColumns(imports, 1, "String.class")).containsExactly(32);
+  }
+
   @Test
   void references_methodUsedInAnotherFile_findsUsageWithSnippet() throws Exception {
     final GreetFixture fx = greetFixture();
