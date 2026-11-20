@@ -1,6 +1,6 @@
 # Lathe and jdtls — LSP Benchmark Pre-Registration
 
-**Status: PRE-REGISTRATION, drafted 2026-11-06, revised 2026-11-07; first runs 2026-11-07/08; amended 2026-11-07, 2026-11-08, 2026-11-11 and 2026-11-19 (see [Amendments](#amendments)).**
+**Status: PRE-REGISTRATION, drafted 2026-11-06, revised 2026-11-07; first runs 2026-11-07/08; amended 2026-11-07, 2026-11-08, 2026-11-11, 2026-11-19 and 2026-11-20 (see [Amendments](#amendments)).**
 This file fixes the projects, servers, queries, metrics and fairness rules before any result exists, so none of them can be chosen after seeing the numbers.
 It is committed ahead of the first run; results go in `results/` and are reported against it unchanged.
 A change to this file after the first run is listed under [Amendments](#amendments) with its date and reason, and the runs before it are reported as such.
@@ -213,3 +213,17 @@ Then every row with its raw results and the command that reproduces it, the rows
     It is one more step of Lathe's setup on that project, which its setup row and the page name.
     Without it, Lathe's "right again after a dependency is added" on spring-petclinic is "never", and every sync after the first fails the same way.
     When WS-40 is fixed, the replacement goes, and the round runs again on the release that fixes it.
+- **2026-11-20, before any measured run of the round, and before the trial round:**
+  - **Item 5 lists what Lathe lacks, not only what both servers do.**
+    Its rows were the features both servers offer, plus inlay hints and member symbol search, so its count read as near parity.
+    It gains a row for each feature jdtls has and Lathe lacks, one row per kind: code generation (getters and setters, `toString`, `equals` and `hashCode`, a constructor from fields, delegate methods); inline (a variable, a method, a constant), move, change signature and extract interface; selection range; code lens (reference counts and run and debug actions); opening a dependency's class that has no sources jar.
+    Each is checked once per server and project, as formatting and folding are: the request or code action of that kind at a position fixed in the project's case file before the trial round, offered, and its edit applied to a copy that then compiles where it is an edit.
+    Each is confirmed on the pinned jdtls before the round; a row the pinned jdtls does not support either stays, marked so.
+  - **Item 5 lists the refactorings and quick fixes Lathe offers, one row each**, which the earlier rows left out but for rename and the import fix: extract a variable, a constant, a field and a method (each also replacing every occurrence); convert a local to `var` and back; surround with try/catch and with try-with-resources; add `throws`; implement missing methods; add a constructor parameter from a field; checked the same way, their edits compiled.
+  - **The headline counts features supported, of all compared**, for each server, instead of the features with the same answers; whether the shared features' answers agree, location by location, stays on the page.
+  - **Formatting is a row of its own, not a shared feature, and is expected to read unsupported for Lathe on all three projects**, which is stated with the reason, not left to be found: Lathe formats only with the formatter a project declares (Spotless, or a `lathe-style.json`); spring-petclinic's is spring-javaformat, which Lathe does not run (EG-113), and Dropwizard and Helidon declare none.
+    jdtls formats any file with Eclipse's formatter.
+  - **The page says what Lathe does not do**, in a section of its own, written from the gap registry as it stands when the round runs, each line with its gap where one is filed and "no gap filed" or "by design" where none is: the features above; smaller gaps in shared features (folding of comments that are not Javadoc, and of a `package-info.java`'s Javadoc; completion in a Javadoc `{@link}`; a deprecated API's replacement; assignment and array creation while debugging); and limits of the design or its reach (a build before the first answer, where jdtls opens any folder; Neovim on Linux and macOS only; Gradle included builds and Java compiled jointly with Groovy; slow references, implementations and incoming calls on very large codebases, with no answer cached).
+    Stated, not measured, apart from the rows item 5 checks.
+  - **The report's layout is fixed now**, before any result: `report.py --headline` generates it whole, so no value is copied by hand and no layout is chosen after the numbers are seen.
+    Feature parity shows one row per area, the shared features as a count and every difference by name; every feature's own row, with its latency, follows it, collapsed; then what Lathe does not do and where jdtls is better.
