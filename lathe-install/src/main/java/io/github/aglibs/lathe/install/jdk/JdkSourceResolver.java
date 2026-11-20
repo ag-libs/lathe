@@ -14,7 +14,6 @@ public final class JdkSourceResolver {
 
   private static final String IMPLEMENTOR_VERSION = "IMPLEMENTOR_VERSION";
   private static final String IMPLEMENTOR = "IMPLEMENTOR";
-  private static final String JAVA_VERSION = "JAVA_VERSION";
   private static final String UNKNOWN = "unknown";
   private static final List<String> LEGAL_SUFFIXES =
       List.of(" Corporation", " Corp.", " Corp", " Inc.", " Inc", " Ltd.", " LLC");
@@ -46,7 +45,7 @@ public final class JdkSourceResolver {
     return resolve(
         home,
         release.getOrDefault(IMPLEMENTOR, UNKNOWN),
-        release.getOrDefault(JAVA_VERSION, UNKNOWN));
+        release.getOrDefault(LatheLayout.JDK_RELEASE_VERSION_KEY, UNKNOWN));
   }
 
   private static JdkSource resolve(final Path home, final String vendor, final String version) {
@@ -83,7 +82,7 @@ public final class JdkSourceResolver {
     }
 
     final String implementor = release.get(IMPLEMENTOR);
-    final String javaVersion = release.get(JAVA_VERSION);
+    final String javaVersion = release.get(LatheLayout.JDK_RELEASE_VERSION_KEY);
     if (implementor != null && javaVersion != null) {
       return sanitize("%s-%s".formatted(stripLegalSuffix(implementor), javaVersion));
     }
@@ -115,7 +114,7 @@ public final class JdkSourceResolver {
       return Map.of();
     }
 
-    final var file = home.resolve("release");
+    final var file = home.resolve(LatheLayout.JDK_RELEASE_FILE);
     if (!Files.exists(file)) {
       return Map.of();
     }
