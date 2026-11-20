@@ -45,7 +45,8 @@ public final class TokenScanner extends WrittenSourceScanner {
           "parameter",
           "variable");
 
-  public static final List<String> TOKEN_MODIFIERS = List.of("declaration", "static", "deprecated");
+  public static final List<String> TOKEN_MODIFIERS =
+      List.of("declaration", "static", "deprecated", "readonly");
 
   private final Trees trees;
   private final Elements elements;
@@ -318,13 +319,20 @@ public final class TokenScanner extends WrittenSourceScanner {
 
   private Set<String> interestingModifiers(final Element element) {
     final var mods = new HashSet<String>();
-    if (element.getModifiers().contains(Modifier.STATIC)) {
+    final Set<Modifier> modifiers = element.getModifiers();
+    if (modifiers.contains(Modifier.STATIC)) {
       mods.add("static");
     }
+
+    if (element.getKind() == ElementKind.FIELD && modifiers.contains(Modifier.FINAL)) {
+      mods.add("readonly");
+    }
+
     // Also a Javadoc-only @deprecated, which javac records and hover shows.
     if (elements.isDeprecated(element)) {
       mods.add("deprecated");
     }
+
     return Set.copyOf(mods);
   }
 

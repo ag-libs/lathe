@@ -12,8 +12,8 @@ Deviations from the plan below, decided during implementation:
 - **Distinct `class` / `interface` / `enum`** rather than one `class` type — more precise and what the
   [Class/Import slice](lathe-class-import-semantic-highlighting.md) required; imports needed no
   dedicated `visitImport` (the existing member-select traversal already reaches them).
-- **`abstract` / `readonly` modifiers deferred**, along with distinct `recordComponent` /
-  `annotationMember` types — low value, more legend noise.
+- Final fields now carry `readonly` at declarations and references.
+  `readonly` for locals, `abstract`, and distinct `recordComponent` / `annotationMember` types remain deferred.
 - Two correctness guards were added: reference tokens emit only when the source at the range spells
   the name (rejects the synthetic annotation `value` element), and member selectors resolve via
   `trees.getElement` (not `SourceLocator.elementAt`, which climbs a package qualifier to its type).
