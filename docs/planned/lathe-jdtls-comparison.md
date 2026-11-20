@@ -4,7 +4,8 @@
 
 **In progress.** The harness is built (`dev/lsp-bench/`: the pre-registration #134, the navigation queries #135, the editing loop and outside changes 2026-11-11 to 11-13) and was trialled on every project.
 On 2026-11-19 the published comparison was narrowed to five headline items, recorded as the 2026-11-19 amendment of `dev/lsp-bench/README.md`.
-The harness for the five items is built (below); next, a trial round on the release candidate, then the measured round on the release.
+On 2026-11-20 item 5 was widened to the features jdtls has and Lathe lacks, and the page gained a section on what Lathe does not do, so the comparison shows Lathe's gaps as plainly as its strengths (the 2026-11-20 amendment).
+The harness for the five items is built, save the widened rows (below); next, a trial round on the release candidate, then the measured round on the release.
 The measured results stay out of the repository until the comparison page is written.
 
 ## The rule
@@ -32,9 +33,30 @@ What makes them worth reading is the precision of each number, not their count.
 | 4 | Does it stay right when the project changes under it? | A branch switch, and a dependency added to the build file and used: the time until the answers and errors are right again. A server that needs a restart or a workspace wipe to get there fails the item, with what it took. |
 | 5 | Does it do what jdtls does? | One row per feature: supported or not, and on the fixed queries whether both servers give the same answer, location by location, a disagreement settled by compiling with the build. |
 
-Item 5 covers definition (project, inherited, library, JDK), type definition, implementations, references, document highlight, type hierarchy both ways, call hierarchy both ways, hover, signature help, completion, rename (the result compiles), the import fix, formatting, document and workspace symbols, folding, and running and debugging a main method (on jdtls through the java-debug bundle, counted in its setup).
-Its latency goes in the full report, not the table.
-Rows Lathe lacks say so: inlay hints (EG-091, deferred), and member symbol search, which Lathe does not plan (jdtls too searches types only by default).
+Item 5 has three kinds of rows, so its count cannot read as parity when it is not, nor hide what Lathe does well.
+
+The features both servers offer: definition (project, inherited, library, JDK), type definition, implementations, references, document highlight, type hierarchy both ways, call hierarchy both ways, hover, signature help, completion, the import fix, document and workspace symbols, folding, and running and debugging a main method (on jdtls through the java-debug bundle, counted in its setup).
+These are checked by their answers, location by location.
+
+The refactorings and quick fixes Lathe offers, one row each, as jdtls offers most of them too: extract a variable, a constant, a field and a method (each also replacing every occurrence; Lathe compile-checks the extracted method when it is picked); convert a local to `var` and back to its type; surround with try/catch and with try-with-resources; add `throws`; implement missing methods; add a constructor parameter from a field; and rename, whose result compiles, refused where a use would change what it refers to.
+Each is checked as the rows below are: offered at a position fixed before the round, its edit applied to a copy that then compiles.
+
+The features jdtls has and Lathe lacks, each a row of its own, so the table shows them rather than leaving them out:
+- code generation, one row each: getters and setters, `toString`, `equals` and `hashCode`, a constructor from fields, delegate methods (Lathe has a constructor parameter from a field, stubs for missing methods and override completion);
+- refactorings, one row each: inline (a variable, a method, a constant), move, change signature, extract interface (Lathe extracts a variable, constant, field or method, converts to and from `var`, and renames);
+- selection range, expanding a selection by syntax (EG-018);
+- code lens, reference counts and run and debug actions above declarations (EG-064), off by default in vscode-java and counted as jdtls's either way;
+- opening a dependency's class that has no sources jar (EG-063): jdtls shows the class, Lathe cannot navigate there;
+- inlay hints (EG-091);
+- member symbol search, methods and fields by name (EG-092), which Lathe does not plan; jdtls searches types only by default, so the row reads as its default gives it.
+
+These and the refactoring rows above are checked once per server and project: the request or code action of that kind, at a position fixed before the round, offered, and its edit applied to a copy that then compiles where it is an edit.
+Each is confirmed on the pinned jdtls before the round; a row the pinned jdtls does not support either stays in the table, marked so.
+
+Formatting is a row of its own, scored as offered or not on each project, and will read unsupported for Lathe on all three, which the page says and explains: Lathe formats only with the formatter the project declares (Spotless, or a `lathe-style.json`), and spring-petclinic's spring-javaformat is one it does not run (EG-113), while Dropwizard and Helidon declare none.
+jdtls formats any file with Eclipse's formatter, whatever style the project keeps.
+
+The latency of every row goes in the full report, not the table.
 
 Not in the headline, and why:
 - Running a test from the editor: its measurement (8 in the 2026-11-11 amendment) is not built, and few users of either server run tests from Neovim.
@@ -42,6 +64,31 @@ Not in the headline, and why:
 - Completion latency, an error in another module, disk use: in the full report.
 - Of items 3 and 4, the README table shows the typed error and the branch switch; the time until an undone error is gone and the build-file change are on the page.
 - Navigation latency: mixed, as Lathe is slower on references to common method names (FR-029, deferred); in the full report and in "where jdtls is better".
+
+## What Lathe does not do
+
+Beside what item 5 shows Lathe does, including its refactorings, the page has a section on what it does not, which says so before any reader goes looking, written from the gap registry as it stands when the round runs: each line names its gap where one is filed, and says "no gap filed" or "by design" where none is, never a gap that does not exist.
+It is stated, not measured, apart from the rows item 5 also checks.
+
+Features jdtls has (item 5 checks each):
+- code generation of accessors, `toString`, `equals` and `hashCode`, constructors from fields, delegates (no gap filed);
+- inline, move, change signature and extract interface (no gap filed);
+- selection range (EG-018), code lens (EG-064), inlay hints (EG-091);
+- a dependency's class without a sources jar (EG-063);
+- member symbol search (EG-092), not planned;
+- formatting with a formatter the project does not declare: none on a project that declares none, and not spring-javaformat or formatter-maven-plugin (EG-113).
+
+Smaller gaps in shared features:
+- folding of comments that are not Javadoc (EG-053), and of a package's Javadoc (EG-020);
+- completion inside a Javadoc `{@link}` (EG-050);
+- no suggestion of a deprecated API's replacement (EG-094);
+- while debugging, no assignment to a variable (DB-1) and no array creation in an expression (DB-2).
+
+Limits of the design or its reach:
+- a build first: Lathe answers a Maven, Gradle or OpenJDK project after its build, where jdtls opens any folder, loose files included (by design: the project model is the build's);
+- Neovim on Linux and macOS only; on Windows, Lathe runs in VS Code (no gap filed);
+- on Gradle, included builds (WS-27) and Java compiled jointly with Groovy (WS-37);
+- on very large codebases, references to a common method name, implementations of an interface method and incoming calls take seconds, and a repeated query is searched again (FR-029, FR-032).
 
 Setup is stated in the page's introduction as counts, not as an item: the lines of Neovim configuration, the files to download and the commands to run before each server answers.
 
@@ -115,12 +162,46 @@ Checked before that, on versions other than the round's pinned ones: the self-ch
 The trial round runs them on the pinned versions.
 Lathe 0.3.1 advertises no formatter on spring-petclinic, whose style (spring-javaformat) it does not run, so that row would show Lathe unsupported there.
 
+## What is left to build
+
+The widened rows of item 5, both the features Lathe lacks and the refactorings it offers: for each, the request or code action kind each server answers it with, a position per project in its case file, and the compile check of its edit where it has one (`extra_checks`, as formatting and folding are checked).
+About a day, before the trial round, which also tests them.
+
+The report below, generated by `report.py --headline` from the sessions' results, so the page is the report with prose around it, not numbers copied by hand: an area for each parity row in the case files; the headline's parity row counting each server's features supported, of all compared, where it now counts the shared features with the same answers (`report.py`'s `parity_cell` and its check in `selfcheck.py`); and the grouped table, the full table and the list of what Lathe does not do as Markdown.
+About half a day.
+
+## The report
+
+The target of the harness: one report a person reads in a few minutes, generated whole from the results, which the page publishes.
+It holds, in this order:
+
+1. **The headline**: the README table below, every value a median with its range.
+2. **Feature parity at a glance**: one row per area, where the features both servers offer collapse into a count and every difference is named, so nothing is hidden behind a number:
+
+   ```markdown
+   | Area            | Both             | Only jdtls                                                    | Only Lathe |
+   |-----------------|------------------|---------------------------------------------------------------|------------|
+   | Navigation      | <n> ✓, <n> agree | member symbol search                                          | <…>        |
+   | Editing aids    | <n> ✓            | inlay hints, selection range, code lens                       | <…>        |
+   | Refactoring     | <n> ✓            | inline, move, change signature, extract interface             | <…>        |
+   | Code generation | –                | accessors, toString, equals/hashCode, constructor, delegates  | <…>        |
+   | Formatting      | –                | without a formatter the project declares ¹                    | <…>        |
+   | Run and debug   | <n> ✓            | –                                                             | <…>        |
+   ```
+
+   "Agree" counts the shared answers that match location by location.
+   Each row's column follows from its "offered" check in the round, for both servers: a Lathe row the pinned jdtls does not offer is named under "Only Lathe", whatever was expected of it.
+   A footnote gives each difference's reason where it has one, as formatting's.
+3. **Every feature**, one row each, with both servers' marks and latency, collapsed under `<details>`, for a reader who wants all of it.
+4. **What Lathe does not do**: the list above, a line each with its gap.
+5. **Where jdtls is better**: every loss in its own words.
+6. **Per project**: the full report, every value with its raw results and the command that reproduces it.
+
+Names, not abbreviations; no value without its unit; a row that could not be measured says why instead of showing a blank.
+
 ## The page
 
-Written last, from the measured round, as a `docs/guide/` page linked from the README's "Why Lathe".
-- The architecture differences, stated as facts, and the setup counts.
-- The five items, both servers side by side per project.
-- "Where jdtls is better": every loss in its own words.
+Written last, from the measured round, as a `docs/guide/` page linked from the README's "Why Lathe": the report above, introduced by the architecture differences, stated as facts, and the setup counts.
 
 The README's "Why Lathe" carries one table, read in half a minute, with the page one click away.
 Its layout, with placeholders where the measured values go:
@@ -142,19 +223,18 @@ Measured against jdtls <version> on Helidon, Dropwizard and spring-petclinic, at
 | Typed error shown after                  | <time>         | <time>                   |
 | Right again after a branch switch        | <time>         | <time, or what it took>  |
 | Right again after a dependency is added  | <time>         | <time, or what it took>  |
-| Features with the same answers           | <n> of <n> ²   | <n> of <n>               |
+| Features supported, of the <n> compared  | <n> ²          | <n>                      |
 | Setup in Neovim                          | <n> lines      | <n> lines, <n> downloads |
 
 ¹ includes the `mvn install` jdtls needs before it imports Helidon.
-² what is missing, and where jdtls is faster, on the linked page.
+² every feature Lathe lacks is named on the linked page, under "What Lathe does not do", with where jdtls is faster.
 Each value is a median; its range and the command that reproduces it are on the linked page.
 ```
-- Per project, the full report with every value, its raw results and the command that reproduces it.
 
 ## Order
 
 1. Finish the release QA (the MCP battery and the gaps).
-2. Set up the round's machine (`setup.sh`, the clones and the pinned Lathe).
+2. Build the widened rows of item 5, and set up the round's machine (`setup.sh`, the clones and the pinned Lathe).
 3. A trial round on the release candidate, about 1½ hours: it tests the harness, and a loss it shows is fixed or filed before the release; its numbers are never published.
 4. The measured round on the release, about 4 hours in sessions of at most 45 minutes.
 5. The page.

@@ -267,6 +267,7 @@ reused):
 - [Measured Comparison with jdtls](planned/lathe-jdtls-comparison.md) — **in progress (narrowed 2026-11-19).**
   How to answer "why Lathe and not jdtls?" with evidence: no claim without a measurement anyone can rerun, and a fix wherever Lathe loses before anything is published.
   Five headline items (first answer, memory, errors against the build, staying right after outside changes, feature parity) on three projects, measured by the pre-registered harness in `dev/lsp-bench/`.
+  Feature parity lists every feature jdtls has and Lathe lacks, and the page says what Lathe does not do (2026-11-20).
   A trial round on the release candidate, the measured round on the release, the comparison page last.
 - [Search Speed on Large Codebases](planned/lathe-search-speed.md) — **in progress (2026-11-10).** FR-029 and
   FR-032 measured and profiled: class reading per javac task dominates and one module's worker carries a query.
