@@ -179,7 +179,7 @@ when cut. Items are grouped, not ordered.
 - Rename beyond the M2 common cases; inlay hints; conservative on-type indentation.
 - Generic-bound receiver completion; snippet (template) completion.
 - `textDocument/typeDefinition` (Neovim `grt`).
-- Semantic-token modifiers (`readonly`/`abstract`/visibility) and `recordComponent`/`annotationMember`.
+- Semantic-token modifiers (`readonly` for locals, `abstract`, visibility) and `recordComponent`/`annotationMember`.
 
 ### Reliability and freshness
 

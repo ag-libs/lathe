@@ -63,8 +63,8 @@ class SemanticTokensTest extends SampleFixture {
   }
 
   @Test
-  void staticField_decl_has_static_modifier() {
-    assertToken(27, 30, "property", "declaration", "static");
+  void scan_staticFinalFieldDeclaration_hasStaticAndReadonly() {
+    assertToken(27, 30, "property", "declaration", "static", "readonly");
   }
 
   @Test
@@ -101,13 +101,18 @@ class SemanticTokensTest extends SampleFixture {
   }
 
   @Test
-  void staticField_usage_is_property_with_static() {
+  void scan_staticFinalFieldReferences_haveStaticAndReadonly() {
     // ENGLISH from static import
-    assertToken(55, 31, "property", "static");
+    assertToken(55, 31, "property", "static", "readonly");
     // PREFIX in summarize
-    assertToken(83, 34, "property", "static");
+    assertToken(83, 34, "property", "static", "readonly");
     // PREFIX in staticHelper
-    assertToken(91, 11, "property", "static");
+    assertToken(91, 11, "property", "static", "readonly");
+
+    final int[] encoded = TokenScanner.encode(List.of(tokenAt(91, 11)));
+    final int staticBit = 1 << TokenScanner.TOKEN_MODIFIERS.indexOf("static");
+    final int readonlyBit = 1 << TokenScanner.TOKEN_MODIFIERS.indexOf("readonly");
+    assertThat(encoded[4]).isEqualTo(staticBit | readonlyBit);
   }
 
   @Test
@@ -168,9 +173,13 @@ class SemanticTokensTest extends SampleFixture {
   }
 
   @Test
-  void instance_field_usage_is_property() {
-    // "name" in "return name;"
-    assertToken(38, 11, "property");
+  void scan_instanceFields_onlyFinalFieldHasReadonly() {
+    assertToken(29, 23, "property", "declaration", "readonly"); // final String name
+    assertToken(30, 14, "property", "declaration"); // int count
+    assertToken(33, 9, "property", "readonly"); // this.name
+    assertToken(34, 9, "property"); // this.count
+    assertToken(38, 11, "property", "readonly"); // return name
+    assertToken(46, 11, "property"); // return count
   }
 
   @Test
@@ -240,7 +249,9 @@ class SemanticTokensTest extends SampleFixture {
     // A record component's synthetic parameter+field share the header offset; only one token emits.
     assertThat(toks.stream().filter(t -> t.line() == 6 && t.character() == 13).toList())
         .singleElement()
-        .satisfies(t -> assertThat(t.type()).isEqualTo("property"));
+        .satisfies(
+            t -> assertThat(t.type()).isEqualTo("property"),
+            t -> assertThat(t.modifiers()).contains("readonly"));
   }
 
   // A declaration token lands on the name, not on the same word in an annotation string before it.

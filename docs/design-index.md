@@ -341,7 +341,9 @@ reused):
   `interface`/`enum` types (declarations, references, and imports), `variable` vs `property`
   (local-vs-field) and `parameter`, and all methods/fields; the
   [Class/Import Semantic Highlighting](done/lathe-class-import-semantic-highlighting.md) slice is part
-  of it. `readonly`/`abstract`/visibility modifiers and `recordComponent`/`annotationMember` deferred.
+  of it.
+  Final fields carry `readonly`.
+  `abstract`/visibility modifiers and `recordComponent`/`annotationMember` are deferred.
 - [Goto Implementation and Type Hierarchy](done/lathe-goto-implementation.md) — inheritance-index-backed type
   navigation and reactor method implementation across reactor, dependency, and JDK types, including lambda and
   method-reference implementations of functional interfaces.
