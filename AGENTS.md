@@ -132,6 +132,8 @@ runs `<dir>/bin/gradle` instead, and `-Dlathe.gradle.skip=true` skips it.
 `-Dlathe.gradle.fixturesHome=<dir>` runs its TestKit fixtures on another Gradle (and
 `-Dlathe.gradle.fixturesJavaHome=<dir>` on another JDK), as CI's older-Gradle jobs do.
 
+A jar's `Lathe-Git-Commit` (and the server's startup `git=`) comes from git-commit-id, which in a linked worktree reads the main checkout's HEAD, not the worktree's: build anything whose label matters (a release, a build a report names) from the main checkout, or check a worktree build by its classes.
+
 ## Test projects
 
 **dropwizard** (`~/git/dropwizard`) — used to test lathe end-to-end with a large real-world

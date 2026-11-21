@@ -411,6 +411,8 @@
       </plugins>
     </pluginManagement>
     <plugins>
+      <!-- In a linked worktree it reads the main checkout's HEAD (both backends, 10.0.1), so a
+           worktree build is labelled with that commit; see CLAUDE.md, Build commands. -->
       <plugin>
         <groupId>io.github.git-commit-id</groupId>
         <artifactId>git-commit-id-maven-plugin</artifactId>
