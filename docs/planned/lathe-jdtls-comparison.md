@@ -71,8 +71,8 @@ Beside what item 5 shows Lathe does, including its refactorings, the page has a 
 It is stated, not measured, apart from the rows item 5 also checks.
 
 Features jdtls has (item 5 checks each):
-- code generation of accessors, `toString`, `equals` and `hashCode`, constructors from fields, delegates (no gap filed);
-- inline, move, change signature and extract interface (no gap filed);
+- code generation of accessors, `toString`, `equals` and `hashCode`, constructors from fields, delegates (EG-114);
+- inline, move, change signature, introduce parameter and make static (EG-114), and extract interface if the pinned jdtls has it;
 - selection range (EG-018), code lens (EG-064), inlay hints (EG-091);
 - a dependency's class without a sources jar (EG-063);
 - member symbol search (EG-092), not planned;
