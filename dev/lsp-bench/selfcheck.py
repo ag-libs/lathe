@@ -139,6 +139,9 @@ check("spread: median and range", report.spread([3000, 1000, 2000], " s", 1000, 
 check("spread: one value alone", report.spread([1500], " s", 1000, 1) == "1.5 s")
 check("with_never: some runs never got there",
       report.with_never([1000, None, 3000], " s", 1000, 1) == "2.0 s (1.0–3.0) (never in 1 of 3)")
+check("counted: singular and plural",
+      report.counted({"lines": 2, "downloads": 0, "commands": 1}) == "2 lines, 0 downloads, 1 command")
+check("version: an unrecorded version is named so", report.version({"jdtls": None}, "jdtls") == "not recorded")
 check("with_never: none got there", report.with_never([None, None], " s", 1000, 1) == "never")
 fake = [(pathlib.Path("d"), {}, {"jdtls": [{"plan": "ready", "error": "no attempt ran", "not_started": True},
                                             {"plan": "ready", "ready_ms": 5}]})]

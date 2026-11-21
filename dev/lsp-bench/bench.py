@@ -436,6 +436,8 @@ BUILD_DEADLINE_S = 300
 QUIET_S = 5.0
 SWITCH_POLL_S = 1.0
 SWITCH_STEADY_S = 60
+# How long a memory run sends nothing before it samples the idle memory (the 2026-11-21 amendment).
+IDLE_S = 60
 # A fresh start's answers count once they stayed the same this long.
 FRESH_STEADY_S = 15
 
@@ -1074,9 +1076,12 @@ def run_server(server, name, project, cases, mode, plan, args, out_dir, label):
             result["cases"].update(extra_checks(client, repo, project, cases, capabilities, spec, server,
                                                 args.request_timeout))
         result["query_peak_mb"] = sampler.peak_mb(since=ready_at)
-        time.sleep(5)
-        sampler.sample()
-        result["idle_mb"] = sampler.last_mb()
+        # Only the memory runs wait: idle is what a server keeps once nothing has been asked of it for a
+        # while, and a JVM sampled seconds after its last answer still holds its peak.
+        if plan == "start":
+            time.sleep(IDLE_S)
+            sampler.sample()
+            result["idle_mb"] = sampler.last_mb()
     except Exception as e:  # the run is recorded as failed with its reason; the next one still runs
         # repr when the message is empty (StopIteration): an empty error would read as none.
         result["error"] = str(e) or repr(e)
