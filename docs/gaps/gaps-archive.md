@@ -10483,6 +10483,53 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-40 — A build check that scans the whole project finds the class mirror in `.lathe/` — done
+
+**Status: done** (2026-11-21: Lathe excludes `.lathe/` from the nohttp check on Maven and on Gradle; other whole-project scanners keep the documented exclusion, and the mirror moving out of the project stays the [External Content Directory](../potential/lathe-external-content-dir.md) design)
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: Maven and Gradle builds with a check that scans the project directory itself (nohttp, license-header checks, Docker contexts).**
+
+Found syncing spring-petclinic for the Declared Formatters probes (2026-11-11).
+
+### Observed behaviour
+
+From the second build on, petclinic's nohttp check fails.
+On Maven it is the `maven-checkstyle-plugin` execution that runs `nohttp-checkstyle` over `${basedir}`;
+on Gradle, the `io.spring.nohttp` plugin's `checkstyleNohttp`.
+Both find `http://` URLs in `.lathe/classes/META-INF/sbom/application.cdx.json`,
+a generated resource that Lathe's class and resource mirror copies.
+The first build passes only because `.lathe/` does not exist yet.
+The check runs in `validate`, before the sync, so the sync cannot change it.
+Only the mirror (`classes`, `test-classes`, generated sources) holds such files; the small files in `.lathe/` hold none.
+
+### Fix direction
+
+The workaround is documented: exclude `.lathe/` from such checks (`troubleshooting.md`; #178).
+Two ways to need no exclusion are open:
+
+- **Lathe adds the exclusion itself.**
+  The Maven extension appends `**/.lathe/**` to a nohttp checkstyle execution's `<excludes>` in memory,
+  and the Gradle plugin adds it to the nohttp extension's `source`, when Lathe is active.
+  It covers one tool, and editing an execution's configuration after the model is built needs a spike.
+  Done on both builds (2026-11-21). Maven: an execution's own configuration, edited in `afterProjectsRead`, reaches the check, where a plugin-level node does not reach the executions (`lathe-maven-extension.md` §9); the plugin-level node is edited too, as a goal run from the command line (`default-cli`) takes it; excludes a project sets through the `checkstyle.excludes` property are kept.
+  Gradle: the `nohttp` extension's source tree gets the exclude when the plugin is applied and again once the project is evaluated, as a build script may replace the tree.
+- **Move the mirror out of the project** into the per-user cache, leaving `.lathe/` the small files.
+  No scanner or Docker context would see it, at the cost of a per-workspace cache and its cleanup.
+  The mirror must stay outside `target/` and `build/`: it outlives a clean and a failed build (`lathe-gradle-support.md`).
+  This is the [External Content Directory](../potential/lathe-external-content-dir.md) design, which covers every
+  scanner, not only nohttp: the proper fix, taken up if more users hit this.
+
+### Regression targets
+
+- Maven: `LatheModelInjectorTest.injectProject_nohttp*`, `injectProject_excludesAlreadyNameLathe_leftAsTheyAreAndAgainOnASecondPass`, `injectProject_excludesNameOnlyALookalike_latheStillAppended`, `injectProject_excludesSetByProperty_keptInTheElementLatheAdds` and `injectProject_checkstyleWithoutNohttp_excludesUntouched` (the excludes the extension writes); spring-petclinic's first build then its sync, which failed with 15 nohttp errors before and passes after (2026-11-21, by hand).
+- Gradle: `LatheNohttpFunctionalTest.nohttpApplied_latheMirrorLeftOutOfItsSource_projectFilesKept` (a stand-in nohttp, with the real plugin's extension shape, no longer lists the mirror), `nohttpSourceReplacedByTheBuildScript_latheMirrorStillLeftOut` and `nohttpExtensionWithoutSource_buildGoesOnAndSaysWhy`.
+
+---
+
 ## WS-45 — A build that rewrites its own POMs leaves the sync's fingerprints stale, so the next reload prompts to sync again — done
 
 **Status: done** (2026-11-19)
