@@ -750,7 +750,7 @@ None yet.
 
 ## EG-114 — Code generation and refactorings jdtls offers that Lathe does not
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-21: features, and the feature freeze holds; the jdtls comparison reports each as a row Lathe lacks)
 
 **Kind: feature**
 
@@ -1033,7 +1033,6 @@ None yet.
 
 **Kind: bug**
 
-
 **Affects: MCP `rename_symbol` and `verify_change`, and the editor's rename.**
 
 Found by the exploratory round on Spring Petclinic (2026-11-17).
@@ -1209,40 +1208,6 @@ The module-descriptor completion branch is being chosen inside the annotation ar
 The directive tests above cover the delivered behavior.
 Module-annotation argument completion has no regression test yet; the paired probe above reproduces it.
 
----
-
-## CQ-0062 — Simple-name completion offers an enclosing class's methods the simple name cannot reach
-
-**Status: in-progress**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-### Observed behaviour
-
-Reproduced on JDK 21, where a class file's parameter types lack the type-use annotations a source's carry.
-In a class extending `ArrayList<String>`, give an inner class a method `remove(@Mark Object value)`, where `Mark` is a type-use annotation.
-Completing `remove§("")` inside the inner class offers its own method and the enclosing class's inherited `ArrayList.remove(Object)` and `remove(int)`.
-The duplicate came from keying methods on their parameters' text, which the annotation changes.
-
-The enclosing class's methods should not be offered at all: Java searches the innermost class that has a method of the name and no further out (JLS 15.12.1), so `remove(0)` there binds to the inner class's `remove(Object)`.
-A statically imported method of the same name is hidden the same way.
-Review of the first fix also found an inner `add(@Mark String)` offered beside the inherited `add(String)`, and two statically imported overloads merged when one mentioned a missing type outside its type arguments.
-
-### Fix
-
-Methods are told apart as javac does, never by the text of their types: an enclosing class's methods and static imports are left out when a nearer class has a method of the name, and the same method reached by two static imports is offered once.
-
-### Regression targets
-
-- `CompletionSimpleNameTest.simpleName_innerClassDeclaresTheName_onlyItsOverloadsOffered`
-- `CompletionSimpleNameTest.simpleName_innerMethodBesideInheritedGenericOne_onlyTheInnerOffered`
-- `CompletionSimpleNameTest.simpleName_classDeclaresTheName_staticImportOfItHidden`
-- `CompletionSimpleNameTest.simpleName_importedOverloadMentionsAMissingTypeDeeply_keepsBoth`
-- `CompletionSimpleNameTest.simpleName_staticImportsWithDifferentTypeArguments_keepsBothMethods`
-- `CompletionSimpleNameTest.simpleName_sameMethodImportedTwice_offeredOnce`
-- `CompletionSimpleNameTest.simpleName_overrideOfGenericSuperclassMethod_offeredOnce`
 ---
 
 # Workspace Lifecycle Gaps (WS)
