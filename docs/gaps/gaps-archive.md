@@ -10483,6 +10483,48 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-46 — A server older than a module's JDK or language level cannot check it as the build does — done
+
+**Status: done** (2026-11-21)
+
+**Kind: bug**
+
+**Affects: a server whose JDK is older than the JDK or language level a module compiles at (`LATHE_JAVA_HOME` set to an older JDK; possibly a Gradle build whose toolchain is newer than the JDK Gradle runs on, not checked); the editor and MCP on that module.**
+
+Found reviewing the fix for the JDK 21 crash of the 2026-11-20 pre-release round (#422), which lets an older server compile a `-source 17` module the build compiled on a newer JDK.
+
+### Observed behaviour
+
+A module that compiles at a language level the server's javac does not know cannot be compiled by it at all.
+javac 21 refuses `-source 25` ("invalid source release: 25") and `--release 25` ("release version 25 not supported"), checked with plain `javac`.
+How the server reports that refusal to the editor and to an agent was not checked.
+
+Where the server can compile the module, at a level it knows but against the build's newer JDK, it compiles against its own JDK instead (the fix above, and the existing fallback for a build JDK gone since the sync).
+Then a use of an API the server's JDK does not have is a "cannot find symbol" error the build does not report.
+There the only explanation is a server log `WARNING` (`[compile] JDK … newer than the server's …`), which the user does not see.
+The warning is logged each time a module's compiler is created, so a reactor of many such modules repeats it once per module on every load and reload.
+
+### Fix
+
+Each load checks every module against the JDK the server runs on (`JdkSupport`): a `--release`, `-source` or `-target` newer than it, or, without `--release`, a newer JDK the build compiled against.
+Such a module is left out of the registry, so no compile, search, write or check reaches it, and the user is told, as an error naming the module, both JDKs and `LATHE_JAVA_HOME`, again only when the set of such modules changes.
+A rename of a symbol such a module compiles against is refused, naming the module, since its uses would stay unrenamed.
+An agent's answers about uses name such modules as not searched, as they do Kotlin sources, so a search does not pass as complete.
+An agent's answers about uses name such modules as not searched, as they do Kotlin sources, so a search does not pass as complete.
+Each of its open files gets one error saying the same, an agent's `get_diagnostics` answers it, and its notes list the file as not checked with that reason.
+A module with `--release` at or below the server's JDK is checked as before, whichever JDK the build ran on, as `--release` gives javac that version's API from its own JDK.
+The crash that failed a whole search is WS-47.
+
+### Regression targets
+
+- `JdkSupportTest` (which modules a server on a given JDK can check, and the message)
+- `UnsupportedJdkTest.open_moduleBuiltForANewerJava_toldOnceAndItsFileSaysWhyOtherModulesWork` and `UnsupportedJdkTest.diagnostics_fileOfAModuleBuiltForANewerJava_theReason`
+- `LatheEngineNotesTest.notes_fileOfAModuleBuiltForANewerJava_notCheckedWithTheReasonAndTheFix`
+- `LatheEngineRenameTest.rename_symbolAModuleBuiltForANewerJavaCompilesAgainst_refusesNamingItAndEditsNothing`
+- `UnsupportedJdkTest.reload_sameModulesLeftOut_notToldAgain` and `UnsupportedJdkTest.initialize_rootModuleBuiltForANewerJava_namesItAsTheRoot`
+
+---
+
 ## WS-40 — A build check that scans the whole project finds the class mirror in `.lathe/` — done
 
 **Status: done** (2026-11-21: Lathe excludes `.lathe/` from the nohttp check on Maven and on Gradle; other whole-project scanners keep the documented exclusion, and the mirror moving out of the project stays the [External Content Directory](../potential/lathe-external-content-dir.md) design)

@@ -15,6 +15,7 @@ import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.UnreadSources;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
+import io.github.aglibs.lathe.server.module.JdkSupport;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -525,10 +527,35 @@ final class ChangeVerifier {
         state.manifest().loadProblem().isPresent(),
         notChecked,
         writePass.reactorBuildInProgress(),
-        Arrays.stream(UnreadLanguage.values())
-            .map(this::unreadSources)
-            .flatMap(Optional::stream)
+        Stream.concat(
+                Arrays.stream(UnreadLanguage.values())
+                    .map(this::unreadSources)
+                    .flatMap(Optional::stream),
+                unsupportedJdkSources())
             .toList());
+  }
+
+  // Modules the server's JDK cannot check are left out of every search as Kotlin is (WS-46): an
+  // answer about uses names them, by the Java they need, as not searched.
+  private Stream<UnreadSources> unsupportedJdkSources() {
+    final Map<Integer, List<String>> byJava =
+        state.registry().unsupportedJdks().stream()
+            .collect(
+                Collectors.groupingBy(
+                    JdkSupport.Mismatch::needed,
+                    TreeMap::new,
+                    Collectors.mapping(
+                        mismatch ->
+                            SourceLayout.displayed(
+                                SourceLayout.moduleRel(
+                                    state.root(), mismatch.module().moduleDir())),
+                        Collectors.toList())));
+    return byJava.entrySet().stream()
+        .map(
+            entry ->
+                new UnreadSources(
+                    "Java %d".formatted(entry.getKey()),
+                    entry.getValue().stream().distinct().sorted().toList()));
   }
 
   private Optional<UnreadSources> unreadSources(final UnreadLanguage language) {
@@ -671,12 +698,16 @@ final class ChangeVerifier {
 
   // A module compiles it, or it is among a dependency's or the JDK's extracted sources.
   boolean routed(final Path file) {
-    return !(router.routeCompiler(LatheUri.fromPath(file)) instanceof CompilerRoute.Missing);
+    final CompilerRoute route = router.routeCompiler(LatheUri.fromPath(file));
+    return !(route instanceof CompilerRoute.Missing
+        || route instanceof CompilerRoute.UnsupportedJdk);
   }
 
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
   private boolean uncheckable(final Path file) {
-    return router.routeCompiler(LatheUri.fromPath(file)) instanceof CompilerRoute.Missing
+    final CompilerRoute route = router.routeCompiler(LatheUri.fromPath(file));
+    return route instanceof CompilerRoute.Missing
+        || route instanceof CompilerRoute.UnsupportedJdk
         || (Files.notExists(file) && backToBuilt(file, new HashMap<>()));
   }
 
@@ -689,6 +720,11 @@ final class ChangeVerifier {
     }
 
     final Path relative = state.root().relativize(file);
+    if (router.routeCompiler(LatheUri.fromPath(file))
+        instanceof final CompilerRoute.UnsupportedJdk unsupported) {
+      return "%s: %s".formatted(relative, unsupported.message());
+    }
+
     if (Files.notExists(file)) {
       return "%s does not exist, and the last build did not compile it".formatted(relative);
     }

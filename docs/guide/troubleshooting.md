@@ -29,6 +29,12 @@ The MCP server reports its JDK there too, and Maven reports its JVM in the build
 Compare the paths with the JDK you intended to use.
 [Choose the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home)
 
+**Lathe says it runs on an older JDK than a module needs.**
+The message names the module, the JDK Lathe runs on and the JDK the module needs: its `--release`, its source level, or the JDK the build compiled it with.
+Lathe leaves that module out rather than show errors the build does not report, and its files say why; the other modules work as usual.
+Run Lathe on a JDK at least that new: set `LATHE_JAVA_HOME` to it, or unset it so Lathe runs on the build's JDK.
+[Choose the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home)
+
 **A Maven sync fails after upgrading Lathe, or a “build is running” note never clears.**
 A running `mvnd` daemon keeps the Lathe extension it first loaded.
 Run `mvnd --stop`, then build again.

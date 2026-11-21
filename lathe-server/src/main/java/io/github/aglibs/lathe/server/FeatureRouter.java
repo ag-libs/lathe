@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
+import io.github.aglibs.lathe.server.module.JdkSupport;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.Optional;
@@ -62,6 +63,18 @@ final class FeatureRouter {
             module -> new CompilerRoute.Module(state.registry().workerFor(module), module))
         .orElseGet(
             () -> {
+              final Optional<JdkSupport.Mismatch> unsupported =
+                  state.registry().unsupportedJdkFor(path);
+              if (unsupported.isPresent()) {
+                return new CompilerRoute.UnsupportedJdk(
+                    uri,
+                    JdkSupport.fileMessage(
+                        SourceLayout.displayed(
+                            SourceLayout.moduleRel(
+                                state.root(), unsupported.get().module().moduleDir())),
+                        unsupported.get()));
+              }
+
               if (state.manifest().libraries().containsFile(path)) {
                 return new CompilerRoute.External(state.registry().externalWorker());
               }

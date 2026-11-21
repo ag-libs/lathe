@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
+import io.github.aglibs.lathe.server.module.JdkSupport;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
@@ -85,6 +86,8 @@ final class WorkspaceSession {
   // A user answers prompts (an editor); the in-process engine's agent does not.
   private boolean interactive = true;
   private MemoryPressure memoryPressure;
+  // The modules the user was last told the server's JDK cannot check (WS-46).
+  private List<String> unsupportedJdksTold = List.of();
   // A pressure round released the sessions of modules without open files; the next tick checks
   // whether that was enough.
   private boolean pressureFollowUp;
@@ -370,6 +373,11 @@ final class WorkspaceSession {
     final CompilerRoute route = router.routeCompiler(uri);
     if (route instanceof CompilerRoute.Missing) {
       return CompletableFuture.completedFuture(List.of());
+    }
+
+    if (route instanceof final CompilerRoute.UnsupportedJdk unsupported) {
+      return CompletableFuture.completedFuture(
+          List.of(DiagnosticPublisher.unsupportedJdk(unsupported.message())));
     }
 
     final long generation = moduleGeneration(route);
@@ -902,13 +910,40 @@ final class WorkspaceSession {
   // and so compiled none through Lathe; each file would only say it is outside every module, and
   // that, not the missing manifest, is what the user must fix.
   private void showWorkspaceStatus(final String okText) {
-    final boolean noModule = state.registry().allConfigs().isEmpty();
+    // Modules the server's JDK cannot check are left out, as an error in place of the ready note,
+    // told when the set changes rather than after every build's reload; a load problem is still
+    // told after it. With modules left out, the workspace is not one without modules.
+    final List<JdkSupport.Mismatch> mismatches = state.registry().unsupportedJdks();
+    final List<String> unsupported =
+        mismatches.stream()
+            .map(
+                mismatch ->
+                    SourceLayout.displayed(
+                        SourceLayout.moduleRel(state.root(), mismatch.module().moduleDir())))
+            .distinct()
+            .toList();
+    final boolean jdkTold = !unsupported.isEmpty() && !unsupported.equals(unsupportedJdksTold);
+    if (jdkTold) {
+      client.showMessage(
+          new MessageParams(
+              MessageType.Error,
+              JdkSupport.workspaceMessage(
+                  unsupported,
+                  mismatches.stream().mapToInt(JdkSupport.Mismatch::needed).max().orElseThrow())));
+    }
+
+    unsupportedJdksTold = unsupported;
+    final boolean noModule = state.registry().allConfigs().isEmpty() && unsupported.isEmpty();
     final Optional<String> problem =
         state
             .manifest()
             .loadProblem()
             .filter(text -> !(noModule && state.manifest().missing()))
             .or(() -> noModule ? Optional.of(NO_MODULE) : Optional.empty());
+    if (problem.isEmpty() && jdkTold) {
+      return;
+    }
+
     client.showMessage(
         problem
             .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))
@@ -956,6 +991,11 @@ final class WorkspaceSession {
       final AfterCompile afterCompile) {
     if (route instanceof final CompilerRoute.Missing missing) {
       publisher.publishMissing(missing.uri(), missing.message());
+      return CompletableFuture.completedFuture(null);
+    }
+
+    if (route instanceof final CompilerRoute.UnsupportedJdk unsupported) {
+      publisher.publishUnsupportedJdk(unsupported.uri(), unsupported.message());
       return CompletableFuture.completedFuture(null);
     }
 

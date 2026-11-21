@@ -55,6 +55,25 @@ sealed interface CompilerRoute {
     }
   }
 
+  // A file of a module the server's JDK cannot check as its build does (WS-46): never compiled, and
+  // its diagnostics say why.
+  record UnsupportedJdk(String uri, String message) implements CompilerRoute {
+
+    public UnsupportedJdk {
+      ValidCheck.check().notNull(uri, "uri").notNull(message, "message").validate();
+    }
+
+    @Override
+    public Optional<CompilationWorker> analysisWorker() {
+      return Optional.empty();
+    }
+
+    @Override
+    public Set<Path> seenTrees() {
+      return Set.of();
+    }
+  }
+
   record Missing(String uri, String message) implements CompilerRoute {
 
     public Missing {

@@ -19,6 +19,43 @@ import org.junit.jupiter.api.Test;
 // The notes a tool's answer ends with: not compiled, not checked, sync required.
 class LatheEngineNotesTest extends LatheEngineTestBase {
 
+  // WS-46: an agent asking about a file of a module built for a Java the server's JDK does not know
+  // is told it is not checked, why, and how to fix it; any answer about uses names the module as
+  // not searched.
+  @Test
+  void notes_fileOfAModuleBuiltForANewerJava_notCheckedWithTheReasonAndTheFix() throws Exception {
+    final Path newer =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "newer",
+                Map.of("com/example/A.java", "package com.example; class A {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "newer",
+        List.of(tmp.resolve("newer/src/main/java")),
+        null,
+        List.of(),
+        List.of(),
+        List.of("--release", "99"));
+    engine = new LatheEngine(tmp);
+
+    final LatheNotes notes = engine.notes(List.of(newer));
+
+    assertThat(notes.unreadSources())
+        .containsExactly(new UnreadSources("Java 99", List.of("newer")));
+    assertThat(notes.notChecked())
+        .singleElement()
+        .satisfies(
+            reason ->
+                assertThat(reason)
+                    .startsWith("%s: ".formatted(Path.of("newer/src/main/java/com/example/A.java")))
+                    .contains("this file's module newer is built for Java 99")
+                    .contains("LATHE_JAVA_HOME"));
+  }
+
   private static final String BUILD_FILES_NOTE =
       "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 

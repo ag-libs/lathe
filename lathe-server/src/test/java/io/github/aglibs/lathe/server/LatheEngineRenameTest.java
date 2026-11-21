@@ -25,6 +25,48 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 // rename_symbol: what it rewrites across files and modules, and every reason it refuses.
 class LatheEngineRenameTest extends LatheEngineTestBase {
+
+  // WS-46: a module built for a Java the server's JDK does not know is left out of every search,
+  // so its uses of a renamed symbol would stay as they are and its build break: the rename is
+  // refused, naming the module and the fix.
+  @Test
+  void rename_symbolAModuleBuiltForANewerJavaCompilesAgainst_refusesNamingItAndEditsNothing()
+      throws Exception {
+    final String formatter =
+        """
+        package com.example;
+        public class Formatter {
+          public String format(String s) { return s; }
+        }
+        """;
+    final Path declaration =
+        TestCompiler.writeMirroredModule(
+                tmp, "lib", Map.of("com/example/Formatter.java", formatter), List.of(), 1_000L)
+            .get(0);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "newer",
+        Map.of(
+            "com/example/FormatterUse.java",
+            "package com.example; class FormatterUse { String run() { return new Formatter().format(\"a\"); } }"),
+        List.of("lib"),
+        1_000L);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "newer",
+        List.of(tmp.resolve("newer/src/main/java")),
+        null,
+        List.of(tmp.resolve("lib/target/classes")),
+        List.of(),
+        List.of("--release", "99"));
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(declaration, formatter, "format", "render"))
+        .hasMessageContaining("`format` cannot be renamed: module newer may use it")
+        .hasMessageContaining("Run Lathe on JDK 99 or newer");
+    assertThat(Files.readString(declaration)).isEqualTo(formatter);
+  }
+
   @Test
   void rename_canonicalRecordParameter_keepsMemberTextReviewAcrossFiles() throws Exception {
     final String source =

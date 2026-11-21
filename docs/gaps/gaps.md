@@ -1346,28 +1346,17 @@ None yet.
 
 ---
 
-## WS-46 — A server older than a module's JDK or language level cannot check it as the build does
+## WS-47 — One module's javac crash fails a whole cross-module search
 
-**Status: documented**
+**Status: deferred** (2026-11-21: split from WS-46; rare now, and failing the request is the safe answer, which a rename needs)
 
 **Kind: bug**
 
-**Affects: a server whose JDK is older than the JDK or language level a module compiles at (`LATHE_JAVA_HOME` set to an older JDK; possibly a Gradle build whose toolchain is newer than the JDK Gradle runs on, not checked); the editor and MCP on that module.**
+**Affects: references, implementations, callers and `analyze_change` across modules, when javac crashes on one module's files.**
 
-Found reviewing the fix for the JDK 21 crash of the 2026-11-20 pre-release round (#422), which lets an older server compile a `-source 17` module the build compiled on a newer JDK.
+Split from WS-46 (2026-11-21), which fixed the server's JDK being older than a module needs; this crash is a separate failure.
 
 ### Observed behaviour
-
-A module that compiles at a language level the server's javac does not know cannot be compiled by it at all.
-javac 21 refuses `-source 25` ("invalid source release: 25") and `--release 25` ("release version 25 not supported"), checked with plain `javac`.
-How the server reports that refusal to the editor and to an agent was not checked.
-
-Where the server can compile the module, at a level it knows but against the build's newer JDK, it compiles against its own JDK instead (the fix above, and the existing fallback for a build JDK gone since the sync).
-Then a use of an API the server's JDK does not have is a "cannot find symbol" error the build does not report.
-There the only explanation is a server log `WARNING` (`[compile] JDK … newer than the server's …`), which the user does not see.
-The warning is logged each time a module's compiler is created, so a reactor of many such modules repeats it once per module on every load and reload.
-
-### Related: one module's javac crash fails a whole search (deferred)
 
 Before #422, with the server on JDK 21, javac crashed in Enter on Dropwizard's docs examples (`--system` naming JDK 25), and the crash failed the whole cross-module request, not just that module: `find_implementations` on `Managed.stop`, its override family and `analyze_change` answered "the request failed; see the server log".
 `JavaSourceCompiler.analyzeSafely` keeps the crashed batch's partial analysis, the locator's first call into `Elements` then throws ("Cannot use Elements.getTypeElement before the TaskEvent.Kind.ENTER finished event"), and the module's failed future fails the request (`ReferenceSearch.searchFiles`).
@@ -1377,12 +1366,6 @@ What can still cause it after #422: a `--system` JDK javac cannot read whose rel
 Deferred: it is rare now, and failing the request is the safe answer, which a rename needs (one that skipped a file would leave its uses unrenamed).
 Answering queries from the other modules would need the skipped files carried up with the hits (`SearchHits`) so a rename can still refuse, and the answer can say it is partial.
 The same note would cover a javac crash in Attr, which throws nothing and can leave a batch's hits missing without a trace.
-
-### Fix direction
-
-Tell the client once per workspace load when the server's JDK is older than a module's language level or build JDK: name the JDK the server runs on, the one the build needs, and how to run the server on it (`LATHE_JAVA_HOME`).
-Log the warning once per JDK, not once per module.
-Whether an agent's answers (`get_diagnostics`, `verify_change`) should carry the same note is part of the triage.
 
 ### Regression targets
 
