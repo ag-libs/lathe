@@ -103,13 +103,10 @@ def outline_checks(b, probe):
     kinds = {name: kind.lower() for _, kind, name, _, _ in items}
     b.check("probe outline: lists every type", all(n in kinds for n in ("LatheProbe", "Shape", "Node", "Leaf", "Color", "Square")),
             "%d item(s)" % len(items))
-    b.check("probe outline: record kind", kinds.get("Leaf") not in (None, "struct"), "Leaf is %s" % kinds.get("Leaf"),
-            known="records show as struct")
-    b.check("probe outline: enum constant kind", kinds.get("RED") not in (None, "field"), "RED is %s" % kinds.get("RED"),
-            known="enum constants show as field")
+    b.check("probe outline: record kind", kinds.get("Leaf") not in (None, "struct"), "Leaf is %s" % kinds.get("Leaf"))
+    b.check("probe outline: enum constant kind", kinds.get("RED") not in (None, "field"), "RED is %s" % kinds.get("RED"))
     labels = sum(1 for _, _, name, _, _ in items if name.startswith("label"))
-    b.check("probe outline: enum constant body methods", labels >= 2, "%d label() item(s)" % labels,
-            known="methods in an enum constant body are omitted")
+    b.check("probe outline: enum constant body methods", labels >= 2, "%d label() item(s)" % labels)
 
 
 def implementation_checks(b, probe):
@@ -261,7 +258,6 @@ def imports_checks(b, probe):
         b.check("probe fix_imports: keeps CRLF", False, "no import added to the CRLF file: %s" % first(text))
     else:
         bare_lf = data.count(b"\n") - data.count(b"\r\n")
-        b.check("probe fix_imports: keeps CRLF", bare_lf == 0, "%d bare LF line ending(s)" % bare_lf,
-                known="MCP edits written to a CRLF file add LF line endings")
+        b.check("probe fix_imports: keeps CRLF", bare_lf == 0, "%d bare LF line ending(s)" % bare_lf)
     target.unlink()
 
