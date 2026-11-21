@@ -10,6 +10,7 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,6 +18,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
@@ -26,7 +28,15 @@ final class SimpleNameProvider {
   private final AttributedFileAnalysis snapshot;
   private final CandidateFactory itemFactory;
   private final SimpleNameContext context;
-  private final Set<String> seen = new LinkedHashSet<>();
+  private final Set<String> seenNames = new LinkedHashSet<>();
+  // The methods offered, each once though two static imports may reach it, and their names: Java
+  // searches the innermost class that has a method of the name and no further out, so an enclosing
+  // class's overloads and a static import of the name are not callable by the simple name there
+  // (JLS 15.12.1). Methods are told apart as javac does, never by the text of their types, which
+  // differs between a source and a class file when a parameter carries a type-use annotation.
+  private final Set<Element> seenMethods = new HashSet<>();
+  private final Set<Name> methodNames = new HashSet<>();
+  private final Set<Name> shadowedMethods = new HashSet<>();
   private final List<CompletionCandidate> items = new ArrayList<>();
 
   SimpleNameProvider(
@@ -117,25 +127,23 @@ final class SimpleNameProvider {
   }
 
   private void addVariable(final String name, final TypeMirror type) {
-    if (name.startsWith(context.prefix()) && seen.add(name)) {
+    if (name.startsWith(context.prefix()) && seenNames.add(name)) {
       items.add(itemFactory.variableCandidate(name, type));
     }
   }
 
   private void addMember(final Element el, final DeclaredType declaredType) {
-    if (seen.add(memberKey(el))) {
-      items.add(itemFactory.memberCandidate(el, declaredType));
-    }
-  }
+    if (el instanceof final ExecutableElement method) {
+      if (shadowedMethods.contains(method.getSimpleName()) || !seenMethods.add(method)) {
+        return;
+      }
 
-  private static String memberKey(final Element el) {
-    if (el instanceof final ExecutableElement executable) {
-      final var params =
-          executable.getParameters().stream().map(param -> param.asType().toString()).toList();
-      return "%s(%s)".formatted(executable.getSimpleName(), String.join(",", params));
+      methodNames.add(method.getSimpleName());
+    } else if (!seenNames.add(el.getSimpleName().toString())) {
+      return;
     }
 
-    return el.getSimpleName().toString();
+    items.add(itemFactory.memberCandidate(el, declaredType));
   }
 
   private void addClassMembers(final boolean staticMethod) {
@@ -152,6 +160,9 @@ final class SimpleNameProvider {
   // or field lies between them.
   private void addMembersOutwards(final TypeElement type, final boolean staticOnly) {
     addClassMembers(type, staticOnly);
+    // This class's method names now hide the enclosing classes' and the static imports' methods of
+    // the same names.
+    shadowedMethods.addAll(methodNames);
     addOwnerMembers(type.getEnclosingElement(), staticOnly || !hasEnclosingInstance(type));
   }
 

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class CompletionSimpleNameTest extends CompletionTestSupport {
 
@@ -543,6 +544,173 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(labels(items)).contains("forTesting");
     assertThat(itemWithLabelDetail(items, "forTesting", "()")).isPresent();
     assertThat(itemWithLabelDetail(items, "forTesting", "(String value)")).isPresent();
+  }
+
+  // CQ-0062: an inner class's annotated remove(Object) beside the outer list's. Java searches the
+  // innermost class with a method named remove and no further out, so inside Inner only Inner's
+  // overloads are callable by the simple name; remove(0) there binds to Inner.remove(Object).
+  @Test
+  void simpleName_innerClassDeclaresTheName_onlyItsOverloadsOffered() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            import java.lang.annotation.*;
+            @Target(ElementType.TYPE_USE) @interface Mark {}
+            class Test extends java.util.ArrayList<String> {
+                class Inner {
+                    void remove(@Mark Object value) {}
+                    void remove(int index) {}
+                    void run() { remove§(""); }
+                }
+            }""");
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("remove"))
+        .extracting(CompletionItem::getDetail)
+        .containsExactlyInAnyOrder(
+            "Inner.remove(Object value) : void", "Inner.remove(int index) : void");
+  }
+
+  // An inner class's add(@Mark String) beside the enclosing class's inherited add(E), shown as
+  // add(String): the inner class has a method named add, so the enclosing class's are not callable
+  // there by the simple name.
+  @Test
+  void simpleName_innerMethodBesideInheritedGenericOne_onlyTheInnerOffered() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            import java.lang.annotation.*;
+            @Target(ElementType.TYPE_USE) @interface Mark {}
+            class Test extends java.util.ArrayList<String> {
+                class Inner {
+                    void add(@Mark String value) {}
+                    void run() { add§(""); }
+                }
+            }""");
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("add"))
+        .extracting(CompletionItem::getDetail)
+        .containsExactly("Inner.add(String value) : void");
+  }
+
+  // An override of a generic superclass's method, add(String) over ArrayList<String>'s add(E), is
+  // one
+  // method: getAllMembers leaves out what a member overrides.
+  @Test
+  void simpleName_overrideOfGenericSuperclassMethod_offeredOnce() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            import java.lang.annotation.*;
+            @Target(ElementType.TYPE_USE) @interface Mark {}
+            class Test extends java.util.ArrayList<String> {
+                @Override public boolean add(@Mark String value) { return super.add(value); }
+                void run() { add§(""); }
+            }""");
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("add"))
+        .extracting(CompletionItem::getDetail)
+        .filteredOn(detail -> !detail.contains(","))
+        .containsExactly("Test.add(String value) : boolean");
+  }
+
+  // A statically imported method is hidden by a method of that name in the class, as javac binds
+  // send(...) there to the class's own.
+  @Test
+  void simpleName_classDeclaresTheName_staticImportOfItHidden() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            package example;
+            import static example.Words.send;
+            class Words { static void send(String value) {} }
+            class Test {
+                void send(int count) {}
+                void run() { send§(1); }
+            }
+            """);
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("send"))
+        .extracting(CompletionItem::getDetail)
+        .containsExactly("Test.send(int count) : void");
+  }
+
+  // The same method reached by a single and a wildcard static import is one method.
+  @Test
+  void simpleName_sameMethodImportedTwice_offeredOnce() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            package example;
+            import static example.Words.send;
+            import static example.Words.*;
+            class Words { static void send(String value) {} }
+            class Test { void run() { send§(""); } }
+            """);
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("send"))
+        .extracting(CompletionItem::getDetail)
+        .containsExactly("Words.send(String value) : void");
+  }
+
+  // Two imported overloads one of which mentions a missing type where it is not a type argument of
+  // the parameter: in the type it is nested in, or in a type variable's bound. Whether they are the
+  // same is uncertain, so both stay.
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "static void send(Holder<Missing>.Entry entry) {}|static void send(Holder<String>.Entry entry) {}",
+        "static <T extends Missing> void send(T value) {}|static <T extends String> void send(T value) {}"
+      })
+  void simpleName_importedOverloadMentionsAMissingTypeDeeply_keepsBoth(final String methods) {
+    final String[] declared = methods.split("\\|");
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            package example;
+            import static example.Others.send;
+            import static example.Words.send;
+            class Holder<T> { class Entry {} }
+            class Others { %s }
+            class Words { %s }
+            class Test { void run() { send§(null); } }
+            """
+                .formatted(declared[0], declared[1]));
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("send"))
+        .extracting(CompletionItem::getDetail)
+        .hasSize(2)
+        .anyMatch(detail -> detail.startsWith("Others.send"))
+        .anyMatch(detail -> detail.startsWith("Words.send"));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Integer", "Missing"})
+  void simpleName_staticImportsWithDifferentTypeArguments_keepsBothMethods(final String otherType) {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            package example;
+            import java.util.List;
+            import static example.Others.send;
+            import static example.Words.send;
+            class Others { static void send(List<%s> values) {} }
+            class Words { static void send(List<String> values) {} }
+            class Test { void run() { send§(List.of("word")); } }
+            """
+                .formatted(otherType));
+
+    assertThat(items)
+        .filteredOn(item -> item.getLabel().equals("send"))
+        .extracting(CompletionItem::getDetail)
+        .containsExactlyInAnyOrder(
+            "Others.send(List<%s> values) : void".formatted(otherType),
+            "Words.send(List<String> values) : void");
   }
 
   @Test

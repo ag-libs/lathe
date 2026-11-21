@@ -1211,40 +1211,38 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0062 — Simple-name completion's duplicate check keys a method on annotated parameter text
+## CQ-0062 — Simple-name completion offers an enclosing class's methods the simple name cannot reach
 
-**Status: deferred** (triaged 2026-11-16: narrow and not reproduced)
+**Status: in-progress**
 
 **Kind: bug**
 
 **Value: low — Size: S**
 
-**Affects: simple-name completion (no qualifier) inside a nested class or with static imports, on a server running JDK 21 or older, or for a `SOURCE`-retained annotation.**
+### Observed behaviour
 
-Found reviewing the FR-031 fix (2026-11-08); suspected from the code, not reproduced.
-Rewritten after checking the code (2026-11-16): the override case first suspected cannot happen.
+Reproduced on JDK 21, where a class file's parameter types lack the type-use annotations a source's carry.
+In a class extending `ArrayList<String>`, give an inner class a method `remove(@Mark Object value)`, where `Mark` is a type-use annotation.
+Completing `remove§("")` inside the inner class offers its own method and the enclosing class's inherited `ArrayList.remove(Object)` and `remove(int)`.
+The duplicate came from keying methods on their parameters' text, which the annotation changes.
 
-### Suspected behaviour
+The enclosing class's methods should not be offered at all: Java searches the innermost class that has a method of the name and no further out (JLS 15.12.1), so `remove(0)` there binds to the inner class's `remove(Object)`.
+A statically imported method of the same name is hidden the same way.
+Review of the first fix also found an inner `add(@Mark String)` offered beside the inherited `add(String)`, and two statically imported overloads merged when one mentioned a missing type outside its type arguments.
 
-`SimpleNameProvider.memberKey`, which keeps the same member reached twice from being listed twice, keys a method on its parameters' type text (`asType().toString()`).
-FR-031 showed that text carries type-use annotations for a type compiled from source and lacks them for the same type read from a class file on JDK 21 and older.
+### Fix
 
-An override is not affected: `SimpleNameProvider` takes a class's members from `Elements.getAllMembers`, which already drops a supertype method that a member overrides, by erasure, so the two never meet in `memberKey`.
-Member completion after a dot goes through `CandidateGenerator` and does not use `memberKey` at all.
-What is left is the same signature reached through two `getAllMembers` calls: an enclosing class's members (`addMembersOutwards`) or a static import.
-A mismatch there would list the method twice, though an inner class's method of the same name usually shadows the outer one, so the case is narrow.
-
-### Probe
-
-Re-checked (2026-11-17): the case first written here cannot mismatch, as within one javac context both paths reach the same symbol, so the text is the same.
-A duplicate needs two distinct methods of the same name and parameters, one compiled from source and one read from a class file, with a type-use annotation, on a JDK 21 or older server: an inner class's source method beside an outer class's inherited library method.
-Close this gap if that probe does not reproduce.
-The likely fix keys on `ReferenceTarget.erasedTypeName`, which names a type without its annotations; it is harmless hardening even if the probe does not reproduce.
+Methods are told apart as javac does, never by the text of their types: an enclosing class's methods and static imports are left out when a nearer class has a method of the name, and the same method reached by two static imports is offered once.
 
 ### Regression targets
 
-None yet.
-
+- `CompletionSimpleNameTest.simpleName_innerClassDeclaresTheName_onlyItsOverloadsOffered`
+- `CompletionSimpleNameTest.simpleName_innerMethodBesideInheritedGenericOne_onlyTheInnerOffered`
+- `CompletionSimpleNameTest.simpleName_classDeclaresTheName_staticImportOfItHidden`
+- `CompletionSimpleNameTest.simpleName_importedOverloadMentionsAMissingTypeDeeply_keepsBoth`
+- `CompletionSimpleNameTest.simpleName_staticImportsWithDifferentTypeArguments_keepsBothMethods`
+- `CompletionSimpleNameTest.simpleName_sameMethodImportedTwice_offeredOnce`
+- `CompletionSimpleNameTest.simpleName_overrideOfGenericSuperclassMethod_offeredOnce`
 ---
 
 # Workspace Lifecycle Gaps (WS)
