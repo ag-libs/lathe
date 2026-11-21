@@ -55,7 +55,8 @@ public final class LatheLock {
 
   /**
    * Non-blocking check of whether the lock is held — fresh and not owned by an exited process.
-   * Unlike {@link #awaitAndRead}, this never waits. An unreadable lock is treated as not held.
+   * Unlike {@link #awaitAndRead}, this never waits. A lock whose owner cannot be read is held until
+   * it goes stale; any other failure to read it counts as not held.
    */
   public static boolean isBuilding(final Path lockFile) {
     try {
@@ -160,6 +161,8 @@ public final class LatheLock {
 
       return owner.get().info().startInstant().map(start::equals).orElse(true);
     } catch (final CharacterCodingException
+        // Another user's lock, or one Windows is deleting, which is gone a poll later.
+        | AccessDeniedException
         | NumberFormatException
         | DateTimeParseException
         | SecurityException

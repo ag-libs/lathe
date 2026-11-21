@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -8,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -130,6 +134,24 @@ final class LatheLockTest {
 
     assertThat(unlocked).isEqualTo("unlocked");
     assertThat(stale).isEqualTo("stale");
+  }
+
+  // POSIX permissions make the read throw AccessDeniedException, as Windows does for a lock its
+  // holder is deleting.
+  @Test
+  @DisabledOnOs(OS.WINDOWS)
+  void isBuilding_unreadableOwner_usesMtimeExpiry() throws IOException {
+    LatheLock.acquire(moduleLock());
+    Files.setPosixFilePermissions(moduleLock(), PosixFilePermissions.fromString("-w-------"));
+    assumeFalse(Files.isReadable(moduleLock()), "permissions do not bind this user");
+
+    final boolean fresh = LatheLock.isBuilding(moduleLock());
+    Files.setPosixFilePermissions(moduleLock(), PosixFilePermissions.fromString("rw-------"));
+    Files.setLastModifiedTime(moduleLock(), FileTime.from(Instant.now().minusSeconds(180)));
+    Files.setPosixFilePermissions(moduleLock(), PosixFilePermissions.fromString("-w-------"));
+
+    assertThat(fresh).isTrue();
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
   }
 
   @Test
