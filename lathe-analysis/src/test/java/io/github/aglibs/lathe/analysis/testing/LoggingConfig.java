@@ -12,6 +12,9 @@ import org.junit.jupiter.api.extension.ExtensionContext;
 // console's default INFO is printed.
 public final class LoggingConfig implements BeforeAllCallback {
 
+  // Held: a logger nothing references may be collected, and its level with it, so Lathe's loggers
+  // would fall back to the root's INFO partway through a run.
+  private static final Logger LATHE = Logger.getLogger("io.github.aglibs.lathe");
   private static boolean configured;
 
   // Once per JVM: re-reading the configuration resets every logger, which would drop the handlers
@@ -30,7 +33,7 @@ public final class LoggingConfig implements BeforeAllCallback {
         }
       }
 
-      Logger.getLogger("io.github.aglibs.lathe").setLevel(Level.FINE);
+      LATHE.setLevel(Level.FINE);
       configured = true;
     }
   }
