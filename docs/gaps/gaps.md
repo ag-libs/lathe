@@ -1411,6 +1411,17 @@ Then a use of an API the server's JDK does not have is a "cannot find symbol" er
 There the only explanation is a server log `WARNING` (`[compile] JDK … newer than the server's …`), which the user does not see.
 The warning is logged each time a module's compiler is created, so a reactor of many such modules repeats it once per module on every load and reload.
 
+### Related: one module's javac crash fails a whole search (deferred)
+
+Before #422, with the server on JDK 21, javac crashed in Enter on Dropwizard's docs examples (`--system` naming JDK 25), and the crash failed the whole cross-module request, not just that module: `find_implementations` on `Managed.stop`, its override family and `analyze_change` answered "the request failed; see the server log".
+`JavaSourceCompiler.analyzeSafely` keeps the crashed batch's partial analysis, the locator's first call into `Elements` then throws ("Cannot use Elements.getTypeElement before the TaskEvent.Kind.ENTER finished event"), and the module's failed future fails the request (`ReferenceSearch.searchFiles`).
+`find_references` fails the same way whenever a crashed batch holds one of its candidate files.
+
+What can still cause it after #422: a `--system` JDK javac cannot read whose release file is missing or unparseable, another javac crash in Enter, or a Lathe locator bug on one file.
+Deferred: it is rare now, and failing the request is the safe answer, which a rename needs (one that skipped a file would leave its uses unrenamed).
+Answering queries from the other modules would need the skipped files carried up with the hits (`SearchHits`) so a rename can still refuse, and the answer can say it is partial.
+The same note would cover a javac crash in Attr, which throws nothing and can leave a batch's hits missing without a trace.
+
 ### Fix direction
 
 Tell the client once per workspace load when the server's JDK is older than a module's language level or build JDK: name the JDK the server runs on, the one the build needs, and how to run the server on it (`LATHE_JAVA_HOME`).
