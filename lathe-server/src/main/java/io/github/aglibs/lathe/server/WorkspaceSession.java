@@ -613,13 +613,13 @@ final class WorkspaceSession {
 
   // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
   // a build file the agent just edited is seen now rather than on the next tick, then an eager
-  // pass. If its result can't be trusted (a build-file sync pending, or a running build) it
-  // carries a DeferReason so verify_change waits: for the sync it names, or for the build to end.
-  // The outcome lists every stale
-  // source, including one that failed unchanged since and so was not recompiled. Runs on the
-  // event loop.
+  // pass. The check requests no pass of its own, as the tick's does: the eager one covers it, and
+  // a second pass would scan every source tree again. If its result can't be trusted (a
+  // build-file sync pending, or a running build) it carries a DeferReason so verify_change waits:
+  // for the sync it names, or for the build to end. The outcome lists every stale source,
+  // including one that failed unchanged since and so was not recompiled. Runs on the event loop.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
-    checkForChanges();
+    reactToWatcher();
     if (writePass.reactorBuildInProgress()) {
       return CompletableFuture.completedFuture(
           new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS));
@@ -764,8 +764,18 @@ final class WorkspaceSession {
   }
 
   private void checkForChanges() {
+    if (reactToWatcher()) {
+      // Every tick: a pass with nothing stale only scans, about 25 ms on a 377-tree reactor.
+      writePass.requestPass(false);
+    }
+  }
+
+  // The watcher's check: reloads, refreshes or asks for a sync as the build files and the manifest
+  // changed. True when the sources are to be scanned next; not after a reload or a refresh, nor
+  // while a build runs.
+  private boolean reactToWatcher() {
     if (watcher == null) {
-      return;
+      return false;
     }
 
     releaseSessionsOnTick();
@@ -774,7 +784,7 @@ final class WorkspaceSession {
     // the lock clears picks up the settled state in one reload.
     if (writePass.reactorBuildInProgress()) {
       LOG.fine(() -> "[watcher] skipped — reactor build in progress");
-      return;
+      return false;
     }
 
     final WorkspaceWatcher.PollResult change = watcher.poll();
@@ -782,31 +792,32 @@ final class WorkspaceSession {
       scanPace.changed();
     }
 
-    switch (change) {
+    return switch (change) {
       case WORKSPACE_CHANGED -> {
         reload();
         writePass.forgetPendingStale();
         LOG.fine(() -> "[reload] pending-stale reset");
+        yield false;
       }
       // Every sync touches workspace.json: one that only resolved the formatter changed no more.
       case REACTOR_REFRESH -> {
         reactorIndex.refresh();
         writePass.forgetPendingStale();
         formats.reloadStyle();
+        yield false;
       }
       case BUILD_FILES_CHANGED -> {
         promptForSync("Build files changed. Lathe will run a full refresh.");
-        writePass.requestPass(false);
+        yield true;
       }
       // A prompt already shown stays (answering it still syncs), but MCP stops asking for a sync
       // and the next change prompts again.
       case BUILD_FILES_RESTORED -> {
         buildFilesChanged = false;
-        writePass.requestPass(false);
+        yield true;
       }
-      // Every tick: a pass with nothing stale only scans, about 25 ms on a 377-tree reactor.
-      case NO_CHANGE -> writePass.requestPass(false);
-    }
+      case NO_CHANGE -> true;
+    };
   }
 
   private void promptForSync(final String message) {

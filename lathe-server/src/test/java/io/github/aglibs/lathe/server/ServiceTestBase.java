@@ -255,19 +255,42 @@ abstract class ServiceTestBase {
         .anyMatch(diagnostic -> diagnostic.getMessage().getLeft().contains(message));
   }
 
+  // A handler on one of Lathe's loggers while open. The logger hears every session in the JVM and
+  // test classes run in parallel, so each subclass keeps only its own session's records. A
+  // subclass listens once its own fields are set, as records arrive from other threads at once.
+  protected abstract static class LogCapture extends Handler implements AutoCloseable {
+    private final Logger logger;
+
+    LogCapture(final Logger logger) {
+      this.logger = logger;
+    }
+
+    final void listen() {
+      logger.addHandler(this);
+    }
+
+    @Override
+    public void flush() {}
+
+    @Override
+    public void close() {
+      logger.removeHandler(this);
+    }
+  }
+
   // The compile log of one workspace while open: a test counts compile tasks here, as a stale
-  // result is dropped unpublished and redundant compiles show nowhere else. The logger hears every
-  // compile in the JVM; each compile line names a file it compiled, so keeping the lines under the
-  // workspace lets test classes compile in parallel.
-  protected static final class CompileLog extends Handler implements AutoCloseable {
+  // result is dropped unpublished and redundant compiles show nowhere else. Each compile line
+  // names a file it compiled, so the lines under the workspace are this test's.
+  protected static final class CompileLog extends LogCapture {
     private static final Logger COMPILER = Logger.getLogger(SourceAnalysisSession.class.getName());
     private final Queue<String> messages = new ConcurrentLinkedQueue<>();
     private final String workspaceUri;
 
     CompileLog(final Path workspace) {
+      super(COMPILER);
       final String uri = LatheUri.canonical(workspace.toUri().toString());
       workspaceUri = uri.endsWith("/") ? uri : uri + "/";
-      COMPILER.addHandler(this);
+      listen();
     }
 
     List<String> messages() {
@@ -283,14 +306,6 @@ abstract class ServiceTestBase {
       if (record.getMessage().contains(workspaceUri)) {
         messages.add(record.getMessage());
       }
-    }
-
-    @Override
-    public void flush() {}
-
-    @Override
-    public void close() {
-      COMPILER.removeHandler(this);
     }
   }
 
