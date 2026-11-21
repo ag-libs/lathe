@@ -4,16 +4,19 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,10 +48,20 @@ final class LatheModelInjector {
   private static final String INIT_GOAL = "init";
   private static final String INIT_EXECUTION_ID = "lathe-init";
   private static final String SYNC_EXECUTION_ID = "lathe-sync";
+  private static final String MAVEN_PLUGINS_GROUP_ID = "org.apache.maven.plugins";
+  private static final String CHECKSTYLE_PLUGIN_ARTIFACT_ID = "maven-checkstyle-plugin";
+  private static final String NOHTTP_GROUP_ID = "io.spring.nohttp";
+  private static final String NOHTTP_ARTIFACT_ID = "nohttp-checkstyle";
+  private static final String EXCLUDES = "excludes";
+  private static final String LATHE_EXCLUDE = "**/%s/**".formatted(LatheLayout.LATHE_DIR);
+  // Excludes that already keep the whole of .lathe/ out; one naming only part of it does not.
+  private static final Set<String> LATHE_EXCLUDES =
+      Set.of(LATHE_EXCLUDE, "%s/*".formatted(LATHE_EXCLUDE), "%s/".formatted(LATHE_EXCLUDE));
 
   private final String version;
   // One injector serves a build: a build declaring the extension in every module says so once.
   private boolean extensionsTurnedOff;
+  private boolean nohttpExcluded;
 
   LatheModelInjector(final String version) {
     this.version = version;
@@ -59,6 +72,7 @@ final class LatheModelInjector {
   // every module whose packaging compiles. A pom module has none, and one created without a
   // version would make Maven look up the newest plugin online on every build.
   void injectProject(final MavenProject project) {
+    excludeLatheFromNohttp(project);
     compilerPlugin(project)
         .ifPresent(
             compiler -> {
@@ -66,6 +80,67 @@ final class LatheModelInjector {
               injectTreeScopes(project);
               injectCaptureDependency(project);
             });
+  }
+
+  // nohttp's checkstyle execution scans the whole project directory, and from the second build on
+  // .lathe/ holds mirrored files with http:// URLs (a copied SBOM), so every sync after the first
+  // fails (WS-40). Maven has merged the plugin's configuration into each execution's by now, so
+  // each execution's own is edited; the plugin's too, for a goal run from the command line
+  // (default-cli). Every execution of a plugin that runs nohttp gets the exclude: one that checks
+  // style over src/ never reaches .lathe/, so it changes nothing there. Any project, not only one
+  // that compiles: a parent pom can carry the check.
+  void excludeLatheFromNohttp(final MavenProject project) {
+    final Optional<Plugin> checkstyle =
+        findPlugin(project, MAVEN_PLUGINS_GROUP_ID, CHECKSTYLE_PLUGIN_ARTIFACT_ID);
+    if (checkstyle.isEmpty() || !runsNohttp(checkstyle.get())) {
+      return;
+    }
+
+    boolean excluded =
+        checkstyle.get().getConfiguration() instanceof final Xpp3Dom pluginConfiguration
+            && excludeLathe(pluginConfiguration);
+    for (final PluginExecution execution : checkstyle.get().getExecutions()) {
+      if (execution.getConfiguration() instanceof final Xpp3Dom configuration) {
+        excluded |= excludeLathe(configuration);
+      }
+    }
+
+    if (excluded && !nohttpExcluded) {
+      nohttpExcluded = true;
+      LOG.info(
+          "[setup] {} excluded from the nohttp check, which scans the whole project",
+          LATHE_EXCLUDE);
+    }
+  }
+
+  private static boolean runsNohttp(final Plugin checkstyle) {
+    return checkstyle.getDependencies().stream()
+        .anyMatch(
+            dependency ->
+                NOHTTP_GROUP_ID.equals(dependency.getGroupId())
+                    && NOHTTP_ARTIFACT_ID.equals(dependency.getArtifactId()));
+  }
+
+  // Whether it changed the configuration: an execution whose excludes already name .lathe/ keeps
+  // them, so a second pass changes nothing.
+  private static boolean excludeLathe(final Xpp3Dom configuration) {
+    final Xpp3Dom excludes = configuration.getChild(EXCLUDES);
+    if (excludes == null) {
+      final var added = new Xpp3Dom(EXCLUDES);
+      added.setValue(LATHE_EXCLUDE);
+      configuration.addChild(added);
+      return true;
+    }
+
+    final String value = excludes.getValue();
+    if (value != null
+        && Arrays.stream(value.split(",")).map(String::trim).anyMatch(LATHE_EXCLUDES::contains)) {
+      return false;
+    }
+
+    excludes.setValue(
+        value == null || value.isBlank() ? LATHE_EXCLUDE : "%s,%s".formatted(value, LATHE_EXCLUDE));
+    return true;
   }
 
   static Optional<Plugin> compilerPlugin(final MavenProject project) {

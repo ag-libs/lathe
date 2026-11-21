@@ -57,7 +57,8 @@ On Maven, also keep Lathe out of JDT LS's own project import.
 **A project-wide check fails on files under `.lathe/` after the first build.**
 Lathe copies classes and resources into that directory.
 A check such as nohttp may flag a URL in a copied resource on the next build.
-Exclude the directory from the check, as you would a build output directory.
+On Maven, where the Lathe extension is active, Lathe excludes `.lathe/` from a nohttp check itself: the `maven-checkstyle-plugin` that runs `nohttp-checkstyle` gets `**/.lathe/**` added to its excludes for the build, and the build log says so.
+For other checks, on Gradle, and on a Maven build Lathe does not wire (the plugin declared without the extension, or Lathe turned off for the build), exclude the directory yourself, as you would a build output directory.
 
 ```xml
 <!-- Maven: the maven-checkstyle-plugin execution that runs nohttp-checkstyle -->
