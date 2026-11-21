@@ -16,6 +16,7 @@ import org.apache.maven.model.Model;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,6 +64,134 @@ class LatheModelInjectorTest {
     compiler.setVersion(version);
     project.getBuild().getPlugins().add(compiler);
     return compiler;
+  }
+
+  // A project's nohttp check as Spring projects declare it: maven-checkstyle-plugin with nohttp as
+  // its dependency, in an execution of its own over the whole project. Returns that execution's
+  // configuration; excludes null leaves the element out.
+  private static Xpp3Dom addNohttp(final MavenProject project, final String excludes) {
+    final Xpp3Dom configuration = addCheckstyle(project, "io.spring.nohttp", "nohttp-checkstyle");
+    if (excludes != null) {
+      final var element = new Xpp3Dom("excludes");
+      element.setValue(excludes);
+      configuration.addChild(element);
+    }
+
+    return configuration;
+  }
+
+  private static Xpp3Dom addCheckstyle(
+      final MavenProject project, final String groupId, final String artifactId) {
+    final var dependency = new Dependency();
+    dependency.setGroupId(groupId);
+    dependency.setArtifactId(artifactId);
+    final var configuration = new Xpp3Dom("configuration");
+    final var sources = new Xpp3Dom("sourceDirectories");
+    sources.setValue("${basedir}");
+    configuration.addChild(sources);
+    final var execution = new PluginExecution();
+    execution.setId("nohttp-checkstyle-validation");
+    execution.addGoal("check");
+    execution.setConfiguration(configuration);
+    final var checkstyle = new Plugin();
+    checkstyle.setGroupId("org.apache.maven.plugins");
+    checkstyle.setArtifactId("maven-checkstyle-plugin");
+    checkstyle.addDependency(dependency);
+    checkstyle.addExecution(execution);
+    project.getBuild().getPlugins().add(checkstyle);
+    return configuration;
+  }
+
+  private static String excludes(final Xpp3Dom configuration) {
+    final Xpp3Dom excludes = configuration.getChild("excludes");
+    return excludes == null ? null : excludes.getValue();
+  }
+
+  // WS-40: nohttp scans the whole project, and .lathe/ holds mirrored files with http:// URLs.
+  @Test
+  void injectProject_nohttpCheckWithExcludes_latheAppended() {
+    final MavenProject project = project();
+    addCompiler(project, "3.14.0");
+    final Xpp3Dom configuration = addNohttp(project, "**/.git/**/*,**/target/**/");
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(configuration)).isEqualTo("**/.git/**/*,**/target/**/,**/.lathe/**");
+  }
+
+  @Test
+  void injectProject_nohttpCheckWithoutExcludes_latheExcluded() {
+    final MavenProject project = project();
+    final Xpp3Dom configuration = addNohttp(project, null);
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(configuration)).isEqualTo("**/.lathe/**");
+  }
+
+  // A parent pom compiles nothing, yet can run the check over the whole project.
+  @Test
+  void injectProject_nohttpCheckInPomModule_latheExcluded() {
+    final MavenProject project = project();
+    final Xpp3Dom configuration = addNohttp(project, "**/target/**/");
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(configuration)).isEqualTo("**/target/**/,**/.lathe/**");
+    assertThat(project.getProperties()).doesNotContainKey("maven.compiler.compilerId");
+  }
+
+  @Test
+  void injectProject_excludesAlreadyNameLathe_leftAsTheyAreAndAgainOnASecondPass() {
+    final MavenProject project = project();
+    final Xpp3Dom configuration = addNohttp(project, "**/target/**/,**/.lathe/**/*");
+    final var injector = new LatheModelInjector(VERSION);
+
+    injector.injectProject(project);
+    injector.injectProject(project);
+
+    assertThat(excludes(configuration)).isEqualTo("**/target/**/,**/.lathe/**/*");
+  }
+
+  // A pattern naming only part of .lathe/, or another directory that starts like it, keeps nothing
+  // of the mirror out.
+  @Test
+  void injectProject_excludesNameOnlyALookalike_latheStillAppended() {
+    final MavenProject project = project();
+    final Xpp3Dom configuration = addNohttp(project, "**/.lathe-backup/**, **/.lathe/cache/**");
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(configuration))
+        .isEqualTo("**/.lathe-backup/**, **/.lathe/cache/**,**/.lathe/**");
+  }
+
+  // A goal run from the command line (mvn checkstyle:check) takes the plugin's own configuration.
+  @Test
+  void injectProject_nohttpConfiguredOnThePlugin_latheExcludedThereToo() {
+    final MavenProject project = project();
+    addNohttp(project, null);
+    final Plugin checkstyle =
+        project
+            .getBuild()
+            .getPluginsAsMap()
+            .get("org.apache.maven.plugins:maven-checkstyle-plugin");
+    final var pluginConfiguration = new Xpp3Dom("configuration");
+    checkstyle.setConfiguration(pluginConfiguration);
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(pluginConfiguration)).isEqualTo("**/.lathe/**");
+  }
+
+  @Test
+  void injectProject_checkstyleWithoutNohttp_excludesUntouched() {
+    final MavenProject project = project();
+    final Xpp3Dom configuration = addCheckstyle(project, "com.puppycrawl.tools", "checkstyle");
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(configuration)).isNull();
   }
 
   @Test
