@@ -53,6 +53,7 @@ import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.api.tasks.util.PatternFilterable;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaToolchainService;
@@ -86,6 +87,12 @@ public class LatheProjectPlugin implements Plugin<Project> {
   // one-project run does not, as Maven's -pl.
   private static final GradleVersion CROSS_PROJECT_TRIGGER = GradleVersion.version("9.0");
   private static final Set<String> ROOT_LIFECYCLE = Set.of("build", "check", "test");
+
+  // nohttp's Gradle plugin, its extension, and the exclude that keeps its check out of .lathe/.
+  private static final String NOHTTP_PLUGIN = "io.spring.nohttp";
+  private static final String NOHTTP_EXTENSION = "nohttp";
+  private static final String NOHTTP_SOURCE_GETTER = "getSource";
+  private static final String LATHE_EXCLUDE = "**/%s/**".formatted(LatheLayout.LATHE_DIR);
 
   private final BuildFeatures features;
 
@@ -135,6 +142,56 @@ public class LatheProjectPlugin implements Plugin<Project> {
         .artifact(facts.flatMap(LatheFactsTask::getFactsFile));
     triggerWorkspace(project, facts);
     project.getPlugins().withType(JavaPlugin.class, java -> registerJava(project, facts));
+    project.getPluginManager().withPlugin(NOHTTP_PLUGIN, nohttp -> excludeLatheFromNohttp(project));
+  }
+
+  // nohttp's check scans the whole project directory, so from the second build on it finds the
+  // http:// URLs in what Lathe mirrors into .lathe/, and every sync after the first fails (WS-40).
+  // Its extension's source is the tree the check reads when it runs, so an exclude added before
+  // then counts. A build script may replace that tree after the plugin is applied
+  // (nohttp { source = fileTree(...) }), so the tree the project ends its evaluation with gets the
+  // exclude too.
+  private static void excludeLatheFromNohttp(final Project project) {
+    excludeFromNohttpSource(project);
+    if (!project.getState().getExecuted()) {
+      project.afterEvaluate(LatheProjectPlugin::excludeFromNohttpSource);
+    }
+  }
+
+  // Lathe does not compile against nohttp: the getter is reached as a build script reaches it, and
+  // an extension that changed shape is left alone rather than failing the build.
+  private static void excludeFromNohttpSource(final Project project) {
+    final Object extension = project.getExtensions().findByName(NOHTTP_EXTENSION);
+    if (extension == null) {
+      return;
+    }
+
+    final Object source;
+    try {
+      source = extension.getClass().getMethod(NOHTTP_SOURCE_GETTER).invoke(extension);
+    } catch (final NoSuchMethodException e) {
+      project.getLogger().info("[lathe] nohttp's extension has no source: .lathe/ not excluded");
+      return;
+    } catch (final ReflectiveOperationException e) {
+      project.getLogger().info("[lathe] nohttp's source not read: .lathe/ not excluded", e);
+      return;
+    }
+
+    if (!(source instanceof final PatternFilterable tree)) {
+      project
+          .getLogger()
+          .info(
+              "[lathe] nohttp's source is {}: .lathe/ not excluded",
+              source == null ? "not set" : "no file tree");
+      return;
+    }
+
+    tree.exclude(LATHE_EXCLUDE);
+    project
+        .getLogger()
+        .info(
+            "[lathe] {} excluded from the nohttp check, which scans the whole project",
+            LATHE_EXCLUDE);
   }
 
   private void triggerWorkspace(final Project project, final TaskProvider<LatheFactsTask> facts) {
