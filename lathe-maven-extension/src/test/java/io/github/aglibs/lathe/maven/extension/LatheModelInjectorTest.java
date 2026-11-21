@@ -153,6 +153,19 @@ class LatheModelInjectorTest {
     assertThat(excludes(configuration)).isEqualTo("**/target/**/,**/.lathe/**/*");
   }
 
+  // Without an element, the plugin reads its excludes from the checkstyle.excludes property; the
+  // element Lathe adds keeps what the property said.
+  @Test
+  void injectProject_excludesSetByProperty_keptInTheElementLatheAdds() {
+    final MavenProject project = project();
+    project.getProperties().setProperty("checkstyle.excludes", "**/generated/**");
+    final Xpp3Dom configuration = addNohttp(project, null);
+
+    new LatheModelInjector(VERSION).injectProject(project);
+
+    assertThat(excludes(configuration)).isEqualTo("**/generated/**,**/.lathe/**");
+  }
+
   // A pattern naming only part of .lathe/, or another directory that starts like it, keeps nothing
   // of the mirror out.
   @Test

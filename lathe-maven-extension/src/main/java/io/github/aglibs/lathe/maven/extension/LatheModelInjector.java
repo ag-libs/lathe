@@ -53,6 +53,8 @@ final class LatheModelInjector {
   private static final String NOHTTP_GROUP_ID = "io.spring.nohttp";
   private static final String NOHTTP_ARTIFACT_ID = "nohttp-checkstyle";
   private static final String EXCLUDES = "excludes";
+  // The property maven-checkstyle-plugin reads its excludes from when no element sets them.
+  private static final String EXCLUDES_PROPERTY = "checkstyle.excludes";
   private static final String LATHE_EXCLUDE = "**/%s/**".formatted(LatheLayout.LATHE_DIR);
   // Excludes that already keep the whole of .lathe/ out; one naming only part of it does not.
   private static final Set<String> LATHE_EXCLUDES =
@@ -96,12 +98,13 @@ final class LatheModelInjector {
       return;
     }
 
+    final String inherited = inheritedExcludes(project);
     boolean excluded =
         checkstyle.get().getConfiguration() instanceof final Xpp3Dom pluginConfiguration
-            && excludeLathe(pluginConfiguration);
+            && excludeLathe(pluginConfiguration, inherited);
     for (final PluginExecution execution : checkstyle.get().getExecutions()) {
       if (execution.getConfiguration() instanceof final Xpp3Dom configuration) {
-        excluded |= excludeLathe(configuration);
+        excluded |= excludeLathe(configuration, inherited);
       }
     }
 
@@ -121,13 +124,23 @@ final class LatheModelInjector {
                     && NOHTTP_ARTIFACT_ID.equals(dependency.getArtifactId()));
   }
 
+  // The excludes a configuration without its own element takes from the checkstyle.excludes
+  // property: a -D one (Maven sets those as system properties too), else the project's. An element
+  // Lathe adds would hide the property, so it starts from that value.
+  private static String inheritedExcludes(final MavenProject project) {
+    final String fromCommandLine = System.getProperty(EXCLUDES_PROPERTY);
+    return fromCommandLine != null
+        ? fromCommandLine
+        : project.getProperties().getProperty(EXCLUDES_PROPERTY);
+  }
+
   // Whether it changed the configuration: an execution whose excludes already name .lathe/ keeps
   // them, so a second pass changes nothing.
-  private static boolean excludeLathe(final Xpp3Dom configuration) {
+  private static boolean excludeLathe(final Xpp3Dom configuration, final String inherited) {
     final Xpp3Dom excludes = configuration.getChild(EXCLUDES);
     if (excludes == null) {
       final var added = new Xpp3Dom(EXCLUDES);
-      added.setValue(LATHE_EXCLUDE);
+      added.setValue(withLathe(inherited));
       configuration.addChild(added);
       return true;
     }
@@ -138,9 +151,14 @@ final class LatheModelInjector {
       return false;
     }
 
-    excludes.setValue(
-        value == null || value.isBlank() ? LATHE_EXCLUDE : "%s,%s".formatted(value, LATHE_EXCLUDE));
+    excludes.setValue(withLathe(value));
     return true;
+  }
+
+  private static String withLathe(final String excludes) {
+    return excludes == null || excludes.isBlank()
+        ? LATHE_EXCLUDE
+        : "%s,%s".formatted(excludes, LATHE_EXCLUDE);
   }
 
   static Optional<Plugin> compilerPlugin(final MavenProject project) {
