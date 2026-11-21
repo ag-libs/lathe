@@ -33,9 +33,11 @@ from mcp_consistency import first  # noqa: E402
 # file; a reactor type and a CamelHumps query for it; a test method; where the probe file goes;
 # and, at the pinned commit, the exact counts of the symbol's references and callers and of the
 # interface's implementations, which a search that drops files (a lost batch) would change.
+# The pins are the local clones' commits, not dev/lsp-bench's (which the clones do not have): keep
+# each clone checked out at its pin, as a pull moves HEAD and the count checks then skip.
 CONFIGS = {
     "dropwizard": dict(
-        pin="46bb4ed819",
+        pin="08e290b764",
         counts=dict(references=51, callers=51, implementations=13),
         file="dropwizard-util/src/main/java/io/dropwizard/util/Duration.java",
         symbol="toMilliseconds", newname="toMillisLatheSmoke", is_method=True,
@@ -66,8 +68,8 @@ CONFIGS = {
               "fail_whenHashCodesAreInconsistent", "HashCodeTest"),
         probe=("equalsverifier-core/src/main/java/nl/jqno/equalsverifier", "nl.jqno.equalsverifier")),
     "helidon": dict(
-        pin="2f6df16425",
-        counts=dict(references=72, callers=66, implementations=4),
+        pin="27a692eb0d",
+        counts=dict(references=60, callers=54, implementations=4),
         file="common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java",
         symbol="text()", newname="textLatheSmoke", is_method=True,
         iface=("common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java", "MediaType {", "MediaType"),
@@ -77,8 +79,9 @@ CONFIGS = {
               "MediaTypesTest"),
         probe=("common/media-type/src/main/java/io/helidon/common/media/type", "io.helidon.common.media.type"),
         module_info="common/media-type/src/main/java/module-info.java",
-        # Implemented in many modules (about 50 implementations in 14), as the checks of a listing's
-        # modules need: a method implemented in a few cannot show what they look for.
+        # Implemented in many modules (at the pin, 171 implementations in 28 modules, lambdas and
+        # method references included), as the checks of a listing's modules need: a method
+        # implemented in a few cannot show what they look for.
         wide=("webserver/webserver/src/main/java/io/helidon/webserver/http/Handler.java",
               "void handle(ServerRequest", "handle")),
 }
