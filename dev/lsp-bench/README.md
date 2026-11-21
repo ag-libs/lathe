@@ -1,6 +1,6 @@
 # Lathe and jdtls — LSP Benchmark Pre-Registration
 
-**Status: PRE-REGISTRATION, drafted 2026-11-06, revised 2026-11-07; first runs 2026-11-07/08; amended 2026-11-07, 2026-11-08, 2026-11-11, 2026-11-19 and 2026-11-20 (see [Amendments](#amendments)).**
+**Status: PRE-REGISTRATION, drafted 2026-11-06, revised 2026-11-07; first runs 2026-11-07/08; amended 2026-11-07, 2026-11-08, 2026-11-11, 2026-11-19, 2026-11-20 and 2026-11-21 (see [Amendments](#amendments)).**
 This file fixes the projects, servers, queries, metrics and fairness rules before any result exists, so none of them can be chosen after seeing the numbers.
 It is committed ahead of the first run; results go in `results/` and are reported against it unchanged.
 A change to this file after the first run is listed under [Amendments](#amendments) with its date and reason, and the runs before it are reported as such.
@@ -227,3 +227,8 @@ Then every row with its raw results and the command that reproduces it, the rows
     Stated, not measured, apart from the rows item 5 checks.
   - **The report's layout is fixed now**, before any result: `report.py --headline` generates it whole, so no value is copied by hand and no layout is chosen after the numbers are seen.
     Feature parity shows one row per area, the shared features as a count and every difference by name; every feature's own row, with its latency, follows it, collapsed; then what Lathe does not do and where jdtls is better.
+- **2026-11-21, after the trial session on spring-petclinic, before any measured run:**
+  - **Idle memory is sampled after 60 seconds without a request**, in the start group's memory runs only; it was sampled 5 seconds after the last query of every run.
+    The trial read the same value as idle and as peak for both servers: 5 seconds after its last answer a JVM still holds its peak, so the value said nothing about what a server keeps while the user reads code.
+    Neither server is told it is idle: Lathe gives memory back only when its scan pauses, which only its MCP engine sets (after 5 minutes without a request), and jdtls runs with vscode-java's heap-shrinking collector settings; the 60 seconds measure what each does on its own.
+    It adds about 6 minutes per project to the start group (3 memory runs per server).

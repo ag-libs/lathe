@@ -70,6 +70,24 @@ c = Fake(); bench.reload(c, repo, texts)
 check("reload: a second reload with nothing changed sends nothing", c.sent == [])
 shutil.rmtree(repo)
 
+# undo_lathe: Lathe's edits and files go, the ignored build output stays.
+import subprocess  # noqa: E402
+import servers  # noqa: E402
+work = pathlib.Path(tempfile.mkdtemp())
+git = lambda *a: subprocess.run(["git", *a], cwd=work, check=True, capture_output=True)
+git("init", "-q"); (work / ".gitignore").write_text("target/\n"); (work / "pom.xml").write_text("<project/>\n")
+git("add", "."); git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "pin")
+pin = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True).stdout.strip()
+(work / "pom.xml").write_text("<project><!-- lathe --></project>\n")
+(work / ".lathe").mkdir(); (work / ".lathe" / "workspace.json").write_text("{}")
+(work / "target" / "classes").mkdir(parents=True); (work / "target" / "classes" / "Main.class").write_text("x")
+check("lathe_touched: a replaced file or .lathe/ counts", servers.lathe_touched(work))
+servers.undo_lathe(work, pin)
+check("undo_lathe: the file back, .lathe/ gone, the build output kept",
+      (work / "pom.xml").read_text() == "<project/>\n" and not (work / ".lathe").exists()
+      and (work / "target" / "classes" / "Main.class").exists() and not servers.lathe_touched(work))
+shutil.rmtree(work)
+
 # stage2.injection: after a class's opening line; an enum or an annotation type is left out.
 text, line = stage2.injection("package p;\n\n@Deprecated\npublic final class A\n    extends B {\n  int x;\n}\n")
 check("injection: after the opening line of a two-line declaration (line %d)" % line,
@@ -139,6 +157,9 @@ check("spread: median and range", report.spread([3000, 1000, 2000], " s", 1000, 
 check("spread: one value alone", report.spread([1500], " s", 1000, 1) == "1.5 s")
 check("with_never: some runs never got there",
       report.with_never([1000, None, 3000], " s", 1000, 1) == "2.0 s (1.0–3.0) (never in 1 of 3)")
+check("counted: singular and plural",
+      report.counted({"lines": 2, "downloads": 0, "commands": 1}) == "2 lines, 0 downloads, 1 command")
+check("version: an unrecorded version is named so", report.version({"jdtls": None}, "jdtls") == "not recorded")
 check("with_never: none got there", report.with_never([None, None], " s", 1000, 1) == "never")
 fake = [(pathlib.Path("d"), {}, {"jdtls": [{"plan": "ready", "error": "no attempt ran", "not_started": True},
                                             {"plan": "ready", "ready_ms": 5}]})]

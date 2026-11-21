@@ -213,6 +213,14 @@ def lathe_prepare(name, project, mode, log):
     return (time.monotonic() - start) * 1000
 
 
+def undo_lathe(repo, commit):
+    """The pinned checkout without what Lathe's runs added or changed, its ignored build output kept:
+    tracked files back as committed, untracked files gone, and .lathe/ gone even where it is ignored."""
+    subprocess.run(["git", "checkout", "-q", "-f", "--detach", commit], cwd=repo, check=True)
+    subprocess.run(["git", "clean", "-q", "-ffd"], cwd=repo, check=True)
+    shutil.rmtree(repo / ".lathe", ignore_errors=True)
+
+
 def lathe_touched(repo):
     """Whether Lathe's runs left the checkout changed: a tracked file edited, or .lathe/ there."""
     status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo,
@@ -272,10 +280,11 @@ def jdtls_prepare(name, project, mode, state, log):
     repo = repo_of(name)
     if mode == "warm":
         state.mkdir(parents=True, exist_ok=True)
-        # jdtls never sees Lathe's checkout: the extension, a replaced file, .lathe/ and its build
-        # output go, as after a cold run's fresh checkout; jdtls's own state stays.
+        # jdtls never sees Lathe's checkout: the extension, a replaced file and .lathe/ go. The build
+        # output stays: a warm jdtls trusts its saved state and does not build again, so without its
+        # classes a debug launch finds no main class.
         if lathe_touched(repo):
-            fresh_checkout(repo, project["commit"])
+            undo_lathe(repo, project["commit"])
         return None
     fresh_checkout(repo, project["commit"])
     shutil.rmtree(state, ignore_errors=True)

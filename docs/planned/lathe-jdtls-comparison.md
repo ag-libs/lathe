@@ -101,7 +101,7 @@ Setup is stated in the page's introduction as counts, not as an item: the lines 
   | Measurement | Runs per server and project | Why |
   |---|---|---|
   | A cold run: the build, then the first start (jdtls: its `mvn install` on Helidon, then its first start on an empty workspace, which imports) | 2 | minutes long, with little spread |
-  | A warm run: reopening the built project, with peak and idle memory | 4 | the first is also the parity run; memory comes from the other 3 |
+  | A warm run: reopening the built project, with peak and idle memory | 4 | the first is also the parity run; memory comes from the other 3, idle sampled after 60 s without a request |
   | A typed error until it shows, and until it is gone | 10 | seconds each |
   | A branch switch; a build-file change | 3, with a 5-minute deadline | each can take minutes |
   | Feature parity; errors against the build | 1 | the same answer every run |
@@ -130,11 +130,11 @@ Estimated from the stage 1 runs:
 
 | Group | spring-petclinic | Dropwizard | Helidon |
 |---|---|---|---|
-| Build or import, ready, memory, parity | 15 min | 35 min | 75 min |
+| Build or import, ready, memory, parity | 21 min | 41 min | 81 min |
 | Errors against the build, typing | 5 min | 20 min | 35 min |
 | Branch switch, build-file change | 10 min | 20 min | 40 min |
 
-About 4 hours in 7 sessions: spring-petclinic in one, Dropwizard in two (start and parity; the other two groups), Helidon in four (start and parity once per server; errors and typing; outside changes).
+About 4¼ hours in 7 sessions: spring-petclinic in one, Dropwizard in two (start and parity; the other two groups), Helidon in four (start and parity once per server; errors and typing; outside changes).
 The trial round runs everything once, in about 1½ hours.
 
 ## The harness

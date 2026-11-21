@@ -301,10 +301,20 @@ def setup_cell(server):
     plain, debug = setup_counts(server), setup_counts(server, debug=True)
     if not plain:
         return "-"
-    cell = "%d lines, %d downloads, %d commands" % (plain["lines"], plain["downloads"], plain["commands"])
+    cell = counted(plain)
     if debug:
-        cell += "; with debugging %d, %d, %d" % (debug["lines"], debug["downloads"], debug["commands"])
+        cell += "; with debugging, %s" % counted(debug)
     return cell
+
+
+def counted(counts):
+    return ", ".join("%d %s%s" % (counts[key], key[:-1], "" if counts[key] == 1 else "s")
+                     for key in ("lines", "downloads", "commands"))
+
+
+def version(versions, key):
+    """A recorded version, or that none was: a setup that does not name one is no version "None"."""
+    return versions.get(key) or "not recorded"
 
 
 def sessions(dirs):
@@ -459,7 +469,8 @@ def headline(dirs):
     for project in sorted(found):
         project_sessions = found[project]
         envs = [env for _d, env, _r in project_sessions]
-        versions = sorted({"Lathe %s, jdtls %s" % (e["versions"]["lathe"], e["versions"]["jdtls"]) for e in envs})
+        versions = sorted({"Lathe %s, jdtls %s" % (version(e["versions"], "lathe"), version(e["versions"], "jdtls"))
+                            for e in envs})
         lines += ["", "## %s" % project, "",
                   "Commit `%s`; %s." % (envs[0]["project_commit"][:10], "; ".join(versions)), "",
                   "| | Lathe | jdtls |", "|---|---|---|"]
@@ -490,8 +501,8 @@ def main():
         "# %s, %s" % (env["project"], env["date"]),
         "",
         "Project commit `%s`; Lathe %s; jdtls %s; build JDK %s; jdtls JDK %s%s." % (
-            env["project_commit"][:10], env["versions"]["lathe"], env["versions"]["jdtls"],
-            env["versions"]["build_jdk"], env["versions"]["jdtls_jdk"],
+            env["project_commit"][:10], version(env["versions"], "lathe"), version(env["versions"], "jdtls"),
+            version(env["versions"], "build_jdk"), version(env["versions"], "jdtls_jdk"),
             "; every server at -Xmx%s" % env["heap"] if env.get("heap") else ""),
         "**Variant:** jdtls with %s changed from vscode-java's defaults." % ", ".join(
             "`%s=%s`" % kv for kv in env["jdtls_settings"].items()) if env.get("jdtls_settings") else "",
