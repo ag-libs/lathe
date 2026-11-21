@@ -70,6 +70,24 @@ c = Fake(); bench.reload(c, repo, texts)
 check("reload: a second reload with nothing changed sends nothing", c.sent == [])
 shutil.rmtree(repo)
 
+# undo_lathe: Lathe's edits and files go, the ignored build output stays.
+import subprocess  # noqa: E402
+import servers  # noqa: E402
+work = pathlib.Path(tempfile.mkdtemp())
+git = lambda *a: subprocess.run(["git", *a], cwd=work, check=True, capture_output=True)
+git("init", "-q"); (work / ".gitignore").write_text("target/\n"); (work / "pom.xml").write_text("<project/>\n")
+git("add", "."); git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "pin")
+pin = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True).stdout.strip()
+(work / "pom.xml").write_text("<project><!-- lathe --></project>\n")
+(work / ".lathe").mkdir(); (work / ".lathe" / "workspace.json").write_text("{}")
+(work / "target" / "classes").mkdir(parents=True); (work / "target" / "classes" / "Main.class").write_text("x")
+check("lathe_touched: a replaced file or .lathe/ counts", servers.lathe_touched(work))
+servers.undo_lathe(work, pin)
+check("undo_lathe: the file back, .lathe/ gone, the build output kept",
+      (work / "pom.xml").read_text() == "<project/>\n" and not (work / ".lathe").exists()
+      and (work / "target" / "classes" / "Main.class").exists() and not servers.lathe_touched(work))
+shutil.rmtree(work)
+
 # stage2.injection: after a class's opening line; an enum or an annotation type is left out.
 text, line = stage2.injection("package p;\n\n@Deprecated\npublic final class A\n    extends B {\n  int x;\n}\n")
 check("injection: after the opening line of a two-line declaration (line %d)" % line,
