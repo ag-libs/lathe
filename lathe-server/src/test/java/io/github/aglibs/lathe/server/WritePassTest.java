@@ -27,6 +27,8 @@ import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,9 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.MessageParams;
@@ -498,6 +503,50 @@ class WritePassTest extends ServiceTestBase {
         .isEqualTo(ReconcileOutcome.DeferReason.NONE);
   }
 
+  // A query's freshen step checks the watcher, then runs one eager pass: the check requests no pass
+  // of its own, which made the eager one wait behind it and scan every source tree a second time
+  // on every MCP query. A pass that is not the query's (a tick's, every 2 s, or one a tick queued
+  // behind the catch-up) can only add a scan to the window, never take the query's away, so the
+  // fewest seen over three queries is the query's own.
+  @Test
+  void reconcileForVerify_nothingChanged_scansTheSourceTreesOnce() throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    host.initialize(tmp);
+    awaitStartup();
+    final Thread loop =
+        host.onLoop(session -> Thread.currentThread()).get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    final var scanned = new ArrayList<Integer>();
+    try (final var scans = new ScanLog(loop)) {
+      for (int query = 0; query < 3; query++) {
+        reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
+        scans.reset();
+        assertThat(reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
+            .isEqualTo(ReconcileOutcome.DeferReason.NONE);
+        scanned.add(scans.count());
+      }
+    }
+
+    assertThat(Collections.min(scanned)).as("scans per query: %s", scanned).isEqualTo(1);
+  }
+
+  // A query right after a source changed on disk writes it in the pass it waits for, now that its
+  // one pass is the eager one. A tick's pass waits a tick more before it claims a changed source,
+  // so the write is the query's.
+  @Test
+  void reconcileForVerify_sourceChangedOnDisk_writesItInTheQuerysPass() throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    host.initialize(tmp);
+    awaitStartup();
+    final Path foo = writeFoo(CHANGED_FOO, 5_000L);
+
+    final ReconcileOutcome outcome = reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(outcome.deferral()).isEqualTo(ReconcileOutcome.DeferReason.NONE);
+    assertThat(outcome.reacted()).contains(foo);
+    assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
+  }
+
   // A tick's pass that found the lock held tries again only at the next tick, 2 s on. A query
   // waiting on it makes it try at once: the other server's pass has usually ended by then.
   @Test
@@ -715,5 +764,35 @@ class WritePassTest extends ServiceTestBase {
   private static boolean isRecompileBegin(final ProgressParams params) {
     return params.getValue().getLeft() instanceof WorkDoneProgressBegin begin
         && begin.getTitle().contains("recompiling");
+  }
+
+  // The write pass's scans logged on one session's event loop: the scan line names no workspace,
+  // so the loop thread tells this test's session apart.
+  private static final class ScanLog extends LogCapture {
+    private static final Logger WRITE_PASS = Logger.getLogger(WritePass.class.getName());
+    private final AtomicInteger scans = new AtomicInteger();
+    private final long loopThread;
+
+    ScanLog(final Thread loop) {
+      super(WRITE_PASS);
+      loopThread = loop.getId();
+      listen();
+    }
+
+    void reset() {
+      scans.set(0);
+    }
+
+    int count() {
+      return scans.get();
+    }
+
+    @Override
+    public void publish(final LogRecord record) {
+      if (record.getLongThreadID() == loopThread
+          && record.getMessage().startsWith("[stale] scanned")) {
+        scans.incrementAndGet();
+      }
+    }
   }
 }
