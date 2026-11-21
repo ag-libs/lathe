@@ -29,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -494,7 +495,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   private static boolean hoistOption(
       final StandardJavaFileManager fm, final String flag, final String value) {
-    if (SYSTEM.equals(flag) && !isOtherJdk(value)) {
+    if (SYSTEM.equals(flag) && !isUsableOtherJdk(value)) {
       return true;
     }
 
@@ -502,9 +503,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   // The JDK a build compiled against (--system): the server's own is javac's default, already open,
-  // so it is not applied again; one gone since the sync cannot be, and the compile then runs
-  // against the server's JDK.
-  private static boolean isOtherJdk(final String home) {
+  // so it is not applied again. One gone since the sync cannot be, and one newer than the server's
+  // cannot be read by its javac (its class files are of a later version, and javac then fails
+  // every compile of the module with an assertion): the compile runs against the server's JDK.
+  private static boolean isUsableOtherJdk(final String home) {
     final Path jdk = Path.of(home);
     if (isSameFile(jdk, Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY)))) {
       return false;
@@ -518,7 +520,34 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       return false;
     }
 
+    final int feature = jdkFeature(jdk);
+    final int serverFeature = Runtime.version().feature();
+    if (feature > serverFeature) {
+      LOG.warning(
+          () ->
+              "[compile] JDK %s the build compiled against is %d, newer than the server's %d; compiling against the server's"
+                  .formatted(home, feature, serverFeature));
+      return false;
+    }
+
     return true;
+  }
+
+  // The feature version a JDK's release file names (JAVA_VERSION="25.0.1" is 25); 0 when the file
+  // is missing or names no version Runtime.Version parses, and the JDK is then applied as before.
+  private static int jdkFeature(final Path jdk) {
+    final var release = new Properties();
+    try (final var reader =
+        Files.newBufferedReader(
+            jdk.resolve(LatheLayout.JDK_RELEASE_FILE), StandardCharsets.UTF_8)) {
+      release.load(reader);
+      final String version =
+          release.getProperty(LatheLayout.JDK_RELEASE_VERSION_KEY, "").replace("\"", "");
+      return Runtime.Version.parse(version).feature();
+    } catch (final IOException | IllegalArgumentException e) {
+      LOG.fine(() -> "[compile] JDK %s release version unreadable; not compared".formatted(jdk));
+      return 0;
+    }
   }
 
   private static boolean isSameFile(final Path a, final Path b) {

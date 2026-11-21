@@ -347,18 +347,24 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  // A build's compile JDK comes as --system. The server's own is javac's default, and one gone
-  // since
-  // the sync cannot be opened: neither is applied, the compile writes against the server's JDK,
-  // and only the missing one is warned about.
+  // A build's compile JDK comes as --system. The server's own is javac's default; one gone since
+  // the sync cannot be opened, and one newer than the server's cannot be read by its javac. None is
+  // applied, the compile writes against the server's JDK, and the missing and the newer one are
+  // warned about.
   @Test
-  void compileBatch_systemOfOwnOrMissingJdk_writesAgainstTheServersJdk_warnsOfTheMissing()
+  void compileBatch_systemOfOwnMissingOrNewerJdk_writesAgainstTheServersJdk_warnsOfTheOthers()
       throws Exception {
     final var config = TestCompiler.mainTreeConfig(td, "module");
     final Path sourceRoot = config.sourceRoots().get(0);
     Files.createDirectories(sourceRoot);
     final String uri = sourceRoot.resolve("Names.java").toUri().toString();
     final Path missing = td.resolve("uninstalled-jdk");
+    final Path newer = td.resolve("newer-jdk");
+    Files.createDirectories(newer.resolve(LatheLayout.JDK_MODULES_IMAGE).getParent());
+    Files.writeString(newer.resolve(LatheLayout.JDK_MODULES_IMAGE), "not an image");
+    Files.writeString(
+        newer.resolve(LatheLayout.JDK_RELEASE_FILE),
+        "JAVA_VERSION=\"%d.0.1\"%n".formatted(Runtime.version().feature() + 1));
     final var warned = new CopyOnWriteArrayList<String>();
     final var handler =
         new Handler() {
@@ -379,7 +385,10 @@ class ModuleSourceCompilerTest {
     log.addHandler(handler);
     try {
       for (final String jdk :
-          List.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), missing.toString())) {
+          List.of(
+              System.getProperty(LatheLayout.JAVA_HOME_PROPERTY),
+              missing.toString(),
+              newer.toString())) {
         try (var compiler =
             new ModuleSourceCompiler(
                 withOptions(
@@ -407,7 +416,10 @@ class ModuleSourceCompilerTest {
       log.removeHandler(handler);
     }
 
-    assertThat(warned).singleElement().asString().contains(missing.toString());
+    assertThat(warned)
+        .satisfiesExactly(
+            first -> assertThat(first).contains(missing.toString()).contains("not found"),
+            second -> assertThat(second).contains(newer.toString()).contains("newer"));
   }
 
   // The editor's text is compiled from a temp copy javac reads in the module's -encoding: a

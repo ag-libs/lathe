@@ -61,6 +61,9 @@ public final class LatheLayout {
   public static final Path JDK_SOURCE_ZIP = Path.of("lib", "src.zip");
   // A JDK's module image, relative to its home: only a JDK 9+ has one, as javac's --system needs.
   public static final Path JDK_MODULES_IMAGE = Path.of("lib", "modules");
+  // A JDK's version and vendor, relative to its home, and the key of its version ("21.0.8").
+  public static final Path JDK_RELEASE_FILE = Path.of("release");
+  public static final String JDK_RELEASE_VERSION_KEY = "JAVA_VERSION";
   public static final String NATIVE_ENCODING_PROPERTY = "native.encoding";
   public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";
