@@ -90,6 +90,17 @@ final class DiagnosticPublisher {
     client.publishDiagnostics(singleDiag(uri, message, DiagnosticSeverity.Hint));
   }
 
+  // A file of a module the server's JDK cannot check: an error, as its answers would be wrong, and
+  // no stack trace, as the setup is at fault, not the server.
+  void publishUnsupportedJdk(final String uri, final String message) {
+    client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of(unsupportedJdk(message))));
+  }
+
+  // The same, as the one diagnostic an agent's get_diagnostics answers for such a file.
+  static Diagnostic unsupportedJdk(final String message) {
+    return fileDiag(message, DiagnosticSeverity.Error);
+  }
+
   void publishError(final OpenDocument snapshot, final CompileMode mode, final Throwable ex) {
     if (registry.isStale(snapshot, snapshot.generation())) {
       return;
@@ -103,10 +114,11 @@ final class DiagnosticPublisher {
 
   private static PublishDiagnosticsParams singleDiag(
       final String uri, final String message, final DiagnosticSeverity severity) {
-    return new PublishDiagnosticsParams(
-        uri,
-        List.of(
-            new Diagnostic(
-                new Range(new Position(0, 0), new Position(0, 1)), message, severity, "lathe")));
+    return new PublishDiagnosticsParams(uri, List.of(fileDiag(message, severity)));
+  }
+
+  private static Diagnostic fileDiag(final String message, final DiagnosticSeverity severity) {
+    return new Diagnostic(
+        new Range(new Position(0, 0), new Position(0, 1)), message, severity, "lathe");
   }
 }

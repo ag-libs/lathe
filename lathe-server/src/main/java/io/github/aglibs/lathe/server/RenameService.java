@@ -15,6 +15,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
+import io.github.aglibs.lathe.server.module.JdkSupport;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
@@ -305,6 +306,12 @@ final class RenameService {
                     Collectors.mapping(ReferenceMatch::range, Collectors.toList())));
     final boolean fileScoped = target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE;
     final ModuleSourceConfig declaring = search.declaringConfigFor(target, cursorConfig);
+    final Optional<String> unchecked =
+        fileScoped ? Optional.empty() : uncheckedUser(target, declaring);
+    if (unchecked.isPresent()) {
+      return CompletableFuture.completedFuture(unchecked);
+    }
+
     final Set<ModuleSourceConfig> seeing =
         Stream.of(
                 Stream.ofNullable(declaring),
@@ -438,6 +445,26 @@ final class RenameService {
     }
 
     return target;
+  }
+
+  // A module the server's JDK cannot check is left out of every search (WS-46), yet it may use the
+  // symbol: its uses would stay unrenamed and its build break, so the rename is refused instead.
+  private Optional<String> uncheckedUser(
+      final ReferenceTarget target, final ModuleSourceConfig declaring) {
+    if (declaring == null) {
+      return Optional.empty();
+    }
+
+    return state.registry().unsupportedJdks().stream()
+        .filter(mismatch -> mismatch.module().sees(declaring))
+        .findFirst()
+        .map(
+            mismatch ->
+                JdkSupport.renameRefusal(
+                    target.simpleName(),
+                    SourceLayout.displayed(
+                        SourceLayout.moduleRel(state.root(), mismatch.module().moduleDir())),
+                    mismatch));
   }
 
   private static void refuseIfPresent(final Optional<String> reason) {

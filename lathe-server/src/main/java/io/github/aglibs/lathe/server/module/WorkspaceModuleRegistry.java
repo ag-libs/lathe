@@ -30,18 +30,23 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   // Where every worker completes its results: the server's event loop.
   private final Executor delivery;
   private final List<ModuleSourceConfig> moduleSources;
+  // Modules the server's JDK cannot check as their build does, left out of moduleSources so no
+  // compile, search or write reaches them (WS-46).
+  private final List<JdkSupport.Mismatch> unsupportedJdks;
   private final Map<Path, ModuleSourceConfig> configsByOutput;
   private final Map<String, CompilationWorker> workers = new HashMap<>();
   private final CompilationWorker externalWorker;
 
   private WorkspaceModuleRegistry(
       final List<ModuleSourceConfig> moduleSources,
+      final List<JdkSupport.Mismatch> unsupportedJdks,
       final WorkspaceManifest manifest,
       final Executor delivery) {
     this.compilationAdmission =
         new CompilationAdmission(Runtime.getRuntime().availableProcessors());
     this.delivery = delivery;
     this.moduleSources = moduleSources;
+    this.unsupportedJdks = unsupportedJdks;
     this.configsByOutput =
         moduleSources.stream()
             .collect(
@@ -53,7 +58,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   }
 
   public static WorkspaceModuleRegistry empty(final Executor delivery) {
-    return new WorkspaceModuleRegistry(List.of(), WorkspaceManifest.empty(), delivery);
+    return new WorkspaceModuleRegistry(List.of(), List.of(), WorkspaceManifest.empty(), delivery);
   }
 
   // Module by module, main, then test, then any other tree by name: a file two trees' roots hold (a
@@ -77,7 +82,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     if (!Files.isDirectory(latheDir)) {
       LOG.warning(() -> "[workspace] .lathe/ not found at %s".formatted(workspaceRoot));
-      return new WorkspaceModuleRegistry(List.of(), manifest, delivery);
+      return new WorkspaceModuleRegistry(List.of(), List.of(), manifest, delivery);
     }
 
     final var moduleSources = new ArrayList<ModuleSourceConfig>();
@@ -104,11 +109,35 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
       LOG.log(Level.WARNING, e, () -> "[workspace] scan failed");
     }
 
+    final int serverFeature = Runtime.version().feature();
+    final List<JdkSupport.Mismatch> unsupported =
+        moduleSources.stream()
+            .map(config -> JdkSupport.check(config, serverFeature))
+            .flatMap(Optional::stream)
+            .toList();
     LOG.info(
         () ->
-            "[workspace] loaded %d module source config(s) from %s"
-                .formatted(moduleSources.size(), workspaceRoot));
-    return new WorkspaceModuleRegistry(List.copyOf(moduleSources), manifest, delivery);
+            "[workspace] loaded %d module source config(s) to analyze from %s"
+                .formatted(moduleSources.size() - unsupported.size(), workspaceRoot));
+    if (!unsupported.isEmpty()) {
+      LOG.warning(
+          () ->
+              "[workspace] %d module(s) need a newer JDK than the server's %d and are not analyzed: %s"
+                  .formatted(
+                      unsupported.size(),
+                      serverFeature,
+                      unsupported.stream()
+                          .map(mismatch -> mismatch.module().moduleDir().toString())
+                          .toList()));
+    }
+
+    final Set<ModuleSourceConfig> left =
+        unsupported.stream().map(JdkSupport.Mismatch::module).collect(Collectors.toSet());
+    return new WorkspaceModuleRegistry(
+        moduleSources.stream().filter(config -> !left.contains(config)).toList(),
+        unsupported,
+        manifest,
+        delivery);
   }
 
   // A module whose source dir sits under a directory that has its own .lathe/ belongs to a nested
@@ -132,12 +161,23 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   }
 
   public Optional<ModuleSourceConfig> moduleSourceFor(final Path filePath) {
-    return moduleSources.stream()
-        .filter(
-            m ->
-                m.sourceRoots().stream().anyMatch(filePath::startsWith)
-                    || filePath.startsWith(m.generatedSourcesDir()))
+    return moduleSources.stream().filter(module -> holds(module, filePath)).findFirst();
+  }
+
+  public List<JdkSupport.Mismatch> unsupportedJdks() {
+    return unsupportedJdks;
+  }
+
+  // The module holding the file when the server's JDK cannot check it, and why.
+  public Optional<JdkSupport.Mismatch> unsupportedJdkFor(final Path filePath) {
+    return unsupportedJdks.stream()
+        .filter(mismatch -> holds(mismatch.module(), filePath))
         .findFirst();
+  }
+
+  private static boolean holds(final ModuleSourceConfig module, final Path filePath) {
+    return module.sourceRoots().stream().anyMatch(filePath::startsWith)
+        || filePath.startsWith(module.generatedSourcesDir());
   }
 
   // The worker of the module whose sources hold the file.
