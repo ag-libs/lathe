@@ -23,12 +23,14 @@ runs:
       # downloads only what is new. Only the build rows that build the whole reactor save it (see
       # ci.yml), under the same key: target/ is left out, since a build fills it with POMs (the
       # invoker's fixtures and their downloads) that would make the saved key differ from this one.
+      # The number after the OS is a generation: raise it in both keys to refill the cache without a
+      # POM change, as a change to ci.yml's FIXTURE_ONLY_ARTIFACTS needs.
       uses: actions/cache/restore@v6
       with:
         path: |
           ~/.m2/repository
           !~/.m2/repository/io/github/ag-libs
-        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml', '!**/target/**') }}
+        key: maven-${{ runner.os }}-2-${{ hashFiles('**/pom.xml', '!**/target/**') }}
         restore-keys: maven-${{ runner.os }}-
 
     - name: Set up JDK 21 to build (JDK 17 row)
