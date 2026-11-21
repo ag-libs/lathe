@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,6 +27,7 @@ import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.repository.RepositorySystem;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.eclipse.aether.repository.RemoteRepository;
@@ -324,6 +326,8 @@ public final class ReactorProjects {
     return new ShadedUpstreams(List.copyOf(shading), dependents);
   }
 
+  // Maven asks each project's own repositories in declared order, then the super-POM's central, so
+  // central goes last even when a module that declares no repository of its own lists it first.
   public static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {
     final Map<String, RemoteRepository> repositories =
         projects.stream()
@@ -333,8 +337,12 @@ public final class ReactorProjects {
                     ReactorProjects::repositoryKey,
                     repository -> repository,
                     (first, ignored) -> first,
-                    TreeMap::new));
-    return List.copyOf(repositories.values());
+                    LinkedHashMap::new));
+    return repositories.values().stream()
+        .sorted(
+            Comparator.comparing(
+                repository -> RepositorySystem.DEFAULT_REMOTE_REPO_ID.equals(repository.getId())))
+        .toList();
   }
 
   public static String moduleRel(final Path workspaceRoot, final MavenProject project) {

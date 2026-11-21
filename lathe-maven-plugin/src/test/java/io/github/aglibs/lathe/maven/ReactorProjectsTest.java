@@ -252,6 +252,22 @@ class ReactorProjectsTest {
     assertThat(ReactorProjects.remoteRepositories(List.of(first, second))).containsExactly(central);
   }
 
+  @Test
+  void remoteRepositories_rootWithOnlyCentral_centralAfterModuleRepositories() {
+    final MavenProject root = project("com.example", "root", "1", tmp);
+    final MavenProject app = project("com.example", "app", "1", tmp.resolve("app"));
+    final RemoteRepository internal =
+        new RemoteRepository.Builder("internal", "default", "https://repo.example/internal")
+            .build();
+    final RemoteRepository central =
+        new RemoteRepository.Builder("central", "default", "https://repo.example").build();
+    ((TestProject) root).remoteProjectRepositories = List.of(central);
+    ((TestProject) app).remoteProjectRepositories = List.of(internal, central);
+
+    assertThat(ReactorProjects.remoteRepositories(List.of(root, app)))
+        .containsExactly(internal, central);
+  }
+
   private static Path writePom(final Path dir, final String... modules) throws IOException {
     Files.createDirectories(dir);
     final var mods = new StringBuilder();
