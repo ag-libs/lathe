@@ -429,6 +429,7 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
+- [Redundancy in production code and tests](potential/lathe-redundancy-audit.md) — proposed cleanups from the November 21 audit, starting with call hierarchy snippet reads and repeated external-compiler test fixtures.
 - [`:LatheInit`: Set Up Any Folder](potential/lathe-init.md) — **potential; v1 scope agreed,
   spikes partly run (2026-11-11).** Merges Personal Setup and Plain Java Without a Build Tool. One
   `:LatheInit` dialog, its default detected from the opened folder: Plain Java (a generated,
