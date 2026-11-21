@@ -748,6 +748,55 @@ None yet.
 
 ---
 
+## EG-114 — Code generation and refactorings jdtls offers that Lathe does not
+
+**Status: documented**
+
+**Kind: feature**
+
+**Affects: the editor's code actions, on every build.**
+
+Found by the jdtls comparison's probe on spring-petclinic (2026-11-21, Lathe `0.3.99-0f8e6e85`, jdtls 1.51 with the java-debug bundle and nvim-jdtls's client capabilities): the code actions each server offered at the same positions in `Owner` and `OwnerController`.
+One entry for the differences no other gap covers, so the comparison's list of what Lathe does not do can cite it; it splits into a gap per feature when one is taken up.
+
+### Observed behaviour
+
+What jdtls offered and Lathe did not:
+
+| Feature | jdtls's code action | How jdtls delivers it |
+|---|---|---|
+| Generate getters (offered on `OwnerController`, whose fields are final, so setters were not in question) | `source.generate.accessors` | an edit, after a resolve |
+| Generate constructors | `source.generate.constructors` | a prompt (`java.action.generateConstructorsPrompt`) |
+| Generate `toString()` | `source.generate.toString` | a prompt |
+| Generate `hashCode()` and `equals()` | `source.generate.hashCodeEquals` | a prompt |
+| Generate delegate methods | `source.generate.delegateMethods` | a prompt |
+| Override or implement methods, chosen from a list | `source.overrideMethods` | a prompt |
+| Inline a local variable | `refactor.inline` | an edit, after a resolve |
+| Inline a method | `refactor.inline` | an edit, after a resolve |
+| Move a type or a method | `refactor.move` | a refactoring command that applies its edit through the client |
+| Change a method's signature | `refactor.change.signature` | a refactoring command |
+| Introduce a parameter from an expression | `refactor.introduce.parameter` | an edit, after a resolve |
+| Make a method static | `refactor.inline` ("Make Static") | an edit, after a resolve |
+| Surround any statement with try/catch | `refactor` | an edit, after a resolve |
+
+Lathe offers override completion and stubs for missing methods, not a chosen list; and try/catch only where an exception is uncaught, from that diagnostic.
+Extract interface was not offered by jdtls 1.51 at a class name; the comparison's pinned jdtls settles whether it has it.
+
+What both offered at the same positions: extract a variable, a constant, a field and a method (jdtls through a refactoring command, Lathe as an edit or, for a method, after a resolve), and conversion to `var`.
+
+Covered by gaps of their own, and so not here: selection range (EG-018), code lens (EG-064), inlay hints (EG-091), member symbol search (EG-092), formatting with spring-javaformat or formatter-maven-plugin (EG-113).
+
+### Fix direction
+
+Each feature is its own piece of work; the likely first are generating accessors and constructors, which a plain edit delivers, and inline variable, the reverse of extract variable.
+A prompt-driven one (`toString`, `equals` and `hashCode`, delegates) needs a client-side choice, which `lathe.nvim` and the VS Code extension would each implement.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
