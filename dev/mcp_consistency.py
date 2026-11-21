@@ -8,7 +8,8 @@ import re
 from pathlib import Path
 
 LOCATION = re.compile(r"(\S+\.java):(\d+)(?::(\d+))?(?: \[(\w+)\])?: ?(.*)$")
-OUTLINE_ITEM = re.compile(r"^( *)(\S+) (.+?)  (\d+):(\d+): ")
+# A kind may be two words ("enum constant"); a name is one.
+OUTLINE_ITEM = re.compile(r"^( *)(.+?) (\S+)  (\d+):(\d+): ")
 SERVER_LOG_FAILURE = "see the server log"
 
 

@@ -55,7 +55,7 @@ CONFIGS = {
         down_file="http/http/src/main/java/io/helidon/http/HttpMediaTypes.java",
         doc=("common/media-type/src/main/java/io/helidon/common/media/type/MediaTypes.java",
              "public static MediaType create(String type, String subtype)",
-             "http/http/src/main/java/io/helidon/http/AcceptQuery.java", "MediaTypes.create("),
+             "http/http/src/main/java/io/helidon/http/ServerRequestHeaders.java", "MediaTypes.create("),
         iface=("common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java", "MediaType {",
                "io.helidon.common.media.type.MediaType"),
         impl_dir=("http/http/src/main/java/io/helidon/http", "io.helidon.http"),
@@ -63,10 +63,10 @@ CONFIGS = {
         test=("common/media-type/src/test/java/io/helidon/common/media/type/MediaTypesTest.java", "testCustom"),
         pom="common/media-type/pom.xml",
         annot="@io.helidon.common.Api.Stable\n",
-        gen=("common/configurable/src/main/java/io/helidon/common/configurable/AllowListConfigBlueprint.java",
-             "common/configurable", "io/helidon/common/configurable/AllowListConfig.java",
-             "webserver/webserver/src/test/java/io/helidon/webserver/TrustedProxyMatcherTest.java",
-             "io.helidon.common.configurable.AllowListConfig")),
+        gen=("http/http/src/main/java/io/helidon/http/HttpLogConfigBlueprint.java",
+             "http/http", "io/helidon/http/HttpLogConfig.java",
+             "http/http2/src/test/java/io/helidon/http/http2/Http2LoggingFrameListenerTest.java",
+             "io.helidon.http.HttpLogConfig")),
 }
 
 # verify_change's two answers: a clean check, and one that found errors ("N error(s)...").

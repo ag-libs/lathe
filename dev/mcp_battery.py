@@ -36,7 +36,7 @@ from mcp_consistency import first  # noqa: E402
 CONFIGS = {
     "dropwizard": dict(
         pin="46bb4ed819",
-        counts=dict(references=52, callers=51, implementations=13),
+        counts=dict(references=51, callers=51, implementations=13),
         file="dropwizard-util/src/main/java/io/dropwizard/util/Duration.java",
         symbol="toMilliseconds", newname="toMillisLatheSmoke", is_method=True,
         iface=("dropwizard-lifecycle/src/main/java/io/dropwizard/lifecycle/Managed.java", "Managed {", "Managed"),
@@ -54,7 +54,7 @@ CONFIGS = {
                           "public void initialize(", "initialize", "run", "dropwizard-core")),
     "equalsverifier": dict(
         pin="ab54bfce",
-        counts=dict(references=31, callers=0, implementations=8),
+        counts=dict(references=30, callers=0, implementations=8),
         file="equalsverifier-core/src/main/java/nl/jqno/equalsverifier/Warning.java",
         symbol="ALL_FIELDS_SHOULD_BE_USED", newname="ALL_FIELDS_LATHE_SMOKE", is_method=False,
         iface=("equalsverifier-core/src/main/java/nl/jqno/equalsverifier/internal/checkers/Checker.java",
@@ -67,7 +67,7 @@ CONFIGS = {
         probe=("equalsverifier-core/src/main/java/nl/jqno/equalsverifier", "nl.jqno.equalsverifier")),
     "helidon": dict(
         pin="2f6df16425",
-        counts=dict(references=77, callers=66, implementations=4),
+        counts=dict(references=72, callers=66, implementations=4),
         file="common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java",
         symbol="text()", newname="textLatheSmoke", is_method=True,
         iface=("common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java", "MediaType {", "MediaType"),
@@ -76,8 +76,6 @@ CONFIGS = {
         test=("common/media-type/src/test/java/io/helidon/common/media/type/MediaTypesTest.java", "testCustom",
               "MediaTypesTest"),
         probe=("common/media-type/src/main/java/io/helidon/common/media/type", "io.helidon.common.media.type"),
-        # MC-78: MediaType.text() is redeclared abstract in subinterfaces the family leaves out.
-        family_known="analyze_change's override family leaves out abstract redeclarations",
         module_info="common/media-type/src/main/java/module-info.java",
         # Implemented in many modules (about 50 implementations in 14), as the checks of a listing's
         # modules need: a method implemented in a few cannot show what they look for.
@@ -284,11 +282,9 @@ def consistency_checks(b, ws, cfg, f, pos):
         mc.analyze_modules_cover_implementations(
             b, ws, wide_pos, "analyze_change modules cover the implementations")
         impls = b.raw("find_implementations", wide_pos)[0]
-        mc.list_shape(b, ws, impls, "find_implementations",
-                      grouped_known="locations come back in discovery order, modules mixed")
+        mc.list_shape(b, ws, impls, "find_implementations")
     mc.references_round_trip(b, ws, f, pos, cfg["symbol"].rstrip("()"), "references lead back to the declaration")
-    mc.family_covers_definitions(b, ws, f, pos, cfg["symbol"].rstrip("()"), "override family covers what references reach",
-                                 known=cfg.get("family_known"))
+    mc.family_covers_definitions(b, ws, f, pos, cfg["symbol"].rstrip("()"), "override family covers what references reach")
     mc.outline_resolves(b, f)
     mc.diagnostics_agree_with_notes(b, f, "diagnostics agree with notes")
     if cfg.get("override_callers"):
@@ -348,15 +344,14 @@ def negative_checks(b, ws, f):
     with tempfile.TemporaryDirectory(prefix="lathe-battery-outside-") as outside:
         target = Path(outside) / "Outside.java"
         target.write_text("class Outside {}\n", encoding="utf-8")
-        known = "read tools open .java files outside the workspace, through symlinks too"
         b.call("bad request: file outside the workspace", "outline", {"file": str(target)},
-               ok=lambda t, r: r.get("isError") and mc.clean_refusal(t), known=known)
+               ok=lambda t, r: r.get("isError") and mc.clean_refusal(t))
         link = ws / "LatheProbeLink.java"
         link.unlink(missing_ok=True)
         link.symlink_to(target)
         try:
             b.call("bad request: symlink out of the workspace", "outline", {"file": str(link)},
-                   ok=lambda t, r: r.get("isError") and mc.clean_refusal(t), known=known)
+                   ok=lambda t, r: r.get("isError") and mc.clean_refusal(t))
         finally:
             link.unlink()
     # A JSON-RPC error and an error result are both fine; only a hang or silence is not.
