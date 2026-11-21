@@ -1390,6 +1390,39 @@ None yet.
 
 ---
 
+## WS-46 — A server older than a module's JDK or language level cannot check it as the build does
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: a server whose JDK is older than the JDK or language level a module compiles at (`LATHE_JAVA_HOME` set to an older JDK; possibly a Gradle build whose toolchain is newer than the JDK Gradle runs on, not checked); the editor and MCP on that module.**
+
+Found reviewing the fix for the JDK 21 crash of the 2026-11-20 pre-release round (#422), which lets an older server compile a `-source 17` module the build compiled on a newer JDK.
+
+### Observed behaviour
+
+A module that compiles at a language level the server's javac does not know cannot be compiled by it at all.
+javac 21 refuses `-source 25` ("invalid source release: 25") and `--release 25` ("release version 25 not supported"), checked with plain `javac`.
+How the server reports that refusal to the editor and to an agent was not checked.
+
+Where the server can compile the module, at a level it knows but against the build's newer JDK, it compiles against its own JDK instead (the fix above, and the existing fallback for a build JDK gone since the sync).
+Then a use of an API the server's JDK does not have is a "cannot find symbol" error the build does not report.
+There the only explanation is a server log `WARNING` (`[compile] JDK … newer than the server's …`), which the user does not see.
+The warning is logged each time a module's compiler is created, so a reactor of many such modules repeats it once per module on every load and reload.
+
+### Fix direction
+
+Tell the client once per workspace load when the server's JDK is older than a module's language level or build JDK: name the JDK the server runs on, the one the build needs, and how to run the server on it (`LATHE_JAVA_HOME`).
+Log the warning once per JDK, not once per module.
+Whether an agent's answers (`get_diagnostics`, `verify_change`) should carry the same note is part of the triage.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
