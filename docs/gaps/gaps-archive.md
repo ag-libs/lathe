@@ -4350,6 +4350,50 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0064 — Inside a `throw` statement, a constructor's arguments complete only exception types — done
+
+**Status: done** (2026-11-22)
+
+**Kind: bug**
+
+**Affects: completion in the editor, anywhere in the arguments of the thrown expression.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+In Dropwizard's `Duration.parse(String duration)`, with `du` typed:
+
+| Line typed | Offered |
+|---|---|
+| `throw new IllegalArgumentException("Invalid duration: " + du` | `DuplicateFormatFlagsException`, `DuplicateRequestException` |
+| `throw new IllegalArgumentException(du` | the same two |
+| `Object p = new IllegalArgumentException("Invalid duration: " + du` | `duration` |
+| `String s = "x" + du` | `duration` |
+
+So an exception's message cannot be built with completion: the parameter, locals and fields are missing, and only throwable types are offered.
+The same in jdbi: `throw new IllegalStateException(Sneaky.th(toThrow))` answers nothing, where `Object o = Sneaky.th(toThrow)` offers `throwAnyway`.
+`throw Sneaky.th(toThrow)` answers nothing too, while `throw Sneaky.` offers `throwAnyway` (it returns jdbi's `DummyException`): the same cause, as the fix shows.
+
+### Fix
+
+The completion context, not the expected value, was wrong.
+`SentinelParser.inferTypeReferenceRole` walks up from the cursor, and at a `throw` whose expression held the cursor it took the cursor for the type a thrown `new` constructs (`TypeReferenceRole.THROWS`), so only throwable types were completed: anywhere in the thrown constructor's arguments, and in a thrown method call.
+The walk now keeps the `THROWS` role for the type a thrown `new` constructs alone: entering a `new` through its arguments or anonymous body, or climbing through any call, member select or lambda above it, clears it, while parentheses, a conditional and javac's recovery tree around `throw new` keep it; so a `new` inside an argument, or inside a thrown call (`throw wrap(new StringBuilder())`), is an ordinary type again.
+`ExpectedValueResolver.visitThrow`'s `Throwable` only ranks throwables first, as the existing tests expect, and is unchanged.
+
+Checked in the editor on Dropwizard and jdbi with the fix: `throw new IllegalArgumentException("x" + du` and `(du` offer `duration`, `throw Sneaky.th(toThrow)` and `throw new IllegalStateException(Sneaky.th(toThrow))` offer `throwAnyway`, and `throw new Ill` still offers only exception types.
+
+### Regression targets
+
+- `CompletionSimpleNameTest.throwStatement_constructorArgument_completesValuesNotOnlyThrowables`
+- `CompletionSimpleNameTest.throwStatement_newInsideConstructorArgument_completesAnyType`
+- `CompletionSimpleNameTest.throwStatement_newInsideThrownCallArgument_completesAnyType`
+- `CompletionSimpleNameTest.throwStatement_callInsideConstructorArgument_completesTheMethod`
+- `CompletionSimpleNameTest.throwStatement_staticCallReturningAThrowable_completesTheMethod`
+
+---
+
 ## CQ-0062 — Simple-name completion offers an enclosing class's methods the simple name cannot reach — done
 
 **Status: done** (2026-11-21, #430)
