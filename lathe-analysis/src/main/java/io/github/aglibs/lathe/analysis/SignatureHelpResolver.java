@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
@@ -192,8 +193,57 @@ final class SignatureHelpResolver {
           : null;
     }
 
-    final var owner = innermostDeclaring(analysis, callPath, id.getName()).orElse(self);
+    // javac searches the static imports only when no enclosing class has a method of the name
+    // (JLS 15.12.1), and a single-static import shadows an on-demand one (JLS 6.4.1).
+    final Optional<TypeElement> declaring = innermostDeclaring(analysis, callPath, id.getName());
+    if (declaring.isEmpty()) {
+      final List<ExecutableElement> single = importedMethods(analysis, scope, id.getName(), false);
+      final List<ExecutableElement> imported =
+          single.isEmpty() ? importedMethods(analysis, scope, id.getName(), true) : single;
+      if (!imported.isEmpty()) {
+        return new CallTarget(id.getName().toString(), imported, resolved, args);
+      }
+    }
+
+    final var owner = declaring.orElse(self);
     return methodTarget(analysis, scope, owner, owner, id.getName(), resolved, args);
+  }
+
+  // Each method once: two imports may reach the same one.
+  private static List<ExecutableElement> importedMethods(
+      final AttributedFileAnalysis analysis,
+      final Scope scope,
+      final Name name,
+      final boolean onDemand) {
+    final var cu = new TreePath(analysis.tree());
+    final var methods = new ArrayList<ExecutableElement>();
+    for (final ImportTree imp : analysis.tree().getImports()) {
+      if (!imp.isStatic()
+          || !(imp.getQualifiedIdentifier() instanceof final MemberSelectTree member)
+          || !(onDemand
+              ? member.getIdentifier().contentEquals("*")
+              : member.getIdentifier().equals(name))) {
+        continue;
+      }
+
+      final var memberPath = new TreePath(new TreePath(cu, imp), member);
+      if (!(analysis.trees().getTypeMirror(new TreePath(memberPath, member.getExpression()))
+              instanceof final DeclaredType site)
+          || site.getKind() == TypeKind.ERROR) {
+        continue;
+      }
+
+      for (final ExecutableElement method :
+          methodsNamed(analysis, (TypeElement) site.asElement(), name)) {
+        if (method.getModifiers().contains(Modifier.STATIC)
+            && analysis.trees().isAccessible(scope, method, site)
+            && !methods.contains(method)) {
+          methods.add(method);
+        }
+      }
+    }
+
+    return List.copyOf(methods);
   }
 
   private static CallTarget constructionTarget(

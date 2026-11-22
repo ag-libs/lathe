@@ -804,34 +804,6 @@ None yet.
 
 ---
 
-## EG-115 — Signature help is empty inside a call to a statically imported method
-
-**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
-
-**Kind: bug**
-
-**Value: high — Size: S**
-
-**Affects: signature help in the editor, on every build; most of all in test code (AssertJ, JUnit, Mockito, MockMvc).**
-
-Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
-
-### Observed behaviour
-
-In `OwnerTests.java:34`, `assertTrue(owner.getPets().isEmpty())`: signature help inside `assertTrue(|` answers nothing, while inside `owner.getPets(|` on the same line it answers `List<Pet> getPets()`.
-29 of the run's 31 signature-help misses were such calls, and Lathe answered none of them: AssertJ `assertThat` (15), JUnit `assertTrue`, `assertFalse`, `assertEquals` and `assumeTrue`, Mockito `given`, MockMvc `get`, `status` and `view`, `assertThatExceptionOfType`.
-jdtls answers each, for example `assertThat(String actual) : AbstractStringAssert<?>`.
-
-### Fix direction
-
-Resolve the method of an unqualified call through the static imports as javac does (single-static and on-demand), as a call to a method of the enclosing class already is.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-116 — Signature help is empty for a call on a type-variable receiver
 
 **Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)

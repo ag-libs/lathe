@@ -383,6 +383,98 @@ class SignatureHelpTest {
     }
   }
 
+  // EG-115: an unqualified call to a statically imported method lists the imported overloads.
+  @Test
+  void signatureHelp_singleStaticImport_listsTheImportedOverloads() {
+    final var source =
+        """
+        import static java.util.Objects.requireNonNull;
+        class Test {
+          void caller(String s) { requireNonNull(s, "§s"); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .hasSize(3)
+        .allMatch(label -> label.contains("requireNonNull("));
+    assertThat(help.getSignatures().get(help.getActiveSignature()).getLabel())
+        .isEqualTo("<T> T requireNonNull(T, String)");
+    assertThat(help.getActiveParameter()).isEqualTo(1);
+  }
+
+  @Test
+  void signatureHelp_onDemandStaticImport_listsTheStaticOverloads() {
+    final var source =
+        """
+        import static java.lang.Math.*;
+        class Test {
+          long caller() { return max(1L, §2L); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactlyInAnyOrder(
+            "int max(int, int)",
+            "long max(long, long)",
+            "float max(float, float)",
+            "double max(double, double)");
+  }
+
+  // A single-static import shadows an on-demand one of the same name, and a method of the name in
+  // an enclosing class shadows both, as javac resolves the call.
+  @Test
+  void signatureHelp_staticImportShadowed_listsOnlyTheNearerOverloads() {
+    final var shadowedOnDemand =
+        """
+        import static java.lang.Math.*;
+        import static java.util.Collections.max;
+        import java.util.List;
+        class Test {
+          Integer caller(List<Integer> xs) { return max(§xs); }
+        }
+        """;
+    final var shadowedByClass =
+        """
+        import static java.lang.Math.*;
+        class Test {
+          int max(String s) { return 0; }
+          int caller() { return max("§x"); }
+        }
+        """;
+
+    final var bySingleImport = signatureHelpAt(shadowedOnDemand);
+    final var byClass = signatureHelpAt(shadowedByClass);
+
+    assertThat(bySingleImport).isNotNull();
+    assertThat(byClass).isNotNull();
+    assertThat(bySingleImport.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .hasSize(2)
+        .allMatch(label -> label.contains(" max(Collection<? extends T>"));
+    assertThat(byClass.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("int max(String s)");
+  }
+
+  @Test
+  void signatureHelp_unqualifiedCallNoClassOrImportHasTheName_returnsNull() {
+    final var source =
+        """
+        import static java.lang.Math.*;
+        class Test {
+          void caller() { missing(§1); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source)).isNull();
+  }
+
   // --- javadoc in documentation field ---
 
   @Test

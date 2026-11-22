@@ -7,6 +7,43 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-115 — Signature help is empty inside a call to a statically imported method — done
+
+**Status: done** (2026-11-22)
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: signature help in the editor, on every build; most of all in test code (AssertJ, JUnit, Mockito, MockMvc).**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+In `OwnerTests.java:34`, `assertTrue(owner.getPets().isEmpty())`: signature help inside `assertTrue(|` answers nothing, while inside `owner.getPets(|` on the same line it answers `List<Pet> getPets()`.
+29 of the run's 31 signature-help misses were such calls, and Lathe answered none of them: AssertJ `assertThat` (15), JUnit `assertTrue`, `assertFalse`, `assertEquals` and `assumeTrue`, Mockito `given`, MockMvc `get`, `status` and `view`, `assertThatExceptionOfType`.
+jdtls answers each, for example `assertThat(String actual) : AbstractStringAssert<?>`.
+
+### Fix direction
+
+Resolve the method of an unqualified call through the static imports as javac does (single-static and on-demand), as a call to a method of the enclosing class already is.
+
+### Resolution
+
+An unqualified call whose name no enclosing class has a method of now takes its overloads from the file's static imports, as javac does (JLS 15.12.1): the accessible static methods a single-static import names, and only when none does, those an on-demand import brings (JLS 6.4.1); a method two imports reach is listed once.
+A method of the name in an enclosing class still shadows every import.
+
+### Regression targets
+
+- `SignatureHelpTest.signatureHelp_singleStaticImport_listsTheImportedOverloads`
+- `SignatureHelpTest.signatureHelp_onDemandStaticImport_listsTheStaticOverloads`
+- `SignatureHelpTest.signatureHelp_staticImportShadowed_listsOnlyTheNearerOverloads`
+- `SignatureHelpTest.signatureHelp_unqualifiedCallNoClassOrImportHasTheName_returnsNull`
+- `DefinitionLocatorTest.definition_staticallyImportedCallBeingTyped_offersEveryImportedOverload` (definition, which takes a call's overloads from signature help while the call is being typed)
+
+---
+
 ## EG-110 — Definition on a parameter type in a Javadoc `@see` goes to the method, not the type — done
 
 **Status: done** (2026-11-19)

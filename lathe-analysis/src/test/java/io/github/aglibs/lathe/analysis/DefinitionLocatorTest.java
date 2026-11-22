@@ -200,6 +200,54 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  // EG-115: a statically imported call being typed offers every imported overload, as a call to a
+  // method of the class does; a complete one only the overload javac binds.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "greet(name,  other(); | void greet(String name);static void greet(String name, int times)",
+        "greet(\"x\"); | static void greet(String name)",
+      })
+  void definition_staticallyImportedCallBeingTyped_offersEveryImportedOverload(
+      final String call, final String declarations) {
+    final String source =
+        """
+        package p;
+        import static p.C.greet;
+        class C {
+          static void greet(String name) {}
+          static void greet(String name, int times) {}
+        }
+        class Use {
+          String name;
+          void other() {}
+          void use() {
+            %s
+          }
+        }
+        """
+            .formatted(call);
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              1,
+              posOf(source, call, "greet"),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .extracting(location -> location.getRange().getStart())
+          .containsExactlyInAnyOrderElementsOf(
+              Stream.of(declarations.split(";"))
+                  .map(declaration -> posOf(source, declaration, "greet"))
+                  .toList());
+    }
+  }
+
   private static final String VAR_SOURCE =
       """
       import java.util.function.Supplier;
