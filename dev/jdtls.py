@@ -94,9 +94,17 @@ class JdtlsClient(LspClient):
                 "window": {"workDoneProgress": True},
             },
             "initializationOptions": {
-                # Let m2e drive the import; mirrors what nvim-jdtls/vscode-java send.
+                # Let m2e drive the import; mirrors what nvim-jdtls/vscode-java send, as
+                # dev/lsp-bench's jdtls_settings does: a project with a pom.xml and a Gradle build
+                # (spring-petclinic) is imported through Maven, the build Lathe uses, not the Gradle
+                # jdtls prefers; Eclipse metadata stays in the -data dir, out of the project tree.
                 "settings": {"java": {
-                    "import": {"maven": {"enabled": True}},
+                    "import": {
+                        "maven": {"enabled": True},
+                        "gradle": {"enabled": not (root / "pom.xml").is_file()},
+                        "generatesMetadataFilesAtProjectRoot": False,
+                    },
+                    "signatureHelp": {"enabled": True},
                     "autobuild": {"enabled": True},
                     "maxConcurrentBuilds": 1,
                 }},

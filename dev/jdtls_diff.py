@@ -435,6 +435,7 @@ def main():
 
     rows = []
     with LatheClient.start(root) as lathe, JdtlsClient.start(root) as jdt:
+        _require_jdtls_project(jdt, files[0])
         print("both servers ready; warming Lathe index ...", file=sys.stderr)
         _warm(lathe, jdt, files[0])
         for i, f in enumerate(files, 1):
@@ -451,6 +452,16 @@ def main():
 
     gaps = write_report(rows, Path(args.out), files)
     print(f"\nwrote {args.out}  ({len(gaps)} gap candidates / {len(rows)} comparisons)", file=sys.stderr)
+
+
+def _require_jdtls_project(jdt, file):
+    """jdtls reports itself ready even when its import failed (a Gradle sync that cannot connect),
+    and then answers every probe empty, which the report would show as Lathe being richer
+    everywhere: stop instead, pointing at its log."""
+    jdt.open(file)
+    if not jdt.document_symbols(file):
+        sys.exit(f"jdtls has no project for {file.name}: its import failed; see .metadata/.log "
+                 f"under its -data dir in ~/.cache/jdtls-diff/")
 
 
 def _warm(lathe, jdt, file):
