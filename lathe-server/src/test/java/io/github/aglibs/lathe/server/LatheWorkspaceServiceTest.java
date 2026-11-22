@@ -24,7 +24,6 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngines;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -649,12 +648,26 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   @Test
   void close_afterAReloadRetiredABusyWorker_waitsForIt() throws Exception {
     final ShopFixture shop = openShop();
-    final CompilationWorker retiring =
-        host.onLoop(session -> session.workerFor(shop.shop().toUri().toString()).orElseThrow())
-            .get(TIMEOUT_S, TimeUnit.SECONDS);
     final var release = new CountDownLatch(1);
-    retiring.submit(session -> awaitRelease(release));
+    final var started = new CountDownLatch(1);
+    // The worker is chosen and given its task in one loop task: a reload between the two would
+    // retire and close it first, and a closed worker refuses the task, leaving close nothing to
+    // wait for.
+    final CompletableFuture<Boolean> busy =
+        host.onLoop(
+                session ->
+                    session
+                        .workerFor(shop.shop().toUri().toString())
+                        .orElseThrow()
+                        .submit(
+                            analysis -> {
+                              started.countDown();
+                              return awaitRelease(release);
+                            }))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(started.await(TIMEOUT_S, TimeUnit.SECONDS)).as("the worker runs the task").isTrue();
     reloadAddingModule("added");
+    assertThat(busy).as("the retired worker is still busy").isNotDone();
 
     final CompletableFuture<Void> closing = CompletableFuture.runAsync(host::close);
 
