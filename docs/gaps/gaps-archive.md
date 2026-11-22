@@ -4350,6 +4350,52 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0067 — Inside an anonymous class's method, local variables do not complete — done
+
+**Status: done** (2026-11-22)
+
+**Kind: bug**
+
+**Affects: completion of simple names in the methods of anonymous and local classes declared in a method body, in the editor.**
+
+Found while fixing CQ-0064 (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `e95458f6`), and reproduced in the editor on the Dropwizard clone (`08e290b764`).
+
+### Observed behaviour
+
+In Dropwizard's `Duration.parse(String duration)`, with a local `matcher` declared above:
+
+| Typed | Offered |
+|---|---|
+| `Object o = new Object() { String text() { return du` | nothing |
+| `Runnable r = new Runnable() { public void run() { String own = ""; String s = ow` | nothing |
+| `Runnable r = new Runnable() { public void run() { mat` | nothing |
+| `Runnable r = new Runnable() { public void run() { Object x = DURA` | `DURATION_PATTERN` and the `Duration` types (fields and types completed) |
+| `Runnable r = () -> { String s = du` | `duration` |
+
+So inside an anonymous class in a method, neither its own method's locals nor the enclosing method's parameters and locals completed; a lambda in the same place had them.
+And after an anonymous class closed, its method's locals were offered to the code that followed it in the enclosing method.
+
+### Fix
+
+Three causes, in the completion's local lookup.
+`NameLookup.findMethodPath`, asked for the method around the cursor, stopped at a method of another name and never looked inside it, so a method of a class in a method body was not found.
+It compared the method's direct class with the name the completion site gives, which `SentinelParser` takes from the nearest named class, past anonymous ones; it now compares the nearest named class too, and the innermost matching method around the cursor wins.
+`SimpleNameProvider` collected only that method's parameters and locals; it now also adds each enclosing method's, inner names first, so a shadowing one wins.
+A local record, enum or interface is static (JLS 14.3), so the walk outwards stops there; and with no method around the cursor (a stale snapshot), only a member method, not a nested one, is taken as the fallback, as before.
+A local inside a class or method that closed before the cursor is left out, as one inside a closed lambda already was.
+
+Checked in the editor on Dropwizard with the fix: the three rows above offer `duration`, `own` and `matcher`; the field and the lambda rows are unchanged.
+
+Left as they were: a field of the anonymous class (declared or inherited) does not yet shadow an enclosing local of the same name, which completion lists first; and a local of an ordinary block or loop that closed before the cursor is still offered, in any method.
+
+### Regression targets
+
+- `CompletionSimpleNameTest.simpleName_insideAnonymousClassInMethod_completesItsOwnAndTheEnclosingLocals`
+- `CompletionSimpleNameTest.simpleName_afterAnonymousClassCloses_itsLocalsAreNotVisible`
+- `CompletionSimpleNameTest.simpleName_insideLocalRecord_enclosingLocalsAreNotVisible`
+
+---
+
 ## CQ-0064 — Inside a `throw` statement, a constructor's arguments complete only exception types — done
 
 **Status: done** (2026-11-22)
