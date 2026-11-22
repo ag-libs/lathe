@@ -780,6 +780,13 @@ What jdtls offered and Lathe did not:
 | Surround any statement with try/catch | `refactor` | an edit, after a resolve |
 
 Lathe offers override completion and stubs for missing methods, not a chosen list; and try/catch only where an exception is uncaught, from that diagnostic.
+
+Quick fixes on a diagnostic, found by the editor exploratory round (2026-11-22, `c0d49de`, Dropwizard's `Duration.java`), which jdtls offers and Lathe does not:
+
+| Diagnostic | jdtls's quick fix | Lathe |
+|---|---|---|
+| a misspelled member (`long probe = toMillisecond();`, "cannot find symbol") | change to the similar name (`toMilliseconds`) | no code action |
+| a call to a method that does not exist (`this.notThereYet();`) | create the method | only "Extract method", unrelated |
 Extract interface was not offered by jdtls 1.51 at a class name; the comparison's pinned jdtls settles whether it has it.
 
 What both offered at the same positions: extract a variable, a constant, a field and a method (jdtls through a refactoring command, Lathe as an edit or, for a method, after a resolve), and conversion to `var`.
@@ -927,6 +934,35 @@ Top-level types match by initials and humps (`OCT` finds `OwnerControllerTests`,
 ### Fix direction
 
 Run EG-005's CamelCase matching over nested types as well as top-level ones.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-120 — The `class` of a class literal is highlighted as a field
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: semantic tokens in the editor (VS Code and Neovim), on every build.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+In `Map.class`, `Configuration.class` or `Map.Entry.class`, the server sends a `property` token for the keyword `class`, so the editor colours it as a field.
+Every class literal in code gets it: the three in jdbi's `GenericTypes.java` and `SerializableTransactionRunner.java` (`final Configuration config = handle.getConfig(Configuration.class);`); the ten in their Javadoc get no token.
+Definition on that `class` answers nothing, which is right for a keyword.
+
+javac models a class literal as a member select whose element is a field named `class`, and `TokenScanner.visitMemberSelect` emits a reference token for the element it resolves.
+The hover formatter already meets the same modelling ("`this`, `super` and a class literal, which javac models as fields, get no modifiers").
+
+### Fix direction
+
+Emit no token for the `class` of a class literal (a member select named `class` whose element is the synthetic field), as for other keywords; check `Outer.this` and `Outer.super` the same way.
 
 ### Regression targets
 
@@ -1372,6 +1408,111 @@ The module-descriptor completion branch is being chosen inside the annotation ar
 
 The directive tests above cover the delivered behavior.
 Module-annotation argument completion has no regression test yet; the paired probe above reproduces it.
+
+---
+
+## CQ-0064 — Inside a `throw` statement, a constructor's arguments complete only exception types
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion in the editor, anywhere in the arguments of the thrown expression.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+In Dropwizard's `Duration.parse(String duration)`, with `du` typed:
+
+| Line typed | Offered |
+|---|---|
+| `throw new IllegalArgumentException("Invalid duration: " + du` | `DuplicateFormatFlagsException`, `DuplicateRequestException` |
+| `throw new IllegalArgumentException(du` | the same two |
+| `Object p = new IllegalArgumentException("Invalid duration: " + du` | `duration` |
+| `String s = "x" + du` | `duration` |
+
+So an exception's message cannot be built with completion: the parameter, locals and fields are missing, and only throwable types are offered.
+The same in jdbi: `throw new IllegalStateException(Sneaky.th(toThrow))` answers nothing, where `Object o = Sneaky.th(toThrow)` offers `throwAnyway`.
+`throw Sneaky.th(toThrow)` answers nothing too, while `throw Sneaky.` offers `throwAnyway` (it returns jdbi's `DummyException`); whether that is the same cause is to be checked.
+
+`ExpectedValueResolver.visitThrow` sets the expected type to `java.lang.Throwable` whenever the cursor is anywhere in the `throw` statement, so the candidates are filtered for the thrown value even inside an argument of the expression that builds it.
+
+### Fix direction
+
+Expect `Throwable` only where the cursor is the thrown expression itself, not inside an argument of a constructor or method call within it; there the argument's own expected type applies, as it does outside a `throw`.
+
+### Regression targets
+
+None yet.
+
+---
+
+## CQ-0065 — In a record, a member's type completes only when the member is `static`
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion of the type at the start of a member declaration in a record body (top-level or nested), in the editor.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+In EqualsVerifier's nested record `PackageScanOptions.MustExtend`, with `St` typed:
+
+| Member typed in the record body | Items |
+|---|---|
+| `public static St probeStaticMethod() { return null; }` | 50 (`String`, `StringBuilder`, …) |
+| `static St` | 50 |
+| `public St probeMethod() { return null; }` (an instance method, legal in a record) | 0 |
+| `private St probeInstanceField;` | 0 |
+| `public St`, `St`, `St probe() { return null; }` | 0 each |
+| the same instance method in the enclosing class | 50 |
+
+The same in Helidon's records `Http2FrameData` (every member position, `Ht`, `St`, even the full `Http2FrameData`) and `CodegenScope` (`private static St` completes, a bare `St` does not).
+Inside a record's method body, locals complete as anywhere (`Ht[] local` offers `Http2FrameData` and 47 more).
+Instance methods in records (helpers, accessors written out) are common.
+
+Cause not confirmed. A likely one: completion reads the half-typed member as a field, and a record cannot declare an instance field, so javac rejects the member and nothing is attributed; `static` makes it a legal static field.
+
+### Fix direction
+
+Check what the sentinel parser (`SentinelParser`) builds for a member-start position and how a record body's attribution treats it; complete the type there as in a class body.
+
+### Regression targets
+
+None yet.
+
+---
+
+## CQ-0066 — A class's own name is not offered as a type argument in its own header
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion in a class or record declaration's `extends` and `implements` clauses.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+| Header, with the type argument cut to two letters | Offered |
+|---|---|
+| Dropwizard `public class Duration implements Comparable<Du` | nothing |
+| jdbi `public static class Configuration implements JdbiConfig<Co` | 50 types (`ColumnMapper`, `Connection`, …), not `Configuration` |
+
+The supertypes in the same headers complete (`Comparable` rank 5, `Serializable` rank 2, `JdbiConfig` rank 2, EqualsVerifier's `ScanOption` rank 1); only the type being declared is missing, which `Comparable<Self>` and `Builder<Self>` headers need.
+
+### Fix direction
+
+Offer the declaring type (and its enclosing types) in its own header's type arguments.
+
+### Regression targets
+
+None yet.
 
 ---
 
