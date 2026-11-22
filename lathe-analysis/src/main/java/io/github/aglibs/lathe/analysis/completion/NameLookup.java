@@ -59,33 +59,52 @@ final class NameLookup {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void visitMethod(final MethodTree node, final Void unused) {
-        if (!methodName.equals(node.getName().toString())) {
-          return null;
+        final boolean named =
+            methodName.equals(node.getName().toString())
+                && (className == null || className.equals(namedEnclosingClass()));
+        if (named && cursorOffset >= 0 && contains(node)) {
+          result.set(getCurrentPath());
+        } else if (named && result.get() == null && !nestedInMethod()) {
+          // With no method around the cursor (a stale snapshot, or no cursor), a nested method
+          // elsewhere in the file is no better a guess than a member method, so only those count.
+          result.set(getCurrentPath());
         }
 
-        final var parentLeaf = getCurrentPath().getParentPath().getLeaf();
-        if (className != null
-            && !(parentLeaf instanceof final ClassTree cls
-                && className.equals(cls.getSimpleName().toString()))) {
-          return null;
-        }
+        // A method of a local or anonymous class sits in another method's body; scanned after
+        // that method, the innermost one around the cursor wins.
+        return super.visitMethod(node, unused);
+      }
 
-        final var current = getCurrentPath();
-        if (cursorOffset >= 0) {
-          final var pos = snapshot.trees().getSourcePositions();
-          final long start = pos.getStartPosition(snapshot.tree(), node);
-          final long end = pos.getEndPosition(snapshot.tree(), node);
-          if (cursorOffset >= start && cursorOffset <= end) {
-            result.set(current);
-            return null;
+      private boolean nestedInMethod() {
+        for (TreePath path = getCurrentPath().getParentPath();
+            path != null;
+            path = path.getParentPath()) {
+          if (path.getLeaf() instanceof MethodTree) {
+            return true;
           }
         }
 
-        if (result.get() == null) {
-          result.set(current);
+        return false;
+      }
+
+      // The method's nearest named class, past anonymous ones, as the completion site names it.
+      private String namedEnclosingClass() {
+        for (TreePath path = getCurrentPath().getParentPath();
+            path != null;
+            path = path.getParentPath()) {
+          if (path.getLeaf() instanceof final ClassTree cls && !cls.getSimpleName().isEmpty()) {
+            return cls.getSimpleName().toString();
+          }
         }
 
         return null;
+      }
+
+      private boolean contains(final MethodTree node) {
+        final var pos = snapshot.trees().getSourcePositions();
+        final long start = pos.getStartPosition(snapshot.tree(), node);
+        final long end = pos.getEndPosition(snapshot.tree(), node);
+        return cursorOffset >= start && cursorOffset <= end;
       }
     }.scan(snapshot.tree(), null);
     return result.get();

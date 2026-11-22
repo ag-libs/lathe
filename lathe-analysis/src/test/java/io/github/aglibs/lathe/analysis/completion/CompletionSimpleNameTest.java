@@ -46,6 +46,88 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
         .contains("Test");
   }
 
+  // An anonymous class in a method body sees its own method's locals and the enclosing method's
+  // parameters and the locals declared before it, as Java scoping does.
+  @Test
+  void simpleName_insideAnonymousClassInMethod_completesItsOwnAndTheEnclosingLocals() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            Runnable r = new Runnable() {
+                                public void run() { String own = ""; String s = ow§; }
+                            };
+                        }
+                    }""")))
+        .contains("own");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(String duration) {
+                            int before = 1;
+                            Runnable r = new Runnable() {
+                                public void run() { Object o = §; }
+                            };
+                            int after = 2;
+                        }
+                    }""")))
+        .contains("duration", "before")
+        .doesNotContain("after");
+  }
+
+  @Test
+  void simpleName_afterAnonymousClassCloses_itsLocalsAreNotVisible() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            Runnable a = new Runnable() { public void run() { int inner = 1; } };
+                            int y = in§;
+                        }
+                    }""")))
+        .doesNotContain("inner");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            Runnable a = new Runnable() { public void run() { int inner = 1; } };
+                            Runnable b = new Runnable() {
+                                public void run() { int inside = 1; int x = in§; }
+                            };
+                        }
+                    }""")))
+        .contains("inside")
+        .doesNotContain("inner");
+  }
+
+  // A local record, enum or interface is static: the enclosing method's locals are out of its
+  // reach.
+  @Test
+  void simpleName_insideLocalRecord_enclosingLocalsAreNotVisible() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(String duration) {
+                            String local = "";
+                            record R(int x) {
+                                String f() { String own = ""; return §; }
+                            }
+                        }
+                    }""")))
+        .contains("own")
+        .doesNotContain("duration", "local");
+  }
+
   @Test
   void simpleName_uppercasePrefix_inRecoveredStatementsIncludesVisibleValuesAndTypes()
       throws Exception {

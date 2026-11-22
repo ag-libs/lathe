@@ -1,10 +1,12 @@
 package io.github.aglibs.lathe.analysis.completion;
 
 import com.sun.source.tree.BindingPatternTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Scope;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -60,10 +62,31 @@ final class SimpleNameProvider {
     final boolean staticMethod = isStaticMethod(methodPath);
 
     addMethodLocals(methodPath);
+    addEnclosingMethodLocals(methodPath);
     addClassMembers(staticMethod);
     addStaticImportMembers();
 
     return items;
+  }
+
+  // A local or anonymous class's method also sees the enclosing methods' parameters and the locals
+  // declared before it, inner names first so a shadowing one wins. A local record, enum or
+  // interface is static (JLS 14.3) and sees none of them.
+  private void addEnclosingMethodLocals(final TreePath methodPath) {
+    if (methodPath == null) {
+      return;
+    }
+
+    for (TreePath path = methodPath.getParentPath(); path != null; path = path.getParentPath()) {
+      final Tree leaf = path.getLeaf();
+      if (leaf instanceof final ClassTree cls && cls.getKind() != Tree.Kind.CLASS) {
+        return;
+      }
+
+      if (leaf instanceof MethodTree) {
+        addMethodLocals(path);
+      }
+    }
   }
 
   private boolean isStaticMethod(final TreePath methodPath) {
@@ -108,13 +131,18 @@ final class SimpleNameProvider {
 
           if (end < context.cursorOffset()) {
             TreePath ancestor = getCurrentPath().getParentPath();
+            // A lambda, class or method that closed before the cursor takes its locals with it.
             while (ancestor != null && ancestor.getLeaf() != methodPath.getLeaf()) {
-              if (ancestor.getLeaf() instanceof LambdaExpressionTree lambda) {
-                final long lambdaEnd = positions.getEndPosition(snapshot.tree(), lambda);
-                if (lambdaEnd >= 0 && lambdaEnd < context.cursorOffset()) {
+              final Tree scope = ancestor.getLeaf();
+              if (scope instanceof LambdaExpressionTree
+                  || scope instanceof ClassTree
+                  || scope instanceof MethodTree) {
+                final long scopeEnd = positions.getEndPosition(snapshot.tree(), scope);
+                if (scopeEnd >= 0 && scopeEnd < context.cursorOffset()) {
                   return;
                 }
               }
+
               ancestor = ancestor.getParentPath();
             }
 
