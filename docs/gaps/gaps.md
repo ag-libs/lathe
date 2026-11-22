@@ -797,6 +797,143 @@ None yet.
 
 ---
 
+## EG-115 — Signature help is empty inside a call to a statically imported method
+
+**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: signature help in the editor, on every build; most of all in test code (AssertJ, JUnit, Mockito, MockMvc).**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+In `OwnerTests.java:34`, `assertTrue(owner.getPets().isEmpty())`: signature help inside `assertTrue(|` answers nothing, while inside `owner.getPets(|` on the same line it answers `List<Pet> getPets()`.
+29 of the run's 31 signature-help misses were such calls, and Lathe answered none of them: AssertJ `assertThat` (15), JUnit `assertTrue`, `assertFalse`, `assertEquals` and `assumeTrue`, Mockito `given`, MockMvc `get`, `status` and `view`, `assertThatExceptionOfType`.
+jdtls answers each, for example `assertThat(String actual) : AbstractStringAssert<?>`.
+
+### Fix direction
+
+Resolve the method of an unqualified call through the static imports as javac does (single-static and on-demand), as a call to a method of the enclosing class already is.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-116 — Signature help is empty for a call on a type-variable receiver
+
+**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: signature help in the editor, in generic code.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+In `EntityUtils.java:46` (petclinic's tests), in `<T extends BaseEntity> T getById(Collection<T> entities, …)`, signature help inside `entity.getId(|`, where `entity` is a `T`, answers nothing; jdtls answers `getId() : Integer`.
+
+### Fix direction
+
+Look the method up in the type variable's bounds, as javac's member lookup does, when the receiver's type is a type variable.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-117 — Incoming calls leave out calls in an anonymous class's instance initializer
+
+**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: call hierarchy (incoming calls) in the editor, and what is built on it.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+In `PetTypeFormatterTests.java`, `makePetTypes()` builds `new PetType() {{ setName("Dog"); }}` and a second one the same way (lines 86 and 91).
+References of `NamedEntity.setName` find all three calls in the file (58, 86 and 91); its incoming calls list only `testPrint` (58), neither initializer nor the enclosing `makePetTypes`.
+jdtls lists the initializer as a caller.
+
+### Fix direction
+
+Credit a call in an initializer block to that initializer (as jdtls does) or to the enclosing method, the way a call in a lambda is credited to the enclosing method; never drop it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-118 — Type hierarchy with the cursor on a member answers nothing
+
+**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: type hierarchy in the editor, when the command runs with the cursor anywhere but on a type name.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+With the cursor on a method or a field name, such as `getId` in `BaseEntity` or `getName` in `NamedEntity`, `textDocument/prepareTypeHierarchy` answers nothing; on the class name it answers.
+jdtls answers with the hierarchy of the enclosing class (`NamedEntity`, `Person`, `Visit` for `BaseEntity`).
+28 of the run's 30 type-hierarchy misses were such positions, so an editor's type-hierarchy command finds nothing unless the cursor is on a type name.
+
+### Fix direction
+
+Prepare the hierarchy of the innermost type enclosing the position when the position is not on a type name, as jdtls does.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-119 — Workspace symbol initials do not match a nested type
+
+**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: workspace symbol search in the editor and through MCP.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+`PCFHE` and `ProcCreFormHasErr` find nothing, while `ProcessCreationForm` finds `ProcessCreationFormHasErrors`, a `@Nested` class in `PetControllerTests`.
+Top-level types match by initials and humps (`OCT` finds `OwnerControllerTests`, `PTF` `PetTypeFormatter`, `VC` the controllers), as EG-005 made them; jdtls matches the nested type too.
+
+### Fix direction
+
+Run EG-005's CamelCase matching over nested types as well as top-level ones.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1049,6 +1186,34 @@ The same holds for a property Jackson serializes or a JPQL query names: any fram
 
 When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
 A field renamed with its accessors is the same case.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-038 — References to a `toString` override list calls that cannot reach it
+
+**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
+
+**Kind: bug**
+
+**Value: high — Size: S–M**
+
+**Affects: references, highlights of uses and what they feed (the MCP `find_references`, rename's search, change impact), for an override of an `Object` method; not checked for `equals` and `hashCode`.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+References of `NamedEntity.toString` list 15 uses, of which only the 2 on an `Object` receiver can reach it (`sourceProperty.toString()` in `PostgresIntegrationTests`), and those 2 are what jdtls lists.
+The other 13 are calls on receivers that can never be a `NamedEntity`: `LocalDate.toString()` (a final class; 4 calls in `PetControllerTests` and `VisitControllerTests`), `ToStringCreator.toString()` (`Owner.java:168`) and `Path.toString()` (8 calls in `I18nPropertiesSyncTest`).
+The override seems to be searched as every override of `Object.toString`; on a large project its real uses are buried.
+
+### Fix direction
+
+Keep a call whose receiver's static type could be the overriding class: a supertype of it, a subtype of it, or an interface a subclass of it could implement; drop calls on a class unrelated to it, which no instance of the overriding class can be. Check `equals` and `hashCode` the same way.
 
 ### Regression targets
 
