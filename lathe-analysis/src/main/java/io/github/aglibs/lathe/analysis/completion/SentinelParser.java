@@ -661,6 +661,9 @@ final class SentinelParser {
   private static TypeReferenceRole inferTypeReferenceRole(
       final Tree sentinel, final TreePath parentPath) {
     Tree child = sentinel;
+    // Only the type a thrown `new` constructs must be a Throwable: an argument, a receiver or a
+    // call around it takes any value, so the walk tracks whether it is still on that type.
+    boolean thrownNewType = false;
     for (TreePath path = parentPath; path != null; path = path.getParentPath()) {
       final Tree parent = path.getLeaf();
       final Tree currentChild = child;
@@ -677,7 +680,7 @@ final class SentinelParser {
 
       if (parent instanceof final ThrowTree throwTree
           && throwTree.getExpression() == currentChild
-          && currentChild != sentinel) {
+          && thrownNewType) {
         return TypeReferenceRole.THROWS;
       }
 
@@ -686,6 +689,16 @@ final class SentinelParser {
         if (role != TypeReferenceRole.ORDINARY) {
           return role;
         }
+      }
+
+      // The `new` itself may sit in parentheses, a conditional, or an erroneous tree javac's
+      // recovery builds around `throw new` with no arguments yet.
+      if (parent instanceof final NewClassTree newClass) {
+        thrownNewType = newClass.getIdentifier() == currentChild;
+      } else if (!(parent instanceof ParenthesizedTree
+          || parent instanceof ConditionalExpressionTree
+          || parent instanceof ErroneousTree)) {
+        thrownNewType = false;
       }
 
       child = parent;

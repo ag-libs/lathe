@@ -1027,6 +1027,91 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(items).doesNotContain("String", "StringBuilder");
   }
 
+  // The thrown value must be a Throwable; the arguments that build it take any value their
+  // parameter does, so a message completes as it would outside the throw.
+  @Test
+  void throwStatement_constructorArgument_completesValuesNotOnlyThrowables() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(String duration) {
+                            throw new IllegalArgumentException("bad: " + du§);
+                        }
+                    }""")))
+        .contains("duration");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(String duration) {
+                            throw new IllegalArgumentException(du§);
+                        }
+                    }""")))
+        .contains("duration");
+  }
+
+  @Test
+  void throwStatement_newInsideConstructorArgument_completesAnyType() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m() {
+                            throw new IllegalStateException(new StringBu§);
+                        }
+                    }""")))
+        .contains("StringBuilder");
+  }
+
+  @Test
+  void throwStatement_newInsideThrownCallArgument_completesAnyType() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static RuntimeException wrap(Object o) { return new RuntimeException(); }
+                        void m() {
+                            throw wrap(new StringBu§);
+                        }
+                    }""")))
+        .contains("StringBuilder");
+  }
+
+  @Test
+  void throwStatement_callInsideConstructorArgument_completesTheMethod() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static RuntimeException wrap(Throwable t) { return new RuntimeException(t); }
+                        void m(Exception cause) {
+                            throw new IllegalStateException(Test.wr§(cause));
+                        }
+                    }""")))
+        .contains("wrap");
+  }
+
+  @Test
+  void throwStatement_staticCallReturningAThrowable_completesTheMethod() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static RuntimeException wrap(Throwable t) { return new RuntimeException(t); }
+                        void m(Exception cause) {
+                            throw Test.wr§(cause);
+                        }
+                    }""")))
+        .contains("wrap");
+  }
+
   @Test
   void precedence_localsFieldsMethodsMatchesPriority() {
     final var items =
