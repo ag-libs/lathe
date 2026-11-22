@@ -1411,43 +1411,6 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0064 — Inside a `throw` statement, a constructor's arguments complete only exception types
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion in the editor, anywhere in the arguments of the thrown expression.**
-
-Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
-
-### Observed behaviour
-
-In Dropwizard's `Duration.parse(String duration)`, with `du` typed:
-
-| Line typed | Offered |
-|---|---|
-| `throw new IllegalArgumentException("Invalid duration: " + du` | `DuplicateFormatFlagsException`, `DuplicateRequestException` |
-| `throw new IllegalArgumentException(du` | the same two |
-| `Object p = new IllegalArgumentException("Invalid duration: " + du` | `duration` |
-| `String s = "x" + du` | `duration` |
-
-So an exception's message cannot be built with completion: the parameter, locals and fields are missing, and only throwable types are offered.
-The same in jdbi: `throw new IllegalStateException(Sneaky.th(toThrow))` answers nothing, where `Object o = Sneaky.th(toThrow)` offers `throwAnyway`.
-`throw Sneaky.th(toThrow)` answers nothing too, while `throw Sneaky.` offers `throwAnyway` (it returns jdbi's `DummyException`); whether that is the same cause is to be checked.
-
-`ExpectedValueResolver.visitThrow` sets the expected type to `java.lang.Throwable` whenever the cursor is anywhere in the `throw` statement, so the candidates are filtered for the thrown value even inside an argument of the expression that builds it.
-
-### Fix direction
-
-Expect `Throwable` only where the cursor is the thrown expression itself, not inside an argument of a constructor or method call within it; there the argument's own expected type applies, as it does outside a `throw`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## CQ-0065 — In a record, a member's type completes only when the member is `static`
 
 **Status: documented**
