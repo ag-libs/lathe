@@ -896,12 +896,20 @@ final class SentinelParser {
         return TypeReferenceRole.ANNOTATION;
       }
 
-      // A type argument, a wildcard's bound within it, and a type parameter's bound take any
-      // reference type: the role of what they parameterize (a supertype in a header, a declared or
-      // thrown exception) does not reach them, so Comparable<Self> completes. An array's element
-      // type on the way there may also be primitive (List<int[]>, List<? extends int[]>).
+      // A type argument (of a type, or written on a call, a `new` or a method reference:
+      // `Collections.<T>emptyList()`), a wildcard's bound within it, and a type parameter's bound
+      // take any reference type: the role of what they parameterize (a supertype in a header, a
+      // declared or thrown exception) does not reach them, so Comparable<Self> completes. An
+      // array's element type on the way there may also be primitive (List<int[]>).
       if (parent instanceof final ParameterizedTypeTree parameterized
               && parameterized.getTypeArguments().stream().anyMatch(t -> t == currentChild)
+          || parent instanceof final MethodInvocationTree call
+              && call.getTypeArguments().stream().anyMatch(t -> t == currentChild)
+          || parent instanceof final NewClassTree creation
+              && creation.getTypeArguments().stream().anyMatch(t -> t == currentChild)
+          || parent instanceof final MemberReferenceTree reference
+              && reference.getTypeArguments() != null
+              && reference.getTypeArguments().stream().anyMatch(t -> t == currentChild)
           || parent instanceof final TypeParameterTree typeParameter
               && typeParameter.getBounds().stream().anyMatch(t -> t == currentChild)) {
         return arrayElement
