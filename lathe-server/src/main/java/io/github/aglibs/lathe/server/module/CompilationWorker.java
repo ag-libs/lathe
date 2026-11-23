@@ -29,6 +29,12 @@ public final class CompilationWorker {
   // For work no request can cancel.
   public static final CancelChecker NOT_CANCELLED = () -> {};
 
+  // javac attributes and Lathe scans deeply nested code (a long call chain, a long else-if chain)
+  // by recursion. The JVM's default 1 MB thread stack overflowed where command-line javac, on its
+  // main thread's 8 MB, compiles the code; a StackOverflowError is fatal and ended the server. The
+  // size is reserved address space, committed only as a thread goes deep.
+  private static final long WORKER_STACK_BYTES = 16L * 1024 * 1024;
+
   private static final Logger LOG = Logger.getLogger(CompilationWorker.class.getName());
   // At most this many open documents share one analysis task: a refresh chunk, or a file plus the
   // unsaved siblings that join it.
@@ -96,7 +102,7 @@ public final class CompilationWorker {
     this.executor =
         Executors.newSingleThreadExecutor(
             r -> {
-              final var t = new Thread(r, name);
+              final var t = new Thread(null, r, name, WORKER_STACK_BYTES);
               t.setDaemon(true);
               return t;
             });
