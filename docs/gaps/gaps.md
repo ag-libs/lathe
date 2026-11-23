@@ -859,35 +859,6 @@ None yet.
 
 ---
 
-## EG-120 — The `class` of a class literal is highlighted as a field
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: semantic tokens in the editor (VS Code and Neovim), on every build.**
-
-Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
-
-### Observed behaviour
-
-In `Map.class`, `Configuration.class` or `Map.Entry.class`, the server sends a `property` token for the keyword `class`, so the editor colours it as a field.
-Every class literal in code gets it: the three in jdbi's `GenericTypes.java` and `SerializableTransactionRunner.java` (`final Configuration config = handle.getConfig(Configuration.class);`); the ten in their Javadoc get no token.
-Definition on that `class` answers nothing, which is right for a keyword.
-
-javac models a class literal as a member select whose element is a field named `class`, and `TokenScanner.visitMemberSelect` emits a reference token for the element it resolves.
-The hover formatter already meets the same modelling ("`this`, `super` and a class literal, which javac models as fields, get no modifiers").
-
-### Fix direction
-
-Emit no token for the `class` of a class literal (a member select named `class` whose element is the synthetic field), as for other keywords; check `Outer.this` and `Outer.super` the same way.
-
-### Regression targets
-
-None yet.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.
