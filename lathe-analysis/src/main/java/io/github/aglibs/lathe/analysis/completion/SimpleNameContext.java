@@ -7,6 +7,7 @@ record SimpleNameContext(
     String enclosingMethod,
     String prefix,
     int cursorOffset,
+    int snapshotCursorOffset,
     SemanticCompletionContext semanticContext) {
 
   SimpleNameContext {
@@ -14,6 +15,7 @@ record SimpleNameContext(
         .notBlank(enclosingClass, "enclosingClass")
         .notNull(prefix, "prefix")
         .isNonNegative(cursorOffset, "cursorOffset")
+        .isNonNegative(snapshotCursorOffset, "snapshotCursorOffset")
         .nullOrNotBlank(enclosingMethod, "enclosingMethod")
         .notNull(semanticContext, "semanticContext")
         .validate();

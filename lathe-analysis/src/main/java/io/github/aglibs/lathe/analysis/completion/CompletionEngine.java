@@ -385,6 +385,7 @@ public final class CompletionEngine {
             parsed.enclosingMethod(),
             injected.prefix(),
             req.cursorOffset(),
+            req.snapshotOffset(req.cursorOffset()),
             semanticContext);
   }
 

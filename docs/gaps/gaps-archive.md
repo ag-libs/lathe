@@ -4580,6 +4580,46 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0074 — A local declared in a block that has closed is still offered — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion of simple names in a method body after a block, a loop or an `if` that declared locals, in the editor.**
+
+Found while fixing CQ-0067 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`void m() { { int hiddenLocal = 1; } hidden§ }` offers `hiddenLocal`; so do `for (int loopIdx = 0; …) {} loopI§` (`loopIdx`) and `if (b) { int ifLocal = 1; } ifLo§` (`ifLocal`).
+Picking one does not compile: the name is out of scope there.
+CQ-0067 left out the locals of a lambda, class or method that closed before the cursor; a plain block, a loop and an `if` are not checked the same way.
+
+### Expected
+
+Only the locals whose scope contains the cursor.
+
+### Fix
+
+`SimpleNameProvider` collects the method's locals declared before the cursor and leaves out those of a construct that closed before it; since CQ-0067 only a lambda, a class or a method counted as one.
+Now any construct around the local counts (a block, a loop, an `if`, a `try` or `catch`), with two exceptions where Java's scope reaches past it: a local of an old-style `case` group is in scope for the rest of the switch block (JLS 6.3), and a pattern's binding is flow-scoped (`if (!(o instanceof String s)) return;` introduces `s` after the `if`, JLS 6.3.2), so only a block, lambda, class or method ends a binding's scope.
+
+The positions compared are the cached snapshot's, and that snapshot predates the last keystrokes: typing `loopI` just before a loop's `}` puts the cursor past the snapshot's `}`, and the loop's own locals would have been hidden as closed.
+So the cursor is first moved into the snapshot's text (`CompletionRequest.snapshotOffset`): the two texts are compared from both ends, and an offset past the changed region shifts by the edit's length.
+Inside the region it becomes at most the region's end in the snapshot: for typing, a pure insertion, that is where the edit starts, so a `}` after it counts as still open; with edits both above and below the cursor it is the raw offset, as before, so the locals declared between them stay.
+
+Checked in the editor on the Dropwizard clone (`Duration.parse`), the token typed after the setup had compiled: after `for (int loopIdx …) { }`, `loopI` no longer offers `loopIdx`, nor `hidden` the `hiddenLocal` of a closed `{ }` (both were offered on `main`); inside the loop, `loopI` typed just before its `}` offers `loopIdx`, and `dur` the parameter `duration`.
+
+Not covered: the method around the cursor (`NameLookup.findMethodPath`) and the class members' scope (`ReceiverResolver.resolveScope`) still compare the snapshot's positions with the unmoved cursor; a binding's flow scope is not followed, so `if (o instanceof String s) {} s` still offers `s`, as do an expression statement's binding and an earlier `case String s:`; an enhanced `for`'s variable is offered in its own iterable expression, and a `try`'s resource in its `catch` and `finally`.
+
+### Regression targets
+
+- `CompletionSimpleNameTest.simpleName_afterClosedBlock_itsLocalsAreNotVisible`
+- `CompletionSimpleNameTest.simpleName_insideOpenBlock_itsLocalsStayVisible`
+
+---
+
 ## CQ-0066 — A class's own name is not offered as a type argument in its own header — done
 
 **Status: done** (2026-11-23)

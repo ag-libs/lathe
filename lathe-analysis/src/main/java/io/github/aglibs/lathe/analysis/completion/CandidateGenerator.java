@@ -305,10 +305,16 @@ final class CandidateGenerator {
       final String enclosingMethod,
       final String prefix,
       final int cursorOffset,
+      final int snapshotCursorOffset,
       final SemanticCompletionContext semanticContext) {
     final var context =
         new SimpleNameContext(
-            enclosingClass, enclosingMethod, prefix, cursorOffset, semanticContext);
+            enclosingClass,
+            enclosingMethod,
+            prefix,
+            cursorOffset,
+            snapshotCursorOffset,
+            semanticContext);
     return new SimpleNameProvider(snapshot, itemFactory, context).collect();
   }
 

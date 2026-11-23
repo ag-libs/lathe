@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.analysis.completion;
 
 import com.sun.source.tree.BindingPatternTree;
+import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -111,34 +113,35 @@ final class SimpleNameProvider {
       new TreePathScanner<Void, Void>() {
         @Override
         public Void visitVariable(final VariableTree node, final Void unused) {
-          addVariableIfVisible(node);
+          addVariableIfVisible(
+              node, getCurrentPath().getParentPath().getLeaf() instanceof BindingPatternTree);
           return super.visitVariable(node, unused);
         }
 
         @Override
         public Void visitBindingPattern(final BindingPatternTree node, final Void unused) {
-          addVariableIfVisible(node.getVariable());
+          addVariableIfVisible(node.getVariable(), true);
           return super.visitBindingPattern(node, unused);
         }
 
-        private void addVariableIfVisible(final VariableTree node) {
+        private void addVariableIfVisible(final VariableTree node, final boolean binding) {
           final var positions = snapshot.trees().getSourcePositions();
           final long start = positions.getStartPosition(snapshot.tree(), node);
           final long end = positions.getEndPosition(snapshot.tree(), node);
-          if (start < 0 || start >= context.cursorOffset() || end < 0) {
+          // The snapshot predates the last keystrokes, so its positions are compared with the
+          // cursor moved into its content.
+          final int cursor = context.snapshotCursorOffset();
+          if (start < 0 || start >= cursor || end < 0) {
             return;
           }
 
-          if (end < context.cursorOffset()) {
+          if (end < cursor) {
             TreePath ancestor = getCurrentPath().getParentPath();
-            // A lambda, class or method that closed before the cursor takes its locals with it.
             while (ancestor != null && ancestor.getLeaf() != methodPath.getLeaf()) {
               final Tree scope = ancestor.getLeaf();
-              if (scope instanceof LambdaExpressionTree
-                  || scope instanceof ClassTree
-                  || scope instanceof MethodTree) {
+              if (closesScope(scope, binding)) {
                 final long scopeEnd = positions.getEndPosition(snapshot.tree(), scope);
-                if (scopeEnd >= 0 && scopeEnd < context.cursorOffset()) {
+                if (scopeEnd >= 0 && scopeEnd < cursor) {
                   return;
                 }
               }
@@ -152,6 +155,22 @@ final class SimpleNameProvider {
         }
       }.scan(methodPath, null);
     }
+  }
+
+  // Whether a construct around a local that closed before the cursor takes the local with it. A
+  // local of an old-style case group is in scope for the rest of the switch block (JLS 6.3). A
+  // pattern's binding is flow-scoped, introduced after its statement where that statement cannot
+  // complete normally otherwise (JLS 6.3.2), so only a block, lambda, class or method ends it.
+  private static boolean closesScope(final Tree scope, final boolean binding) {
+    if (binding) {
+      return scope instanceof BlockTree
+          || scope instanceof LambdaExpressionTree
+          || scope instanceof ClassTree
+          || scope instanceof MethodTree;
+    }
+
+    return !(scope instanceof final CaseTree caseTree
+        && caseTree.getCaseKind() == CaseTree.CaseKind.STATEMENT);
   }
 
   private void addVariable(final String name, final TypeMirror type) {
