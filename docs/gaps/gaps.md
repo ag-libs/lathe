@@ -804,32 +804,6 @@ None yet.
 
 ---
 
-## EG-116 — Signature help is empty for a call on a type-variable receiver
-
-**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: signature help in the editor, in generic code.**
-
-Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
-
-### Observed behaviour
-
-In `EntityUtils.java:46` (petclinic's tests), in `<T extends BaseEntity> T getById(Collection<T> entities, …)`, signature help inside `entity.getId(|`, where `entity` is a `T`, answers nothing; jdtls answers `getId() : Integer`.
-
-### Fix direction
-
-Look the method up in the type variable's bounds, as javac's member lookup does, when the receiver's type is a type variable.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-117 — Incoming calls leave out calls in an anonymous class's instance initializer
 
 **Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)

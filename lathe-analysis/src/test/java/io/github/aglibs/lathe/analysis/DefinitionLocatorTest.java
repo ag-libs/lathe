@@ -248,6 +248,53 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  // EG-116: a call being typed on a type-variable receiver offers the overloads of its bound, as
+  // one
+  // on a receiver of a class type does; a complete one only the overload javac binds.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "entity.put(1,  other(); | void put(int key) {};void put(int key, String value)",
+        "entity.put(1); | void put(int key) {}",
+      })
+  void definition_typeVariableReceiverCallBeingTyped_offersTheOverloadsOfItsBound(
+      final String call, final String declarations) {
+    final String source =
+        """
+        package p;
+        class Base {
+          void put(int key) {}
+          void put(int key, String value) {}
+        }
+        class Use {
+          void other() {}
+          <T extends Base> void use(T entity) {
+            %s
+          }
+        }
+        """
+            .formatted(call);
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var request =
+          new SourceFeatureRequest(
+              TempSourceCompiler.TEST_URI,
+              source,
+              1,
+              posOf(source, call, "put"),
+              List.of(),
+              LibrarySources.none());
+
+      assertThat(session.navigation().definition(request))
+          .extracting(location -> location.getRange().getStart())
+          .containsExactlyInAnyOrderElementsOf(
+              Stream.of(declarations.split(";"))
+                  .map(declaration -> posOf(source, declaration, "put"))
+                  .toList());
+    }
+  }
+
   private static final String VAR_SOURCE =
       """
       import java.util.function.Supplier;
