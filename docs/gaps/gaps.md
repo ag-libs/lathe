@@ -2469,3 +2469,33 @@ Order a capped list by module and source tree (main before test, the declaring m
 ### Regression targets
 
 None yet.
+
+---
+
+## MC-104 — `call_hierarchy` reads a snippet for every call site, then keeps only `maxResults` of them
+
+**Status: deferred** (2026-11-23: the answer is right, only the work is wasted, and no timing shows it matters; not worth changing `LatheEngine` just before the release)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `call_hierarchy`, both directions.**
+
+Found by the [redundancy audit](../potential/lathe-redundancy-audit.md#apply-the-call-hierarchy-result-cap-before-reading-snippets) (2026-11-21, at `6e29dc6f`); still so at `ff83cbf1`.
+No timings were taken.
+
+### Observed behaviour
+
+`LatheEngine.callHierarchy` turns every call site into a `LatheLocation`, and each one's snippet reads its whole source file, before it applies `maxResults`.
+A method with 500 callers and the default cap reads files 500 times to return 50 snippets; with `maxResults: 10`, to return ten.
+
+### Fix direction
+
+Count every site after the scope filter, order the raw locations, cap them, and build snippets only for the sites kept, as `capLocations` already does for implementations.
+Incoming calls keep their order (origin, URI, position); outgoing calls keep source order and point at the call in the caller.
+
+### Regression targets
+
+None yet.
+Both directions with two sites and `maxResults: 1`: which site and snippet survive, a total of two, and the truncation flag.
