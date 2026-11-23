@@ -136,7 +136,7 @@ final class TypeReferenceCompleter {
                 req.typeIndex())
             : initialExpected;
     if (expected.isEmpty()) {
-      return incompleteEmptyConstructorPrefix(injected, base);
+      return base;
     }
 
     final List<CompletionItem> expectedItems =
@@ -192,8 +192,14 @@ final class TypeReferenceCompleter {
       final SentinelInjectionResult injected,
       final CompletionRequest req,
       final TypeReferenceRole role) {
-    if (req.typeIndex() == null || injected.prefix().isEmpty()) {
+    if (req.typeIndex() == null) {
       return CompletionOutcome.of(List.of());
+    }
+
+    // With no prefix the index is left out, so the list misses its types: a client must ask again
+    // as the user types rather than narrow this one.
+    if (injected.prefix().isEmpty()) {
+      return CompletionOutcome.incomplete(List.of());
     }
 
     // The index's own kind narrows to what fits the position before the validation limit, so a
@@ -503,13 +509,6 @@ final class TypeReferenceCompleter {
 
   private static boolean indexKindMaybeInstantiable(final TypeIndexEntry entry) {
     return entry.kind() == TypeKind.CLASS || entry.kind() == TypeKind.RECORD;
-  }
-
-  private static CompletionOutcome incompleteEmptyConstructorPrefix(
-      final SentinelInjectionResult injected, final CompletionOutcome base) {
-    return injected.prefix().isEmpty()
-        ? new CompletionOutcome(base.items(), base.freshAnalysis(), true)
-        : base;
   }
 
   private static boolean indexKindAllows(final TypeKind kind, final TypeReferenceRole role) {

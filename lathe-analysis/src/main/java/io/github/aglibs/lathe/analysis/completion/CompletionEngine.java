@@ -321,7 +321,9 @@ public final class CompletionEngine {
     }
 
     if (!hasUppercasePrefix(injected)) {
-      return new CompletionOutcome(items, null);
+      // Typing a capital after no prefix brings in the type index, so the client must ask again.
+      return new CompletionOutcome(
+          items, null, injected.prefix().isEmpty() && req.typeIndex() != null);
     }
 
     // Type-index types: uppercase prefix in statement context only (avoids flooding arg lists)
@@ -683,7 +685,8 @@ public final class CompletionEngine {
             injected, req, TypeReferenceRole.ORDINARY);
     final List<CompletionItem> merged =
         Stream.concat(items.stream(), typeOutcome.items().stream()).toList();
-    return new CompletionOutcome(merged, req.cached() == null ? analysis : null);
+    return new CompletionOutcome(
+        merged, req.cached() == null ? analysis : null, typeOutcome.incomplete());
   }
 
   private CompletionOutcome completeDeclarationName(

@@ -76,6 +76,50 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
   }
 
   @Test
+  void typeArgument_emptyPrefix_returnsIncompleteWithoutIndexTypes() {
+    final var outcome = fixture.outcome("class Test implements Comparable<§> {}");
+
+    assertThat(labels(outcome.items())).contains("String").doesNotContain("ArrayDeque");
+    assertThat(outcome.incomplete()).isTrue();
+  }
+
+  @Test
+  void implementsClause_emptyPrefix_returnsIncomplete() {
+    assertThat(fixture.outcome("class Test implements § {}").incomplete()).isTrue();
+  }
+
+  @Test
+  void statementStart_emptyPrefix_returnsIncomplete() {
+    assertThat(fixture.outcome("class Test { void m() { § } }").incomplete()).isTrue();
+  }
+
+  @Test
+  void annotationValue_classTypedElementEmptyPrefix_returnsIncomplete() {
+    final var outcome =
+        fixture.outcome(
+            """
+            package p;
+            @interface Uses { Class<?> value(); }
+            @Uses(§)
+            class Test {}""");
+
+    assertThat(outcome.incomplete()).isTrue();
+  }
+
+  @Test
+  void typeArgument_emptyPrefixWithoutTypeIndex_returnsComplete() {
+    localFixture = new CompletionFixture(null);
+
+    assertThat(localFixture.outcome("class Test implements Comparable<§> {}").incomplete())
+        .isFalse();
+  }
+
+  @Test
+  void memberAccess_emptyPrefix_returnsComplete() {
+    assertThat(fixture.outcome("class Test { void m(String s) { s.§ } }").incomplete()).isFalse();
+  }
+
+  @Test
   void constructorCall_emptyPrefixExpectedType_ranksExpectedTypeFirst() throws IOException {
     localFixture =
         new CompletionFixture(
@@ -83,8 +127,8 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                 tmp.resolve("index.json"),
                 CompletionFixture.typeEntry("ArrayDeque", "java.util.ArrayDeque", TypeKind.CLASS)));
 
-    final var items =
-        localFixture.complete(
+    final var outcome =
+        localFixture.outcome(
             """
             import java.util.ArrayDeque;
 
@@ -94,8 +138,9 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                 }
             }""");
 
-    assertThat(items).isNotEmpty();
-    assertThat(items.get(0).getLabel()).isEqualTo("ArrayDeque");
+    assertThat(outcome.items()).isNotEmpty();
+    assertThat(outcome.items().get(0).getLabel()).isEqualTo("ArrayDeque");
+    assertThat(outcome.incomplete()).isTrue();
   }
 
   @Test
