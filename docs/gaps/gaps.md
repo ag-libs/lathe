@@ -804,34 +804,6 @@ None yet.
 
 ---
 
-## EG-117 — Incoming calls leave out calls in an anonymous class's instance initializer
-
-**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: call hierarchy (incoming calls) in the editor, and what is built on it.**
-
-Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
-
-### Observed behaviour
-
-In `PetTypeFormatterTests.java`, `makePetTypes()` builds `new PetType() {{ setName("Dog"); }}` and a second one the same way (lines 86 and 91).
-References of `NamedEntity.setName` find all three calls in the file (58, 86 and 91); its incoming calls list only `testPrint` (58), neither initializer nor the enclosing `makePetTypes`.
-jdtls lists the initializer as a caller.
-
-### Fix direction
-
-Credit a call in an initializer block to that initializer (as jdtls does) or to the enclosing method, the way a call in a lambda is credited to the enclosing method; never drop it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-118 — Type hierarchy with the cursor on a member answers nothing
 
 **Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)

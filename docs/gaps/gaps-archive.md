@@ -7,6 +7,44 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-117 — Incoming calls leave out calls in an anonymous class's instance initializer — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: call hierarchy (incoming calls) in the editor, and what is built on it.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+In `PetTypeFormatterTests.java`, `makePetTypes()` builds `new PetType() {{ setName("Dog"); }}` and a second one the same way (lines 86 and 91).
+References of `NamedEntity.setName` find all three calls in the file (58, 86 and 91); its incoming calls list only `testPrint` (58), neither initializer nor the enclosing `makePetTypes`.
+jdtls lists the initializer as a caller.
+
+### Fix direction
+
+Credit a call in an initializer block to that initializer (as jdtls does) or to the enclosing method, the way a call in a lambda is credited to the enclosing method; never drop it.
+
+### Resolution
+
+A call outside the methods of an anonymous or local class (in an initializer block, or in a field's initializer, a lambda there included) is now credited to the method or constructor declaring the class, as a call in a lambda is credited to the method holding it.
+That is where an anonymous class is created; a local class may also be created by a method nested in the declaring one, and its static initializer runs once, but the call is still credited to the declaring method rather than dropped.
+So the two `setName` calls in petclinic's `makePetTypes()` are credited to `makePetTypes`.
+Outgoing calls of the creating method already listed them, so the two directions now agree.
+A call in a method of such a class is still that method's own.
+
+Not covered: a call in a top-level or member class's initializer block or field initializer is still left out, as no method holds it; jdtls lists the field or the initializer as the caller.
+
+### Regression targets
+
+- `CallHierarchyIncomingLocatorTest.searchIncomingCalls_callInAnAnonymousOrLocalClassInitializer_creditsTheMethodDeclaringIt`
+
+---
+
 ## EG-116 — Signature help is empty for a call on a type-variable receiver — done
 
 **Status: done** (2026-11-23)
