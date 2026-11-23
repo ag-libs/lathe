@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeReferenceTest extends CompletionTestSupport {
@@ -195,6 +196,83 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
         .doesNotContain("if", "return", "new", "var", "class", "interface");
     assertThat(labels(fixture.complete("class Test implements § {}")))
         .doesNotContain("if", "return", "new", "var", "class", "interface");
+  }
+
+  // A type argument, a wildcard's bound and a type parameter's bound take any reference type,
+  // whatever the clause around them filters (interfaces after implements, classes after extends):
+  // the type being declared (Comparable<Self>) and the file's other types included.
+  @Test
+  void typeArgument_anyPosition_suggestsAnyReferenceType() {
+    assertThat(labels(fixture.complete("class Test implements Comparable<Str§> {}")))
+        .contains("String");
+    assertThat(labels(fixture.complete("record Test() implements Comparable<Str§> {}")))
+        .contains("String");
+    assertThat(labels(fixture.complete("interface Test extends Comparable<Str§> {}")))
+        .contains("String");
+    assertThat(labels(fixture.complete("class Test extends java.util.ArrayList<Runn§> {}")))
+        .contains("Runnable");
+    assertThat(labels(fixture.complete("class Test implements Comparable<? super Str§> {}")))
+        .contains("String");
+    assertThat(labels(fixture.complete("class Box<T extends Runn§> {}"))).contains("Runnable");
+    assertThat(labels(fixture.complete("class Test implements Comparable<Te§> {}")))
+        .contains("Test");
+    assertThat(
+            labels(
+                fixture.complete("class Test { static class Inner {} java.util.List<Inn§> x; }")))
+        .contains("Inner");
+  }
+
+  // None of those positions can hold a keyword, a primitive or a member declaration.
+  @Test
+  void typeArgument_anyPosition_offersNoKeywordPrimitiveOrOverride() {
+    for (final String source :
+        List.of(
+            "class Test implements Comparable<i§> {}",
+            "class Test { void m() { class L implements Comparable<i§> {} } }",
+            "class Test { java.util.List<i§> x; }",
+            "class Test { void m() { java.util.List<i§> x; } }",
+            "class Test { java.util.List<? extends i§> x; }",
+            "class Box<T extends i§> {}")) {
+      assertThat(labels(fixture.complete(source)))
+          .as(source)
+          .contains("Integer")
+          .doesNotContain("int", "interface");
+    }
+
+    final List<CompletionItem> headerItems =
+        fixture.complete("class Test implements Comparable<§> {}");
+    assertThat(labels(headerItems)).doesNotContain("public", "class", "void", "int");
+    assertThat(headerItems)
+        .noneMatch(
+            item -> item.getInsertText() != null && item.getInsertText().contains("@Override"));
+  }
+
+  // An array's element type may be primitive (List<int[]>), and is still no member start.
+  @Test
+  void typeArgument_arrayElementType_suggestsPrimitivesOnly() {
+    for (final String source :
+        List.of(
+            "class Test { java.util.List<i§[]> rows; }",
+            "class Test { java.util.List<? extends i§[]> rows; }",
+            "class Test { void m() { java.util.List<i§[][]> rows; } }")) {
+      assertThat(labels(fixture.complete(source)))
+          .as(source)
+          .contains("int", "Integer")
+          .doesNotContain("interface");
+    }
+
+    final List<CompletionItem> headerItems =
+        fixture.complete("class Test implements Comparable<§[]> {}");
+    assertThat(labels(headerItems)).contains("int").doesNotContain("public", "class", "void");
+    assertThat(headerItems)
+        .noneMatch(
+            item -> item.getInsertText() != null && item.getInsertText().contains("@Override"));
+  }
+
+  // A type parameter's name declares a new name: nothing completes there.
+  @Test
+  void typeParameterName_declaredName_offersNothing() {
+    assertThat(labels(fixture.complete("class Box<T§ extends Number> {}"))).isEmpty();
   }
 
   // ── simple name ───────────────────────────────────────────────────────────────

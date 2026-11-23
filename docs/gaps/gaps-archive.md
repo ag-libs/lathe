@@ -4438,6 +4438,54 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0066 — A class's own name is not offered as a type argument in its own header — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion in a class or record declaration's `extends` and `implements` clauses.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+| Header, with the type argument cut to two letters | Offered |
+|---|---|
+| Dropwizard `public class Duration implements Comparable<Du` | nothing |
+| jdbi `public static class Configuration implements JdbiConfig<Co` | 50 types (`ColumnMapper`, `Connection`, …), not `Configuration` |
+
+The supertypes in the same headers complete (`Comparable` rank 5, `Serializable` rank 2, `JdbiConfig` rank 2, EqualsVerifier's `ScanOption` rank 1); only the type being declared is missing, which `Comparable<Self>` and `Builder<Self>` headers need.
+
+### Fix
+
+The class's own name was one case of a wider one: a type argument took the role of the clause around it.
+`SentinelParser.inferTypeReferenceRole` walks up from the cursor, and reaching the header through `Comparable<Du>` it gave `Du` the `implements` clause's role, interfaces only, so the class `Duration` was filtered out, as was `String` in `implements Comparable<Str`; after `extends`, an interface type argument was filtered out the same way.
+Outside headers, a type argument had the ordinary role, which offers keywords and primitives (`List<i` offered `int` and `interface` in a field or method body, a type parameter's bound `<T extends i` too), and in a header type argument override stubs.
+
+A type argument, a wildcard's bound in it and a type parameter's bound now have their own role, `TYPE_ARGUMENT`: any reference type, the file's own types merged as for a constructor (the type being declared and a nested type, before the index has them), and no keyword, primitive or override stub.
+An array's element type within a type argument (`List<int[]>`, `List<? extends int[]>`) has the role `ARRAY_TYPE_ARGUMENT`, the same with the primitives added.
+A type parameter's name, a declaration, still completes nothing, and every other type position is unchanged.
+
+Checked in the editor with the fix: Dropwizard's `implements Comparable<Du` offers `Duration` first (5 items, where it had none), jdbi's `implements JdbiConfig<Co` offers `Configuration`, and the supertypes themselves complete as before (`Comparable` rank 5, `Serializable` and `JdbiConfig` rank 2); in a method body, `List<i` offers reference types without `int`, and `Map<String, ? extends Dur` offers `Duration`.
+
+Left as they were, each its own fix:
+
+- a qualified name in a type argument (`List<java.util.Ma`) completes nothing, as the injection's receiver text runs back across the `<` (`java.util.List<java.util`);
+- a method call's explicit type argument (`Collections.<i>emptyList()`) is completed as an expression, keywords included, not as a type;
+- a type variable (`T`, a class's `Item`) is offered at no type position, a type argument or any other;
+- a type parameter's second bound (`<T extends Number & Ser`) offers classes too, where only an interface may stand;
+- outside type arguments, a type declared in the file and not yet compiled is not offered where the position is no statement (after `extends` or `implements`, in a cast), as the index does not have it yet.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.typeArgument_anyPosition_suggestsAnyReferenceType`
+- `CompletionTypeReferenceTest.typeArgument_anyPosition_offersNoKeywordPrimitiveOrOverride`
+- `CompletionTypeReferenceTest.typeArgument_arrayElementType_suggestsPrimitivesOnly`
+- `CompletionTypeReferenceTest.typeParameterName_declaredName_offersNothing`
+
+---
+
 ## CQ-0065 — In a record, a member's type completes only when the member is `static` — done
 
 **Status: done** (2026-11-22)

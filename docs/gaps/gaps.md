@@ -1329,35 +1329,6 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0066 — A class's own name is not offered as a type argument in its own header
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion in a class or record declaration's `extends` and `implements` clauses.**
-
-Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
-
-### Observed behaviour
-
-| Header, with the type argument cut to two letters | Offered |
-|---|---|
-| Dropwizard `public class Duration implements Comparable<Du` | nothing |
-| jdbi `public static class Configuration implements JdbiConfig<Co` | 50 types (`ColumnMapper`, `Connection`, …), not `Configuration` |
-
-The supertypes in the same headers complete (`Comparable` rank 5, `Serializable` rank 2, `JdbiConfig` rank 2, EqualsVerifier's `ScanOption` rank 1); only the type being declared is missing, which `Comparable<Self>` and `Builder<Self>` headers need.
-
-### Fix direction
-
-Offer the declaring type (and its enclosing types) in its own header's type arguments.
-
-### Regression targets
-
-None yet.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
