@@ -4580,6 +4580,47 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0076 — A record's instance member gets no name suggestion — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion of the name in a member declaration in a record body, in the editor.**
+
+Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`String §` suggests the name `string` in a class body, for a record's `static` member and for a local; in a record body (`record Test(int x) { String § }`) it suggests nothing.
+The member-stub parse of CQ-0065 takes the sentinel only as a stub's return type, and here it is the stub's name.
+
+### Expected
+
+The same name suggestion as in a class body.
+
+### Fix
+
+At a member start the injection ends the sentinel with a semicolon, so `String §` reads as the instance field `String __LATHE_SENTINEL__;`, which javac's parser drops from a record body.
+CQ-0065's retry turns the sentinel into a method stub's return type (`String __LATHE_SENTINEL__ __latheMember() {}`), which javac drops too where the sentinel is the member's name.
+Where that retry finds nothing, a second stub makes the sentinel the method's name (`String __LATHE_SENTINEL__() {}`), which javac keeps in a record body with any modifiers and type, checked on JDK 17 and 26.
+`SentinelParser.parseMemberStub` takes it only as a member of a record body, and only after a type that a field could have: after `void` or a type parameter the name can only be a method's, for which a class body offers no name either.
+It classifies the slot as the name of a declaration of the method's return type, as a field's name is classified, so completion answers as in a class body.
+At a type position the name stub reads as a constructor and loses the sentinel, so the two stubs never both answer: positions that completed before parse as they did.
+The third parse runs only where the first two found no sentinel.
+
+Checked in the editor on the EqualsVerifier clone, in the record `PackageScanOptions.MustExtend`: `String §` offers `string`, where `main` offered nothing, and `private Class<?> §` offers `value`, as in the enclosing class; `void §` offers nothing, as in a class, and `public St` still completes the type (`String`, 50 items).
+
+Not covered: the suggestion is labelled a field name, as in a class body, though in a record body a member that is not `static` can only be a method.
+
+### Regression targets
+
+- `CompletionDeclarationNameTest.declarationName_recordMemberSlot_offersNamesAsInAClassBody`
+- `SentinelParserTest.parseMemberStub_recordMemberName_findsTheNameSlot`
+- `SentinelParserTest.parseMemberStub_nameStubAtTypePositionOrOutsideRecordBody_answersNothing`
+
+---
+
 ## CQ-0070 — A type variable is never offered as a type — done
 
 **Status: done** (2026-11-23)
