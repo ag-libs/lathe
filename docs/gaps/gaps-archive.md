@@ -4621,6 +4621,212 @@ Without a type index there is nothing to ask again for, and the list stays compl
 
 ---
 
+## CQ-0073 — A type declared in the file is not offered after `extends`, after `implements` or in a cast — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: type completion outside a statement and outside type arguments, for a type the workspace type index has not seen yet (a new or not yet compiled type), in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Test implements Lis§ {} interface Listener {}` offers nothing; `class Test extends Bas§ {} class Base {}` offers only `BaseVirtualThread`; `class Test { static class Inner {} Object o = (Inn§) null; }` offers nothing.
+At a field's type, `Inn§ x;` offers `Inner`: only statement-context type positions, constructors and (since CQ-0066) type arguments merge the file's own types.
+A compiled type reaches these positions through the type index, so the gap shows while the type is new.
+
+### Expected
+
+The file's own types at every type position, filtered by the position's role (interfaces after `implements`, extendable classes after `extends`).
+
+### Fix
+
+The gap was wider than filed: a method parameter's type, a record component's, a lambda parameter's and `throws` missed the file's own types too, while a field's, a local's and a return type had them.
+Those positions complete through the mixed simple-name path, which merges the file's types; the others go to `TypeReferenceCompleter.completeTypeReference`, which merged them only in a type argument (CQ-0066).
+It now merges them at every type reference, as it does `java.lang`'s, filtered by the position's role as before: interfaces after `implements`, a class that is not final after `extends`, a `Throwable` after `throws`.
+After `extends` or `implements`, javac rejects the type being declared, any type nested in it, and any subtype of it or type nested in one (cyclic inheritance), and a sealed type that does not permit it, so those are left out, from the file and from the type index alike.
+They are compared by qualified name, so a type of the same simple name elsewhere stays.
+The declaring type is taken from the file's last compile only when it carries the name the current parse gives: that compile may predate a type just typed, which then cannot be in the file's types or the index yet; before the file's first compile, only the name is known.
+A sealed type of this file with no `permits` clause permits this file's types, but no local class.
+A private type of another class, out of reach at most of these positions, is left out too.
+
+Checked in the editor on Dropwizard's `CachingAuthorizer`, with a new nested type on the same line: a parameter's type, a cast, `implements` and `extends` each offer the new type (on `main`, nothing).
+
+Left as they are, both rare:
+
+- a local class, or a member of one, offered as a supertype is not checked for a cycle or a sealed type, as its qualified name cannot be looked up;
+- the access check uses the scope of the file's last compile at the cursor, which edits that move the text across top-level classes can shift into another one.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.inFileType_anyTypePosition_suggested`
+- `CompletionTypeReferenceTest.inFileType_invalidAtPosition_notSuggested`
+- `CompletionTypeReferenceTest.inFileType_supertypeOfNewNestedType_suggestedFromStaleCompile`
+
+---
+
+## CQ-0076 — A record's instance member gets no name suggestion — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion of the name in a member declaration in a record body, in the editor.**
+
+Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`String §` suggests the name `string` in a class body, for a record's `static` member and for a local; in a record body (`record Test(int x) { String § }`) it suggests nothing.
+The member-stub parse of CQ-0065 takes the sentinel only as a stub's return type, and here it is the stub's name.
+
+### Expected
+
+The same name suggestion as in a class body.
+
+### Fix
+
+At a member start the injection ends the sentinel with a semicolon, so `String §` reads as the instance field `String __LATHE_SENTINEL__;`, which javac's parser drops from a record body.
+CQ-0065's retry turns the sentinel into a method stub's return type (`String __LATHE_SENTINEL__ __latheMember() {}`), which javac drops too where the sentinel is the member's name.
+Where that retry finds nothing, a second stub makes the sentinel the method's name (`String __LATHE_SENTINEL__() {}`), which javac keeps in a record body with any modifiers and type, checked on JDK 17 and 26.
+`SentinelParser.parseMemberStub` takes it only as a member of a record body, and only after a type that a field could have: after `void` or a type parameter the name can only be a method's, for which a class body offers no name either.
+It classifies the slot as the name of a declaration of the method's return type, as a field's name is classified, so completion answers as in a class body.
+At a type position the name stub reads as a constructor and loses the sentinel, so the two stubs never both answer: positions that completed before parse as they did.
+The third parse runs only where the first two found no sentinel.
+
+Checked in the editor on the EqualsVerifier clone, in the record `PackageScanOptions.MustExtend`: `String §` offers `string`, where `main` offered nothing, and `private Class<?> §` offers `value`, as in the enclosing class; `void §` offers nothing, as in a class, and `public St` still completes the type (`String`, 50 items).
+
+Not covered: the suggestion is labelled a field name, as in a class body, though in a record body a member that is not `static` can only be a method.
+
+### Regression targets
+
+- `CompletionDeclarationNameTest.declarationName_recordMemberSlot_offersNamesAsInAClassBody`
+- `SentinelParserTest.parseMemberStub_recordMemberName_findsTheNameSlot`
+- `SentinelParserTest.parseMemberStub_nameStubAtTypePositionOrOutsideRecordBody_answersNothing`
+
+---
+
+## CQ-0070 — A type variable is never offered as a type — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion of a type wherever a type variable is in scope, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In `class Box<Item> { It§ x; }` and `class Box<Item> { java.util.List<It§> items; }`, `Item` is not offered (only `Iterable`); a method's own type variable is not either (`<Elem> void m() { El§ x; }` offers nothing).
+Type completion merges the type index, `java.lang` and the file's class declarations, none of which holds a type variable.
+
+### Expected
+
+The class's and the method's type variables in scope, at every type position (a field, a local, a parameter, a type argument, a bound).
+
+### Fix
+
+No source of type candidates held type variables: the type index, `java.lang` and the file's class declarations hold only classes.
+`SentinelParser` now collects the type variables visible at the cursor from the parse tree, walking outwards: a method adds its own, and a class its own; a `static` method, field or initializer hides its class's, as does an interface's field, which is static; a static type (a static member class, a member of an interface, every interface, enum and record, a local record) sees none declared around it, while an inner, local or anonymous class sees them; an inner type variable hides an outer one of the same name.
+It records them in `ParsedSentinel` only where a type variable can stand: a type written in an ordinary position, a type argument or bound, or the start of a statement in a block or a `case 1:` group that becomes a declaration (`T value`).
+Not before `.class`, in `instanceof` (its operand or a pattern's type), in an initializer or argument, after `new`, as a supertype, permitted subclass or annotation, as a catch parameter's type, or as a switch rule's body.
+The type completer and the simple-name completer add them as `TypeParameter` items, and leave out a type of the same name, which the type variable hides.
+
+Checked in the editor on Dropwizard's `CachingAuthorizer<P extends Principal>`: `P` is offered first (it was not offered) for a field's type, a type argument, a statement start, a local's type and a cast; not for a `static` field, nor in an initializer.
+
+Left as they are:
+
+- after `throws`, no type variable is offered, though one bounded by `Throwable` may stand there (`<E extends Exception> void m() throws E`): the parse sees a bound only as a name, so it cannot tell which;
+- a method call's explicit type argument (`this.<T>m()`) gets none, as it is completed as an expression (CQ-0069);
+- at a statement start that goes on as an expression, `It|.foo()` or `It| = null;`, the type variable is offered too: the injection ends the sentinel there, so the parse cannot see what follows.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.typeVariable_inScope_suggestedAsType`
+- `CompletionTypeReferenceTest.typeVariable_staticContextOrExpression_notSuggested`
+
+---
+
+## CQ-0075 — A record's `toString`, `equals` and `hashCode` are not offered as override stubs — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: override completion in a record body, in the editor.**
+
+Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In a class body, `toS§` offers the `toString` override stub; in a record body (`record Test(int x) { toS§ }`) it offers nothing, nor `hashC§` the `hashCode` stub.
+A record has these methods implicitly, so they look like members it already declares; but a record may still declare them explicitly, and doing so is common.
+
+### Expected
+
+The `toString`, `equals` and `hashCode` stubs in a record body, as in a class body, unless the record already declares one explicitly.
+
+### Fix
+
+`OverrideCompletionProvider` offers the enclosing type's inherited methods and leaves out those the type declares itself.
+A record's `toString`, `equals` and `hashCode` are implicitly declared by the record unless it declares them (JLS 8.10.3), so they were its own members and left out.
+javac enters these implicit members without a source tree, while one the record declares has a tree; checked on JDK 17 and 26.
+An implicit one now stands for the `java.lang.Record` method it overrides, which is offered as a stub as any inherited method is; one the record declares is still left out, and an implicit accessor, which overrides nothing, too.
+
+Checked in the editor on the EqualsVerifier clone, in the record `PackageScanOptions.MustExtend`: `toS`, `hashC` and `equ` offer the `toString`, `hashCode` and `equals` stubs, where `main` offered none.
+
+Not covered: an accessor written out explicitly (`public Class<?> type()`) is not offered as a stub either.
+
+### Regression targets
+
+- `CompletionOverrideTest.completion_objectMethodPrefixInRecordBody_offersImplicitMemberStub`
+- `CompletionOverrideTest.completion_recordDeclaringToStringOrAccessor_offersNoStubForIt`
+
+---
+
+## CQ-0074 — A local declared in a block that has closed is still offered — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion of simple names in a method body after a block, a loop or an `if` that declared locals, in the editor.**
+
+Found while fixing CQ-0067 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`void m() { { int hiddenLocal = 1; } hidden§ }` offers `hiddenLocal`; so do `for (int loopIdx = 0; …) {} loopI§` (`loopIdx`) and `if (b) { int ifLocal = 1; } ifLo§` (`ifLocal`).
+Picking one does not compile: the name is out of scope there.
+CQ-0067 left out the locals of a lambda, class or method that closed before the cursor; a plain block, a loop and an `if` are not checked the same way.
+
+### Expected
+
+Only the locals whose scope contains the cursor.
+
+### Fix
+
+`SimpleNameProvider` collects the method's locals declared before the cursor and leaves out those of a construct that closed before it; since CQ-0067 only a lambda, a class or a method counted as one.
+Now any construct around the local counts (a block, a loop, an `if`, a `try` or `catch`), with two exceptions where Java's scope reaches past it: a local of an old-style `case` group is in scope for the rest of the switch block (JLS 6.3), and a pattern's binding is flow-scoped (`if (!(o instanceof String s)) return;` introduces `s` after the `if`, JLS 6.3.2), so only a block, lambda, class or method ends a binding's scope.
+
+The positions compared are the cached snapshot's, and that snapshot predates the last keystrokes: typing `loopI` just before a loop's `}` puts the cursor past the snapshot's `}`, and the loop's own locals would have been hidden as closed.
+So the cursor is first moved into the snapshot's text (`CompletionRequest.snapshotOffset`): the two texts are compared from both ends, and an offset past the changed region shifts by the edit's length.
+Inside the region it becomes at most the region's end in the snapshot: for typing, a pure insertion, that is where the edit starts, so a `}` after it counts as still open; with edits both above and below the cursor it is the raw offset, as before, so the locals declared between them stay.
+
+Checked in the editor on the Dropwizard clone (`Duration.parse`), the token typed after the setup had compiled: after `for (int loopIdx …) { }`, `loopI` no longer offers `loopIdx`, nor `hidden` the `hiddenLocal` of a closed `{ }` (both were offered on `main`); inside the loop, `loopI` typed just before its `}` offers `loopIdx`, and `dur` the parameter `duration`.
+
+Not covered: the method around the cursor (`NameLookup.findMethodPath`) and the class members' scope (`ReceiverResolver.resolveScope`) still compare the snapshot's positions with the unmoved cursor; a binding's flow scope is not followed, so `if (o instanceof String s) {} s` still offers `s`, as do an expression statement's binding and an earlier `case String s:`; an enhanced `for`'s variable is offered in its own iterable expression, and a `try`'s resource in its `catch` and `finally`.
+
+### Regression targets
+
+- `CompletionSimpleNameTest.simpleName_afterClosedBlock_itsLocalsAreNotVisible`
+- `CompletionSimpleNameTest.simpleName_insideOpenBlock_itsLocalsStayVisible`
+
+---
+
 ## CQ-0066 — A class's own name is not offered as a type argument in its own header — done
 
 **Status: done** (2026-11-23)

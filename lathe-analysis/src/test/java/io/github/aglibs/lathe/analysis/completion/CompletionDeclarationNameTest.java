@@ -26,6 +26,16 @@ class CompletionDeclarationNameTest extends CompletionTestSupport {
         .isEqualTo(CompletionItemKind.Field);
   }
 
+  // A record body drops a member javac reads as an instance field, yet the name slot answers as in
+  // a class body.
+  @Test
+  void declarationName_recordMemberSlot_offersNamesAsInAClassBody() {
+    assertThat(labels(fixture.complete("record Test(int x) { ConnectionString § }")))
+        .containsExactly("connectionString", "string");
+    assertThat(labels(fixture.complete("record Test(int x) { private List<User> u§ }")))
+        .containsExactly("users", "userList");
+  }
+
   @Test
   void declarationName_genericAndQualifiedTypes_useTheSimpleName() {
     assertThat(labels(fixture.complete("class Test { void m() { java.util.List §; } }")))

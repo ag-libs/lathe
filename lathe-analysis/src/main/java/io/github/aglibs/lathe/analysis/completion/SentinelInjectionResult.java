@@ -36,6 +36,14 @@ record SentinelInjectionResult(
 
   // Built only for the retry, so a completion that never needs it copies no text.
   Optional<SentinelInjectionResult> asMemberStub() {
+    return withMemberStub(SentinelInjector.MEMBER_STUB);
+  }
+
+  Optional<SentinelInjectionResult> asMemberNameStub() {
+    return withMemberStub(SentinelInjector.MEMBER_NAME_STUB);
+  }
+
+  private Optional<SentinelInjectionResult> withMemberStub(final String stub) {
     if (memberStubAt < 0) {
       return Optional.empty();
     }
@@ -44,7 +52,7 @@ record SentinelInjectionResult(
         "%s%s%s"
             .formatted(
                 injectedContent.substring(0, memberStubAt),
-                SentinelInjector.MEMBER_STUB,
+                stub,
                 injectedContent.substring(memberStubAt + 1));
     return Optional.of(
         new SentinelInjectionResult(

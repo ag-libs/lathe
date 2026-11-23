@@ -114,6 +114,7 @@ final class CompletionItemPresenter {
       case TYPE_CLASS -> CompletionItemKind.Class;
       case TYPE_INTERFACE -> CompletionItemKind.Interface;
       case TYPE_ENUM -> CompletionItemKind.Enum;
+      case TYPE_PARAMETER -> CompletionItemKind.TypeParameter;
     };
   }
 }
