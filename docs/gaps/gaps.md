@@ -1244,6 +1244,198 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
+## CQ-0068 — A qualified name in a type argument completes nothing
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion of a qualified type inside `<…>`, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Test { java.util.List<java.util.Ma§> x; }` offers nothing; the same qualifier outside a type argument, `java.util.Ma§ x;`, offers `Map`.
+`SentinelInjector`'s receiver scan runs back across the `<`, so the receiver is `java.util.List<java.util`, which resolves to nothing.
+
+### Expected
+
+The members of `java.util` matching `Ma` (`Map`), as for the qualifier outside a type argument.
+
+---
+
+## CQ-0069 — A method call's explicit type argument completes as an expression
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion inside `<…>` before a method name (`Collections.<T>emptyList()`), in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`java.util.Collections.<i§>emptyList()` offers `if`, `instanceof` and `int`, the keywords of an expression, and no type.
+The sentinel is parsed as a simple name in an expression, not as a type reference, so the type-argument role of CQ-0066 does not reach it.
+
+### Expected
+
+Reference types, as in any other type argument (`Integer` here), and no keyword or primitive.
+
+---
+
+## CQ-0070 — A type variable is never offered as a type
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion of a type wherever a type variable is in scope, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In `class Box<Item> { It§ x; }` and `class Box<Item> { java.util.List<It§> items; }`, `Item` is not offered (only `Iterable`); a method's own type variable is not either (`<Elem> void m() { El§ x; }` offers nothing).
+Type completion merges the type index, `java.lang` and the file's class declarations, none of which holds a type variable.
+
+### Expected
+
+The class's and the method's type variables in scope, at every type position (a field, a local, a parameter, a type argument, a bound).
+
+---
+
+## CQ-0071 — A type parameter's second bound offers classes
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion after `&` in a type parameter's bounds, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Box<T extends Number & Str§> {}` offers `String`, `StringBuilder` and other classes; Java allows only an interface after the first bound, so picking one does not compile.
+Every bound has the type-argument role of CQ-0066, which allows any reference type.
+
+### Expected
+
+Interfaces only after `&`; the first bound keeps any reference type.
+
+---
+
+## CQ-0072 — With an empty prefix, a type argument's completion list is marked complete
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion invoked right after `<` and then narrowed by typing, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In `class Test implements Comparable<§> {}`, the result is `isIncomplete: false`, while with a prefix (`Comparable<Str§>`) it is `true`.
+With no prefix, `TypeReferenceCompleter.completeSimpleNameTypeReference` does not query the type index, and the list it returns is marked complete.
+An LSP client may then narrow that list as the user types without asking again, so a type only the index has (`Duration`, typed as `Dur`) would not appear until completion is invoked again; not yet observed in an editor.
+
+### Expected
+
+An empty-prefix list that leaves the index out is marked incomplete, so typing asks the server again.
+
+---
+
+## CQ-0073 — A type declared in the file is not offered after `extends`, after `implements` or in a cast
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: type completion outside a statement and outside type arguments, for a type the workspace type index has not seen yet (a new or not yet compiled type), in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Test implements Lis§ {} interface Listener {}` offers nothing; `class Test extends Bas§ {} class Base {}` offers only `BaseVirtualThread`; `class Test { static class Inner {} Object o = (Inn§) null; }` offers nothing.
+At a field's type, `Inn§ x;` offers `Inner`: only statement-context type positions, constructors and (since CQ-0066) type arguments merge the file's own types.
+A compiled type reaches these positions through the type index, so the gap shows while the type is new.
+
+### Expected
+
+The file's own types at every type position, filtered by the position's role (interfaces after `implements`, extendable classes after `extends`).
+
+---
+
+## CQ-0074 — A local declared in a block that has closed is still offered
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion of simple names in a method body after a block, a loop or an `if` that declared locals, in the editor.**
+
+Found while fixing CQ-0067 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`void m() { { int hiddenLocal = 1; } hidden§ }` offers `hiddenLocal`; so do `for (int loopIdx = 0; …) {} loopI§` (`loopIdx`) and `if (b) { int ifLocal = 1; } ifLo§` (`ifLocal`).
+Picking one does not compile: the name is out of scope there.
+CQ-0067 left out the locals of a lambda, class or method that closed before the cursor; a plain block, a loop and an `if` are not checked the same way.
+
+### Expected
+
+Only the locals whose scope contains the cursor.
+
+---
+
+## CQ-0075 — A record's `toString`, `equals` and `hashCode` are not offered as override stubs
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: override completion in a record body, in the editor.**
+
+Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In a class body, `toS§` offers the `toString` override stub; in a record body (`record Test(int x) { toS§ }`) it offers nothing, nor `hashC§` the `hashCode` stub.
+A record has these methods implicitly, so they look like members it already declares; but a record may still declare them explicitly, and doing so is common.
+
+### Expected
+
+The `toString`, `equals` and `hashCode` stubs in a record body, as in a class body, unless the record already declares one explicitly.
+
+---
+
+## CQ-0076 — A record's instance member gets no name suggestion
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: completion of the name in a member declaration in a record body, in the editor.**
+
+Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`String §` suggests the name `string` in a class body, for a record's `static` member and for a local; in a record body (`record Test(int x) { String § }`) it suggests nothing.
+The member-stub parse of CQ-0065 takes the sentinel only as a stub's return type, and here it is the stub's name.
+
+### Expected
+
+The same name suggestion as in a class body.
+
+---
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
