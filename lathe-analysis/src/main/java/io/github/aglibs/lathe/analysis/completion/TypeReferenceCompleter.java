@@ -39,6 +39,12 @@ final class TypeReferenceCompleter {
   private static final Set<String> OTHER_MODIFIER_KEYWORDS =
       Set.of("static", "final", "abstract", "synchronized", "transient", "volatile");
 
+  private static final Set<TypeReferenceRole> SUPERTYPE_ROLES =
+      Set.of(
+          TypeReferenceRole.CLASS_EXTENDS,
+          TypeReferenceRole.CLASS_IMPLEMENTS,
+          TypeReferenceRole.INTERFACE_EXTENDS,
+          TypeReferenceRole.RECORD_IMPLEMENTS);
   private static final Set<CompletionItemKind> TYPE_KINDS =
       Set.of(CompletionItemKind.Class, CompletionItemKind.Interface, CompletionItemKind.Enum);
 
@@ -72,27 +78,28 @@ final class TypeReferenceCompleter {
         parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
             ? mergeLangTypes(injected.prefix(), req, typeIndexOutcome, parsed.typeReferenceRole())
             : typeIndexOutcome;
-    // A type argument may name a type of this file the index has not seen yet: the type being
-    // declared (Comparable<Self>) or a nested one.
+    // A type may name a type of this file the index has not seen yet: a new one, or the type being
+    // declared (Comparable<Self>).
     final boolean typeArgument =
         parsed.typeReferenceRole() == TypeReferenceRole.TYPE_ARGUMENT
             || parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT;
     final var withInFileTypes =
-        typeArgument
+        typeArgument || parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
             ? mergeInFileTypes(injected.prefix(), req, withLangTypes, parsed.typeReferenceRole())
             : withLangTypes;
+    final var validTypes = withoutInvalidSupertypes(withInFileTypes, parsed, req);
     final List<CompletionItem> typeVariables =
         typeVariableCandidates(parsed, injected.prefix()).stream()
             .map(CompletionItemPresenter::present)
             .toList();
     final var typeRefOutcome =
         typeVariables.isEmpty()
-            ? withInFileTypes
+            ? validTypes
             : mergeOutcomes(
                 typeVariables,
-                withoutHiddenTypes(withInFileTypes, parsed).items(),
-                withInFileTypes.freshAnalysis(),
-                withInFileTypes.incomplete());
+                withoutHiddenTypes(validTypes, parsed).items(),
+                validTypes.freshAnalysis(),
+                validTypes.incomplete());
     if (parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT) {
       final List<CompletionItem> primitives =
           KeywordProvider.primitiveCandidates(injected.prefix()).stream()
@@ -143,6 +150,142 @@ final class TypeReferenceCompleter {
         .filter(name -> name.startsWith(prefix))
         .map(CandidateFactory::typeParameterCandidate)
         .toList();
+  }
+
+  // javac rejects a type as a supertype of itself, of a type nested in it or of a subtype of it
+  // (cyclic inheritance), and a sealed type that does not permit the declaring type. Compared by
+  // qualified name, so a type of the same simple name elsewhere stays. A declaring type the last
+  // compile does not hold is new, so neither the file's types nor the index can hold it; before the
+  // file's first compile, only its name is known.
+  private static CompletionOutcome withoutInvalidSupertypes(
+      final CompletionOutcome outcome, final ParsedSentinel parsed, final CompletionRequest req) {
+    if (parsed.enclosingClass() == null || !SUPERTYPE_ROLES.contains(parsed.typeReferenceRole())) {
+      return outcome;
+    }
+
+    final var analysis = req.cached() != null ? req.cached().analysis() : null;
+    final TypeElement declaring =
+        analysis != null ? declaringTypeAt(analysis, req.cursorOffset(), parsed) : null;
+    if (analysis != null && declaring == null) {
+      return outcome;
+    }
+
+    final List<CompletionItem> items =
+        outcome.items().stream()
+            .filter(
+                item ->
+                    !TYPE_KINDS.contains(item.getKind())
+                        || (declaring != null
+                            ? validSupertype(item.getDetail(), declaring, analysis)
+                            : !item.getLabel().equals(parsed.enclosingClass())))
+            .toList();
+    return new CompletionOutcome(items, outcome.freshAnalysis(), outcome.incomplete());
+  }
+
+  private static boolean validSupertype(
+      final String qualifiedName,
+      final TypeElement declaring,
+      final AttributedFileAnalysis analysis) {
+    if (qualifiedName == null) {
+      return true;
+    }
+
+    final var declaringName = declaring.getQualifiedName().toString();
+    if (qualifiedName.equals(declaringName) || qualifiedName.startsWith(declaringName + ".")) {
+      return false;
+    }
+
+    final var supertype = analysis.elements().getTypeElement(qualifiedName);
+    if (supertype == null) {
+      return true;
+    }
+
+    return !withinSubtype(supertype, declaring, analysis)
+        && permits(supertype, declaring, analysis);
+  }
+
+  // A subtype of the declaring type, or a type nested in one, would close an inheritance cycle.
+  private static boolean withinSubtype(
+      final TypeElement candidate,
+      final TypeElement declaring,
+      final AttributedFileAnalysis analysis) {
+    final var types = analysis.types();
+    final var declaringType = types.erasure(declaring.asType());
+    for (Element element = candidate;
+        element instanceof final TypeElement type;
+        element = element.getEnclosingElement()) {
+      if (types.isSubtype(types.erasure(type.asType()), declaringType)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // A sealed type with no `permits` clause permits the types of its own file; a type with a tree
+  // in this analysis is one of this file's.
+  private static boolean permits(
+      final TypeElement supertype,
+      final TypeElement declaring,
+      final AttributedFileAnalysis analysis) {
+    if (!supertype.getModifiers().contains(Modifier.SEALED)) {
+      return true;
+    }
+
+    // javac forbids a local or anonymous class from extending a sealed type.
+    if (declaring.getNestingKind() == NestingKind.LOCAL
+        || declaring.getNestingKind() == NestingKind.ANONYMOUS) {
+      return false;
+    }
+
+    final var tree = analysis.trees().getTree(supertype);
+    if (tree != null && tree.getPermitsClause().isEmpty()) {
+      return true;
+    }
+
+    for (final TypeMirror permitted : supertype.getPermittedSubclasses()) {
+      if (analysis.types().asElement(permitted) instanceof final TypeElement permittedType
+          && permittedType.getQualifiedName().contentEquals(declaring.getQualifiedName())) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // The analysis is the file's last compile, which may predate the text at the cursor: a nested
+  // type just typed is not in it, and the class around it would be taken for the declaring one.
+  // So the class found must carry the name the current parse gives, or it is not trusted.
+  private static TypeElement declaringTypeAt(
+      final AttributedFileAnalysis analysis, final int offset, final ParsedSentinel parsed) {
+    if (analysis.tree() == null) {
+      return null;
+    }
+
+    final var positions = analysis.trees().getSourcePositions();
+    final var found = new ArrayList<TypeElement>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree node, final Void unused) {
+        final long start = positions.getStartPosition(analysis.tree(), node);
+        final long end = positions.getEndPosition(analysis.tree(), node);
+        if (start > offset || end < offset) {
+          return null;
+        }
+
+        if (analysis.trees().getElement(getCurrentPath()) instanceof final TypeElement type) {
+          found.add(type);
+        }
+
+        return super.visitClass(node, unused);
+      }
+    }.scan(analysis.tree(), null);
+    if (found.isEmpty()) {
+      return null;
+    }
+
+    final TypeElement innermost = found.get(found.size() - 1);
+    return innermost.getSimpleName().contentEquals(parsed.enclosingClass()) ? innermost : null;
   }
 
   CompletionOutcome completeConstructorTypeReference(
@@ -445,6 +588,9 @@ final class TypeReferenceCompleter {
             && !te.getSimpleName().isEmpty()
             && te.getSimpleName().toString().startsWith(prefix)
             && (te.getNestingKind() != NestingKind.LOCAL || isLocalInScope(te, scope))
+            && (scope == null
+                || scope.getEnclosingClass() == null
+                || analysis.trees().isAccessible(scope, te))
             && typeReferenceRoleAllows(te, analysis, scope, role)) {
           result.add(CandidateFactory.typeElementCandidate(te, names));
         }
