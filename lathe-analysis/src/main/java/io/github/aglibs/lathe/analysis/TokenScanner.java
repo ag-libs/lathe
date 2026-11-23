@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
@@ -235,7 +236,7 @@ public final class TokenScanner extends WrittenSourceScanner {
   @Override
   public Void visitIdentifier(final IdentifierTree node, final Void ignored) {
     final var name = node.getName().toString();
-    if (name.equals("this") || name.equals("super")) {
+    if (SourceVersion.isKeyword(name)) {
       return null;
     }
     final var element = trees.getElement(getCurrentPath());
@@ -248,12 +249,18 @@ public final class TokenScanner extends WrittenSourceScanner {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
+    final var name = node.getIdentifier().toString();
+    // javac models a class literal's `class`, `Outer.this` and `Outer.super` as fields named after
+    // the keyword; the keyword is no field, and keeps the editor's keyword colour.
+    if (SourceVersion.isKeyword(name)) {
+      return null;
+    }
+
     // The exact element of this selector — not CursorElements.elementAt, which climbs a package
     // qualifier up to the enclosing type and would mislabel `java.util` in `java.util.List` as a
     // type. A package selector resolves to a PACKAGE here and emits no token.
     final var element = trees.getElement(getCurrentPath());
     if (element != null) {
-      final var name = node.getIdentifier().toString();
       emitReference(element, positions.getEndPosition(cu, node) - name.length(), name);
     }
     return null;

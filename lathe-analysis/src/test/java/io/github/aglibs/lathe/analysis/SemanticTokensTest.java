@@ -254,6 +254,47 @@ class SemanticTokensTest extends SampleFixture {
             t -> assertThat(t.modifiers()).contains("readonly"));
   }
 
+  // A class literal's `class`, `Outer.this` and `Outer.super` are keywords javac models as fields:
+  // they get no token, while the type before them and a real field or method after them do.
+  @Test
+  void memberSelect_keywordMember_noToken() throws IOException {
+    final var source =
+        """
+        import java.util.Map;
+        class Outer {
+          int count;
+          class Inner {
+            Object a = Map.class;
+            Object b = Map.Entry.class;
+            int c = Outer.this.count;
+            String d = Outer.super.toString();
+          }
+        }
+        """;
+    final List<SemanticToken> toks = TokenScannerTestHelper.scanFile(tmp, "Outer.java", source);
+
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 4, 19)).as("Map.class").isNull();
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 5, 25)).as("Map.Entry.class").isNull();
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 6, 18)).as("Outer.this").isNull();
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 7, 21)).as("Outer.super").isNull();
+
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 4, 15))
+        .extracting(SemanticToken::type)
+        .isEqualTo("interface");
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 5, 19))
+        .extracting(SemanticToken::type)
+        .isEqualTo("interface");
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 6, 12))
+        .extracting(SemanticToken::type)
+        .isEqualTo("class");
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 6, 23))
+        .extracting(SemanticToken::type)
+        .isEqualTo("property");
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 7, 27))
+        .extracting(SemanticToken::type)
+        .isEqualTo("method");
+  }
+
   // A declaration token lands on the name, not on the same word in an annotation string before it.
   @Test
   void declaration_nameRepeatedInItsAnnotation_tokenOnTheName() throws IOException {
