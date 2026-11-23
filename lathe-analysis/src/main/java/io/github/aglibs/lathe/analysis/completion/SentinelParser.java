@@ -8,9 +8,12 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.CompilerTrees;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
 
 final class SentinelParser {
@@ -220,6 +223,9 @@ final class SentinelParser {
             && v.getModifiers().getFlags().contains(Modifier.STATIC)
             && v.getModifiers().getFlags().contains(Modifier.FINAL);
 
+    final List<String> typeVariables =
+        acceptsTypeVariable(cls, sentinelPath) ? typeVariablesInScope(sentinelPath) : List.of();
+
     final var parsed =
         ParsedSentinel.valid(
             injected,
@@ -243,11 +249,147 @@ final class SentinelParser {
             cls.inExpression(),
             catchParameter,
             constantField,
+            typeVariables,
             null,
             version);
 
     logValid(parsed);
     return parsed;
+  }
+
+  // A type variable is a type, never a value: it may stand where a type is written, or start a
+  // statement that becomes a declaration (`T value`), but not before `.class` or a member, in
+  // `instanceof`, after `new`, as a supertype, permitted subclass or annotation, or as a catch
+  // parameter's type. Nor after `throws`, where only one bounded by Throwable may, which the parse
+  // cannot tell.
+  private static boolean acceptsTypeVariable(final Classification cls, final TreePath sentinel) {
+    if (cls.context() == SentinelContext.TYPE_REFERENCE) {
+      return switch (cls.typeReferenceRole()) {
+        case ORDINARY ->
+            !(catchParameterType(sentinel) || patternType(sentinel) || permittedSubclass(sentinel));
+        case TYPE_ARGUMENT, ARRAY_TYPE_ARGUMENT -> true;
+        case CONSTRUCTOR,
+            CLASS_EXTENDS,
+            CLASS_IMPLEMENTS,
+            INTERFACE_EXTENDS,
+            RECORD_IMPLEMENTS,
+            THROWS,
+            ANNOTATION ->
+            false;
+      };
+    }
+
+    if (cls.context() != SentinelContext.SIMPLE_NAME) {
+      return false;
+    }
+
+    // A name alone is no statement: javac's recovery wraps it in an erroneous tree.
+    TreePath statement = sentinel.getParentPath();
+    if (statement != null && statement.getLeaf() instanceof ErroneousTree) {
+      statement = statement.getParentPath();
+    }
+
+    // Only a statement of a block or of a `case 1:` group can become a declaration; a switch
+    // rule's or an unbraced `if`'s body cannot.
+    if (statement == null
+        || !(statement.getLeaf() instanceof ExpressionStatementTree)
+        || statement.getParentPath() == null) {
+      return false;
+    }
+
+    final Tree container = statement.getParentPath().getLeaf();
+    return container instanceof BlockTree
+        || container instanceof final CaseTree group
+            && group.getCaseKind() == CaseTree.CaseKind.STATEMENT;
+  }
+
+  // In `catch (A | B e)` each alternative's parent is the union type, not the parameter.
+  private static boolean catchParameterType(final TreePath sentinel) {
+    TreePath parameter = sentinel.getParentPath();
+    if (parameter != null && parameter.getLeaf() instanceof UnionTypeTree) {
+      parameter = parameter.getParentPath();
+    }
+
+    return parameter != null
+        && parameter.getLeaf() instanceof VariableTree
+        && parameter.getParentPath() != null
+        && parameter.getParentPath().getLeaf() instanceof CatchTree;
+  }
+
+  private static boolean patternType(final TreePath sentinel) {
+    final TreePath binding = sentinel.getParentPath();
+    return binding != null
+        && binding.getLeaf() instanceof VariableTree
+        && binding.getParentPath() != null
+        && binding.getParentPath().getLeaf() instanceof BindingPatternTree;
+  }
+
+  private static boolean permittedSubclass(final TreePath sentinel) {
+    final TreePath owner = sentinel.getParentPath();
+    return owner != null
+        && owner.getLeaf() instanceof final ClassTree type
+        && type.getPermitsClause().stream().anyMatch(t -> t == sentinel.getLeaf());
+  }
+
+  // Innermost first, so a method's or an inner class's type variable hides an outer one of the
+  // same name. A static method, field or initializer hides its class's, and every field of an
+  // interface is static; a type that is static, which every interface, enum and record is, sees
+  // none declared around it.
+  private static List<String> typeVariablesInScope(final TreePath sentinel) {
+    final var names = new LinkedHashSet<String>();
+    boolean classVariablesVisible = true;
+    for (TreePath path = sentinel; path != null; path = path.getParentPath()) {
+      final Tree node = path.getLeaf();
+      if (node instanceof final MethodTree method) {
+        addNames(method.getTypeParameters(), names);
+        classVariablesVisible &= !method.getModifiers().getFlags().contains(Modifier.STATIC);
+      } else if (node instanceof final VariableTree field) {
+        classVariablesVisible &= !staticField(field, path.getParentPath());
+      } else if (node instanceof final BlockTree block) {
+        classVariablesVisible &= !block.isStatic();
+      } else if (node instanceof final ClassTree type) {
+        if (classVariablesVisible) {
+          addNames(type.getTypeParameters(), names);
+        }
+
+        if (!seesEnclosingTypeVariables(type, path.getParentPath())) {
+          break;
+        }
+      }
+    }
+
+    return List.copyOf(names);
+  }
+
+  // A member start in an interface (`T|` before `get();`) parses as a field with no name; a field
+  // whose type is a type variable is never legal there, so it is a method's return type, which is
+  // not static.
+  private static boolean staticField(final VariableTree field, final TreePath owner) {
+    return field.getModifiers().getFlags().contains(Modifier.STATIC)
+        || SourceVersion.isIdentifier(field.getName())
+            && owner != null
+            && owner.getLeaf() instanceof final ClassTree type
+            && (type.getKind() == Tree.Kind.INTERFACE
+                || type.getKind() == Tree.Kind.ANNOTATION_TYPE);
+  }
+
+  private static void addNames(
+      final List<? extends TypeParameterTree> typeParameters, final LinkedHashSet<String> names) {
+    for (final TypeParameterTree typeParameter : typeParameters) {
+      names.add(typeParameter.getName().toString());
+    }
+  }
+
+  // An inner class (a member class not static, a local or an anonymous class) sees the type
+  // variables around it; a member of an interface is static as an interface, enum or record is.
+  private static boolean seesEnclosingTypeVariables(final ClassTree type, final TreePath parent) {
+    return type.getKind() == Tree.Kind.CLASS
+        && !type.getModifiers().getFlags().contains(Modifier.STATIC)
+        && parent != null
+        && !(parent.getLeaf() instanceof CompilationUnitTree)
+        && !(parent.getLeaf() instanceof final ClassTree owner
+            && (owner.getKind() == Tree.Kind.INTERFACE
+                || owner.getKind() == Tree.Kind.ANNOTATION_TYPE));
   }
 
   private static void logValid(final ParsedSentinel parsed) {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 // The text fallback resolveReceiver takes when the snapshot's tree has no receiver at the
@@ -83,6 +84,7 @@ class ReceiverResolverTest {
             false,
             false,
             false,
+            List.of(),
             null,
             1);
     return ReceiverResolver.resolveReceiver(sentinel, CURSOR_LINE, snapshot);

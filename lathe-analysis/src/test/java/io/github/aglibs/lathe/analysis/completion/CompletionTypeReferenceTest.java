@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeReferenceTest extends CompletionTestSupport {
@@ -273,6 +274,65 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
   @Test
   void typeParameterName_declaredName_offersNothing() {
     assertThat(labels(fixture.complete("class Box<T§ extends Number> {}"))).isEmpty();
+  }
+
+  // A class's and a method's type variables are types wherever a type is written, at the start of
+  // a statement that becomes a declaration, and in an anonymous class within the method.
+  @Test
+  void typeVariable_inScope_suggestedAsType() {
+    assertThat(fixture.complete("class Box<Item> { It§ x; }"))
+        .anySatisfy(
+            item -> {
+              assertThat(item.getLabel()).isEqualTo("Item");
+              assertThat(item.getKind()).isEqualTo(CompletionItemKind.TypeParameter);
+            });
+    for (final String source :
+        List.of(
+            "class Box<Item> { void m() { It§ } }",
+            "class Box<Item> { void m(int x) { switch (x) { case 1: It§ } } }",
+            "class Box<Item> { void m(It§ p) {} }",
+            "class Box<Item> { Object m(Object o) { return (It§) o; } }",
+            "class Box<Item> { java.util.List<It§> items; }",
+            "record Box<Item>(It§ a) {}",
+            "class Box { <Item> void m() { new Object() { It§ x; }; } }",
+            "interface Box<Item> { It§ get(); }")) {
+      assertThat(labels(fixture.complete(source))).as(source).contains("Item");
+    }
+  }
+
+  // A static member or nested type does not see the class's type variables, an interface's field
+  // being static, nor does a local record see its method's. A type variable is no value, so
+  // expressions and `new` leave it out, and neither a catch parameter, `throws`, a pattern, a
+  // `permits` clause nor a switch rule's body can take one. It hides an outer type variable or a
+  // type of the same name.
+  @Test
+  void typeVariable_staticContextOrExpression_notSuggested() {
+    for (final String source :
+        List.of(
+            "class Box<Item> { static It§ x; }",
+            "class Box<Item> { static void m() { It§ x; } }",
+            "class Box<Item> { static class Inner { It§ x; } }",
+            "class Box { <Item> void m() { record R() { static It§ x; } } }",
+            "interface Box<Item> { It§ x = null; }",
+            "class Box<Item> { Object m() { return It§.class; } }",
+            "class Box<Item> { boolean m(Object o) { return o instanceof It§; } }",
+            "class Box<Item> { void m() { Object o = It§ } }",
+            "class Box<Item> { Object m() { return new It§ } }",
+            "class Box<Item> { void m() { try {} catch (It§ e) {} } }",
+            "class Box { <Item extends Exception> void m() throws It§ {} }",
+            "class Box<Item> { void m(Object o) { if (o instanceof It§ i) {} } }",
+            "sealed class Box<Item> permits It§ {}",
+            "class Box<Item> { void m(int x) { switch (x) { case 1 -> It§; } } }")) {
+      assertThat(labels(fixture.complete(source))).as(source).doesNotContain("Item");
+    }
+
+    assertThat(labels(fixture.complete("class Box<Item> { <Item> void m() { It§ x; } }")))
+        .containsOnlyOnce("Item");
+    assertThat(fixture.complete("class Box<String> { Str§ x; }"))
+        .filteredOn(item -> item.getLabel().equals("String"))
+        .singleElement()
+        .extracting(CompletionItem::getKind)
+        .isEqualTo(CompletionItemKind.TypeParameter);
   }
 
   // ── simple name ───────────────────────────────────────────────────────────────

@@ -104,6 +104,12 @@ final class CandidateFactory {
         importEditFor(names, el));
   }
 
+  // A type variable is named, never imported or qualified.
+  static CompletionCandidate typeParameterCandidate(final String name) {
+    return new CompletionCandidate(
+        name, name, CandidateKind.TYPE_PARAMETER, null, name, false, null, null, null, null);
+  }
+
   private static CandidateKind kindForElement(final ElementKind kind) {
     return switch (kind) {
       case INTERFACE, ANNOTATION_TYPE -> CandidateKind.TYPE_INTERFACE;

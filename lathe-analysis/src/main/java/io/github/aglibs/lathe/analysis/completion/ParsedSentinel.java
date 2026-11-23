@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis.completion;
 
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.List;
 
 record ParsedSentinel(
     boolean valid,
@@ -26,6 +27,9 @@ record ParsedSentinel(
     boolean inExpression,
     boolean catchParameter,
     boolean constantField,
+    // The type variables a type written at the cursor may name, innermost first; empty where no
+    // type variable can stand (an expression, a supertype, after `new`).
+    List<String> typeVariables,
     ModuleDirectiveKind directiveKeyword,
     int docVersion) {
 
@@ -35,6 +39,7 @@ record ParsedSentinel(
         .nullOrNotEmpty(receiverText, "receiverText")
         .when(valid, v -> v.notNull(sentinelContext, "sentinelContext"))
         .notNull(typeReferenceRole, "typeReferenceRole")
+        .notNull(typeVariables, "typeVariables")
         .when(
             !valid,
             v ->
@@ -42,6 +47,7 @@ record ParsedSentinel(
                     .isNull(enclosingClass, "enclosingClass")
                     .isNull(enclosingMethod, "enclosingMethod"))
         .validate();
+    typeVariables = List.copyOf(typeVariables);
   }
 
   static ParsedSentinel invalid(
@@ -70,6 +76,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        List.of(),
         null,
         docVersion);
   }
@@ -103,6 +110,7 @@ record ParsedSentinel(
         false,
         false,
         false,
+        List.of(),
         directiveKeyword,
         docVersion);
   }
@@ -129,6 +137,7 @@ record ParsedSentinel(
       final boolean inExpression,
       final boolean catchParameter,
       final boolean constantField,
+      final List<String> typeVariables,
       final ModuleDirectiveKind directiveKeyword,
       final int docVersion) {
     return new ParsedSentinel(
@@ -155,6 +164,7 @@ record ParsedSentinel(
         inExpression,
         catchParameter,
         constantField,
+        typeVariables,
         directiveKeyword,
         docVersion);
   }
