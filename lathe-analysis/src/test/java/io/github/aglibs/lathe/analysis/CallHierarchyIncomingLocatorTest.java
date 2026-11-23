@@ -395,6 +395,59 @@ class CallHierarchyIncomingLocatorTest {
     }
   }
 
+  // EG-117: a call outside the methods of an anonymous or local class is credited to the method
+  // declaring the class, even where a method nested there creates it; one in a method of the class
+  // is that method's own. A named class's field initializer has no method to credit.
+  @Test
+  void searchIncomingCalls_callInAnAnonymousOrLocalClassInitializer_creditsTheMethodDeclaringIt() {
+    final String content =
+        """
+        class Pets {
+            static void name(String s) {}
+            Pets() { new Object() {{ name("Cow"); }}; }
+            Runnable nested() {
+                class Late { { name("Owl"); } }
+                return new Runnable() { public void run() { new Late(); } };
+            }
+            Object doubleBrace() { return new Object() {{ name("Dog"); }}; }
+            Object field() { return new Object() { final Runnable r = () -> name("Cat"); }; }
+            Object local() {
+                class Named { { name("Bird"); } }
+                return new Named();
+            }
+            Runnable method() { return new Runnable() { public void run() { name("Fish"); } }; }
+            final Object member = new Object() {{ name("Ant"); }};
+        }
+        """;
+    final var targetRequest = request(content, SampleFixture.posOf(content, "name(String", "name"));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
+
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyIncomingCall> calls =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  itemData(items.get(0)),
+                  Set.of())
+              .hits();
+
+      assertThat(calls)
+          .extracting(
+              call -> call.getFrom().getName(), call -> call.getFromRanges().get(0).getStart())
+          .containsExactlyInAnyOrder(
+              tuple("Pets", SampleFixture.posOf(content, "name(\"Cow", "name")),
+              tuple("nested", SampleFixture.posOf(content, "name(\"Owl", "name")),
+              tuple("doubleBrace", SampleFixture.posOf(content, "name(\"Dog", "name")),
+              tuple("field", SampleFixture.posOf(content, "name(\"Cat", "name")),
+              tuple("local", SampleFixture.posOf(content, "name(\"Bird", "name")),
+              tuple("run", SampleFixture.posOf(content, "name(\"Fish", "name")));
+    }
+  }
+
   private static CallHierarchyItemData itemData(final CallHierarchyItem item) {
     return CallHierarchyItemDataCodec.decode(item.getData());
   }

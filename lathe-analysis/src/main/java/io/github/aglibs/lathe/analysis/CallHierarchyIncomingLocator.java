@@ -22,6 +22,7 @@ import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -233,8 +234,19 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     callerRanges.computeIfAbsent(callerElement, k -> new ArrayList<>()).add(callSite);
   }
 
-  private static TreePath enclosingMethod(final TreePath path) {
-    return TreePaths.nearest(path.getParentPath(), MethodTree.class, TreePaths::isMemberBoundary);
+  // The method or constructor a call runs in. One outside the methods of an anonymous or local
+  // class (in an initializer block, a field's initializer) is credited to the method declaring the
+  // class, as a call in a lambda is: that is where an anonymous class is created, and where a local
+  // one mostly is, though a method nested there may create it too.
+  private TreePath enclosingMethod(final TreePath path) {
+    return TreePaths.nearest(
+        path.getParentPath(),
+        MethodTree.class,
+        current ->
+            current.getLeaf() instanceof ClassTree
+                && !(trees.getElement(current) instanceof final TypeElement type
+                    && (type.getNestingKind() == NestingKind.ANONYMOUS
+                        || type.getNestingKind() == NestingKind.LOCAL)));
   }
 
   private List<CallHierarchyIncomingCall> buildResults(final String fileUri) {
