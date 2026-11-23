@@ -804,33 +804,6 @@ None yet.
 
 ---
 
-## EG-119 — Workspace symbol initials do not match a nested type
-
-**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: workspace symbol search in the editor and through MCP.**
-
-Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
-
-### Observed behaviour
-
-`PCFHE` and `ProcCreFormHasErr` find nothing, while `ProcessCreationForm` finds `ProcessCreationFormHasErrors`, a `@Nested` class in `PetControllerTests`.
-Top-level types match by initials and humps (`OCT` finds `OwnerControllerTests`, `PTF` `PetTypeFormatter`, `VC` the controllers), as EG-005 made them; jdtls matches the nested type too.
-
-### Fix direction
-
-Run EG-005's CamelCase matching over nested types as well as top-level ones.
-
-### Regression targets
-
-None yet.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.

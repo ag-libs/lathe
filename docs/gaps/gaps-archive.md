@@ -7,6 +7,38 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-119 — Workspace symbol initials do not match a nested type — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: workspace symbol search in the editor and through MCP.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+`PCFHE` and `ProcCreFormHasErr` find nothing, while `ProcessCreationForm` finds `ProcessCreationFormHasErrors`, a `@Nested` class in `PetControllerTests`.
+Top-level types match by initials and humps (`OCT` finds `OwnerControllerTests`, `PTF` `PetTypeFormatter`, `VC` the controllers), as EG-005 made them; jdtls matches the nested type too.
+
+### Fix direction
+
+Run EG-005's CamelCase matching over nested types as well as top-level ones.
+
+### Resolution
+
+CamelCase matching read the completion and import map, which holds reactor types only when they are top-level or public, so a package-private nested type such as a `@Nested` test class was never matched.
+It now matches every named reactor type, nested and package-private ones among them (anonymous and local classes have no name to match), and lists the top-level ones first, so nested types cannot crowd them out of the capped list; workspace symbol search is its only caller.
+
+### Regression targets
+
+- `WorkspaceTypeIndexTest.searchCamelCase_packagePrivateNestedType_findsItByItsHumps`
+
+---
+
 ## EG-118 — Type hierarchy with the cursor on a member answers nothing — done
 
 **Status: done** (2026-11-23)
