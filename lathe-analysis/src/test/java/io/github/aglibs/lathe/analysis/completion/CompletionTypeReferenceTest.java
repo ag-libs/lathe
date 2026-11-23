@@ -222,6 +222,38 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
             labels(
                 fixture.complete("class Test { static class Inner {} java.util.List<Inn§> x; }")))
         .contains("Inner");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "class Test { Object m() { return java.util.Collections.<Str§>emptyList(); } }")))
+        .contains("String");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        static class Inner {}
+                        <T> T id(T t) { return t; }
+                        Object m() { return this.<Inn§>id(null); }
+                    }""")))
+        .contains("Inner");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "class Test { static class Foo { <T> Foo() {} } Object m() { return new"
+                        + " <Str§>Foo(); } }")))
+        .contains("String");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "class Test { java.util.function.Function<Object, String> f ="
+                        + " String::<Str§>valueOf; }")))
+        .contains("String");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "class Test<P> { Object m() { return java.util.Collections.<P§>emptyList(); } }")))
+        .contains("P");
   }
 
   // None of those positions can hold a keyword, a primitive or a member declaration.
@@ -234,11 +266,15 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
             "class Test { java.util.List<i§> x; }",
             "class Test { void m() { java.util.List<i§> x; } }",
             "class Test { java.util.List<? extends i§> x; }",
-            "class Box<T extends i§> {}")) {
+            "class Box<T extends i§> {}",
+            "class Test { Object m() { return java.util.Collections.<i§>emptyList(); } }",
+            "class Test { <T> T id(T t) { return t; } Object m() { return this.<i§>id(null); } }",
+            "class Test { static class Foo { <T> Foo() {} } Object m() { return new <i§>Foo(); } }",
+            "class Test { java.util.function.Function<Object, String> f = String::<i§>valueOf; }")) {
       assertThat(labels(fixture.complete(source)))
           .as(source)
           .contains("Integer")
-          .doesNotContain("int", "interface");
+          .doesNotContain("int", "interface", "if", "instanceof");
     }
 
     final List<CompletionItem> headerItems =
