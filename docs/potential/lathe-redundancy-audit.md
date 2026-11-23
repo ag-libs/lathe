@@ -14,6 +14,8 @@ Several production items revisit CR-208, CR-210, CR-211, CR-212, and CR-218 from
 
 ### Apply the call hierarchy result cap before reading snippets
 
+Tracked as [MC-104](../gaps/gaps.md#mc-104--call_hierarchy-reads-a-snippet-for-every-call-site-then-keeps-only-maxresults-of-them).
+
 For each incoming or outgoing call site, `LatheEngine` constructs a location with a snippet, which reads the whole source file through `Files.readAllLines`.
 Only after constructing every location does it apply `maxResults`.
 With 500 sites and a cap of ten, that path can read files 500 times to return ten snippets. [Call collection and cap](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/LatheEngine.java#L1067) · [Source line read](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/LatheEngine.java#L464)
