@@ -128,6 +128,86 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
         .doesNotContain("duration", "local");
   }
 
+  // A block, a loop, an `if` or a `catch` that closed before the cursor takes its locals with it.
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "{ int hidden = 1; } hid§",
+        "for (int hidden = 0; hidden < 3; hidden++) {} hid§",
+        "for (String hidden : args) {} hid§",
+        "if (args.length > 0) { int hidden = 1; } hid§",
+        "try { } catch (RuntimeException hidden) { } hid§",
+        "{ { int hidden = 1; } int y = hid§; }"
+      })
+  void simpleName_afterClosedBlock_itsLocalsAreNotVisible(final String body) {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(String[] args) {
+                            %s
+                        }
+                    }"""
+                        .formatted(body))))
+        .doesNotContain("hidden");
+  }
+
+  // A local of an old-style switch's earlier case and a local a pattern introduces after its
+  // statement stay visible; and with a snapshot that predates the typed name, whose `}` of the
+  // cursor's own block lies before the cursor, so do the block's.
+  @Test
+  void simpleName_insideOpenBlock_itsLocalsStayVisible() {
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        void m(int k) {
+                            switch (k) {
+                                case 1: int early = 1; break;
+                                case 2: early = 2; int x = ear§;
+                            }
+                        }
+                    }""")))
+        .contains("early");
+    assertThat(
+            labels(
+                fixture.complete(
+                    """
+                    class Test {
+                        int m(Object o) {
+                            if (!(o instanceof String text)) { return 0; }
+                            return te§;
+                        }
+                    }""")))
+        .contains("text");
+    final var source =
+        """
+        class Test {
+            void m() {
+                for (int loopIdx = 0; loopIdx < 3; loopIdx++) {%s}
+            }
+        }""";
+    assertThat(labels(fixture.completeWithCache(source.formatted(""), source.formatted("loopI§"))))
+        .contains("loopIdx");
+    final var edited =
+        """
+        class Test {
+            void m() {
+                int first = %s;
+                int count = 2;
+                int y = %s;
+                int last = %s;
+            }
+        }""";
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    edited.formatted("1", "0", "3"), edited.formatted("10", "cou§", "30"))))
+        .contains("count");
+  }
+
   @Test
   void simpleName_uppercasePrefix_inRecoveredStatementsIncludesVisibleValuesAndTypes()
       throws Exception {
