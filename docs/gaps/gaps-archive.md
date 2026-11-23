@@ -4580,6 +4580,52 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0073 — A type declared in the file is not offered after `extends`, after `implements` or in a cast — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: type completion outside a statement and outside type arguments, for a type the workspace type index has not seen yet (a new or not yet compiled type), in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Test implements Lis§ {} interface Listener {}` offers nothing; `class Test extends Bas§ {} class Base {}` offers only `BaseVirtualThread`; `class Test { static class Inner {} Object o = (Inn§) null; }` offers nothing.
+At a field's type, `Inn§ x;` offers `Inner`: only statement-context type positions, constructors and (since CQ-0066) type arguments merge the file's own types.
+A compiled type reaches these positions through the type index, so the gap shows while the type is new.
+
+### Expected
+
+The file's own types at every type position, filtered by the position's role (interfaces after `implements`, extendable classes after `extends`).
+
+### Fix
+
+The gap was wider than filed: a method parameter's type, a record component's, a lambda parameter's and `throws` missed the file's own types too, while a field's, a local's and a return type had them.
+Those positions complete through the mixed simple-name path, which merges the file's types; the others go to `TypeReferenceCompleter.completeTypeReference`, which merged them only in a type argument (CQ-0066).
+It now merges them at every type reference, as it does `java.lang`'s, filtered by the position's role as before: interfaces after `implements`, a class that is not final after `extends`, a `Throwable` after `throws`.
+After `extends` or `implements`, javac rejects the type being declared, any type nested in it, and any subtype of it or type nested in one (cyclic inheritance), and a sealed type that does not permit it, so those are left out, from the file and from the type index alike.
+They are compared by qualified name, so a type of the same simple name elsewhere stays.
+The declaring type is taken from the file's last compile only when it carries the name the current parse gives: that compile may predate a type just typed, which then cannot be in the file's types or the index yet; before the file's first compile, only the name is known.
+A sealed type of this file with no `permits` clause permits this file's types, but no local class.
+A private type of another class, out of reach at most of these positions, is left out too.
+
+Checked in the editor on Dropwizard's `CachingAuthorizer`, with a new nested type on the same line: a parameter's type, a cast, `implements` and `extends` each offer the new type (on `main`, nothing).
+
+Left as they are, both rare:
+
+- a local class, or a member of one, offered as a supertype is not checked for a cycle or a sealed type, as its qualified name cannot be looked up;
+- the access check uses the scope of the file's last compile at the cursor, which edits that move the text across top-level classes can shift into another one.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.inFileType_anyTypePosition_suggested`
+- `CompletionTypeReferenceTest.inFileType_invalidAtPosition_notSuggested`
+- `CompletionTypeReferenceTest.inFileType_supertypeOfNewNestedType_suggestedFromStaleCompile`
+
+---
+
 ## CQ-0076 — A record's instance member gets no name suggestion — done
 
 **Status: done** (2026-11-23)

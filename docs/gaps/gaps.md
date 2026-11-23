@@ -1302,28 +1302,6 @@ An empty-prefix list that leaves the index out is marked incomplete, so typing a
 
 ---
 
-## CQ-0073 — A type declared in the file is not offered after `extends`, after `implements` or in a cast
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: type completion outside a statement and outside type arguments, for a type the workspace type index has not seen yet (a new or not yet compiled type), in the editor.**
-
-Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-`class Test implements Lis§ {} interface Listener {}` offers nothing; `class Test extends Bas§ {} class Base {}` offers only `BaseVirtualThread`; `class Test { static class Inner {} Object o = (Inn§) null; }` offers nothing.
-At a field's type, `Inn§ x;` offers `Inner`: only statement-context type positions, constructors and (since CQ-0066) type arguments merge the file's own types.
-A compiled type reaches these positions through the type index, so the gap shows while the type is new.
-
-### Expected
-
-The file's own types at every type position, filtered by the position's role (interfaces after `implements`, extendable classes after `extends`).
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
