@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -13,6 +14,8 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class TypeHierarchyTest {
 
@@ -123,16 +126,50 @@ class TypeHierarchyTest {
     }
   }
 
-  @Test
-  void prepareTypeHierarchy_methodCursor_returnsEmpty() {
-    final String content = "class Service { void execute() {} }\n";
-    final var request = request(content, new Position(0, 22));
+  private static final String BASE = "class Base { int id; int getId() { return id; } }\n";
+  private static final String SHOP =
+      """
+      class Shop extends Base {
+          void sell(Base other) {
+              int count = other.getId();
+              Runnable r = new Runnable() { public void run() {} };
+              System.out.println("hi" + other.toString());
+          }
+      }
+      """;
+
+  // EG-118. A literal in a call's arguments is about the class it is in, not the called method's;
+  // an anonymous class and Object, neither of them a hierarchy to show, give way to that class.
+  @ParameterizedTest
+  @CsvSource({
+    "int getId(, getId, Base",
+    "int id;, id, Base",
+    "other.getId(), getId, Base",
+    "int count, count, Shop",
+    "void run(), run, Shop",
+    "new Runnable() {, {, Shop",
+    "\"hi\" +, hi, Shop",
+    "other.toString(), toString, Shop",
+    "import java.util.List;, import, ''",
+  })
+  void prepareTypeHierarchy_cursorOffATypeName_preparesTheClassThePositionIsAbout(
+      final String snippet, final String token, final String expected) throws IOException {
+    write("Base.java", BASE);
+    write("Shop.java", SHOP);
+    final var content = "import java.util.List;\n%s%s".formatted(BASE, SHOP);
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                List.of(entry("Base", TypeKind.CLASS), entry("Shop", TypeKind.CLASS, "Base"))));
+    final var request = request(content, SampleFixture.posOf(content, snippet, token));
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      assertThat(session.hierarchy().prepareTypeHierarchy(request, WorkspaceTypeIndex.empty()))
-          .isEmpty();
+      assertThat(session.hierarchy().prepareTypeHierarchy(request, index))
+          .extracting(TypeHierarchyItem::getName)
+          .containsExactlyElementsOf(expected.isEmpty() ? List.of() : List.of(expected));
     }
   }
 

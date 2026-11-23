@@ -7,6 +7,41 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-118 — Type hierarchy with the cursor on a member answers nothing — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: type hierarchy in the editor, when the command runs with the cursor anywhere but on a type name.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+With the cursor on a method or a field name, such as `getId` in `BaseEntity` or `getName` in `NamedEntity`, `textDocument/prepareTypeHierarchy` answers nothing; on the class name it answers.
+jdtls answers with the hierarchy of the enclosing class (`NamedEntity`, `Person`, `Visit` for `BaseEntity`).
+28 of the run's 30 type-hierarchy misses were such positions, so an editor's type-hierarchy command finds nothing unless the cursor is on a type name.
+
+### Fix direction
+
+Prepare the hierarchy of the innermost type enclosing the position when the position is not on a type name, as jdtls does.
+
+### Resolution
+
+Off a type name, the hierarchy is now prepared for the type the position is about.
+On a member's own name, at its declaration or at a use, that is the member's declaring class (`getId` in `BaseEntity` gives `BaseEntity`, as does `owner.getId()` elsewhere); anywhere else, a literal or a keyword in a call's arguments among them, it is the class around the position.
+An anonymous or local class is not in the type index, so the named class around it stands for it; `Object` stands for no member's class (`x.toString()`), as its hierarchy is the whole index.
+A type name still prepares that type, and a position outside every class (an import, the package line) still answers nothing.
+
+### Regression targets
+
+- `TypeHierarchyTest.prepareTypeHierarchy_cursorOffATypeName_preparesTheClassThePositionIsAbout`
+
+---
+
 ## EG-120 — The `class` of a class literal is highlighted as a field — done
 
 **Status: done** (2026-11-23)

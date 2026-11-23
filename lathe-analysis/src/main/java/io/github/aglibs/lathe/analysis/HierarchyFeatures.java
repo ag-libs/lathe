@@ -1,13 +1,18 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.util.TreePath;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -36,18 +41,46 @@ public final class HierarchyFeatures {
   public List<TypeHierarchyItem> prepareTypeHierarchy(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
     final Optional<Cursor> at = session.cursor(request);
-    if (at.isEmpty()) {
+    if (at.isEmpty() || at.get().path() == null) {
       return List.of();
     }
 
     final Cursor cur = at.get();
-    final var element = CursorElements.elementAt(cur.analysis().trees(), cur.path());
-    if (!(element instanceof final TypeElement typeElement)) {
-      return List.of();
-    }
-
-    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    return typeHierarchyResolver.prepare(binaryName, typeIndex, request.typeSourceRoots());
+    final var trees = cur.analysis().trees();
+    // Off a type name, as jdtls answers: on a member's own name its declaring class, else the class
+    // around the position. Anonymous and local classes are not in the index, so the class around
+    // one stands for it, and Object stands for no member's class: its hierarchy is the whole index.
+    final Stream<Element> named =
+        Stream.ofNullable(CursorElements.elementAt(trees, cur.path()))
+            .filter(TypeElement.class::isInstance);
+    final Stream<Element> declaring =
+        Stream.ofNullable(trees.getElement(cur.path()))
+            .filter(member -> !(member instanceof TypeElement))
+            .map(Element::getEnclosingElement)
+            .filter(
+                owner ->
+                    !(owner instanceof final TypeElement type
+                        && type.getQualifiedName().contentEquals("java.lang.Object")));
+    final Stream<Element> enclosing =
+        Stream.iterate(cur.path(), Objects::nonNull, TreePath::getParentPath)
+            .filter(path -> path.getLeaf() instanceof ClassTree)
+            .map(trees::getElement);
+    return Stream.of(named, declaring, enclosing)
+        .flatMap(candidates -> candidates)
+        .filter(TypeElement.class::isInstance)
+        .map(TypeElement.class::cast)
+        .filter(
+            type ->
+                type.getNestingKind() != NestingKind.ANONYMOUS
+                    && type.getNestingKind() != NestingKind.LOCAL)
+        .findFirst()
+        .map(
+            type ->
+                typeHierarchyResolver.prepare(
+                    cur.analysis().elements().getBinaryName(type).toString(),
+                    typeIndex,
+                    request.typeSourceRoots()))
+        .orElse(List.of());
   }
 
   public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
