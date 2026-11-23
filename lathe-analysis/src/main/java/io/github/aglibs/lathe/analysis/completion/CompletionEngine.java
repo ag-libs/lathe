@@ -66,13 +66,23 @@ public final class CompletionEngine {
 
     final int version = req.cached() != null ? req.cached().version() : -1;
     final var initialParse = sentinelParser.parse(initial, req.pos().getLine(), version, req.uri());
-    final Optional<SentinelInjectionResult> stub =
+    final Optional<SentinelInjectionResult> typeStub =
         initialParse.valid() ? Optional.empty() : initial.asMemberStub();
-    final Optional<ParsedSentinel> stubParse =
-        stub.flatMap(memberStub -> parseMemberStub(memberStub, req, version));
+    final Optional<ParsedSentinel> typeStubParse =
+        typeStub.flatMap(stub -> parseMemberStub("type", stub, req, version));
+    // Where the member's name, not its type, is at the cursor, only the name stub keeps it.
+    final Optional<SentinelInjectionResult> nameStub =
+        typeStub.isEmpty() || typeStubParse.isPresent()
+            ? Optional.empty()
+            : initial.asMemberNameStub();
+    final Optional<ParsedSentinel> nameStubParse =
+        nameStub.flatMap(stub -> parseMemberStub("name", stub, req, version));
     // Everything after the parse reads the injection that was parsed.
-    final var injected = stubParse.isPresent() ? stub.orElseThrow() : initial;
-    final var parsed = stubParse.orElse(initialParse);
+    final var injected =
+        typeStubParse.isPresent()
+            ? typeStub.orElseThrow()
+            : nameStubParse.isPresent() ? nameStub.orElseThrow() : initial;
+    final var parsed = typeStubParse.or(() -> nameStubParse).orElse(initialParse);
     LOG.fine(
         () ->
             "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s| class=%s method=%s role=%s"
@@ -169,14 +179,17 @@ public final class CompletionEngine {
   // Parsed only where the first parse found no usable sentinel: a record body drops the member
   // start the injection read as an instance field (CQ-0065).
   private Optional<ParsedSentinel> parseMemberStub(
-      final SentinelInjectionResult stub, final CompletionRequest req, final int version) {
+      final String shape,
+      final SentinelInjectionResult stub,
+      final CompletionRequest req,
+      final int version) {
     final var timer = Stopwatch.start();
     final Optional<ParsedSentinel> parsed =
         sentinelParser.parseMemberStub(stub, req.pos().getLine(), version, req.uri());
     LOG.fine(
         () ->
-            "[completion] member stub %s found=%s %dms"
-                .formatted(req.uri(), parsed.isPresent(), timer.elapsedMs()));
+            "[completion] member stub %s %s found=%s %dms"
+                .formatted(req.uri(), shape, parsed.isPresent(), timer.elapsedMs()));
     return parsed;
   }
 

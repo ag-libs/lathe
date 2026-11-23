@@ -15,6 +15,7 @@ import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.type.TypeKind;
 
 final class SentinelParser {
 
@@ -35,15 +36,23 @@ final class SentinelParser {
         .parseContent(
             uri,
             injected.injectedContent(),
-            (trees, cu) -> findSentinel(trees, cu, injected, expectedLspLine, version, false))
+            (trees, cu) ->
+                findSentinel(
+                    trees,
+                    cu,
+                    new SentinelFinder().scan(cu, null),
+                    injected,
+                    expectedLspLine,
+                    version,
+                    false))
         .orElseGet(
             () -> ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version));
   }
 
   // A record body drops a member javac reads as an instance field, and the sentinel with it; as
-  // the member stub's return type it stays. Only a record's member position counts, so a stub that
-  // landed in a block, or in another type where the first parse failed for another reason, never
-  // answers.
+  // the member stub's return type, or as the name stub's method name, it stays. Only a record's
+  // member position counts, so a stub that landed in a block, or in another type where the first
+  // parse failed for another reason, never answers.
   Optional<ParsedSentinel> parseMemberStub(
       final SentinelInjectionResult stub,
       final int expectedLspLine,
@@ -61,37 +70,55 @@ final class SentinelParser {
       final SentinelInjectionResult stub,
       final int expectedLspLine,
       final int version) {
-    final var sentinelPath = new SentinelFinder().scan(cu, null);
-    if (sentinelPath == null || !isMemberStubReturnType(sentinelPath)) {
+    final TreePath returnTypePath = new SentinelFinder().scan(cu, null);
+    final TreePath sentinelPath =
+        returnTypePath != null ? returnTypePath : new MemberNameFinder().scan(cu, null);
+    if (sentinelPath == null || !isRecordMemberStub(sentinelPath)) {
       return null;
     }
 
-    final ParsedSentinel parsed = findSentinel(trees, cu, stub, expectedLspLine, version, true);
+    final ParsedSentinel parsed =
+        findSentinel(trees, cu, sentinelPath, stub, expectedLspLine, version, true);
     return parsed.valid() ? parsed : null;
   }
 
-  private static boolean isMemberStubReturnType(final TreePath sentinelPath) {
-    final TreePath methodPath = sentinelPath.getParentPath();
-    return methodPath != null
-        && methodPath.getLeaf() instanceof final MethodTree method
-        && method.getReturnType() == sentinelPath.getLeaf()
-        && SentinelInjector.MEMBER_STUB_NAME.contentEquals(method.getName())
+  private static boolean isRecordMemberStub(final TreePath sentinelPath) {
+    final boolean nameStub = sentinelPath.getLeaf() instanceof MethodTree;
+    final TreePath methodPath = nameStub ? sentinelPath : sentinelPath.getParentPath();
+    if (methodPath == null || !(methodPath.getLeaf() instanceof final MethodTree method)) {
+      return false;
+    }
+
+    final boolean stubbed =
+        nameStub
+            ? couldBeField(method)
+            : method.getReturnType() == sentinelPath.getLeaf()
+                && SentinelInjector.MEMBER_STUB_NAME.contentEquals(method.getName());
+    return stubbed
         && methodPath.getParentPath() != null
         && methodPath.getParentPath().getLeaf() instanceof final ClassTree owner
         && owner.getKind() == Tree.Kind.RECORD;
   }
 
-  // memberStub: the parse of SentinelInjectionResult.asMemberStub, whose stub method holds the
+  // After `void` or a type parameter the name can only be a method's, for which a class body offers
+  // no name either.
+  private static boolean couldBeField(final MethodTree method) {
+    return method.getReturnType() != null
+        && method.getTypeParameters().isEmpty()
+        && !(method.getReturnType() instanceof final PrimitiveTypeTree primitive
+            && primitive.getPrimitiveTypeKind() == TypeKind.VOID);
+  }
+
+  // memberStub: the parse of a SentinelInjectionResult member stub, whose stub method holds the
   // sentinel at a member start and so is no enclosing method.
   private static ParsedSentinel findSentinel(
       final Trees trees,
       final CompilationUnitTree cu,
+      final TreePath sentinelPath,
       final SentinelInjectionResult injected,
       final int expectedLspLine,
       final int version,
       final boolean memberStub) {
-
-    final var sentinelPath = new SentinelFinder().scan(cu, null);
     if (sentinelPath == null) {
       LOG.fine(() -> "[sentinel-parse] sentinel not found in parse tree");
       if (cu.getModule() != null) {
@@ -158,7 +185,9 @@ final class SentinelParser {
     for (final Tree node : sentinelPath) {
       if (node instanceof MethodTree m
           && enclosingMethod == null
-          && !(memberStub && SentinelInjector.MEMBER_STUB_NAME.contentEquals(m.getName()))) {
+          && !(memberStub
+              && (SentinelInjector.MEMBER_STUB_NAME.contentEquals(m.getName())
+                  || SentinelInjector.SENTINEL.contentEquals(m.getName())))) {
         enclosingMethod = m.getName().toString();
       } else if (node instanceof ClassTree c && !c.getSimpleName().isEmpty()) {
         // An anonymous class has no name: its enclosing named class is the one to complete in.
@@ -543,7 +572,12 @@ final class SentinelParser {
 
   private static Classification classifySentinel(final Tree sentinel, final TreePath parentPath) {
     if (sentinel instanceof VariableTree v) {
-      return classifyVariableDeclaration(v);
+      return classifyDeclaration(v.getType());
+    }
+
+    // The name stub's method: its name is the member's, its return type the member's type.
+    if (sentinel instanceof final MethodTree method) {
+      return classifyDeclaration(method.getReturnType());
     }
 
     if (sentinel instanceof MemberReferenceTree) {
@@ -666,8 +700,7 @@ final class SentinelParser {
     return classifyDefault(sentinel);
   }
 
-  private static Classification classifyVariableDeclaration(final VariableTree v) {
-    final var type = v.getType();
+  private static Classification classifyDeclaration(final Tree type) {
     // Treat an erroneous type as absent so the position is not flagged as a typed name slot.
     final boolean realType = type != null && type.getKind() != Tree.Kind.ERRONEOUS;
     return new Classification(
@@ -994,6 +1027,24 @@ final class SentinelParser {
 
   private static boolean containsSentinel(final Tree tree) {
     return tree != null && tree.toString().contains(SentinelInjector.SENTINEL);
+  }
+
+  // The name stub's method, which SentinelFinder does not look for: a method's name is no tree.
+  private static final class MemberNameFinder extends TreePathScanner<TreePath, Void> {
+
+    @Override
+    public TreePath visitMethod(final MethodTree node, final Void unused) {
+      if (SentinelInjector.SENTINEL.contentEquals(node.getName())) {
+        return getCurrentPath();
+      }
+
+      return super.visitMethod(node, unused);
+    }
+
+    @Override
+    public TreePath reduce(final TreePath r1, final TreePath r2) {
+      return r1 != null ? r1 : r2;
+    }
   }
 
   private static final class SentinelFinder extends TreePathScanner<TreePath, Void> {

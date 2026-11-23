@@ -7,9 +7,11 @@ final class SentinelInjector {
   static final String SENTINEL = "__LATHE_SENTINEL__";
   // Where the sentinel ends a statement, a member start reads as the field `SENTINEL;`, an
   // instance field javac's parser drops from a record body; as this method stub's return type
-  // the sentinel stays in every type body.
+  // the sentinel stays in every type body. Where the sentinel is the member's name (`String
+  // SENTINEL;`), only the name stub, a method the sentinel names, stays.
   static final String MEMBER_STUB_NAME = "__latheMember";
   static final String MEMBER_STUB = " %s() {}".formatted(MEMBER_STUB_NAME);
+  static final String MEMBER_NAME_STUB = "() {}";
 
   enum Context {
     STATEMENT,
