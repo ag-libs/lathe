@@ -4438,6 +4438,60 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0065 — In a record, a member's type completes only when the member is `static` — done
+
+**Status: done** (2026-11-22)
+
+**Kind: bug**
+
+**Affects: completion of the type at the start of a member declaration in a record body (top-level or nested), in the editor.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+In EqualsVerifier's nested record `PackageScanOptions.MustExtend`, with `St` typed:
+
+| Member typed in the record body | Items |
+|---|---|
+| `public static St probeStaticMethod() { return null; }` | 50 (`String`, `StringBuilder`, …) |
+| `static St` | 50 |
+| `public St probeMethod() { return null; }` (an instance method, legal in a record) | 0 |
+| `private St probeInstanceField;` | 0 |
+| `public St`, `St`, `St probe() { return null; }` | 0 each |
+| the same instance method in the enclosing class | 50 |
+
+The same in Helidon's records `Http2FrameData` (every member position, `Ht`, `St`, even the full `Http2FrameData`) and `CodegenScope` (`private static St` completes, a bare `St` does not).
+Inside a record's method body, locals complete as anywhere (`Ht[] local` offers `Http2FrameData` and 47 more).
+Instance methods in records (helpers, accessors written out) are common.
+
+
+### Fix
+
+Completion injects a sentinel name at the cursor, and at a member start `SentinelInjector` ends it with a semicolon: `St` becomes `__LATHE_SENTINEL__;` and `public St helper() {` becomes `public __LATHE_SENTINEL__; helper() {`, both an instance field to javac's parser.
+In a record body the parser drops a member it reads as an instance field ("field declaration must be static"), so the sentinel was not in the tree and completion answered nothing; `static` made it a static field, which a record keeps.
+Checked on javac's parse tree: in a record, `__LATHE_SENTINEL__;`, `public __LATHE_SENTINEL__; helper() {}` and `private __LATHE_SENTINEL__ f;` leave no sentinel, while `static __LATHE_SENTINEL__;` and `public __LATHE_SENTINEL__ helper() {}` keep it; in a class all five keep it.
+
+Where the injection adds that semicolon, it also records where, so the same text with the sentinel as the return type of a method stub (`__LATHE_SENTINEL__ __latheMember() {}`) can be built when needed.
+`CompletionEngine` parses the stub only when the first parse gave no usable sentinel, and `SentinelParser.parseMemberStub` takes it only where the stub is a member of a record body, so a stub that landed in a block or in another type never answers; everything after the parse reads the injection that was parsed.
+The stub is no enclosing method, so the slot keeps its class-body keywords and override stubs.
+The first parse is unchanged: positions that completed before parse exactly as they did.
+
+Checked in the editor with the fix: in Helidon's `Http2FrameData`, `public St`, `St` and `public Ht[] probeA(int size) { … }` complete (48 to 50 items, where they had none); in EqualsVerifier's `PackageScanOptions.MustExtend`, `public St probeMethod() { … }`, `St` and `public St` do; the `static` and class cases are unchanged.
+An instance field in a record (`Ht probeAfterMethod;`) still completes nothing: javac drops it as it would without the sentinel, and a record cannot declare one.
+A record's implicit `toString()`, `equals()` and `hashCode()` are not offered as override stubs, as members the record already has; the other overridable methods are.
+A member's name in a record (`String na`) still completes nothing: there the stub holds the sentinel as its name, not its return type, and is not taken.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.memberType_inRecordBody_completesTheInstanceMemberType`
+- `CompletionKeywordAndNoSlotTest.recordBody_modifierPrefix_suggestsMatchingModifier`
+- `CompletionOverrideTest.completion_methodPrefixInRecordBody_offersOverrideStub`
+- `SentinelParserTest.parseMemberStub_recordMemberStart_findsTheSentinel`
+- `SentinelParserTest.parseMemberStub_classMemberStartOrRecordMethodBody_answersNothing`
+
+---
+
 ## CQ-0067 — Inside an anonymous class's method, local variables do not complete — done
 
 **Status: done** (2026-11-22)

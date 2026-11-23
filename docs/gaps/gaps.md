@@ -1329,45 +1329,6 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0065 — In a record, a member's type completes only when the member is `static`
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion of the type at the start of a member declaration in a record body (top-level or nested), in the editor.**
-
-Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
-
-### Observed behaviour
-
-In EqualsVerifier's nested record `PackageScanOptions.MustExtend`, with `St` typed:
-
-| Member typed in the record body | Items |
-|---|---|
-| `public static St probeStaticMethod() { return null; }` | 50 (`String`, `StringBuilder`, …) |
-| `static St` | 50 |
-| `public St probeMethod() { return null; }` (an instance method, legal in a record) | 0 |
-| `private St probeInstanceField;` | 0 |
-| `public St`, `St`, `St probe() { return null; }` | 0 each |
-| the same instance method in the enclosing class | 50 |
-
-The same in Helidon's records `Http2FrameData` (every member position, `Ht`, `St`, even the full `Http2FrameData`) and `CodegenScope` (`private static St` completes, a bare `St` does not).
-Inside a record's method body, locals complete as anywhere (`Ht[] local` offers `Http2FrameData` and 47 more).
-Instance methods in records (helpers, accessors written out) are common.
-
-Cause not confirmed. A likely one: completion reads the half-typed member as a field, and a record cannot declare an instance field, so javac rejects the member and nothing is attributed; `static` makes it a legal static field.
-
-### Fix direction
-
-Check what the sentinel parser (`SentinelParser`) builds for a member-start position and how a record body's attribution treats it; complete the type there as in a class body.
-
-### Regression targets
-
-None yet.
-
----
-
 ## CQ-0066 — A class's own name is not offered as a type argument in its own header
 
 **Status: documented**

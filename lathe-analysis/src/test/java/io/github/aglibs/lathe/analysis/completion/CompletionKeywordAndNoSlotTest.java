@@ -57,6 +57,12 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
     assertThat(items).doesNotContain("protected");
   }
 
+  // A record's member start is parsed as a method stub (CQ-0065), which is no enclosing method.
+  @Test
+  void recordBody_modifierPrefix_suggestsMatchingModifier() {
+    assertThat(labels(fixture.complete("record Test(int x) { pub§ }"))).contains("public");
+  }
+
   @Test
   void classBody_afterModifier_suggestsTypesAndNestedDeclarations() {
     assertThat(labels(fixture.complete("class Test { private § }")))

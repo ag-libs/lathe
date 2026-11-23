@@ -8,6 +8,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.CompilerTrees;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Modifier;
@@ -31,17 +32,61 @@ final class SentinelParser {
         .parseContent(
             uri,
             injected.injectedContent(),
-            (trees, cu) -> findSentinel(trees, cu, injected, expectedLspLine, version))
+            (trees, cu) -> findSentinel(trees, cu, injected, expectedLspLine, version, false))
         .orElseGet(
             () -> ParsedSentinel.invalid(injected.prefix(), injected.receiverText(), version));
   }
 
+  // A record body drops a member javac reads as an instance field, and the sentinel with it; as
+  // the member stub's return type it stays. Only a record's member position counts, so a stub that
+  // landed in a block, or in another type where the first parse failed for another reason, never
+  // answers.
+  Optional<ParsedSentinel> parseMemberStub(
+      final SentinelInjectionResult stub,
+      final int expectedLspLine,
+      final int version,
+      final String uri) {
+    return sourceParser.parseContent(
+        uri,
+        stub.injectedContent(),
+        (trees, cu) -> memberStubSentinel(trees, cu, stub, expectedLspLine, version));
+  }
+
+  private static ParsedSentinel memberStubSentinel(
+      final Trees trees,
+      final CompilationUnitTree cu,
+      final SentinelInjectionResult stub,
+      final int expectedLspLine,
+      final int version) {
+    final var sentinelPath = new SentinelFinder().scan(cu, null);
+    if (sentinelPath == null || !isMemberStubReturnType(sentinelPath)) {
+      return null;
+    }
+
+    final ParsedSentinel parsed = findSentinel(trees, cu, stub, expectedLspLine, version, true);
+    return parsed.valid() ? parsed : null;
+  }
+
+  private static boolean isMemberStubReturnType(final TreePath sentinelPath) {
+    final TreePath methodPath = sentinelPath.getParentPath();
+    return methodPath != null
+        && methodPath.getLeaf() instanceof final MethodTree method
+        && method.getReturnType() == sentinelPath.getLeaf()
+        && SentinelInjector.MEMBER_STUB_NAME.contentEquals(method.getName())
+        && methodPath.getParentPath() != null
+        && methodPath.getParentPath().getLeaf() instanceof final ClassTree owner
+        && owner.getKind() == Tree.Kind.RECORD;
+  }
+
+  // memberStub: the parse of SentinelInjectionResult.asMemberStub, whose stub method holds the
+  // sentinel at a member start and so is no enclosing method.
   private static ParsedSentinel findSentinel(
       final Trees trees,
       final CompilationUnitTree cu,
       final SentinelInjectionResult injected,
       final int expectedLspLine,
-      final int version) {
+      final int version,
+      final boolean memberStub) {
 
     final var sentinelPath = new SentinelFinder().scan(cu, null);
     if (sentinelPath == null) {
@@ -108,7 +153,9 @@ final class SentinelParser {
     String enclosingClass = null;
     String enclosingMethod = null;
     for (final Tree node : sentinelPath) {
-      if (node instanceof MethodTree m && enclosingMethod == null) {
+      if (node instanceof MethodTree m
+          && enclosingMethod == null
+          && !(memberStub && SentinelInjector.MEMBER_STUB_NAME.contentEquals(m.getName()))) {
         enclosingMethod = m.getName().toString();
       } else if (node instanceof ClassTree c && !c.getSimpleName().isEmpty()) {
         // An anonymous class has no name: its enclosing named class is the one to complete in.
