@@ -804,34 +804,6 @@ None yet.
 
 ---
 
-## EG-118 — Type hierarchy with the cursor on a member answers nothing
-
-**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: type hierarchy in the editor, when the command runs with the cursor anywhere but on a type name.**
-
-Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
-
-### Observed behaviour
-
-With the cursor on a method or a field name, such as `getId` in `BaseEntity` or `getName` in `NamedEntity`, `textDocument/prepareTypeHierarchy` answers nothing; on the class name it answers.
-jdtls answers with the hierarchy of the enclosing class (`NamedEntity`, `Person`, `Visit` for `BaseEntity`).
-28 of the run's 30 type-hierarchy misses were such positions, so an editor's type-hierarchy command finds nothing unless the cursor is on a type name.
-
-### Fix direction
-
-Prepare the hierarchy of the innermost type enclosing the position when the position is not on a type name, as jdtls does.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-119 — Workspace symbol initials do not match a nested type
 
 **Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
