@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.junit.jupiter.api.Test;
@@ -333,6 +334,93 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
         .singleElement()
         .extracting(CompletionItem::getKind)
         .isEqualTo(CompletionItemKind.TypeParameter);
+  }
+
+  // A type declared in the file completes at every type position, before the type index has it,
+  // and as a supertype unless it is the declaring type: a type of the same name elsewhere, or a
+  // sealed type of this file with no `permits` clause, is one.
+  @Test
+  void inFileType_anyTypePosition_suggested() {
+    final Map<String, String> expected =
+        Map.of(
+            "class Test { static class Inner {} void m(Inn§ p) {} }",
+            "Inner",
+            "class Test { static class Inner {} Object m(Object o) { return (Inn§) o; } }",
+            "Inner",
+            "class Test { static class Inner {} record R(Inn§ a) {} }",
+            "Inner",
+            "class Test { void m() { java.util.function.Consumer<Inner> c = (Inn§ a) -> {}; }"
+                + " static class Inner {} }",
+            "Inner",
+            "class Test { static class Boom extends Exception {} void m() throws Boo§ {} }",
+            "Boom",
+            "class Test implements Lis§ {} interface Listener {}",
+            "Listener",
+            "class Test extends Bas§ {} class Base {}",
+            "Base",
+            "interface Test extends Lis§ {} interface Listener {}",
+            "Listener",
+            "class Node extends Nod§ {} class Holder { static class Node {} }",
+            "Node",
+            "sealed class Shape {} final class Circle extends Shape {} class Test extends Sha§ {}",
+            "Shape");
+    expected.forEach(
+        (source, label) -> assertThat(labels(fixture.complete(source))).as(source).contains(label));
+  }
+
+  // The last compile predates a nested type just typed, so the class around the cursor there, the
+  // outer one, must not be taken for the declaring type and left out; nor is a type of the new
+  // type's name elsewhere.
+  @Test
+  void inFileType_supertypeOfNewNestedType_suggestedFromStaleCompile() {
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    "sealed interface Shape {%s}".formatted(" ".repeat(60)),
+                    "sealed interface Shape { record Circle() implements Sha§ {} }")))
+        .contains("Shape");
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    "class Holder {%s} class Other { static class Node {} }"
+                        .formatted(" ".repeat(60)),
+                    "class Holder { static class Node extends Nod§ {} }"
+                        + " class Other { static class Node {} }")))
+        .contains("Node");
+  }
+
+  // The position's kind still filters them; a type is no supertype of itself, of a type nested
+  // in it or of a subtype of it or a type nested in one, nor is a sealed type that does not permit
+  // it, or any sealed type to a local class; a private type of another class is out of reach.
+  @Test
+  void inFileType_invalidAtPosition_notSuggested() {
+    final Map<String, String> excluded =
+        Map.ofEntries(
+            Map.entry("class Test implements Lis§ {} class Listing {}", "Listing"),
+            Map.entry("class Test extends Lis§ {} interface Listener {}", "Listener"),
+            Map.entry("class Test extends Fin§ {} final class Finished {}", "Finished"),
+            Map.entry("class Test { static class Plain {} void m() throws Pla§ {} }", "Plain"),
+            Map.entry("class Tester extends Tes§ {}", "Tester"),
+            Map.entry("interface Tester extends Tes§ {}", "Tester"),
+            Map.entry("class Test implements Lis§ { interface Listener {} }", "Listener"),
+            Map.entry(
+                "sealed class Shape permits Circle {} final class Circle extends Shape {}"
+                    + " class Test extends Sha§ {}",
+                "Shape"),
+            Map.entry(
+                "class Holder { private static class Secret {} } class Test { void m(Sec§ p) {} }",
+                "Secret"),
+            Map.entry("class Base extends Sub {} class Sub extends Bas§ {}", "Base"),
+            Map.entry(
+                "class Base extends Nes§ {} class Sub extends Base { static class Nested {} }",
+                "Nested"),
+            Map.entry(
+                "sealed class Shape {} final class Circle extends Shape {}"
+                    + " class Test { void m() { class Local extends Sha§ {} } }",
+                "Shape"));
+    excluded.forEach(
+        (source, label) ->
+            assertThat(labels(fixture.complete(source))).as(source).doesNotContain(label));
   }
 
   // ── simple name ───────────────────────────────────────────────────────────────
