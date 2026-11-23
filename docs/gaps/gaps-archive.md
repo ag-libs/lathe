@@ -7,6 +7,47 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-116 — Signature help is empty for a call on a type-variable receiver — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: signature help in the editor, in generic code.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+In `EntityUtils.java:46` (petclinic's tests), in `<T extends BaseEntity> T getById(Collection<T> entities, …)`, signature help inside `entity.getId(|`, where `entity` is a `T`, answers nothing; jdtls answers `getId() : Integer`.
+
+### Fix direction
+
+Look the method up in the type variable's bounds, as javac's member lookup does, when the receiver's type is a type variable.
+
+### Resolution
+
+A call on a receiver typed as a type variable now takes its overloads from the variable's bound, as javac looks the method up: from each type of an intersection bound (`<T extends A & B>`, JLS 4.9), and of the methods with the same parameters two of them have, the first bound's.
+A captured wildcard is such a variable, so a call on `pets.get(0)` of a `List<? extends Pet>` is covered too.
+Access is checked through each bound, as for any other receiver, except that a private method of the bound is left out: a type variable does not inherit it (JLS 4.4).
+Definition on such a call while it is being typed offers the same overloads, as it does for a receiver of a class type.
+
+Not covered: a label shows the method's declared parameter types (`put(K key, V value)`), not the bound's type arguments, as for any receiver.
+
+### Regression targets
+
+- `SignatureHelpTest.signatureHelp_typeVariableReceiver_listsTheOverloadsOfItsBound`
+- `SignatureHelpTest.signatureHelp_intersectionBoundReceiver_listsAMethodOnlyItsSecondTypeHas`
+- `SignatureHelpTest.signatureHelp_intersectionBoundsShareAMethod_listsItOnce`
+- `SignatureHelpTest.signatureHelp_typeVariableReceiver_leavesOutThePrivateMethodsOfItsBound`
+- `SignatureHelpTest.signatureHelp_capturedWildcardReceiver_listsTheOverloadsOfItsBound`
+- `SignatureHelpTest.signatureHelp_typeVariableBoundHasNoMethodOfTheName_returnsNull`
+- `DefinitionLocatorTest.definition_typeVariableReceiverCallBeingTyped_offersTheOverloadsOfItsBound`
+
+---
+
 ## FR-038 — References to a `toString` override list calls that cannot reach it — done
 
 **Status: done** (2026-11-22)

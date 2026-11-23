@@ -33,7 +33,10 @@ import javax.lang.model.element.Name;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
@@ -163,16 +166,38 @@ final class SignatureHelpResolver {
             : null;
     final var self = enclosingClass(callPath, trees);
     if (select instanceof final MemberSelectTree member) {
-      if (!(trees.getTypeMirror(
-                  new TreePath(new TreePath(callPath, member), member.getExpression()))
-              instanceof final DeclaredType receiver)
-          || !(receiver.asElement() instanceof final TypeElement owner)) {
+      final var receiver =
+          trees.getTypeMirror(new TreePath(new TreePath(callPath, member), member.getExpression()));
+      final List<TypeElement> owners = receiverClasses(receiver);
+      if (owners.isEmpty()) {
         return null;
       }
 
       // `super.m()` reaches m through the calling class, which protected access is checked from.
-      final var site = isNamed(member.getExpression(), "super") && self != null ? self : owner;
-      return methodTarget(analysis, scope, owner, site, member.getIdentifier(), resolved, args);
+      final var viaSuper = isNamed(member.getExpression(), "super") && self != null;
+      // A type variable inherits no private member of its bound (JLS 4.4), and two of its bounds
+      // may each have a method the call names, of which it lists one.
+      final var typeVariable = !(receiver instanceof DeclaredType);
+      final var name = member.getIdentifier();
+      final List<ExecutableElement> reached =
+          owners.stream()
+              .flatMap(
+                  owner ->
+                      accessibleMethods(analysis, scope, owner, viaSuper ? self : owner, name)
+                          .stream())
+              .filter(method -> !typeVariable || !method.getModifiers().contains(Modifier.PRIVATE))
+              .toList();
+      return new CallTarget(
+          name.toString(),
+          IntStream.range(0, reached.size())
+              .filter(
+                  i ->
+                      reached.subList(0, i).stream()
+                          .noneMatch(listed -> sameParameters(analysis, listed, reached.get(i))))
+              .mapToObj(reached::get)
+              .toList(),
+          resolved,
+          args);
     }
 
     if (!(select instanceof final IdentifierTree id) || self == null) {
@@ -206,7 +231,31 @@ final class SignatureHelpResolver {
     }
 
     final var owner = declaring.orElse(self);
-    return methodTarget(analysis, scope, owner, owner, id.getName(), resolved, args);
+    return new CallTarget(
+        id.getName().toString(),
+        accessibleMethods(analysis, scope, owner, owner, id.getName()),
+        resolved,
+        args);
+  }
+
+  // The classes a receiver's methods come from. A type variable's, a captured wildcard's among
+  // them, are those of its bound, and an intersection bound has each of its types' (JLS 4.9).
+  private static List<TypeElement> receiverClasses(final TypeMirror type) {
+    if (type instanceof final DeclaredType declared) {
+      return declared.asElement() instanceof final TypeElement owner ? List.of(owner) : List.of();
+    }
+
+    if (type instanceof final TypeVariable variable) {
+      return receiverClasses(variable.getUpperBound());
+    }
+
+    if (type instanceof final IntersectionType intersection) {
+      return intersection.getBounds().stream()
+          .flatMap(bound -> receiverClasses(bound).stream())
+          .toList();
+    }
+
+    return List.of();
   }
 
   // Each method once: two imports may reach the same one.
@@ -326,16 +375,16 @@ final class SignatureHelpResolver {
 
   private static boolean sameParameters(
       final AttributedFileAnalysis analysis,
-      final ExecutableElement constructor,
+      final ExecutableElement executable,
       final ExecutableElement other) {
     final var types = analysis.types();
     return other != null
-        && constructor.getParameters().size() == other.getParameters().size()
-        && IntStream.range(0, constructor.getParameters().size())
+        && executable.getParameters().size() == other.getParameters().size()
+        && IntStream.range(0, executable.getParameters().size())
             .allMatch(
                 i ->
                     types.isSameType(
-                        types.erasure(constructor.getParameters().get(i).asType()),
+                        types.erasure(executable.getParameters().get(i).asType()),
                         types.erasure(other.getParameters().get(i).asType())));
   }
 
@@ -346,22 +395,16 @@ final class SignatureHelpResolver {
         .toList();
   }
 
-  private static CallTarget methodTarget(
+  private static List<ExecutableElement> accessibleMethods(
       final AttributedFileAnalysis analysis,
       final Scope scope,
       final TypeElement owner,
       final TypeElement site,
-      final Name name,
-      final ExecutableElement resolved,
-      final List<? extends Tree> args) {
+      final Name name) {
     final var siteType = (DeclaredType) site.asType();
-    return new CallTarget(
-        name.toString(),
-        methodsNamed(analysis, owner, name).stream()
-            .filter(method -> analysis.trees().isAccessible(scope, method, siteType))
-            .toList(),
-        resolved,
-        args);
+    return methodsNamed(analysis, owner, name).stream()
+        .filter(method -> analysis.trees().isAccessible(scope, method, siteType))
+        .toList();
   }
 
   private static CallTarget constructorTarget(

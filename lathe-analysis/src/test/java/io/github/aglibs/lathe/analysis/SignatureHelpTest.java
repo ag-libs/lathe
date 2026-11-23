@@ -475,6 +475,120 @@ class SignatureHelpTest {
     assertThat(signatureHelpAt(source)).isNull();
   }
 
+  // EG-116: a call on a type-variable receiver lists the overloads its bound has.
+  @Test
+  void signatureHelp_typeVariableReceiver_listsTheOverloadsOfItsBound() {
+    final var source =
+        """
+        class Test {
+          static class Base {
+            void put(int key) {}
+            void put(int key, String value) {}
+          }
+          <T extends Base> void caller(T entity) { entity.put(1, §"v"); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactlyInAnyOrder("void put(int key)", "void put(int key, String value)");
+    assertThat(help.getSignatures().get(help.getActiveSignature()).getLabel())
+        .isEqualTo("void put(int key, String value)");
+    assertThat(help.getActiveParameter()).isEqualTo(1);
+  }
+
+  @Test
+  void signatureHelp_intersectionBoundReceiver_listsAMethodOnlyItsSecondTypeHas() {
+    final var source =
+        """
+        class Test {
+          interface Named { String name(); }
+          interface Sized { void resize(int width, int height); }
+          <T extends Named & Sized> void caller(T shape) { shape.resize(§1, 2); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("void resize(int width, int height)");
+  }
+
+  @Test
+  void signatureHelp_intersectionBoundsShareAMethod_listsItOnce() {
+    final var source =
+        """
+        class Test {
+          static class Task implements Runnable { public void run() {} }
+          <T extends Task & Runnable> void caller(T task) { task.run(§); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("void run()");
+  }
+
+  // javac rejects a private method of the bound on a type variable, though the bound's own class
+  // could call it on a receiver of the bound's type.
+  @Test
+  void signatureHelp_typeVariableReceiver_leavesOutThePrivateMethodsOfItsBound() {
+    final var source =
+        """
+        class Test {
+          static class Base {
+            private void put(int key) {}
+            public void put(int key, String value) {}
+          }
+          <T extends Base> void caller(T entity, Base base) { entity.put(§1, "v"); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+    final var direct = signatureHelpAt(source.replace("entity.put(§", "base.put(§"));
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("void put(int key, String value)");
+    assertThat(direct.getSignatures()).hasSize(2);
+  }
+
+  @Test
+  void signatureHelp_capturedWildcardReceiver_listsTheOverloadsOfItsBound() {
+    final var source =
+        """
+        import java.util.List;
+        class Test {
+          interface Pet { void feed(int grams); }
+          void caller(List<? extends Pet> pets) { pets.get(0).feed(§1); }
+        }
+        """;
+    final var help = signatureHelpAt(source);
+
+    assertThat(help).isNotNull();
+    assertThat(help.getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("void feed(int grams)");
+  }
+
+  @Test
+  void signatureHelp_typeVariableBoundHasNoMethodOfTheName_returnsNull() {
+    final var source =
+        """
+        class Test {
+          interface Pet { void feed(int grams); }
+          <T extends Pet> void caller(T pet) { pet.groom(§1); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source)).isNull();
+  }
+
   // --- javadoc in documentation field ---
 
   @Test
