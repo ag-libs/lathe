@@ -7,6 +7,43 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-120 — The `class` of a class literal is highlighted as a field — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: semantic tokens in the editor (VS Code and Neovim), on every build.**
+
+Found by the editor exploratory round (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, the working-tree Neovim client in a headless Neovim, on the Dropwizard `08e290b764`, Helidon `27a692eb0d`, EqualsVerifier `ab54bfce` and jdbi `567155b` clones), and reproduced by hand.
+
+### Observed behaviour
+
+In `Map.class`, `Configuration.class` or `Map.Entry.class`, the server sends a `property` token for the keyword `class`, so the editor colours it as a field.
+Every class literal in code gets it: the three in jdbi's `GenericTypes.java` and `SerializableTransactionRunner.java` (`final Configuration config = handle.getConfig(Configuration.class);`); the ten in their Javadoc get no token.
+Definition on that `class` answers nothing, which is right for a keyword.
+
+javac models a class literal as a member select whose element is a field named `class`, and `TokenScanner.visitMemberSelect` emits a reference token for the element it resolves.
+The hover formatter already meets the same modelling ("`this`, `super` and a class literal, which javac models as fields, get no modifiers").
+
+### Fix direction
+
+Emit no token for the `class` of a class literal (a member select named `class` whose element is the synthetic field), as for other keywords; check `Outer.this` and `Outer.super` the same way.
+
+### Resolution
+
+`TokenScanner.visitMemberSelect` now emits no token for a member select whose name is a keyword, as `visitIdentifier` already did for a bare `this` and `super`.
+That covers the three members javac models as fields named after a keyword: a class literal's `class`, `Outer.this` and `Outer.super`; no real member can have such a name, so no other token is lost.
+The type before them keeps its token, and a field or method selected after `Outer.this` or `Outer.super` keeps its own.
+
+Checked in the editor on the jdbi clone: the class literals in code (`Configuration.class` in `SerializableTransactionRunner.java`, `Map.class` and `Map.Entry.class` in `GenericTypes.java`) had a `property` token and now have none, as the ones in Javadoc.
+
+### Regression targets
+
+- `SemanticTokensTest.memberSelect_keywordMember_noToken`
+
+---
+
 ## EG-117 — Incoming calls leave out calls in an anonymous class's instance initializer — done
 
 **Status: done** (2026-11-23)
