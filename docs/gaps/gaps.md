@@ -1259,27 +1259,6 @@ Reference types, as in any other type argument (`Integer` here), and no keyword 
 
 ---
 
-## CQ-0070 — A type variable is never offered as a type
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion of a type wherever a type variable is in scope, in the editor.**
-
-Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-In `class Box<Item> { It§ x; }` and `class Box<Item> { java.util.List<It§> items; }`, `Item` is not offered (only `Iterable`); a method's own type variable is not either (`<Elem> void m() { El§ x; }` offers nothing).
-Type completion merges the type index, `java.lang` and the file's class declarations, none of which holds a type variable.
-
-### Expected
-
-The class's and the method's type variables in scope, at every type position (a field, a local, a parameter, a type argument, a bound).
-
----
-
 ## CQ-0071 — A type parameter's second bound offers classes
 
 **Status: documented**

@@ -303,7 +303,12 @@ public final class CompletionEngine {
       candidates = sealedCaseCandidates;
     } else {
       candidates =
-          Stream.of(javacCandidates, enumCandidates, keywordCandidates, instanceofCandidates)
+          Stream.of(
+                  javacCandidates,
+                  enumCandidates,
+                  keywordCandidates,
+                  instanceofCandidates,
+                  TypeReferenceCompleter.typeVariableCandidates(parsed, injected.prefix()))
               .flatMap(List::stream)
               .toList();
     }
@@ -329,8 +334,10 @@ public final class CompletionEngine {
         hasUppercasePrefix(injected)
             ? TypeReferenceCompleter.mergeSimpleNameAndTypeIndexItems(
                 items,
-                typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
-                    injected, req, TypeReferenceRole.ORDINARY))
+                TypeReferenceCompleter.withoutHiddenTypes(
+                    typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
+                        injected, req, TypeReferenceRole.ORDINARY),
+                    parsed))
             : new CompletionOutcome(items, null);
 
     // Static member fit: uppercase prefix + expected type, works in both statement and expression

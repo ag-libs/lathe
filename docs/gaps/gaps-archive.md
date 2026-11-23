@@ -4580,6 +4580,48 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0070 — A type variable is never offered as a type — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion of a type wherever a type variable is in scope, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In `class Box<Item> { It§ x; }` and `class Box<Item> { java.util.List<It§> items; }`, `Item` is not offered (only `Iterable`); a method's own type variable is not either (`<Elem> void m() { El§ x; }` offers nothing).
+Type completion merges the type index, `java.lang` and the file's class declarations, none of which holds a type variable.
+
+### Expected
+
+The class's and the method's type variables in scope, at every type position (a field, a local, a parameter, a type argument, a bound).
+
+### Fix
+
+No source of type candidates held type variables: the type index, `java.lang` and the file's class declarations hold only classes.
+`SentinelParser` now collects the type variables visible at the cursor from the parse tree, walking outwards: a method adds its own, and a class its own; a `static` method, field or initializer hides its class's, as does an interface's field, which is static; a static type (a static member class, a member of an interface, every interface, enum and record, a local record) sees none declared around it, while an inner, local or anonymous class sees them; an inner type variable hides an outer one of the same name.
+It records them in `ParsedSentinel` only where a type variable can stand: a type written in an ordinary position, a type argument or bound, or the start of a statement in a block or a `case 1:` group that becomes a declaration (`T value`).
+Not before `.class`, in `instanceof` (its operand or a pattern's type), in an initializer or argument, after `new`, as a supertype, permitted subclass or annotation, as a catch parameter's type, or as a switch rule's body.
+The type completer and the simple-name completer add them as `TypeParameter` items, and leave out a type of the same name, which the type variable hides.
+
+Checked in the editor on Dropwizard's `CachingAuthorizer<P extends Principal>`: `P` is offered first (it was not offered) for a field's type, a type argument, a statement start, a local's type and a cast; not for a `static` field, nor in an initializer.
+
+Left as they are:
+
+- after `throws`, no type variable is offered, though one bounded by `Throwable` may stand there (`<E extends Exception> void m() throws E`): the parse sees a bound only as a name, so it cannot tell which;
+- a method call's explicit type argument (`this.<T>m()`) gets none, as it is completed as an expression (CQ-0069);
+- at a statement start that goes on as an expression, `It|.foo()` or `It| = null;`, the type variable is offered too: the injection ends the sentinel there, so the parse cannot see what follows.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.typeVariable_inScope_suggestedAsType`
+- `CompletionTypeReferenceTest.typeVariable_staticContextOrExpression_notSuggested`
+
+---
+
 ## CQ-0075 — A record's `toString`, `equals` and `hashCode` are not offered as override stubs — done
 
 **Status: done** (2026-11-23)

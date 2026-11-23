@@ -27,6 +27,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
 
 final class TypeReferenceCompleter {
 
@@ -37,6 +38,9 @@ final class TypeReferenceCompleter {
       Set.of("public", "private", "protected");
   private static final Set<String> OTHER_MODIFIER_KEYWORDS =
       Set.of("static", "final", "abstract", "synchronized", "transient", "volatile");
+
+  private static final Set<CompletionItemKind> TYPE_KINDS =
+      Set.of(CompletionItemKind.Class, CompletionItemKind.Interface, CompletionItemKind.Enum);
 
   private final JavaSourceCompiler compiler;
 
@@ -73,10 +77,22 @@ final class TypeReferenceCompleter {
     final boolean typeArgument =
         parsed.typeReferenceRole() == TypeReferenceRole.TYPE_ARGUMENT
             || parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT;
-    final var typeRefOutcome =
+    final var withInFileTypes =
         typeArgument
             ? mergeInFileTypes(injected.prefix(), req, withLangTypes, parsed.typeReferenceRole())
             : withLangTypes;
+    final List<CompletionItem> typeVariables =
+        typeVariableCandidates(parsed, injected.prefix()).stream()
+            .map(CompletionItemPresenter::present)
+            .toList();
+    final var typeRefOutcome =
+        typeVariables.isEmpty()
+            ? withInFileTypes
+            : mergeOutcomes(
+                typeVariables,
+                withoutHiddenTypes(withInFileTypes, parsed).items(),
+                withInFileTypes.freshAnalysis(),
+                withInFileTypes.incomplete());
     if (parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT) {
       final List<CompletionItem> primitives =
           KeywordProvider.primitiveCandidates(injected.prefix()).stream()
@@ -101,6 +117,32 @@ final class TypeReferenceCompleter {
     }
 
     return typeRefOutcome;
+  }
+
+  // A type variable hides a type of the same simple name: written there, the name means the
+  // variable, so offering the type (with its import) would name something else.
+  static CompletionOutcome withoutHiddenTypes(
+      final CompletionOutcome outcome, final ParsedSentinel parsed) {
+    if (parsed.typeVariables().isEmpty()) {
+      return outcome;
+    }
+
+    final List<CompletionItem> visible =
+        outcome.items().stream()
+            .filter(
+                item ->
+                    !(TYPE_KINDS.contains(item.getKind())
+                        && parsed.typeVariables().contains(item.getLabel())))
+            .toList();
+    return new CompletionOutcome(visible, outcome.freshAnalysis(), outcome.incomplete());
+  }
+
+  static List<CompletionCandidate> typeVariableCandidates(
+      final ParsedSentinel parsed, final String prefix) {
+    return parsed.typeVariables().stream()
+        .filter(name -> name.startsWith(prefix))
+        .map(CandidateFactory::typeParameterCandidate)
+        .toList();
   }
 
   CompletionOutcome completeConstructorTypeReference(

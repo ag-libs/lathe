@@ -10,5 +10,6 @@ enum CandidateKind {
   PACKAGE,
   TYPE_CLASS,
   TYPE_INTERFACE,
-  TYPE_ENUM
+  TYPE_ENUM,
+  TYPE_PARAMETER
 }
