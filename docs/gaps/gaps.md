@@ -1280,28 +1280,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0072 — With an empty prefix, a type argument's completion list is marked complete
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion invoked right after `<` and then narrowed by typing, in the editor.**
-
-Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-In `class Test implements Comparable<§> {}`, the result is `isIncomplete: false`, while with a prefix (`Comparable<Str§>`) it is `true`.
-With no prefix, `TypeReferenceCompleter.completeSimpleNameTypeReference` does not query the type index, and the list it returns is marked complete.
-An LSP client may then narrow that list as the user types without asking again, so a type only the index has (`Duration`, typed as `Dur`) would not appear until completion is invoked again; not yet observed in an editor.
-
-### Expected
-
-An empty-prefix list that leaves the index out is marked incomplete, so typing asks the server again.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync

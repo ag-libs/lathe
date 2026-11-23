@@ -4580,6 +4580,47 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0072 — With an empty prefix, a completion list that leaves out the type index is marked complete — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion invoked with no prefix where a type may follow (a type position such as `Comparable<§>` or `implements §`, a statement start, a `Class`-valued annotation argument) and then narrowed by typing, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`); the statement start and the annotation argument were found by the fix's review.
+
+### Observed behaviour
+
+In `class Test implements Comparable<§> {}`, the result is `isIncomplete: false`, while with a prefix (`Comparable<Str§>`) it is `true`.
+With no prefix, the type index is not queried, so the list holds only `java.lang` and the file's own types (109 items on a Lathe source file, no `Duration`), yet it was marked complete.
+blink.cmp (1.10.2) keeps a complete list for the rest of the completion session and narrows it as the user types, without asking again (its `lsp/cache.lua` and `provider/list.lua`, read, not run in an editor): invoked by hand right after `<`, then `Dur` typed, it would show nothing, though the server offers `Duration` for `<Dur`.
+Typing `<Dur` without invoking by hand was not affected: completion opens at `D` and asks with a prefix.
+
+The same held at a statement start (`void m() { § }`, where only a capitalised prefix brings in the index) and in a `Class`-valued annotation argument (`@ExtendWith(§)`), which dropped the type list's mark when it merged the list with the value keywords; that one also dropped it with a prefix, when the index list was cut at its limit.
+
+### Fix
+
+Wherever the type index is left out for an empty prefix, the list is marked incomplete, so a client asks again as the user types: the shared type lookup (every type position, including `new §`, which had its own copy of the rule), a statement start, and a `Class`-valued annotation argument, which now keeps the type list's mark.
+Without a type index there is nothing to ask again for, and the list stays complete; a member access (`s.§`) does too.
+
+### Not covered
+
+- In a file of the default package, a `Class`-valued annotation argument with no prefix offers nothing: the annotation's element type is not resolved there.
+
+### Regression targets
+
+- `CompletionTypeIndexTest.typeArgument_emptyPrefix_returnsIncompleteWithoutIndexTypes`
+- `CompletionTypeIndexTest.implementsClause_emptyPrefix_returnsIncomplete`
+- `CompletionTypeIndexTest.statementStart_emptyPrefix_returnsIncomplete`
+- `CompletionTypeIndexTest.annotationValue_classTypedElementEmptyPrefix_returnsIncomplete`
+- `CompletionTypeIndexTest.typeArgument_emptyPrefixWithoutTypeIndex_returnsComplete`
+- `CompletionTypeIndexTest.memberAccess_emptyPrefix_returnsComplete`
+- `CompletionTypeIndexTest.constructorCall_emptyPrefixWithoutExpectedType_returnsIncomplete`
+- `CompletionTypeIndexTest.constructorCall_emptyPrefixExpectedType_ranksExpectedTypeFirst`
+
+---
+
 ## CQ-0073 — A type declared in the file is not offered after `extends`, after `implements` or in a cast — done
 
 **Status: done** (2026-11-23)
