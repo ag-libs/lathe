@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class CompletionTypeReferenceTest extends CompletionTestSupport {
@@ -244,4 +245,26 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
   }
 
   // ── type index: unimported simple name fallback (gap B) ───────────────────────
+
+  // ── a member's type ───────────────────────────────────────────────────────────
+
+  // A record cannot declare an instance field, and javac's parser drops one: the type at the start
+  // of an instance member must still complete, as it does in a class.
+  @Test
+  void memberType_inRecordBody_completesTheInstanceMemberType() {
+    for (final String member :
+        List.of("St§", "public St§", "public St§ helper() { return null; }")) {
+      assertThat(
+              labels(
+                  fixture.complete(
+                      """
+                      record Test(int x) {
+                          %s
+                          void after() {}
+                      }"""
+                          .formatted(member))))
+          .as(member)
+          .contains("String");
+    }
+  }
 }

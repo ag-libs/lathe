@@ -29,6 +29,15 @@ class CompletionOverrideTest extends CompletionTestSupport {
   }
 
   @Test
+  void completion_methodPrefixInRecordBody_offersOverrideStub() {
+    final CompletionItem item =
+        itemLabeled(fixture.complete("record Test(int x) implements Runnable { ru§ }"), "run")
+            .orElseThrow();
+
+    assertThat(item.getInsertText()).contains("@Override", "public void run()");
+  }
+
+  @Test
   void completion_insideAnInterface_offersADefaultStubButNoneOfObjects() {
     final CompletionItem item =
         itemLabeled(fixture.complete("interface Test extends Runnable { ru§ }"), "run")

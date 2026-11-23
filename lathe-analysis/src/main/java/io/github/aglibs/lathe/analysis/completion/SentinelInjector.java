@@ -5,6 +5,11 @@ import io.github.aglibs.lathe.analysis.DeclarationNames;
 final class SentinelInjector {
 
   static final String SENTINEL = "__LATHE_SENTINEL__";
+  // Where the sentinel ends a statement, a member start reads as the field `SENTINEL;`, an
+  // instance field javac's parser drops from a record body; as this method stub's return type
+  // the sentinel stays in every type body.
+  static final String MEMBER_STUB_NAME = "__latheMember";
+  static final String MEMBER_STUB = " %s() {}".formatted(MEMBER_STUB_NAME);
 
   enum Context {
     STATEMENT,
@@ -50,6 +55,10 @@ final class SentinelInjector {
                 semicolon,
                 content.substring(suffixStart),
                 "}".repeat(fwd.unclosedBraces()));
+    final int memberStubAt =
+        semicolon.isEmpty() || fwd.unclosedParens() > 0
+            ? -1
+            : back.tokenStart() + SENTINEL.length();
 
     return new SentinelInjectionResult(
         back.prefix(),
@@ -59,7 +68,8 @@ final class SentinelInjector {
         back.context(),
         back.hasDot(),
         back.memberReference(),
-        injected);
+        injected,
+        memberStubAt);
   }
 
   private BackwardResult backwardScan(final int cursorOffset) {

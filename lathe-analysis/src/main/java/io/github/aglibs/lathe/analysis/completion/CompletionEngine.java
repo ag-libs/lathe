@@ -11,9 +11,11 @@ import io.github.aglibs.lathe.analysis.StaticImportCandidates;
 import io.github.aglibs.lathe.analysis.Strings;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.internal.IndexTypes;
+import io.github.aglibs.lathe.core.Stopwatch;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -50,23 +52,27 @@ public final class CompletionEngine {
   }
 
   public CompletionOutcome complete(final CompletionRequest req) {
-    final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
+    final var initial = new SentinelInjector(req.content()).inject(req.cursorOffset());
     LOG.fine(
         () ->
             "[completion] inject prefix=|%s| receiver=|%s| ctx=%s hasDot=%s"
                 .formatted(
-                    injected.prefix(),
-                    injected.receiverText(),
-                    injected.context(),
-                    injected.hasDot()));
+                    initial.prefix(), initial.receiverText(), initial.context(), initial.hasDot()));
 
-    if (injected.hasDot() && injected.receiverText() == null) {
+    if (initial.hasDot() && initial.receiverText() == null) {
       LOG.fine(() -> "[completion] bare dot with no receiver — returning empty");
       return CompletionOutcome.of(List.of());
     }
 
     final int version = req.cached() != null ? req.cached().version() : -1;
-    final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version, req.uri());
+    final var initialParse = sentinelParser.parse(initial, req.pos().getLine(), version, req.uri());
+    final Optional<SentinelInjectionResult> stub =
+        initialParse.valid() ? Optional.empty() : initial.asMemberStub();
+    final Optional<ParsedSentinel> stubParse =
+        stub.flatMap(memberStub -> parseMemberStub(memberStub, req, version));
+    // Everything after the parse reads the injection that was parsed.
+    final var injected = stubParse.isPresent() ? stub.orElseThrow() : initial;
+    final var parsed = stubParse.orElse(initialParse);
     LOG.fine(
         () ->
             "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s| class=%s method=%s role=%s"
@@ -158,6 +164,20 @@ public final class CompletionEngine {
     return recompiled != null && withOverrides.freshAnalysis() == null
         ? new CompletionOutcome(withOverrides.items(), recompiled, withOverrides.incomplete())
         : withOverrides;
+  }
+
+  // Parsed only where the first parse found no usable sentinel: a record body drops the member
+  // start the injection read as an instance field (CQ-0065).
+  private Optional<ParsedSentinel> parseMemberStub(
+      final SentinelInjectionResult stub, final CompletionRequest req, final int version) {
+    final var timer = Stopwatch.start();
+    final Optional<ParsedSentinel> parsed =
+        sentinelParser.parseMemberStub(stub, req.pos().getLine(), version, req.uri());
+    LOG.fine(
+        () ->
+            "[completion] member stub %s found=%s %dms"
+                .formatted(req.uri(), parsed.isPresent(), timer.elapsedMs()));
+    return parsed;
   }
 
   // At a class-body member-declaration slot (inside a class, not inside a method body), the slot is
