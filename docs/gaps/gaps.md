@@ -1324,27 +1324,6 @@ The file's own types at every type position, filtered by the position's role (in
 
 ---
 
-## CQ-0076 — A record's instance member gets no name suggestion
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion of the name in a member declaration in a record body, in the editor.**
-
-Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-`String §` suggests the name `string` in a class body, for a record's `static` member and for a local; in a record body (`record Test(int x) { String § }`) it suggests nothing.
-The member-stub parse of CQ-0065 takes the sentinel only as a stub's return type, and here it is the stub's name.
-
-### Expected
-
-The same name suggestion as in a class body.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
