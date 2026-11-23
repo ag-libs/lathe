@@ -24,6 +24,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.platform.commons.annotation.Testable;
 import org.junit.platform.suite.api.Suite;
 
 /**
@@ -83,6 +84,7 @@ public final class TestJavac {
       List.of(
           jarOf(org.junit.jupiter.api.Test.class),
           jarOf(ParameterizedTest.class),
+          jarOf(Testable.class),
           jarOf(Suite.class));
 
   public record ParsedSource(
