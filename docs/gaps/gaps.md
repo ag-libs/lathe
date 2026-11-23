@@ -1345,27 +1345,6 @@ The file's own types at every type position, filtered by the position's role (in
 
 ---
 
-## CQ-0075 — A record's `toString`, `equals` and `hashCode` are not offered as override stubs
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: override completion in a record body, in the editor.**
-
-Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-In a class body, `toS§` offers the `toString` override stub; in a record body (`record Test(int x) { toS§ }`) it offers nothing, nor `hashC§` the `hashCode` stub.
-A record has these methods implicitly, so they look like members it already declares; but a record may still declare them explicitly, and doing so is common.
-
-### Expected
-
-The `toString`, `equals` and `hashCode` stubs in a record body, as in a class body, unless the record already declares one explicitly.
-
----
-
 ## CQ-0076 — A record's instance member gets no name suggestion
 
 **Status: documented**
