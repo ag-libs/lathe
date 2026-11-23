@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -45,9 +46,10 @@ public final class WorkspaceTypeIndex {
   // The trees the asking file compiles against, its own included; every tree unless narrowed.
   private final Predicate<Path> seenTree;
   private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
-  // Like bySimpleNameLower but with no visibility filter: every top-level type, including
-  // package-private ones. Backs searchSymbols() (workspace/symbol + stack-frame navigation), which
-  // must locate a dependency's internal impl classes; completion/import stay on bySimpleNameLower.
+  // Like bySimpleNameLower but with no visibility filter: every named type, nested and
+  // package-private ones included. Backs searchSymbols() (workspace/symbol + stack-frame
+  // navigation), which must locate a dependency's internal impl classes; completion/import stay on
+  // bySimpleNameLower.
   private final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower;
   private final NavigableMap<String, TypeIndexEntry> byBinaryName;
   private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
@@ -385,12 +387,19 @@ public final class WorkspaceTypeIndex {
   // CamelCase-hump matching (e.g. "TaskMgr" -> TaskManager, "ASF" -> AbstractServerFactory) is
   // scoped to reactor-owned types only, not JDK/dependency types: it is a supplementary layer on
   // top of search()'s exact prefix match, not a replacement, so it deliberately does not touch
-  // search()'s existing contract or its completion/import-quickfix callers.
+  // search()'s existing contract or its completion/import-quickfix callers. Every named reactor
+  // type matches, a nested or package-private one (a @Nested test class) too, and the top-level
+  // ones come first, so nested types cannot crowd them out of a capped list.
   public List<TypeIndexEntry> searchCamelCase(final String query, final int limit) {
-    return bySimpleNameLower.values().stream()
-        .flatMap(List::stream)
-        .filter(entry -> reactorTrees.containsKey(entry.binaryName()))
+    return reactorTrees.keySet().stream()
+        .map(byBinaryName::get)
+        .filter(Objects::nonNull)
+        .filter(WorkspaceTypeIndex::isNamedSymbol)
         .filter(entry -> CamelCaseMatcher.matches(query, entry.simpleName()))
+        .sorted(
+            Comparator.comparing((TypeIndexEntry entry) -> !entry.isTopLevel())
+                .thenComparing(TypeIndexEntry::simpleName)
+                .thenComparing(TypeIndexEntry::binaryName))
         .limit(limit)
         .toList();
   }

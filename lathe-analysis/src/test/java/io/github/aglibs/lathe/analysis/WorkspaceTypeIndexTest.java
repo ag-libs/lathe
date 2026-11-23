@@ -381,6 +381,37 @@ class WorkspaceTypeIndexTest {
         .containsExactly("com.example.AbstractServerFactory");
   }
 
+  // EG-119: a package-private nested type, such as a @Nested test class, matches by its humps,
+  // after the top-level types; an anonymous or local class, which has no name to search, does not.
+  @Test
+  void searchCamelCase_packagePrivateNestedType_findsItByItsHumps() {
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                List.of(
+                    graphEntry("com.example.PetControllerTests", true),
+                    graphEntry(
+                        "com.example.PetControllerTests$ProcessCreationFormHasErrors", false),
+                    graphEntry("com.example.PetControllerTests$1", false),
+                    graphEntry("com.example.PetControllerTests$1Helper", false),
+                    graphEntry("com.example.ProcessorConfig", true))));
+
+    assertThat(index.searchCamelCase("PCFHE", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.PetControllerTests$ProcessCreationFormHasErrors");
+    assertThat(index.searchCamelCase("ProcCreFormHasErr", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly("com.example.PetControllerTests$ProcessCreationFormHasErrors");
+    assertThat(index.searchCamelCase("PC", 10))
+        .extracting(TypeIndexEntry::binaryName)
+        .containsExactly(
+            "com.example.PetControllerTests",
+            "com.example.ProcessorConfig",
+            "com.example.PetControllerTests$ProcessCreationFormHasErrors");
+    assertThat(index.searchCamelCase("Helper", 10)).isEmpty();
+  }
+
   @Test
   void searchCamelCase_limitsResults() {
     final var index =
