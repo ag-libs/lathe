@@ -1345,28 +1345,6 @@ The file's own types at every type position, filtered by the position's role (in
 
 ---
 
-## CQ-0074 — A local declared in a block that has closed is still offered
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion of simple names in a method body after a block, a loop or an `if` that declared locals, in the editor.**
-
-Found while fixing CQ-0067 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-`void m() { { int hiddenLocal = 1; } hidden§ }` offers `hiddenLocal`; so do `for (int loopIdx = 0; …) {} loopI§` (`loopIdx`) and `if (b) { int ifLocal = 1; } ifLo§` (`ifLocal`).
-Picking one does not compile: the name is out of scope there.
-CQ-0067 left out the locals of a lambda, class or method that closed before the cursor; a plain block, a loop and an `if` are not checked the same way.
-
-### Expected
-
-Only the locals whose scope contains the cursor.
-
----
-
 ## CQ-0075 — A record's `toString`, `equals` and `hashCode` are not offered as override stubs
 
 **Status: documented**
