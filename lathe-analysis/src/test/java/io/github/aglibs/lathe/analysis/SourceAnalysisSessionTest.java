@@ -415,7 +415,8 @@ class SourceAnalysisSessionTest {
               List.of(),
               false,
               false,
-              -1);
+              -1,
+              null);
 
       // Delete the source file to simulate a source-read failure
       final Path sourceFile = Path.of(analysis.tree().getSourceFile().toUri());

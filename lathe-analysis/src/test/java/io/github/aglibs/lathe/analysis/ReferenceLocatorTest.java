@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
@@ -508,6 +509,120 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "s.handle()", "handle")));
     assertThat(result)
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "i.handle()", "handle")));
+  }
+
+  // FR-038: a reference search runs on the contract (here Object.toString) and keeps a use only
+  // where its receiver is typed as the class asked about, a subtype or a supertype of it, as jdtls
+  // counts them: not an unrelated class, an interface the class does not implement, a `super`
+  // call in an unrelated class, or a Javadoc link to another class's method.
+  @Test
+  void method_contractReachingOnlyAClass_keepsTheUsesWhoseReceiverCanHoldIt() throws IOException {
+    final var source =
+        """
+        class Named {
+            @Override
+            public String toString() { return "n"; }
+        }
+        class Pet extends Named {
+            class Inner {
+                String outer() { return Pet.super.toString(); }
+            }
+        }
+        class Creator {
+            @Override
+            public String toString() { return super.toString(); }
+        }
+        /** See {@link java.time.LocalDate#toString()} and {@link Named#toString()}. */
+        class Use {
+            void use(
+                Named n,
+                Pet p,
+                Object o,
+                java.time.LocalDate d,
+                StringBuilder sb,
+                Runnable r,
+                java.nio.file.Path path,
+                Creator c) {
+                n.toString();
+                p.toString();
+                o.toString();
+                d.toString();
+                sb.toString();
+                r.toString();
+                path.toString();
+                d.plusDays(1).toString();
+                new Creator().toString();
+                c.toString();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final ReferenceTarget target =
+        ReferenceTarget.from(
+                ElementFilter.methodsIn(
+                        analysis
+                            .elements()
+                            .getTypeElement("java.lang.Object")
+                            .getEnclosedElements())
+                    .stream()
+                    .filter(method -> method.getSimpleName().contentEquals("toString"))
+                    .findFirst()
+                    .orElseThrow(),
+                analysis.types(),
+                analysis.elements())
+            .reachingOnly("Named");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "Named#toString", "toString"),
+            posOf(source, "Pet.super.toString()", "toString"),
+            posOf(source, "n.toString()", "toString"),
+            posOf(source, "p.toString()", "toString"),
+            posOf(source, "o.toString()", "toString"));
+  }
+
+  // An unqualified call in an anonymous class runs on the outer instance when the anonymous class
+  // has no such method, as javac binds it; a sibling implementation's call never reaches it.
+  @Test
+  void method_contractReachingOnlyAClass_creditsAnUnqualifiedCallToTheClassItRunsOn()
+      throws IOException {
+    final var source =
+        """
+        interface Service {
+            void handle();
+        }
+        class Impl implements Service {
+            public void handle() {}
+            void go() {
+                new Thread(new Runnable() { public void run() { handle(); } }).start();
+            }
+        }
+        class Other implements Service {
+            public void handle() {}
+        }
+        class Use {
+            void use(Service s, Impl i, Other o) {
+                s.handle();
+                i.handle();
+                o.handle();
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final ReferenceTarget target =
+        targetAt(analysis, "void handle();", "handle").reachingOnly("Impl");
+
+    final List<ReferenceMatch> result = refs(analysis, target, false);
+
+    assertThat(result)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "handle(); } }", "handle"),
+            posOf(source, "s.handle()", "handle"),
+            posOf(source, "i.handle()", "handle"));
   }
 
   @Test

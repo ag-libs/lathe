@@ -85,7 +85,8 @@ class ReferenceCandidatePlannerTest {
         overriddenDeclarers,
         kind == ElementKind.METHOD,
         false,
-        -1);
+        -1,
+        null);
   }
 
   private static ReferenceTarget staticMethod(
@@ -99,7 +100,8 @@ class ReferenceCandidatePlannerTest {
         List.of(),
         true,
         true,
-        -1);
+        -1,
+        null);
   }
 
   private static ReferenceTarget type(final String qualifiedName, final String simpleName) {

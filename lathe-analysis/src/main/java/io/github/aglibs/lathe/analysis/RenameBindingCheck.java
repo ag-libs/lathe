@@ -104,7 +104,8 @@ public final class RenameBindingCheck {
         target.staticMember(),
         target.hasDeclarationIdentity() && declaringFile != null
             ? declaringFile.shifted((int) target.declarationOffset())
-            : target.declarationOffset());
+            : target.declarationOffset(),
+        null);
   }
 
   // A binary name with its last segment, after the package's `.` or the outer type's `$`, renamed.

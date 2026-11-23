@@ -121,7 +121,14 @@ final class ReferenceSearch {
 
               return referenceSearchTarget(cursorWorker, request, target, cancelChecker)
                   .thenCompose(
-                      searchTarget -> {
+                      contract -> {
+                        // The contract's uses, kept where they can reach the cursor's method
+                        // (FR-038): `LocalDate.toString()` never reaches an override of
+                        // `Object.toString`.
+                        final ReferenceTarget searchTarget =
+                            contract.equals(target)
+                                ? target
+                                : contract.reachingOnly(target.qualifiedName());
                         targetName.set(searchTarget.simpleName());
                         return searchReferencesForTarget(
                                 openFile,
