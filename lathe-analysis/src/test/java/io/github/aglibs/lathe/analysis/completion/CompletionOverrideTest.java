@@ -37,6 +37,43 @@ class CompletionOverrideTest extends CompletionTestSupport {
     assertThat(item.getInsertText()).contains("@Override", "public void run()");
   }
 
+  // A record's toString, equals and hashCode are implicit, so its own members, yet it may still
+  // declare them.
+  @Test
+  void completion_objectMethodPrefixInRecordBody_offersImplicitMemberStub() {
+    assertThat(
+            itemLabeled(fixture.complete("record Test(int x) { toS§ }"), "toString")
+                .orElseThrow()
+                .getInsertText())
+        .contains("@Override", "public String toString()");
+    assertThat(
+            itemLabeled(fixture.complete("record Test(int x) { hashC§ }"), "hashCode")
+                .orElseThrow()
+                .getInsertText())
+        .contains("@Override", "public int hashCode()");
+    assertThat(
+            itemLabeled(fixture.complete("record Test(int x) { equ§ }"), "equals")
+                .orElseThrow()
+                .getInsertText())
+        .contains("@Override", "public boolean equals(Object ");
+  }
+
+  // One the record declares is not offered again, nor an implicit accessor, which overrides
+  // nothing.
+  @Test
+  void completion_recordDeclaringToStringOrAccessor_offersNoStubForIt() {
+    assertThat(
+            fixture.complete(
+                """
+                record Test(int x) {
+                    public String toString() { return ""; }
+                    toS§
+                }"""))
+        .noneMatch(i -> i.getInsertText() != null && i.getInsertText().contains("toString()"));
+    assertThat(fixture.complete("record Test(int value) { val§ }"))
+        .noneMatch(i -> i.getInsertText() != null && i.getInsertText().contains("@Override"));
+  }
+
   @Test
   void completion_insideAnInterface_offersADefaultStubButNoneOfObjects() {
     final CompletionItem item =

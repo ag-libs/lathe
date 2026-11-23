@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
 import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.List;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
@@ -42,10 +43,36 @@ final class OverrideCompletionProvider {
     return analysis.elements().getAllMembers(enclosingType).stream()
         .filter(el -> el.getKind() == ElementKind.METHOD)
         .map(ExecutableElement.class::cast)
+        .map(method -> overriddenIfImplicit(method, enclosingType, analysis))
         .filter(method -> isOverridable(method, enclosingType))
         .filter(method -> method.getSimpleName().toString().startsWith(prefix))
         .map(method -> overrideItem(method, enclosingType, types, names))
         .toList();
+  }
+
+  // A record's toString, equals and hashCode are implicit unless it declares them (JLS 8.10.3), so
+  // they are its own members though it may still declare them; javac enters the implicit ones
+  // without a tree. Their stub is the java.lang.Record method they override.
+  private static ExecutableElement overriddenIfImplicit(
+      final ExecutableElement method,
+      final TypeElement enclosingType,
+      final AttributedFileAnalysis analysis) {
+    if (enclosingType.getKind() != ElementKind.RECORD
+        || !method.getEnclosingElement().equals(enclosingType)
+        || analysis.trees().getTree(method) != null
+        || !(analysis.types().asElement(enclosingType.getSuperclass())
+            instanceof final TypeElement superclass)) {
+      return method;
+    }
+
+    for (final Element member : superclass.getEnclosedElements()) {
+      if (member instanceof final ExecutableElement overridden
+          && analysis.elements().overrides(method, overridden, enclosingType)) {
+        return overridden;
+      }
+    }
+
+    return method;
   }
 
   private static boolean isOverridable(

@@ -4580,6 +4580,43 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0075 — A record's `toString`, `equals` and `hashCode` are not offered as override stubs — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: override completion in a record body, in the editor.**
+
+Found while fixing CQ-0065 (2026-11-22), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+In a class body, `toS§` offers the `toString` override stub; in a record body (`record Test(int x) { toS§ }`) it offers nothing, nor `hashC§` the `hashCode` stub.
+A record has these methods implicitly, so they look like members it already declares; but a record may still declare them explicitly, and doing so is common.
+
+### Expected
+
+The `toString`, `equals` and `hashCode` stubs in a record body, as in a class body, unless the record already declares one explicitly.
+
+### Fix
+
+`OverrideCompletionProvider` offers the enclosing type's inherited methods and leaves out those the type declares itself.
+A record's `toString`, `equals` and `hashCode` are implicitly declared by the record unless it declares them (JLS 8.10.3), so they were its own members and left out.
+javac enters these implicit members without a source tree, while one the record declares has a tree; checked on JDK 17 and 26.
+An implicit one now stands for the `java.lang.Record` method it overrides, which is offered as a stub as any inherited method is; one the record declares is still left out, and an implicit accessor, which overrides nothing, too.
+
+Checked in the editor on the EqualsVerifier clone, in the record `PackageScanOptions.MustExtend`: `toS`, `hashC` and `equ` offer the `toString`, `hashCode` and `equals` stubs, where `main` offered none.
+
+Not covered: an accessor written out explicitly (`public Class<?> type()`) is not offered as a stub either.
+
+### Regression targets
+
+- `CompletionOverrideTest.completion_objectMethodPrefixInRecordBody_offersImplicitMemberStub`
+- `CompletionOverrideTest.completion_recordDeclaringToStringOrAccessor_offersNoStubForIt`
+
+---
+
 ## CQ-0074 — A local declared in a block that has closed is still offered — done
 
 **Status: done** (2026-11-23)
