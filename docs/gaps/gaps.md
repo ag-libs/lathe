@@ -1201,34 +1201,6 @@ None yet.
 
 ---
 
-## FR-038 — References to a `toString` override list calls that cannot reach it
-
-**Status: accepted** (triaged 2026-11-22: found by the jdtls differential run; fixed before the comparison goes on)
-
-**Kind: bug**
-
-**Value: high — Size: S–M**
-
-**Affects: references, highlights of uses and what they feed (the MCP `find_references`, rename's search, change impact), for an override of an `Object` method; not checked for `equals` and `hashCode`.**
-
-Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
-
-### Observed behaviour
-
-References of `NamedEntity.toString` list 15 uses, of which only the 2 on an `Object` receiver can reach it (`sourceProperty.toString()` in `PostgresIntegrationTests`), and those 2 are what jdtls lists.
-The other 13 are calls on receivers that can never be a `NamedEntity`: `LocalDate.toString()` (a final class; 4 calls in `PetControllerTests` and `VisitControllerTests`), `ToStringCreator.toString()` (`Owner.java:168`) and `Path.toString()` (8 calls in `I18nPropertiesSyncTest`).
-The override seems to be searched as every override of `Object.toString`; on a large project its real uses are buried.
-
-### Fix direction
-
-Keep a call whose receiver's static type could be the overriding class: a supertype of it, a subtype of it, or an interface a subclass of it could implement; drop calls on a class unrelated to it, which no instance of the overriding class can be. Check `equals` and `hashCode` the same way.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in

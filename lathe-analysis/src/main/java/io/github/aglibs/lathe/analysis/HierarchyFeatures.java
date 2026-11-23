@@ -115,7 +115,8 @@ public final class HierarchyFeatures {
             List.of(),
             false,
             data.staticMember(),
-            -1);
+            -1,
+            null);
     try {
       return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
     } catch (final IOException e) {

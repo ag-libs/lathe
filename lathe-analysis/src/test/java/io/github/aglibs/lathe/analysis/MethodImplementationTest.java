@@ -150,7 +150,8 @@ class MethodImplementationTest {
             List.of(),
             false,
             false,
-            -1);
+            -1,
+            null);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       assertThat(
@@ -178,7 +179,8 @@ class MethodImplementationTest {
             List.of(),
             false,
             false,
-            -1);
+            -1,
+            null);
     final var compiler = new CountingJavaSourceCompiler();
 
     try (var session = new SourceAnalysisSession(compiler)) {

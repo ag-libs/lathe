@@ -7,6 +7,53 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-038 — References to a `toString` override list calls that cannot reach it — done
+
+**Status: done** (2026-11-22)
+
+**Kind: bug**
+
+**Value: high — Size: S–M**
+
+**Affects: references, highlights of uses and what they feed (the MCP `find_references`, rename's search, change impact), for an override of an `Object` method, `equals` and `hashCode` alike.**
+
+Found by the differential run against jdtls on spring-petclinic (2026-11-22, Lathe `0.1.0-SNAPSHOT` at `c0d49de`, jdtls 1.63.0, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand.
+
+### Observed behaviour
+
+References of `NamedEntity.toString` list 15 uses, of which only the 2 on an `Object` receiver can reach it (`sourceProperty.toString()` in `PostgresIntegrationTests`), and those 2 are what jdtls lists.
+The other 13 are calls on receivers that can never be a `NamedEntity`: `LocalDate.toString()` (a final class; 4 calls in `PetControllerTests` and `VisitControllerTests`), `ToStringCreator.toString()` (`Owner.java:168`) and `Path.toString()` (8 calls in `I18nPropertiesSyncTest`).
+The override seems to be searched as every override of `Object.toString`; on a large project its real uses are buried.
+
+### Fix direction
+
+Keep a call whose receiver's static type could be the overriding class: a supertype of it, a subtype of it, or an interface a subclass of it could implement; drop calls on a class unrelated to it, which no instance of the overriding class can be. Check `equals` and `hashCode` the same way.
+
+### Resolution
+
+The cause was not the matching: before searching, references swap the method for its contract, the topmost method it overrides (`Object.toString` for any `toString`), and so matched every override of that contract.
+The search still runs on the contract, with its modules and planning, and rename is unchanged; but a reference search now names the class asked about (`ReferenceTarget.reachingClass`), and in a file where that class resolves, a use of the contract is kept only when its receiver is typed as the class, a subtype or a supertype of it (`Object` included), as jdtls counts them.
+A call on an unrelated class (`LocalDate`, `ToStringCreator`) or an interface the class does not implement (`Path`) is dropped; on spring-petclinic this leaves the 2 calls jdtls lists.
+The receiver of an unqualified call is the innermost enclosing class with the method as a member, as javac binds it, so a call in an anonymous class inside the class still counts; that of a `super` call is the calling class, and of `X.super` the class X; a Javadoc link counts through the class declaring the method it resolves to.
+Where the class does not resolve, the file keeps every use of the contract, as before: a module upstream of the class or a sibling of its module, a class with no name in source (an anonymous class, a local class, an enum constant's body), a file outside the workspace.
+An override written since the last compile still finds its calls, as only its class, not the method, needs to resolve.
+`equals` and `hashCode` overrides follow the same path, checked for `equals`.
+Not covered, by the rule chosen to match jdtls: a call through an interface the class does not implement (`Runnable r` holding a subclass that implements it, or `CharSequence.toString()`) is not listed, though a subclass could implement that interface; nor a call on a receiver typed as a type variable whose bound is such an interface; and with the cursor on an interface's method, a call on a class not implementing the interface is not listed either.
+A class whose own name contains `$` is looked up by a name with `.` in its place, as the search's other lookups are, so it does not resolve and its uses are listed as before this fix.
+Also not covered: a sibling implementation in a module where the class is not visible is still listed; and a method that implements an interface method only through a subclass (`class Impl2 extends Base implements Service`) is not found from `Base.handle`, as before this fix.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.references_overrideOfObjectMethod_omitsCallsOnUnrelatedReceivers`
+- `LatheEngineNavigationTest.references_implementationOfAnInterface_omitsCallsOnASiblingImplementation`
+- `LatheEngineNavigationTest.references_implementationInADownstreamModule_listsTheCallThroughTheInterfaceUpstream`
+- `LatheEngineNavigationTest.references_methodOfAnEnumConstantBody_listsTheCallsThroughTheEnum`
+- `LatheEngineNavigationTest.references_overrideNotCompiledYet_listsTheCallsThroughItsClassAndObject`
+- `ReferenceLocatorTest.method_contractReachingOnlyAClass_keepsTheUsesWhoseReceiverCanHoldIt` (the per-file filter: `Path`, `LocalDate`, `Runnable`, chained calls, an unrelated class with its own `toString`, a `super` call, Javadoc links)
+- `ReferenceLocatorTest.method_contractReachingOnlyAClass_creditsAnUnqualifiedCallToTheClassItRunsOn`
+
+---
+
 ## EG-115 — Signature help is empty inside a call to a statically imported method — done
 
 **Status: done** (2026-11-22)

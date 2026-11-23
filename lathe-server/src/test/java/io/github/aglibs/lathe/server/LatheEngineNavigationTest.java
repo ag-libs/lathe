@@ -4,6 +4,7 @@ import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -201,6 +203,245 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             r ->
                 r.location().uri().endsWith("Caller.java")
                     && r.location().snippet().contains("greet"));
+  }
+
+  // FR-038: references to an override are the calls that can reach it, through its class, a
+  // subclass or a supertype it overrides; not every call of the method it overrides, as the
+  // calls on an unrelated class that overrides it too can never reach it.
+  @Test
+  void references_overrideOfObjectMethod_omitsCallsOnUnrelatedReceivers() throws Exception {
+    final String namedSource =
+        """
+        package com.example;
+        class Named {
+          @Override
+          public String toString() { return "n"; }
+          @Override
+          public boolean equals(Object other) { return other == this; }
+        }
+        """;
+    final Path named = TestCompiler.writeModuleSource(tmp, "com/example/Named.java", namedSource);
+    final Path pet =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Pet.java", "package com.example; class Pet extends Named {}");
+    final Path creator =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Creator.java",
+            "package com.example; class Creator { @Override public String toString() { return \"c\"; } }");
+    final String userSource =
+        """
+        package com.example;
+        class User {
+          void use(Named n, Pet p, Object o, java.time.LocalDate d, java.nio.file.Path path) {
+            n.toString();
+            p.toString();
+            o.toString();
+            d.toString();
+            path.toString();
+            new Creator().toString();
+            n.equals(o);
+            o.equals(n);
+            path.equals(o);
+            "s".equals(o);
+          }
+        }
+        """;
+    final Path user = TestCompiler.writeModuleSource(tmp, "com/example/User.java", userSource);
+    compileIntoMirror(named, pet, creator, user);
+    engine = new LatheEngine(tmp);
+    final var toString = positionOf(namedSource, "toString");
+
+    final LatheReferences references =
+        engine
+            .references(named, toString.getLine(), toString.getCharacter(), 50, ANY_ACCESS)
+            .value();
+
+    assertThat(references.references())
+        .extracting(
+            reference -> new Position(reference.location().line(), reference.location().column()))
+        .containsExactlyInAnyOrder(
+            SampleFixture.posOf(userSource, "n.toString", "toString"),
+            SampleFixture.posOf(userSource, "p.toString", "toString"),
+            SampleFixture.posOf(userSource, "o.toString", "toString"));
+    final var equals = positionOf(namedSource, "equals");
+    assertThat(
+            engine
+                .references(named, equals.getLine(), equals.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .references())
+        .extracting(
+            reference -> new Position(reference.location().line(), reference.location().column()))
+        .containsExactlyInAnyOrder(
+            SampleFixture.posOf(userSource, "n.equals", "equals"),
+            SampleFixture.posOf(userSource, "o.equals", "equals"));
+  }
+
+  // The same for an interface the project declares: a call on a sibling implementation never
+  // reaches this one, while a call through the interface may.
+  @Test
+  void references_implementationOfAnInterface_omitsCallsOnASiblingImplementation()
+      throws Exception {
+    final Path service =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Service.java",
+            "package com.example; interface Service { void handle(); }");
+    final String implSource =
+        """
+        package com.example;
+        class Impl implements Service {
+          public void handle() {}
+        }
+        """;
+    final Path impl = TestCompiler.writeModuleSource(tmp, "com/example/Impl.java", implSource);
+    final Path other =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Other.java",
+            "package com.example; class Other implements Service { public void handle() {} }");
+    final String userSource =
+        """
+        package com.example;
+        class User {
+          void use(Service s, Impl i, Other o) {
+            s.handle();
+            i.handle();
+            o.handle();
+          }
+        }
+        """;
+    final Path user = TestCompiler.writeModuleSource(tmp, "com/example/User.java", userSource);
+    compileIntoMirror(service, impl, other, user);
+    engine = new LatheEngine(tmp);
+    final var handle = positionOf(implSource, "handle");
+
+    final LatheReferences references =
+        engine.references(impl, handle.getLine(), handle.getCharacter(), 50, ANY_ACCESS).value();
+
+    assertThat(references.references())
+        .extracting(
+            reference -> new Position(reference.location().line(), reference.location().column()))
+        .containsExactlyInAnyOrder(
+            SampleFixture.posOf(userSource, "s.handle", "handle"),
+            SampleFixture.posOf(userSource, "i.handle", "handle"));
+  }
+
+  // A call through the interface in a module upstream of the implementation reaches it at run
+  // time: the modules searched are the interface's, the calls kept the implementation's.
+  @Test
+  void references_implementationInADownstreamModule_listsTheCallThroughTheInterfaceUpstream()
+      throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "api",
+        Map.of(
+            "com/example/api/Service.java",
+            "package com.example.api; public interface Service { void handle(); }",
+            "com/example/api/Runner.java",
+            "package com.example.api; class Runner { void run(Service s) { s.handle(); } }"),
+        List.of(),
+        1_000L);
+    final String implSource =
+        """
+        package com.example.impl;
+        class Impl implements com.example.api.Service {
+          public void handle() {}
+        }
+        """;
+    final Path impl =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "impl",
+                Map.of("com/example/impl/Impl.java", implSource),
+                List.of("api"),
+                1_000L)
+            .get(0);
+    engine = new LatheEngine(tmp);
+    final var handle = positionOf(implSource, "handle");
+
+    final LatheReferences references =
+        engine.references(impl, handle.getLine(), handle.getCharacter(), 50, ANY_ACCESS).value();
+
+    assertThat(references.references())
+        .extracting(reference -> Path.of(reference.location().path()).getFileName().toString())
+        .containsExactly("Runner.java");
+  }
+
+  // A method of a class with no name in source, here an enum constant's body, is called only
+  // through a supertype, and those calls are its references.
+  @Test
+  void references_methodOfAnEnumConstantBody_listsTheCallsThroughTheEnum() throws Exception {
+    final String opSource =
+        """
+        package com.example;
+        enum Op {
+          PLUS {
+            int apply(int a, int b) { return a + b; }
+          };
+          abstract int apply(int a, int b);
+        }
+        """;
+    final Path op = TestCompiler.writeModuleSource(tmp, "com/example/Op.java", opSource);
+    final String userSource =
+        "package com.example; class User { int use(Op op) { return op.apply(1, 2); } }";
+    final Path user = TestCompiler.writeModuleSource(tmp, "com/example/User.java", userSource);
+    compileIntoMirror(op, user);
+    engine = new LatheEngine(tmp);
+    final var apply = positionOf(opSource, "apply");
+
+    final LatheReferences references =
+        engine.references(op, apply.getLine(), apply.getCharacter(), 50, ANY_ACCESS).value();
+
+    assertThat(references.references())
+        .extracting(
+            reference -> new Position(reference.location().line(), reference.location().column()))
+        .containsExactly(SampleFixture.posOf(userSource, "op.apply", "apply"));
+  }
+
+  // An override written since the last compile is not in the class files other files are checked
+  // against; its class is, so the calls that can reach it are still found.
+  @Test
+  void references_overrideNotCompiledYet_listsTheCallsThroughItsClassAndObject() throws Exception {
+    final Path named =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Named.java", "package com.example; class Named {}");
+    final String userSource =
+        """
+        package com.example;
+        class User {
+          void use(Named n, Object o, java.time.LocalDate d) {
+            n.toString();
+            o.toString();
+            d.toString();
+          }
+        }
+        """;
+    final Path user = TestCompiler.writeModuleSource(tmp, "com/example/User.java", userSource);
+    compileIntoMirror(named, user);
+    final String namedSource =
+        """
+        package com.example;
+        class Named {
+          @Override
+          public String toString() { return "n"; }
+        }
+        """;
+    Files.writeString(named, namedSource);
+    engine = new LatheEngine(tmp);
+    final var toString = positionOf(namedSource, "toString");
+
+    final LatheReferences references =
+        engine
+            .references(named, toString.getLine(), toString.getCharacter(), 50, ANY_ACCESS)
+            .value();
+
+    assertThat(references.references())
+        .extracting(
+            reference -> new Position(reference.location().line(), reference.location().column()))
+        .containsExactlyInAnyOrder(
+            SampleFixture.posOf(userSource, "n.toString", "toString"),
+            SampleFixture.posOf(userSource, "o.toString", "toString"));
   }
 
   // MC-101: a declaration is no use, neither the method's own nor an override's, so an unused

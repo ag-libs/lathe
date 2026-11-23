@@ -41,7 +41,8 @@ class RenameBindingCheckTest {
             List.of(),
             true,
             false,
-            -1);
+            -1,
+            null);
 
     try (var compiler = new TempSourceCompiler(List.of(classes))) {
       assertThat(

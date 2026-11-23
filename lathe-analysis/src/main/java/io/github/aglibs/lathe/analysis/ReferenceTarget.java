@@ -32,7 +32,8 @@ public record ReferenceTarget(
     List<String> overriddenDeclarers,
     boolean overrideFamilyBounded,
     boolean staticMember,
-    long declarationOffset) {
+    long declarationOffset,
+    String reachingClass) {
 
   // A method or constructor known by its owner's binary name and erased descriptor, as a
   // call-hierarchy item carries it.
@@ -44,7 +45,16 @@ public record ReferenceTarget(
       final SearchScope scope,
       final boolean staticMember) {
     return new ReferenceTarget(
-        kind, ownerBinaryName, name, erasedDescriptor, scope, List.of(), false, staticMember, -1);
+        kind,
+        ownerBinaryName,
+        name,
+        erasedDescriptor,
+        scope,
+        List.of(),
+        false,
+        staticMember,
+        -1,
+        null);
   }
 
   public enum SearchScope {
@@ -55,6 +65,9 @@ public record ReferenceTarget(
     REACTOR_MODULES
   }
 
+  // reachingClass: the binary name of the class whose method a reference search asks about, when
+  // the target is the contract that method overrides; a use of the contract is then kept only where
+  // its receiver can hold that class (ReferenceLocator). Null when every use of the target counts.
   public ReferenceTarget {
     ValidCheck.check()
         .notNull(kind, "kind")
@@ -64,6 +77,21 @@ public record ReferenceTarget(
         .notNull(overriddenDeclarers, "overriddenDeclarers")
         .validate();
     overriddenDeclarers = List.copyOf(overriddenDeclarers);
+  }
+
+  // This target, its uses kept only where they can reach the named class's override of it.
+  public ReferenceTarget reachingOnly(final String binaryName) {
+    return new ReferenceTarget(
+        kind,
+        qualifiedName,
+        simpleName,
+        erasedDescriptor,
+        scope,
+        overriddenDeclarers,
+        overrideFamilyBounded,
+        staticMember,
+        declarationOffset,
+        binaryName);
   }
 
   // Two same-named local-scope symbols in a class have identical structural descriptors, so a
@@ -121,7 +149,8 @@ public record ReferenceTarget(
               List.of(),
               false,
               false,
-              -1);
+              -1,
+              null);
       case METHOD, CONSTRUCTOR -> {
         final var ee = (ExecutableElement) element;
         final var owner = (TypeElement) ee.getEnclosingElement();
@@ -137,7 +166,8 @@ public record ReferenceTarget(
             declarers,
             method,
             isStatic(element),
-            -1);
+            -1,
+            null);
       }
       case FIELD, ENUM_CONSTANT -> {
         final var owner = (TypeElement) element.getEnclosingElement();
@@ -150,7 +180,8 @@ public record ReferenceTarget(
             List.of(),
             false,
             isStatic(element),
-            -1);
+            -1,
+            null);
       }
       default ->
           new ReferenceTarget(
@@ -162,7 +193,8 @@ public record ReferenceTarget(
               List.of(),
               false,
               false,
-              declarationOffset);
+              declarationOffset,
+              null);
     };
   }
 

@@ -4,6 +4,7 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -25,10 +26,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.Position;
@@ -40,6 +46,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   private final boolean includeDeclaration;
   private final ExecutableElement targetMethod;
   private final Element targetLocal;
+  private final TypeElement reachingClass;
   private final List<ReferenceMatch> results = new ArrayList<>();
   private final Set<Range> reported = new HashSet<>();
 
@@ -53,12 +60,14 @@ final class ReferenceLocator extends SourceTreeLocator {
       final String uri,
       final boolean includeDeclaration,
       final ExecutableElement targetMethod,
-      final Element targetLocal) {
+      final Element targetLocal,
+      final TypeElement reachingClass) {
     super(trees, cu, content, target, types, elements);
     this.uri = uri;
     this.includeDeclaration = includeDeclaration;
     this.targetMethod = targetMethod;
     this.targetLocal = targetLocal;
+    this.reachingClass = reachingClass;
   }
 
   static List<ReferenceMatch> references(
@@ -85,7 +94,13 @@ final class ReferenceLocator extends SourceTreeLocator {
             uri,
             includeDeclaration,
             targetMethod,
-            target.hasDeclarationIdentity() ? declaredLocal(analysis, target) : null);
+            target.hasDeclarationIdentity() ? declaredLocal(analysis, target) : null,
+            // FR-038: the class the search asks about, where it resolves; null when every use
+            // counts, or the class is not visible here (upstream of it, no name in source), where
+            // a use of the contract may reach it.
+            target.reachingClass() == null
+                ? null
+                : analysis.elements().getTypeElement(target.reachingClass().replace('$', '.')));
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
   }
@@ -95,7 +110,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     final var name = node.getName().toString();
     if (positions.getEndPosition(cu, node) >= 0) {
       final var element = trees.getElement(getCurrentPath());
-      if (matchesTarget(element)) {
+      if (matchesTarget(element) && reaches(element, () -> unqualifiedReceiver(node, element))) {
         addMatch(positions.getStartPosition(cu, node), name.length(), roleForElement(element));
       }
     }
@@ -119,7 +134,8 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (target.matchesFamily(element, types, elements, targetMethod)) {
+    if (target.matchesFamily(element, types, elements, targetMethod)
+        && reaches(element, () -> typeOf(node.getQualifierExpression()))) {
       addMatchAtIdentifier(node, DeclarationNames.referenceName(node), ReferenceRole.INVOCATION);
     }
     return null;
@@ -185,7 +201,8 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (target.matchesFamily(element, types, elements, targetMethod)) {
+    if (target.matchesFamily(element, types, elements, targetMethod)
+        && reaches(element, () -> selectReceiver(node))) {
       addMatchAtIdentifier(node, node.getIdentifier().toString(), roleForMemberSelect(element));
     }
     return null;
@@ -195,7 +212,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMethod(final MethodTree node, final Void ignored) {
     if (includeDeclaration) {
       final var element = matchedElement();
-      if (element != null) {
+      if (element != null && reaches(element, () -> element.getEnclosingElement().asType())) {
         addDeclarationMatch(node, DeclarationNames.declarationName(element).toString());
       } else {
         addConstructorDeclarationForTypeTarget(node);
@@ -273,7 +290,10 @@ final class ReferenceLocator extends SourceTreeLocator {
         cu,
         getCurrentPath(),
         reference -> {
-          if (reference.element() == null || !matchesTarget(reference.element())) {
+          if (reference.element() == null
+              || !matchesTarget(reference.element())
+              || !reaches(
+                  reference.element(), () -> reference.element().getEnclosingElement().asType())) {
             return;
           }
 
@@ -284,6 +304,88 @@ final class ReferenceLocator extends SourceTreeLocator {
             addMatch(nameStart, name.length(), roleForElement(reference.element()));
           }
         });
+  }
+
+  // A method use reaches the class's override only through a receiver typed as the class, a
+  // subtype or a supertype of it, as jdtls counts them; not through an unrelated type, an interface
+  // included (`Path.toString()`), though a subclass could implement it. The receiver is typed only
+  // when there is a class to check against; one Lathe cannot type keeps the use.
+  private boolean reaches(final Element element, final Supplier<TypeMirror> receiverOf) {
+    if (reachingClass == null || element == null || element.getKind() != ElementKind.METHOD) {
+      return true;
+    }
+
+    final TypeMirror receiver = receiverOf.get();
+    if (receiver == null || receiver.getKind() == TypeKind.ERROR) {
+      return true;
+    }
+
+    final TypeMirror held = types.erasure(reachingClass.asType());
+    final TypeMirror through = types.erasure(receiver);
+    return types.isSubtype(through, held) || types.isSubtype(held, through);
+  }
+
+  private TypeMirror typeOf(final Tree expression) {
+    return expression == null
+        ? null
+        : trees.getTypeMirror(new TreePath(getCurrentPath(), expression));
+  }
+
+  // `x.m()` runs on x; `super.m()` in the calling class and `X.super.m()` in class X, which reach
+  // only what that class can (for an interface X, the calling class).
+  private TypeMirror selectReceiver(final MemberSelectTree node) {
+    final ExpressionTree expression = node.getExpression();
+    if (expression instanceof final MemberSelectTree qualified
+        && qualified.getIdentifier().contentEquals("super")
+        && trees.getElement(
+                new TreePath(new TreePath(getCurrentPath(), expression), qualified.getExpression()))
+            instanceof final TypeElement named
+        && !named.getKind().isInterface()) {
+      return named.asType();
+    }
+
+    final boolean superCall =
+        expression instanceof final IdentifierTree id && id.getName().contentEquals("super")
+            || expression instanceof final MemberSelectTree qualified
+                && qualified.getIdentifier().contentEquals("super");
+    if (!superCall) {
+      return typeOf(expression);
+    }
+
+    for (TreePath path = getCurrentPath(); path != null; path = path.getParentPath()) {
+      if (path.getLeaf() instanceof ClassTree
+          && trees.getElement(path) instanceof final TypeElement enclosing) {
+        return enclosing.asType();
+      }
+    }
+
+    return null;
+  }
+
+  // An unqualified call's receiver is the innermost enclosing class with the method as a member,
+  // as javac binds it (a call in an anonymous class may run on the outer instance); null for an
+  // identifier that is not a call's name.
+  private TypeMirror unqualifiedReceiver(final IdentifierTree node, final Element element) {
+    final TreePath parent = getCurrentPath().getParentPath();
+    if (parent == null
+        || !(parent.getLeaf() instanceof final MethodInvocationTree call)
+        || call.getMethodSelect() != node
+        || !(element instanceof final ExecutableElement method)) {
+      return null;
+    }
+
+    for (TreePath path = parent; path != null; path = path.getParentPath()) {
+      if (path.getLeaf() instanceof ClassTree
+          && trees.getElement(path) instanceof final TypeElement enclosing
+          && ElementFilter.methodsIn(elements.getAllMembers(enclosing)).stream()
+              .anyMatch(
+                  member ->
+                      member.equals(method) || elements.overrides(member, method, enclosing))) {
+        return enclosing.asType();
+      }
+    }
+
+    return null;
   }
 
   private Element matchedElement() {
