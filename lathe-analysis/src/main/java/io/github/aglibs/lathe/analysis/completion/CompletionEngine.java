@@ -188,9 +188,12 @@ public final class CompletionEngine {
       final ParsedSentinel parsed,
       final SentinelInjectionResult injected,
       final CompletionRequest req) {
+    // A type argument or bound is part of a member's type, never the start of a member.
     final boolean memberStartSlot =
         (parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
                 || parsed.sentinelContext() == SentinelContext.VARIABLE_DECLARATION)
+            && parsed.typeReferenceRole() != TypeReferenceRole.TYPE_ARGUMENT
+            && parsed.typeReferenceRole() != TypeReferenceRole.ARRAY_TYPE_ARGUMENT
             && !isRealNameSlot(parsed);
     if (!memberStartSlot || parsed.enclosingClass() == null || parsed.enclosingMethod() != null) {
       return outcome;

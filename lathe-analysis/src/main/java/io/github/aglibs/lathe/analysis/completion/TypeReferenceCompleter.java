@@ -64,10 +64,26 @@ final class TypeReferenceCompleter {
         completeSimpleNameTypeReference(injected, req, parsed.typeReferenceRole());
     // Lang types merged only for TYPE_REFERENCE; VARIABLE_DECLARATION arrives here too but
     // gets a bare type-index result.
-    final var typeRefOutcome =
+    final var withLangTypes =
         parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
             ? mergeLangTypes(injected.prefix(), req, typeIndexOutcome, parsed.typeReferenceRole())
             : typeIndexOutcome;
+    // A type argument may name a type of this file the index has not seen yet: the type being
+    // declared (Comparable<Self>) or a nested one.
+    final boolean typeArgument =
+        parsed.typeReferenceRole() == TypeReferenceRole.TYPE_ARGUMENT
+            || parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT;
+    final var typeRefOutcome =
+        typeArgument
+            ? mergeInFileTypes(injected.prefix(), req, withLangTypes, parsed.typeReferenceRole())
+            : withLangTypes;
+    if (parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT) {
+      final List<CompletionItem> primitives =
+          KeywordProvider.primitiveCandidates(injected.prefix()).stream()
+              .map(CompletionItemPresenter::present)
+              .toList();
+      return mergeSimpleNameAndTypeIndexItems(primitives, typeRefOutcome);
+    }
 
     if (parsed.typeReferenceRole() == TypeReferenceRole.ORDINARY
         && parsed.enclosingClass() != null) {
@@ -502,7 +518,7 @@ final class TypeReferenceCompleter {
     }
 
     return switch (role) {
-      case ORDINARY -> true;
+      case ORDINARY, TYPE_ARGUMENT, ARRAY_TYPE_ARGUMENT -> true;
       case CONSTRUCTOR ->
           kind == TypeKind.CLASS || kind == TypeKind.RECORD || kind == TypeKind.INTERFACE;
       case CLASS_EXTENDS, THROWS -> kind == TypeKind.CLASS;
@@ -516,7 +532,10 @@ final class TypeReferenceCompleter {
       final AttributedFileAnalysis analysis,
       final Scope scope,
       final TypeReferenceRole role) {
-    if (analysis == null || role == TypeReferenceRole.ORDINARY) {
+    if (analysis == null
+        || role == TypeReferenceRole.ORDINARY
+        || role == TypeReferenceRole.TYPE_ARGUMENT
+        || role == TypeReferenceRole.ARRAY_TYPE_ARGUMENT) {
       return true;
     }
 
@@ -530,7 +549,7 @@ final class TypeReferenceCompleter {
       final Scope scope,
       final TypeReferenceRole role) {
     return switch (role) {
-      case ORDINARY -> true;
+      case ORDINARY, TYPE_ARGUMENT, ARRAY_TYPE_ARGUMENT -> true;
       case CONSTRUCTOR -> constructibleType(typeEl, analysis, scope);
       case CLASS_EXTENDS -> extendableClass(typeEl);
       case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS ->

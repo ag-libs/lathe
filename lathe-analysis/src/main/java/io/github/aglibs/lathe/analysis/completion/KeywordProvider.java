@@ -75,6 +75,13 @@ final class KeywordProvider {
         .toList();
   }
 
+  static List<CompletionCandidate> primitiveCandidates(final String prefix) {
+    return PRIMITIVES.stream()
+        .filter(primitive -> primitive.startsWith(prefix))
+        .map(KeywordProvider::keywordCandidate)
+        .toList();
+  }
+
   static CompletionCandidate keywordCandidate(final String keyword) {
     final String insertText = STANDALONE_KEYWORDS.contains(keyword) ? keyword : keyword + " ";
     return new CompletionCandidate(

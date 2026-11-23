@@ -711,6 +711,7 @@ final class SentinelParser {
     // Only the type a thrown `new` constructs must be a Throwable: an argument, a receiver or a
     // call around it takes any value, so the walk tracks whether it is still on that type.
     boolean thrownNewType = false;
+    boolean arrayElement = false;
     for (TreePath path = parentPath; path != null; path = path.getParentPath()) {
       final Tree parent = path.getLeaf();
       final Tree currentChild = child;
@@ -718,6 +719,23 @@ final class SentinelParser {
       if (parent instanceof final AnnotationTree annotationTree
           && annotationTree.getAnnotationType() == currentChild) {
         return TypeReferenceRole.ANNOTATION;
+      }
+
+      // A type argument, a wildcard's bound within it, and a type parameter's bound take any
+      // reference type: the role of what they parameterize (a supertype in a header, a declared or
+      // thrown exception) does not reach them, so Comparable<Self> completes. An array's element
+      // type on the way there may also be primitive (List<int[]>, List<? extends int[]>).
+      if (parent instanceof final ParameterizedTypeTree parameterized
+              && parameterized.getTypeArguments().stream().anyMatch(t -> t == currentChild)
+          || parent instanceof final TypeParameterTree typeParameter
+              && typeParameter.getBounds().stream().anyMatch(t -> t == currentChild)) {
+        return arrayElement
+            ? TypeReferenceRole.ARRAY_TYPE_ARGUMENT
+            : TypeReferenceRole.TYPE_ARGUMENT;
+      }
+
+      if (parent instanceof final ArrayTypeTree array && array.getType() == currentChild) {
+        arrayElement = true;
       }
 
       if (parent instanceof final MethodTree method

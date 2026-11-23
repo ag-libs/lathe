@@ -8,5 +8,11 @@ enum TypeReferenceRole {
   INTERFACE_EXTENDS,
   RECORD_IMPLEMENTS,
   THROWS,
-  ANNOTATION
+  ANNOTATION,
+  // A type argument (a wildcard's bound included) or a type parameter's bound: any reference type,
+  // and no keyword, primitive or member declaration, which none of those positions can hold.
+  TYPE_ARGUMENT,
+  // An array's element type within a type argument (List<int[]>): a type argument that also takes
+  // a primitive.
+  ARRAY_TYPE_ARGUMENT
 }
