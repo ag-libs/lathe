@@ -546,11 +546,21 @@ final class TypeReferenceCompleter {
                     || el.getKind() == ElementKind.INTERFACE
                     || el.getKind() == ElementKind.ENUM
                     || el.getKind() == ElementKind.ANNOTATION_TYPE)
-        .filter(el -> !el.getModifiers().contains(Modifier.PRIVATE))
         .filter(el -> el.getSimpleName().toString().startsWith(prefix))
+        .filter(el -> isUsableLangType((TypeElement) el, analysis, scope))
         .filter(el -> typeReferenceRoleAllows((TypeElement) el, analysis, scope, role))
         .map(el -> CandidateFactory.typeElementCandidate((TypeElement) el))
         .toList();
+  }
+
+  // java.lang holds package-private types too (AbstractStringBuilder, NamedPackage): javac says
+  // which the cursor can use, so code in java.lang itself still gets them; without a scope, only
+  // the public ones.
+  private static boolean isUsableLangType(
+      final TypeElement type, final AttributedFileAnalysis analysis, final Scope scope) {
+    return scope != null && scope.getEnclosingClass() != null
+        ? analysis.trees().isAccessible(scope, type)
+        : type.getModifiers().contains(Modifier.PUBLIC);
   }
 
   private CompletionOutcome mergeInFileTypes(
