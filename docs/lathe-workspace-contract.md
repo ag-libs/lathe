@@ -94,7 +94,8 @@ A compile with no `--release` (and no preview) has `--system <the JDK it compile
 the server's javac, which may be a newer JDK's, then writes the class file version the build does and checks the same language level and JDK API.
 A JDK before 9 has no module image, so its compile gets only the versions.
 Maven records none of them for a toolchain that targets a newer release than the JDK Maven runs on, which the server runs on too: its javac could not compile for it.
-The server skips a `--system` that names its own JDK, and one no longer installed, with a warning.
+The server compiles against its own JDK in place of a `--system` no longer installed, or newer than its own, with a warning.
+It always gives its javac a `--system`, as javac warns of a `-source` older than itself without one, and a build's `-Werror` turns that warning into an error.
 
 Without it, files under the module are "not in a Lathe module" and get no compiler, and runs are blocked as not compiled.
 Classpath entries that point at a sibling module's build output are rewritten by the server to that module's mirror,

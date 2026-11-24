@@ -30,10 +30,12 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
 import org.junit.jupiter.api.io.TempDir;
 
 class ModuleSourceCompilerTest {
@@ -347,10 +349,9 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  // A build's compile JDK comes as --system. The server's own is javac's default; one gone since
-  // the sync cannot be opened, and one newer than the server's cannot be read by its javac. None is
-  // applied, the compile writes against the server's JDK, and the missing and the newer one are
-  // warned about.
+  // A build's compile JDK comes as --system. One gone since the sync cannot be opened, and one
+  // newer than the server's cannot be read by its javac: the server's own stands in for either, the
+  // compile writes against it, and both are warned about. The server's own is applied silently.
   @Test
   void compileBatch_systemOfOwnMissingOrNewerJdk_writesAgainstTheServersJdk_warnsOfTheOthers()
       throws Exception {
@@ -420,6 +421,53 @@ class ModuleSourceCompilerTest {
         .satisfiesExactly(
             first -> assertThat(first).contains(missing.toString()).contains("not found"),
             second -> assertThat(second).contains(newer.toString()).contains("newer"));
+  }
+
+  // A build with -source older than the server's JDK, under -Xlint:all -Werror: without --system,
+  // javac's [options] warning becomes an error before attribution, and the file is reported as
+  // "warnings found" with nothing else checked. The server's own JDK stands in for one gone since
+  // the sync; beside --release none is given, as javac refuses both. A -source 17 needs a newer
+  // JDK to warn.
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_18)
+  void compile_systemUnderWerror_ownMissingOrReleased_attributesTheFile() throws Exception {
+    final var config = TestCompiler.mainTreeConfig(td, "module");
+    final Path sourceRoot = config.sourceRoots().get(0);
+    Files.createDirectories(sourceRoot);
+    final String uri = sourceRoot.resolve("Names.java").toUri().toString();
+    final String ownJdk = System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
+    final String missingJdk = td.resolve("uninstalled-jdk").toString();
+    final List<String> lint = List.of("-Werror", "-Xlint:all");
+    final List<String> versions = List.of("-source", "17", "-target", "17");
+
+    for (final String jdk : List.of(ownJdk, missingJdk)) {
+      final List<String> args =
+          Stream.of(List.of("--system", jdk), versions, lint).flatMap(List::stream).toList();
+      assertThat(
+              compileNamesWithTypeError(
+                  withOptions(config, null, config.proc(), config.encoding(), args), uri))
+          .as(jdk)
+          .singleElement()
+          .asString()
+          .contains("incompatible types");
+    }
+
+    final List<String> released =
+        Stream.of(List.of("--system", ownJdk), lint).flatMap(List::stream).toList();
+    assertThat(
+            compileNamesWithTypeError(
+                withOptions(config, "17", config.proc(), config.encoding(), released), uri))
+        .singleElement()
+        .asString()
+        .contains("incompatible types");
+  }
+
+  private static List<String> compileNamesWithTypeError(
+      final ModuleSourceConfig config, final String uri) {
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      return errorMessages(
+          compiler.compile(uri, "class Names { int n = \"a\"; }", CompileMode.OPEN));
+    }
   }
 
   // The editor's text is compiled from a temp copy javac reads in the module's -encoding: a
