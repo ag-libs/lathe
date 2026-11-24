@@ -848,6 +848,79 @@ A `method` token on the name of a method reference, as for a call; `status.md` s
 
 None yet.
 
+## EG-124 — A position on a package segment of an import resolves to the imported type
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: hover and definition in the editor; MCP `describe_symbol` and `get_definition`.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B8).
+
+### Observed behaviour
+
+In `dropwizard-util`'s `Duration.java:7`, `import java.util.Locale;`, hover and definition on `java` (column 8), `util` (13) and `Locale` (18) all answer `public final class Locale …`; definition on `java` opens `Locale.java:574`.
+On the `package` line the same kind of position answers the package (`describe_symbol` at 1:12 gives `io.dropwizard`).
+
+### Expected
+
+The package for `java` and `util` (`java`, `java.util`), as on the `package` line, or nothing; the type only on its own name.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-125 — An unused local is reported twice once the module's compiler plugins have run
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: diagnostics in the editor and MCP `get_diagnostics`, in a module that runs Error Prone.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N14).
+
+### Observed behaviour
+
+A new file in `dropwizard-util` with two unused locals (`List<String> l = null;`, `Path p = null;`) answers `get_diagnostics` with four entries: Lathe's hint `Unused local variable 'l'` and Error Prone's warning `[UnusedVariable] The local variable 'l' is never read.` for each, on the same variable.
+
+### Expected
+
+One report per unused local: Lathe's own hint left out where the build's compiler plugin already reports it, or the two merged.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-126 — After the test `module-info.java` is opened, its errors are reported in every other file of the tree, at unrelated positions
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: diagnostics in the editor, for a source tree with its own `module-info.java`.**
+
+Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P2).
+
+### Observed behaviour
+
+In a fresh session, `src/test/java/org/junitpioneer/testkit/PioneerTestKitTests.java` opens with 0 errors.
+After `src/test/java/module-info.java` is opened (6 errors of its own, see [WS-49](#ws-49--a-test-tree-with-its-own-module-infojava-loses-the-main-classes-the-build-patches-into-it)) and closed, `PioneerTestKitTests.java` has 6 errors: the module-info's messages (`cannot find symbol … class IssueExtensionExecutionListener … location: package org.junitpioneer.jupiter.issue`), placed at lines 60, 64, 66, 68, 69 and 76 of the test file, on unrelated text (`assertThat(results).hasNumberOfStartedTests(1);`).
+Every test file opened later in the session gets them; closing the module-info does not clear them.
+
+### Expected
+
+A file's diagnostics are its own: an error in `module-info.java` is reported there only, at its own position.
+
+### Regression targets
+
+None yet.
+
 ---
 
 # Find References Gaps (FR)
@@ -1102,6 +1175,33 @@ The same holds for a property Jackson serializes or a JPQL query names: any fram
 
 When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
 A field renamed with its accessors is the same case.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-039 — A source root shared by two trees doubles every reference in it, and rename then fails with an internal error
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: references and rename in the editor; MCP `find_references` (and what counts its rows); probably every answer merged across trees.**
+
+Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P3).
+
+### Observed behaviour
+
+Pioneer's `src/demo/java` is a source root of both the `demo` source set and the `demoTests` JVM test suite (`.lathe/lsp-params-classes-demo.json` and `lsp-params-classes-demoTests.json` both list it).
+References of `@CartesianTest` (`src/main/java/org/junitpioneer/jupiter/cartesian/CartesianTest.java:55:19`) list every use in `CartesianTestExtensionDemo.java` twice: 58 rows for 29 positions, over LSP and in MCP `find_references`, whose header ("95 reference(s)") counts the duplicates.
+`textDocument/rename` of it answers `-32603 Internal error`: `StringIndexOutOfBoundsException: Range [1432, 1419) out of bounds for length 8682` in `Positions.segment`, from `Positions.applyEdits` in `RenameBindingCheck$EditedFile.of`, as two identical edits reach one file.
+The battery's "find_references: no duplicate rows" check passes on Dropwizard, which shares no source root.
+
+### Expected
+
+One reference per position in a file, whichever trees compile it, and a rename edit with one edit per use.
 
 ### Regression targets
 
@@ -1529,6 +1629,42 @@ None yet.
 
 ---
 
+## WS-49 — A test tree with its own `module-info.java` loses the main classes the build patches into it
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: diagnostics and every feature of such a test tree in the editor and MCP; MCP `run_test`, which refuses code that does not compile; references and rename, which miss the tree.**
+
+Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P1).
+
+### Observed behaviour
+
+Pioneer's test tree declares the module again (`src/test/java/module-info.java`, `module org.junitpioneer { … provides … with org.junitpioneer.jupiter.issue.IssueExtensionExecutionListener; … }`), and the build compiles it with the main output patched in (`--patch-module=org.junitpioneer=build/classes/java/main`, recorded in `.lathe/lsp-params-test-classes.json`).
+Command-line javac with the descriptor's own options, module path and class path compiles the whole test tree, and the module-info alone, with exit 0.
+
+- MCP `get_diagnostics` reports errors in all 76 test files and in none of the 123 main and 32 demo files; `CartesianTestExtensionTests.java` has 198, from its first import, `import org.junitpioneer.jupiter.ReportEntry;` (public, in an exported package).
+- MCP `run_test` refuses every test: `CartesianTestExtensionTests.java was not run: code it runs does not compile: …:35: cannot find symbol`.
+- In the editor, the module-info has 6 errors, `cannot find symbol` on each `provides … with` and `uses` of a main type; in a fresh session `TestNameFormatterTests.java` (13) and `EnvironmentVariableUtilsTests.java` (3) do not find main types of their own package.
+- References of `@CartesianTest` list 95 uses in `main` and `demo` and none in `test`, which uses it throughout; a rename would leave them all behind.
+
+### Expected
+
+The test tree compiles as the build compiles it: the module made of the test sources with the main classes patched in.
+
+### Fix direction
+
+The server's log shows `CLASS_PATH=[.lathe/test-classes, .lathe/classes]` and `MODULE_PATH=[.lathe/classes, …]` for the test compile.
+`ModuleSourceCompiler.processPatchModules` repoints each `--patch-module` at `tempDir` plus the tree's own output (`.lathe/test-classes`), dropping the build's value, the main output (remapped, `.lathe/classes`).
+Keeping the build's patch entries, remapped, after the overlay and the tree's output would give javac the module the build compiled.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1740,6 +1876,34 @@ Only the client's test tree uses it today; `run_test` and the editor's run entri
 Use a discovery's tests for a file the scan finds none in (and for the methods a class with some `@Test` methods also has), so whatever any runner selects becomes runnable, at the cost of one discovery JVM per module, run one at a time and kept until the module's test classes change.
 A source-only alternative, `test*` methods in a class whose hierarchy carries `@TestMethodProviders` with a JUnit 3-style provider, covers randomizedtesting alone.
 Related: TE-24 (done) made custom annotations built on `@Testable` runnable from the source scan; discovery would have covered them too.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-28 — A captured test launch Lathe can no longer read fails the run with "see the server log", and the module still counts as captured
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: editor test runs (`lathe.run.test`), MCP `run_test` and `workspace_summary`, on a module whose `test-launch.json` was captured by an older Lathe.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B7).
+
+### Observed behaviour
+
+22 of Dropwizard's 30 `.lathe/<module>/test-launch.json` were captured on 2026-08-16, before `TestLaunchData` gained `workingDir`; only the 8 recaptured on 2026-11-16 run.
+MCP `run_test` on `dropwizard-core`'s `ApplicationTest.java` answers `isError` with `the request failed; see the server log`; the log has a SEVERE for `invalid JSON file …/.lathe/dropwizard-core/test-launch.json`, caused by `ValidationException: 'workingDir' must not be null`.
+Over LSP, `lathe.run.test` answers `-32603 Internal error` whose `data` holds the whole stack trace and the module's full classpath (some 20 KB).
+`workspace_summary` reports `tests: captured` for these modules, and a sync (`mvn process-test-classes`) leaves the old files without a word.
+The battery's `run_test` checks use `dropwizard-util`, which was recaptured, so they pass.
+
+### Expected
+
+No old format needs to be read, but an unreadable capture is told like a missing one: the run is blocked with `run .lathe/lathe-sync.sh --tests <module> to capture it`, and `workspace_summary` does not count it as captured.
 
 ### Regression targets
 
@@ -2466,3 +2630,82 @@ Incoming calls keep their order (origin, URI, position); outgoing calls keep sou
 
 None yet.
 Both directions with two sites and `maxResults: 1`: which site and snippet survive, a total of two, and the truncation flag.
+
+---
+
+## MC-105 — `search_symbols` finds nothing for a binary name (`Outer$Inner`) or a member name, without saying why
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP `search_symbols`.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N9).
+
+### Observed behaviour
+
+`search_symbols` for `DropwizardResourceConfig$EndpointLogLine`, as a stack trace or a class file names it, answers "No symbols matching"; `DropwizardResourceConfig.EndpointLogLine` finds the nested class.
+`toNanoseconds`, a method of `Duration`, also answers "No symbols matching", with no word that the tool searches types only.
+
+### Expected
+
+A `$` in a query is read as a nesting dot; a query that matches no type but looks like a member says that the tool finds types, and how to find a member (`outline` on the type).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP `search_symbols` and editor workspace symbol.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N10).
+
+### Observed behaviour
+
+The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
+`asf` matches nothing.
+Related: [EG-119](gaps-archive.md#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
+
+### Expected
+
+A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-107 — `analyze_change` lists only the tests that reference the symbol directly, sorted by name
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: MCP `analyze_change` (`relevant tests`).**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N11).
+
+### Observed behaviour
+
+- On the private field `Duration.count`: `references: 17 production, 0 test`, `relevant tests: none`, though `DurationTest` exercises every use of it.
+- On `Duration.toNanoseconds`: `DurationTest` only, not `SlowRequestFilterTest` or `DurationValidatorTest`, whose subjects (`SlowRequestFilter`, `MaxDurationValidator`) call it.
+- On the class `Duration`: 24 tests in alphabetical order, `AbstractRequestLogPatternIntegrationTest` first and `DurationTest` seventh.
+
+[FR-034](#fr-034--renaming-a-member-a-processor-derives-another-from-leaves-the-derived-members-callers-broken) records the same blast radius on a generated builder (`relevant tests: none`).
+
+### Expected
+
+The tests of the classes that hold the references (a private member: its own class's counterpart test), with the declaring class's counterpart first, so an agent that runs the first few runs the right ones.
+
+### Regression targets
+
+None yet.
