@@ -4580,6 +4580,45 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0069 — A method call's explicit type argument completes as an expression — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: completion inside `<…>` before a method name (`Collections.<T>emptyList()`), in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`java.util.Collections.<i§>emptyList()` offers `if`, `instanceof` and `int`, the keywords of an expression, and no type.
+The sentinel is parsed as a simple name in an expression, not as a type reference, so the type-argument role of CQ-0066 does not reach it.
+
+### Expected
+
+Reference types, as in any other type argument (`Integer` here), and no keyword or primitive.
+
+### Fix
+
+`SentinelParser.inferTypeReferenceRole` gave the type-argument role only to the arguments of a parameterized type, so the type arguments a call carries (`Collections.<T>emptyList()`, `this.<T>id(x)`, `new <T>Foo()`), which javac keeps on the method invocation, the `new` or the method reference (`String::<T>valueOf`), fell through to an expression.
+They now take the same role, so they complete as any type argument does: reference types, the file's own types and the type variables in scope, with no keyword or primitive.
+The call's ordinary arguments are untouched.
+
+Checked in the editor on Dropwizard's `CachingAuthorizer<P>`: in a method body, `Collections.<i` offers reference types where it offered `if`, `instanceof` and `int`, and `Collections.<P` offers the type variable `P` first, which CQ-0070 left out of a call's type argument.
+
+Not covered:
+
+- a call's type argument still being typed, with no `>` or method name after it (`Collections.<i`), completes nothing, before and after this fix: javac's recovery leaves the sentinel out of the tree, though it keeps it after `this.<`, `new <` and `String::<`;
+- a qualified name there (`Collections.<java.util.Ma`) still completes nothing, which is CQ-0068.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.typeArgument_anyPosition_suggestsAnyReferenceType`
+- `CompletionTypeReferenceTest.typeArgument_anyPosition_offersNoKeywordPrimitiveOrOverride`
+
+---
+
 ## CQ-0072 — With an empty prefix, a completion list that leaves out the type index is marked complete — done
 
 **Status: done** (2026-11-23)

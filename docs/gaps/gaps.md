@@ -1238,27 +1238,6 @@ The members of `java.util` matching `Ma` (`Map`), as for the qualifier outside a
 
 ---
 
-## CQ-0069 — A method call's explicit type argument completes as an expression
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion inside `<…>` before a method name (`Collections.<T>emptyList()`), in the editor.**
-
-Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-`java.util.Collections.<i§>emptyList()` offers `if`, `instanceof` and `int`, the keywords of an expression, and no type.
-The sentinel is parsed as a simple name in an expression, not as a type reference, so the type-argument role of CQ-0066 does not reach it.
-
-### Expected
-
-Reference types, as in any other type argument (`Integer` here), and no keyword or primitive.
-
----
-
 ## CQ-0071 — A type parameter's second bound offers classes
 
 **Status: documented**
