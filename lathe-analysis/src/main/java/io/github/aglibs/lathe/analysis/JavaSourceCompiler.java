@@ -108,8 +108,7 @@ public interface JavaSourceCompiler extends AutoCloseable {
       final CompilerResult result =
           compile(source.uri(), source.content(), CompileMode.FULL, cancelChecker);
       written.addAll(result.writtenBinaryNames());
-      diagnostics.put(
-          source.uri(), JavacDiagnosticMapper.filterAndMap(result.diagnostics(), source.content()));
+      diagnostics.put(source.uri(), JavacDiagnosticMapper.filterAndMap(result, source.content()));
     }
 
     return new BatchWrite(written, diagnostics);

@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -97,6 +98,28 @@ class JavacDiagnosticMapperTest {
     assertThat(result.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
   }
 
+  // A compile that read another file (the module-info an open buffer left in the overlay) reports
+  // that file's errors too: they are not this file's, and their positions are the other file's.
+  @Test
+  void filterAndMap_ofOneFile_dropsAnotherFilesError_keepsItsOwnAndAFilelessOne() {
+    final JavaFileObject compiled = file("file:///ws/a/SvcTest.java");
+    final JavaFileObject moduleInfo = file("file:///tmp/overlay/module-info.java");
+    final var own = mockDiag(Diagnostic.Kind.ERROR, 0L, 1L);
+    when(own.getSource()).thenReturn(compiled);
+    final var other = mockDiag(Diagnostic.Kind.ERROR, 2L, 3L);
+    when(other.getSource()).thenReturn(moduleInfo);
+    final var fileless = mockDiag(Diagnostic.Kind.ERROR, Diagnostic.NOPOS, Diagnostic.NOPOS);
+    when(fileless.getSource()).thenReturn(null);
+    when(fileless.getMessage(Locale.ENGLISH)).thenReturn("warnings found and -Werror specified");
+
+    assertThat(JavacDiagnosticMapper.filterAndMap(List.of(own, other, fileless), "x y z", compiled))
+        .extracting(diagnostic -> diagnostic.getMessage().getLeft())
+        .containsExactly("msg", "warnings found and -Werror specified");
+    assertThat(JavacDiagnosticMapper.filterAndMap(List.of(own, other, fileless), "x y z"))
+        .as("without a file, every error is kept, as before")
+        .hasSize(3);
+  }
+
   // A warning of no file is about the compile and is dropped; an error of no file stays.
   @Test
   void filterAndMap_filelessWarningAndError_keepsOnlyTheError() {
@@ -146,6 +169,12 @@ class JavacDiagnosticMapperTest {
   private static org.eclipse.lsp4j.Diagnostic diag(
       final Diagnostic.Kind kind, final long start, final long end) {
     return JavacDiagnosticMapper.toLsp(mockDiag(kind, start, end), "hello world");
+  }
+
+  private static JavaFileObject file(final String uri) {
+    final var file = mock(JavaFileObject.class);
+    when(file.toUri()).thenReturn(URI.create(uri));
+    return file;
   }
 
   @SuppressWarnings("unchecked")

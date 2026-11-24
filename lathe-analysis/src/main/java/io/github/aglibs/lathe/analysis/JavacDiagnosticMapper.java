@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -34,6 +35,31 @@ public final class JavacDiagnosticMapper {
         .map(d -> toLsp(d, content))
         .filter(d -> notDuplicate(d, seen))
         .toList();
+  }
+
+  // One compiled file's diagnostics. Its compile may report errors in another file it read, as the
+  // module-info an open buffer left in the module's overlay, whose positions are that file's: those
+  // are left to that file's own compile. An error of no file stays, as the compile it fails would
+  // otherwise look clean.
+  static List<Diagnostic> filterAndMap(
+      final List<? extends javax.tools.Diagnostic<? extends JavaFileObject>> raw,
+      final String content,
+      final JavaFileObject file) {
+    return filterAndMap(
+        raw.stream()
+            .filter(
+                d -> d.getSource() == null || Objects.equals(d.getSource().toUri(), file.toUri()))
+            .toList(),
+        content);
+  }
+
+  // A single-file compile's diagnostics: those of the file it parsed; all of them when it parsed
+  // none.
+  static List<Diagnostic> filterAndMap(final CompilerResult run, final String content) {
+    final CompilationUnitTree tree = run.fileAnalysis().tree();
+    return tree == null
+        ? filterAndMap(run.diagnostics(), content)
+        : filterAndMap(run.diagnostics(), content, tree.getSourceFile());
   }
 
   // A warning or note of no file is about the compile (a -source older than javac's own, processor
