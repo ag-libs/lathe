@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.Position;
@@ -389,6 +391,115 @@ class CallHierarchyOutgoingLocatorTest {
                   .hierarchy()
                   .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot)))
           .isEmpty();
+    }
+  }
+
+  // EG-122: a field or initializer block credited with a call (as incoming calls credit one outside
+  // any method) lists the calls in its own initializer, the lambdas it creates among them, and no
+  // other member's.
+  @Test
+  void outgoingCalls_fieldOrInitializerCaller_listsTheCallsInItsInitializerOnly()
+      throws IOException {
+    final String content =
+        """
+        class Lib {
+            static int target(String s) { return 1; }
+            static final int CONSTANT = target("constant");
+            static { target("static"); }
+            final Runnable lambda = () -> target("lambda");
+            int method() { return target("method"); }
+        }
+        """;
+    Files.writeString(sourceRoot.resolve("Lib.java"), content);
+    final var request = request(content, SampleFixture.posOf(content, "target(String", "target"));
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+      final List<CallHierarchyItem> callers =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  CallHierarchyItemDataCodec.decode(items.get(0).getData()),
+                  Set.of())
+              .hits()
+              .stream()
+              .map(CallHierarchyIncomingCall::getFrom)
+              .toList();
+
+      for (final String caller : List.of("CONSTANT", "static {...}", "lambda")) {
+        final CallHierarchyItem item =
+            callers.stream()
+                .filter(from -> from.getName().equals(caller))
+                .findFirst()
+                .orElseThrow();
+        final String argument =
+            caller.equals("CONSTANT") ? "constant" : caller.equals("lambda") ? "lambda" : "static";
+        assertThat(
+                session
+                    .hierarchy()
+                    .outgoingCalls(item, request.uri(), content, 1, List.of(sourceRoot)))
+            .as(caller)
+            .extracting(call -> call.getTo().getName(), call -> call.getFromRanges())
+            .containsExactly(
+                tuple(
+                    "target",
+                    List.of(
+                        new Range(
+                            SampleFixture.posOf(
+                                content, "target(\"%s".formatted(argument), "target"),
+                            SampleFixture.posOf(content, "(\"%s".formatted(argument), "(")))));
+      }
+    }
+  }
+
+  // Each initializer block is its own caller: a class's second static block does not lend the first
+  // its calls. A named class inside an anonymous class makes its own calls (credited to its own
+  // field by incoming calls), not the method creating the anonymous class.
+  @Test
+  void outgoingCalls_blockOrMethodAroundOtherDeclarations_listsOnlyItsOwnCalls()
+      throws IOException {
+    final String content =
+        """
+        class Lib {
+            static int a() { return 1; }
+            static int b() { return 2; }
+            static { a(); }
+            static { b(); }
+            void m() { new Object() { class Inner { int x = b(); } }; a(); }
+        }
+        """;
+    Files.writeString(sourceRoot.resolve("Lib.java"), content);
+    final var request = request(content, SampleFixture.posOf(content, "int a()", "a"));
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
+      final List<CallHierarchyItem> callers =
+          session
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  CallHierarchyItemDataCodec.decode(items.get(0).getData()),
+                  Set.of())
+              .hits()
+              .stream()
+              .map(CallHierarchyIncomingCall::getFrom)
+              .toList();
+
+      assertThat(callers)
+          .extracting(CallHierarchyItem::getName)
+          .containsExactlyInAnyOrder("static {...}", "m");
+      for (final CallHierarchyItem caller : callers) {
+        assertThat(
+                session
+                    .hierarchy()
+                    .outgoingCalls(caller, request.uri(), content, 1, List.of(sourceRoot)))
+            .as(caller.getName())
+            .extracting(call -> call.getTo().getName())
+            .containsExactly("a");
+      }
     }
   }
 

@@ -20,7 +20,8 @@ class CallHierarchyItemDataCodecTest {
           true,
           List.of(
               new CallHierarchyItemData.Overridden("com.example.Base", "(java.lang.Object,int)")),
-          List.of("com.example.Foo", "com.example.Base", "java.lang.Object"));
+          List.of("com.example.Foo", "com.example.Base", "java.lang.Object"),
+          -1);
 
   @Test
   void encode_decode_roundTrip_preservesAllFields() {
@@ -28,6 +29,26 @@ class CallHierarchyItemDataCodecTest {
     final CallHierarchyItemData decoded = CallHierarchyItemDataCodec.decode(encoded);
 
     assertThat(decoded).isEqualTo(SAMPLE);
+  }
+
+  // An initializer block is told from the others of its kind by its start (EG-122).
+  @Test
+  void encode_decode_initializerItem_keepsItsDeclarationOffset() {
+    final var block =
+        new CallHierarchyItemData(
+            "com.example.Foo",
+            "<clinit>",
+            "",
+            ElementKind.STATIC_INIT,
+            "file:///com/example/Foo.java",
+            ReferenceTarget.SearchScope.DECLARING_FILE,
+            true,
+            List.of(),
+            List.of(),
+            42);
+
+    assertThat(CallHierarchyItemDataCodec.decode(CallHierarchyItemDataCodec.encode(block)))
+        .isEqualTo(block);
   }
 
   @Test

@@ -1256,7 +1256,8 @@ final class ReferenceSearch {
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
-    if (data == null) {
+    // A field or initializer caller (EG-122) is read, not called: its readers are no callers.
+    if (data == null || !data.callable()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
