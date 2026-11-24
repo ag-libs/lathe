@@ -81,9 +81,13 @@ final class CompletionFixture implements AutoCloseable {
   }
 
   List<CompletionItem> completeWithCache(final String cachedSource, final String markedSource) {
+    return outcomeWithCache(cachedSource, markedSource).items();
+  }
+
+  CompletionOutcome outcomeWithCache(final String cachedSource, final String markedSource) {
     final var cursor = CursorFixture.cursor(markedSource);
     final var cached = new CachedFileAnalysis(cachedSource, 0, compile(cachedSource));
-    return engine.complete(request(cursor, cached)).items();
+    return engine.complete(request(cursor, cached));
   }
 
   List<CompletionItem> completeModuleInfo(final String markedContent) {
