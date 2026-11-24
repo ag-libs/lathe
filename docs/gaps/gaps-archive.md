@@ -7,6 +7,58 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
+
+### Observed behaviour
+
+Valid code nested deeply enough overflows the stack of the thread analysing it.
+A `StackOverflowError` is a `VirtualMachineError`, which ends the server by design, so the server exits:
+
+- a call chain about 700 long (`new StringBuilder().append(1).append(1)…`), verified on main (2849e785);
+- by the fuzzing report, an `if`/`else if` chain about 1000 long, or about 3000 terms joined with `+`.
+
+It fires when such a file is opened or edited (the live analysis), and on MCP `outline` and `describe_symbol`;
+the MCP server exits with status 1.
+The write pass and `verify_change` compile such a file without overflowing.
+javac itself compiles it.
+
+The overflowing frames are Lathe's own tree walk, `TokenScanner.visitMemberSelect` under `WrittenSourceScanner.scan`, on top of javac's attribution.
+Lathe's compile workers are plain threads with the JVM's default stack (1 MB on 64-bit Linux),
+while command-line javac runs on the main thread, which gets about 8 MB.
+
+Hand-written code rarely nests this deep;
+generated sources can (long builder or `append` chains, large concatenated string constants, big dispatch `if` chains).
+
+### Fix
+
+The compile workers' threads now get a 16 MB stack, twice what command-line javac's main thread has; it is reserved address space, used only as a thread goes deep.
+`StackOverflowError` stays fatal, in line with the fail-fast policy until GA.
+
+Measured through a real `CompilationWorker` compiling in the live-analysis mode: with the 1 MB default a 700-call chain overflowed, as reported; with 16 MB a 10,000-call chain and a 5,000-branch `else if` chain compile (4 MB already covered the depths reported).
+MCP's `outline` goes through the same workers (`DocumentFeatures.documentSymbolFuture`).
+A chain of 30,000 constant strings joined with `+` did not overflow even the 1 MB stack, so the fuzzing report's concatenation case did not reproduce in that form and has no test.
+
+### Not covered
+
+- Code deeper than the larger stack still ends the server; the limit moves from a 700-call chain to well past what generated sources reach.
+
+### Regression targets
+
+- `CompilationWorkerTest.compile_deeplyNestedCallChain_compilesWithoutFatalError`
+- `CompilationWorkerTest.compile_longElseIfChain_compilesWithoutFatalError`
+
+---
+
 ## EG-119 — Workspace symbol initials do not match a nested type — done
 
 **Status: done** (2026-11-23)

@@ -11,6 +11,8 @@ import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
+import io.github.aglibs.lathe.server.TestCompiler;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -20,14 +22,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class CompilationWorkerTest {
 
   private static final String DELIVERY_THREAD = "delivery-thread";
+  // Several times what overflowed the default stack: a 700-call chain, a 1,000-branch else-if.
+  private static final int DEEP = 3_000;
 
   private final SourceAnalysisSession context = mock(SourceAnalysisSession.class);
   private final CompilationWorker worker =
@@ -219,6 +226,28 @@ class CompilationWorkerTest {
     assertTermination(new IllegalStateException("expected"), 0);
   }
 
+  // javac compiles code this deep on its main thread; the default thread stack overflowed under
+  // Lathe's scan of javac's tree, and the fatal error ended the server.
+  @Test
+  void compile_deeplyNestedCallChain_compilesWithoutFatalError(@TempDir final Path workspace) {
+    assertCompilesWithoutFatalError(
+        workspace,
+        "class Deep { Object deep() { return new StringBuilder()%s; } }"
+            .formatted(".append(1)".repeat(DEEP)));
+  }
+
+  @Test
+  void compile_longElseIfChain_compilesWithoutFatalError(@TempDir final Path workspace) {
+    final String branches =
+        IntStream.range(1, DEEP)
+            .mapToObj(i -> " else if (x == %d) { return %d; }".formatted(i, i))
+            .collect(Collectors.joining());
+    assertCompilesWithoutFatalError(
+        workspace,
+        "class Deep { int deep(int x) { if (x == 0) { return 0; }%s return -1; } }"
+            .formatted(branches));
+  }
+
   @Test
   void submit_activeRequest_runsAgainstTheSession() {
     final String uri = "file:///A.java";
@@ -275,6 +304,31 @@ class CompilationWorkerTest {
             thrown -> assertThat(thrown).isInstanceOf(CancellationException.class),
             thrown -> assertThat(thrown).hasCauseInstanceOf(CancellationException.class));
     verify(context, never()).transientAnalyses(sources, cancelChecker);
+  }
+
+  private static void assertCompilesWithoutFatalError(final Path workspace, final String content) {
+    final Path sourceRoot = workspace.resolve("src/main/java");
+    final String uri = sourceRoot.resolve("Deep.java").toUri().toString();
+    final var status = new AtomicInteger();
+    final var real =
+        new CompilationWorker(
+            "lathe-module-deep",
+            () ->
+                new SourceAnalysisSession(
+                    new ModuleSourceCompiler(
+                        TestCompiler.moduleConfig(workspace, sourceRoot),
+                        new CompilationAdmission(1))),
+            Runnable::run,
+            status::set);
+    try {
+      final CompileResponse response =
+          real.compile(new CompileRequest(uri, content, 1, 1L, CompileMode.OPEN)).join();
+
+      assertThat(response.diagnostics()).isEmpty();
+      assertThat(status).hasValue(0);
+    } finally {
+      real.close();
+    }
   }
 
   private void assertTermination(final Throwable failure, final int expectedStatus) {
