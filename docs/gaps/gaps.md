@@ -831,34 +831,6 @@ None yet.
 
 ---
 
-## EG-126 — After the test `module-info.java` is opened, its errors are reported in every other file of the tree, at unrelated positions
-
-**Status: accepted** (triaged 2026-11-24: medium; one saved mistake in a module-info.java shows as a false error, misplaced, in every file of the tree; rechecked independent of WS-49)
-
-**Kind: bug**
-
-**Affects: diagnostics in the editor, for a source tree with its own `module-info.java`.**
-
-Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P2).
-
-### Observed behaviour
-
-In a fresh session, `src/test/java/org/junitpioneer/testkit/PioneerTestKitTests.java` opens with 0 errors.
-After `src/test/java/module-info.java` is opened (6 errors of its own, see [WS-49](gaps-archive.md#ws-49--a-test-tree-with-its-own-module-infojava-loses-the-main-classes-the-build-patches-into-it--done)) and closed, `PioneerTestKitTests.java` has 6 errors: the module-info's messages (`cannot find symbol … class IssueExtensionExecutionListener … location: package org.junitpioneer.jupiter.issue`), placed at lines 60, 64, 66, 68, 69 and 76 of the test file, on unrelated text (`assertThat(results).hasNumberOfStartedTests(1);`).
-Every test file opened later in the session gets them; closing the module-info does not clear them.
-
-Rechecked 2026-11-24 with WS-49's fix (a server built on `b6801a4c`): with an error saved in the module-info (`uses org.junitpioneer.jupiter.NoSuchQaType;`), `PioneerTestKitTests.java` reports it at 80:2 and `TestNameFormatterTests.java` at 70:40; an error only typed into the module-info's buffer shows in no other file, so the compile reads the module-info from disk.
-
-### Expected
-
-A file's diagnostics are its own: an error in `module-info.java` is reported there only, at its own position.
-
-### Regression targets
-
-None yet.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.

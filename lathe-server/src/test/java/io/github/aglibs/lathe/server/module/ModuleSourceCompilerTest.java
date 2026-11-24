@@ -995,6 +995,66 @@ class ModuleSourceCompilerTest {
     }
   }
 
+  // A test tree with its own module-info.java, as JUnit Pioneer's: once the module-info is opened,
+  // its text stays in the module's overlay, which every later compile of the tree reads. An error
+  // saved there is reported in the module-info, and not again, misplaced, in each other file.
+  @Test
+  void compile_testTreeAfterItsModuleInfoWasOpened_reportsNoneOfTheModuleInfosErrors()
+      throws Exception {
+    final Path mainSources = td.resolve("lib/src/main/java");
+    final Path mainInfo = mainSources.resolve("module-info.java");
+    final Path service = mainSources.resolve("a/Svc.java");
+    Files.createDirectories(service.getParent());
+    Files.writeString(mainInfo, "module m { exports a; }");
+    Files.writeString(service, "package a; public interface Svc {}");
+    TestJavac.compileToDir(td.resolve(".lathe/lib/classes"), mainInfo, service);
+    final Path mainOutput = td.resolve("lib/target/classes");
+    final ModuleSourceConfig patching =
+        testTreePatching(mainOutput.toString(), TestCompiler.targetRewrite(td, "lib"));
+    final ModuleSourceConfig config =
+        new ModuleSourceConfig(
+            patching.moduleDir(),
+            patching.sourceTree(),
+            patching.outputDir(),
+            patching.originalGenSourcesDir(),
+            patching.sourceRoots(),
+            List.of(),
+            List.of(mainOutput),
+            List.of(),
+            patching.release(),
+            patching.encoding(),
+            false,
+            false,
+            LatheFlags.PROC_NONE,
+            patching.compilerArgs(),
+            null,
+            false,
+            null,
+            patching.reactorRewrite(),
+            null);
+    final Path testInfo = td.resolve("lib/src/test/java/module-info.java");
+    final String testInfoText = "module m { exports a; uses a.NoSuchQaType; }";
+    Files.writeString(testInfo, testInfoText);
+    final Path test = td.resolve("lib/src/test/java/a/SvcTest.java");
+    final String testText = "package a;\n\nclass SvcTest {\n  Svc svc;\n  int count = 1;\n}\n";
+    Files.createDirectories(test.getParent());
+    Files.writeString(test, testText);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1));
+        var session = new SourceAnalysisSession(compiler)) {
+      assertThat(session.compile(testInfo.toUri().toString(), testInfoText, 1, CompileMode.OPEN))
+          .singleElement()
+          .satisfies(error -> assertThat(error.getMessage().getLeft()).contains("NoSuchQaType"));
+      final String testUri = test.toUri().toString();
+      assertThat(compiler.compile(testUri, testText, CompileMode.OPEN).diagnostics())
+          .as("the compile reads the module-info and reports its error")
+          .anyMatch(
+              d -> d.getSource() != null && d.getSource().getName().endsWith("module-info.java"));
+
+      assertThat(session.compile(testUri, testText, 1, CompileMode.OPEN)).isEmpty();
+    }
+  }
+
   // The test tree of module lib, declaring module m again, with the build's --patch-module value.
   private ModuleSourceConfig testTreePatching(final String patch, final ReactorRewrite rewrite)
       throws Exception {

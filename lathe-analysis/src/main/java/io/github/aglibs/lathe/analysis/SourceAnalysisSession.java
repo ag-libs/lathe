@@ -196,8 +196,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // so a file whose package is not its directory is flagged on each path.
   private List<Diagnostic> mapDiagnostics(
       final String uri, final CompilerResult run, final String content) {
-    final List<Diagnostic> compiled =
-        JavacDiagnosticMapper.filterAndMap(run.diagnostics(), content);
+    final List<Diagnostic> compiled = JavacDiagnosticMapper.filterAndMap(run, content);
     JavacDiagnosticMapper.enrich(compiled, run.fileAnalysis());
     final boolean compileFailed =
         compiled.stream().anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
