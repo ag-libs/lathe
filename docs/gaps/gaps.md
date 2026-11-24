@@ -1471,37 +1471,6 @@ None yet.
 
 ---
 
-## WS-50 — jdtls answers nothing on a Maven project that registers Lathe
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: jdtls (the VS Code Java extension, `nvim-jdtls`) and Eclipse, on a Maven project whose `.mvn/extensions.xml` or root `pom.xml` registers `lathe-maven-extension`.**
-
-Found on 2026-11-24 while checking Lathe beside jdtls (jdtls 1.63.0 with m2e 2.8.0, Lathe 0.3.1).
-
-### Observed behaviour
-
-m2e, the Maven embedded in jdtls, loads the extension as any Maven build does and runs its participant, which injects `compilerId=lathe`, the Lathe goals and `lathe-junit` into the effective POM.
-m2e cannot configure that compiler, so it gives the project no Java build path.
-On a two-class project (`AppServer` calling `Greeter.greet`), definition on `greet` answers nothing, as hover and completion do, and jdtls shows no error, not even on `pom.xml`.
-The same project without the extension, or with jdtls started with `-Dlathe.disabled=true`, answers `Greeter.java`.
-That workaround, in the Maven guide, has to be known and set by every jdtls user of a project that registers Lathe.
-A manual POM setup, which writes `compilerId=lathe` into the POM itself, breaks jdtls the same way, and `-Dlathe.disabled=true` does not help it.
-
-A Gradle build that applies the Lathe settings plugin is not affected: jdtls's import through Buildship answers as it does without Lathe, as Lathe never changes the `JavaCompile` settings Buildship reads.
-
-### Expected
-
-jdtls imports a project that registers Lathe as it imports one that does not, with no setting of its own.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone

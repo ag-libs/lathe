@@ -11532,6 +11532,52 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-50 — jdtls answers nothing on a Maven project that registers Lathe — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: jdtls (the VS Code Java extension, `nvim-jdtls`) and Eclipse, on a Maven project whose `.mvn/extensions.xml` or root `pom.xml` registers `lathe-maven-extension`.**
+
+Found on 2026-11-24 while checking Lathe beside jdtls (jdtls 1.63.0 with m2e 2.8.0, Lathe 0.3.1).
+
+### Observed behaviour
+
+m2e, the Maven embedded in jdtls, loads the extension as any Maven build does and runs its participant, which injects `compilerId=lathe`, the Lathe goals and `lathe-junit` into the effective POM.
+m2e cannot configure that compiler, so it gives the project no Java build path.
+On a two-class project (`AppServer` calling `Greeter.greet`), definition on `greet` answers nothing, as hover and completion do, and jdtls shows no error, not even on `pom.xml`.
+The same project without the extension, or with jdtls started with `-Dlathe.disabled=true`, answers `Greeter.java`.
+That workaround, in the Maven guide, has to be known and set by every jdtls user of a project that registers Lathe.
+A manual POM setup, which writes `compilerId=lathe` into the POM itself, breaks jdtls the same way, and `-Dlathe.disabled=true` does not help it.
+
+A Gradle build that applies the Lathe settings plugin is not affected: jdtls's import through Buildship answers as it does without Lathe, as Lathe never changes the `JavaCompile` settings Buildship reads.
+
+### Expected
+
+jdtls imports a project that registers Lathe as it imports one that does not, with no setting of its own.
+
+### Fix
+
+m2e sets the user property `m2e.version` on every request of its embedded Maven (`MavenExecutionContext`); POMs use it to turn on Eclipse-only profiles, and no other Maven sets it.
+`LatheLifecycleParticipant.afterProjectsRead` now returns first when the session carries it, logging that Lathe is off inside m2e, as it returns for `-Dlathe.disabled=true`, so m2e reads the build as it is.
+It is checked before `lathe.disabled`: an explicit `-Dlathe.disabled=false` cannot make m2e configure the injected compiler, so inside m2e Lathe stays off either way.
+
+Checked with jdtls 1.63.0 on the two-class project, the extension built from the change and installed into jdtls's own Maven repository: definition on `greet` answers `Greeter.java`, and no `.lathe/` is written.
+The same build with the check removed answers nothing again, m2e reporting the injected `lathe-maven-plugin` and `lathe-junit` it cannot resolve.
+
+A manual POM setup names `compilerId=lathe` itself, which no extension can take back, so the Maven guide now shows its blocks in a profile activated by `!m2e.version`: jdtls answers `Greeter.java` on such a POM, where the same POM without the profile answers nothing, and command-line Maven still activates the profile.
+
+Not covered: jdtls still indexes `.lathe/` unless its `java.import.exclusions` holds `**/.lathe/**`, on Maven and Gradle alike, as the installation guide says; Lathe cannot set jdtls's import settings.
+
+### Regression targets
+
+- `LatheLifecycleParticipantTest.insideM2e_m2eSetsItsVersion_true`
+- `LatheLifecycleParticipantTest.insideM2e_commandLineMaven_false`
+- `LatheLifecycleParticipantTest.afterProjectsRead_insideM2e_leavesTheReactorUntouched`
+
+---
+
 ## WS-49 — A test tree with its own `module-info.java` loses the main classes the build patches into it — done
 
 **Status: done** (2026-11-24; triaged accepted, high: it breaks every test file of such a tree)
