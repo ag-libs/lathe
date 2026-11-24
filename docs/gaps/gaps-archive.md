@@ -11494,6 +11494,45 @@ A class run of `CartesianTestExtensionTests` also runs its nested `…TestCases`
 
 ---
 
+## WS-48 — A module whose build passes `-source` in its own compiler arguments gets no `--system`, and `-Werror` then fails the compile — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: diagnostics and every feature of the module, for a build that sets the language level through `<compilerArgs>` with `-Werror`.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B6), with the module's compile descriptor edited by hand to the shape such a build records, then restored.
+
+### Observed behaviour
+
+With `dropwizard-util`'s `.lathe/…/lsp-params-classes.json` at `release: null` and compiler arguments starting `-source 17 -target 17 -Werror -Xlint:all`, every file of the module opens with only `error: warnings found and -Werror specified` (the compile's options carry no `--system`).
+Command-line `javac --system <JDK 25> -source 17 -target 17 -Werror -Xlint:all` compiles it cleanly.
+What a normal sync records holds since #466: with `--system` naming the server's JDK or a JDK that is gone, the same arguments give no diagnostics.
+
+### Cause (read from the code, not fixed)
+
+`CompileCapture.withCompileJdk` records no `--system` when the arguments already carry a version flag, and `ModuleSourceCompiler.hoistOption` replaces a `--system` only when one is present; so #466's always-a-`--system` never applies.
+
+### Expected
+
+The module compiles as the build does: a `--system` is given whenever there is no `--release`, wherever the level came from.
+
+### Resolution
+
+#466 gave javac a `--system` only when the build's arguments named one, replacing a JDK that is gone or newer with the server's own; a build that sets its level in its own compiler arguments records none, so the rule never applied.
+The server now gives its own JDK as `--system` whenever the arguments name none and nothing in the module sets `--release` (in the config or the arguments), so javac no longer warns of the `-source` and `-Werror` no longer stops the compile.
+The OpenJDK mode (`MODULE_SYSTEM`), which compiles against the host JDK's module system with patched modules on purpose, is left as it was.
+
+Not covered: such a module compiles against the server's JDK API, not the build's, as the sync records no build JDK for it; a newer server JDK may then accept a call the build's JDK lacks, as with a build JDK that is gone.
+A level of 8 or below under `-Werror` still stops the compile, before and after: javac's warning there is about the bootstrap class path (and, on JDK 21+, the obsolete source value), which no `--system` satisfies.
+
+### Regression targets
+
+- `ModuleSourceCompilerTest.compile_levelInTheBuildsOwnArgsUnderWerror_noSystemRecorded_attributesTheFile`
+
+---
+
 ## WS-46 — A server older than a module's JDK or language level cannot check it as the build does — done
 
 **Status: done** (2026-11-21)
