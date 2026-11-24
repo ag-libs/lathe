@@ -759,6 +759,97 @@ None yet.
 
 ---
 
+## EG-121 — A secondary top-level type is missing from workspace symbol, definition from another file, type hierarchy and implementations
+
+**Status: accepted** (triaged 2026-11-24: high; MCP answers "No implementations found" for an interface with five, and an agent takes that as fact)
+
+**Kind: bug**
+
+**Affects: workspace symbol, definition, type hierarchy and implementations in the editor; MCP `search_symbols` and `find_implementations`.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B1).
+
+### Observed behaviour
+
+`dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/DropwizardExtensionsSupportTest.java` declares nine top-level types and none named after the file (`CountingExtension`, `DelayedAssertionsTest`, `ParentClass_ChildHasExtension` with a nested `NestedClass_OnlyInParent`, …); `HttpClientBuilderTest.java` in `dropwizard-client` declares one more, `AnotherHttpClientBuilder`.
+All are compiled into the module's `.lathe/` class output.
+
+- `workspace/symbol` finds none of them, even by exact name; MCP `search_symbols` (also with `scope: reactor`) answers "No symbols matching".
+- Definition of `CountingExtension` from another file of the package gives nothing (`[definition] … element=io.dropwizard.testing.junit5.CountingExtension overloads=0 → not found`), while hover and completion at the same position work.
+- `prepareTypeHierarchy` gives nothing for them, even in their own file (`new AnotherHttpClientBuilder()`).
+- MCP `find_implementations` on `interface DelayedAssertionsTest` answers "No implementations found."; five classes in the same file implement it.
+
+Definition within the file, references, rename, document symbols, MCP `outline` and runnables work.
+
+### Expected
+
+A secondary top-level type is a reactor type like any other: each feature above finds it.
+
+### Fix direction
+
+The features that miss it look a type up by its file; a secondary type has no file of its own name.
+Rename already handles this through the workspace type index and the class file's `SourceFile` attribute (`ClassSourceFile`); the same lookup would serve the others.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-122 — Incoming calls leave out calls in a top-level or member class's initializers and in enum constant arguments
+
+**Status: accepted** (triaged 2026-11-24: medium; both QA rounds hit it on real code, and MCP `call_hierarchy` feeds change impact; references already find the calls)
+
+**Kind: bug**
+
+**Affects: call hierarchy (incoming calls) in the editor, and MCP `call_hierarchy`.**
+
+Found by the 2026-11-24 QA round on both Dropwizard and Helidon (`0.1.0-SNAPSHOT` at `7a4ab21`; reports `dev/reports/qa-2026-11-24-dropwizard.md` B2 and `dev/reports/qa-2026-11-24-helidon.md` B-4).
+EG-117 left this out as not covered: it credits a call in an anonymous or local class's initializer to the method declaring the class, and here no method holds the call.
+
+### Observed behaviour
+
+Incoming calls of `Duration.toNanoseconds` (`dropwizard-util`) list 8 callers over LSP and 9 caller lines over MCP; `dropwizard-jersey`'s `RuntimeFilter.java:26`, `private static final float NANOS_IN_SECOND = Duration.seconds(1).toNanoseconds();`, is in neither, while references list it.
+
+In-buffer probes (Dropwizard's `Generics.java`, Helidon's `LoomServer.java`) drop a call in each of: a field initializer (`static final int F = target();`, `int y = target();`), a lambda in a field initializer, an anonymous class created in a field initializer, an instance initializer and a static initializer, of a top-level or a member class, and an enum constant's arguments (`A(target())`).
+A call in a method, in an anonymous class's method, and in an anonymous or local class inside a method is credited (EG-117).
+References find every one of them, and outgoing calls disagree with incoming.
+
+### Expected
+
+Every call that references list appears as an incoming call: credited to the field, or to the class's initializer, as jdtls credits it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-123 — The method name in a method reference gets no semantic token
+
+**Status: deferred** (triaged 2026-11-24: low; highlighting only, hover and navigation on the name work)
+
+**Kind: bug**
+
+**Affects: semantic highlighting in the editor.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B4).
+
+### Observed behaviour
+
+In `dropwizard-migrations`' `DbRollbackCommand.java:98`, `.map(Object::toString)` gives `map` a method token and `Object` a class token, and `toString` none.
+In-buffer, `this::g`, `Outer.this::g`, `String::valueOf` and `super::hashCode` lack a method token too; hover on each name works.
+
+### Expected
+
+A `method` token on the name of a method reference, as for a call; `status.md` says every method is tokenized.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1135,6 +1226,31 @@ None yet.
 
 ---
 
+## CA-21 — Extract variable and extract method are not offered on an expression of a captured wildcard type
+
+**Status: deferred** (triaged 2026-11-24: low; one expression shape, and the variable can be written by hand)
+
+**Kind: bug**
+
+**Affects: the extract variable and extract method code actions in the editor.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B3).
+
+### Observed behaviour
+
+Selecting `authenticator.getClass()` in `dropwizard-auth`'s `CachingAuthenticator.java:91` offers no code action.
+In-buffer, `o.getClass()` and `k.getSuperclass()` (on a `Class<?> k`) get none either, while `l.get(0)` on a `List<?>` (an `Object`) and on a `List<? extends Number>` (a `Number`) offer both, and the result compiles.
+
+### Expected
+
+Both actions, with the variable or return type written as the capture's upper bound (`Class<? extends Authenticator>`).
+
+### Regression targets
+
+None yet.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
@@ -1190,6 +1306,70 @@ Every bound has the type-argument role of CQ-0066, which allows any reference ty
 ### Expected
 
 Interfaces only after `&`; the first bound keeps any reference type.
+
+---
+
+## CQ-0077 — A name declared since the last compile is not offered by simple-name completion, and the list is marked complete
+
+**Status: accepted** (triaged 2026-11-24: high; it is the everyday declare-then-use flow, and the fix widens an existing recompile)
+
+**Kind: bug**
+
+**Affects: completion of simple names in the editor, while typing.**
+
+Found by the 2026-11-24 QA round on both Helidon and Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; reports `dev/reports/qa-2026-11-24-helidon.md` B-1, with its evaluation, and `dev/reports/qa-2026-11-24-dropwizard.md` N1).
+
+### Observed behaviour
+
+In Helidon's `LoomServer.java`, inside `validateRoutingsHaveNamedListener`, one `didChange` adding `String zqxLocal = "";` and a next line `zqx§`, then completion at once, gives nothing; from about 0.6 s after the change (the 500 ms debounce plus the compile) it gives `zqxLocal`.
+Every keystroke restarts the debounce, so typing the declaration, Enter and `zqx` at 120 ms a character still gets nothing.
+Dropwizard's round adds that the empty list is marked `incomplete=false`, so a client that narrows the list does not ask again as the name is typed.
+
+The same holds for a new field, method, parameter, block, `for`, enhanced-`for`, lambda, catch and pattern variable.
+Member access on the new local (`zqxLocal.§`) works at once.
+
+The unit fixture reproduces it: `CompletionFixture.completeWithCache(old, current)`, with `old` an empty method and `current` declaring `zqxLocal`, `zqxField` or `zqxParam`, gives `[]`; `complete(current)` gives the name.
+
+### Cause
+
+`SimpleNameProvider` takes every name from the cached snapshot (the method's locals by scanning its tree, class members from its `Scope`), and a name typed since that compile is not in it.
+`CompletionEngine` recompiles the current text when the cache differs before the completion token (`MemberAccessCompleter.staleBeforeCompletionToken`) and returns the recompile as `freshAnalysis`, which `SourceAnalysisSession` caches, but only for a case label; member access does the same on its own.
+
+### Fix direction
+
+Widen that recompile to the simple-name contexts (`SIMPLE_NAME`, `ARGUMENT_POSITION`, a constructor call's argument, a lambda body without a receiver).
+As the recompile is cached, the next keystrokes of the word find a cache matching up to the token and stay on the fast path: about one recompile per word typed in a burst.
+Measured as member access on a new local (the same recompile): 56 ms against 28 ms in a 652-line file, 256 ms against 46 ms in a 3127-line one, on a shared machine.
+
+### Regression targets
+
+None yet; `CompletionMemberAccessTest.memberAccess_staleCacheNewLine_typeResolved` is the pattern.
+
+---
+
+## CQ-0078 — Completion offers package-private `java.lang` types
+
+**Status: deferred** (triaged 2026-11-24: low; two JDK types, offered only on a prefix or an empty list that matches them)
+
+**Kind: bug**
+
+**Affects: completion of type names in the editor.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B5).
+
+### Observed behaviour
+
+In `dropwizard-util`'s `Generics.java` (in-buffer), `java.util.List<§> x;` lists `java.lang.NamedPackage` and `java.lang.AbstractStringBuilder` among its 107 items, and `Named§ x;` at a statement start offers `NamedPackage`.
+Both are package-private, so picking one does not compile.
+The MCP battery's KNOWN `search_symbols: only usable types` is the same kind of leak in the MCP search.
+
+### Expected
+
+Only types the code can use: a `java.lang` type outside `java.lang` only when it is public.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -1312,6 +1492,36 @@ What can still cause it after #422: a `--system` JDK javac cannot read whose rel
 Deferred: it is rare now, and failing the request is the safe answer, which a rename needs (one that skipped a file would leave its uses unrenamed).
 Answering queries from the other modules would need the skipped files carried up with the hits (`SearchHits`) so a rename can still refuse, and the answer can say it is partial.
 The same note would cover a javac crash in Attr, which throws nothing and can leave a batch's hits missing without a trace.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-48 — A module whose build passes `-source` in its own compiler arguments gets no `--system`, and `-Werror` then fails the compile
+
+**Status: accepted** (triaged 2026-11-24: medium; it fails every file of such a module, and it completes #466's own fix)
+
+**Kind: bug**
+
+**Affects: diagnostics and every feature of the module, for a build that sets the language level through `<compilerArgs>` with `-Werror`.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B6), with the module's compile descriptor edited by hand to the shape such a build records, then restored.
+
+### Observed behaviour
+
+With `dropwizard-util`'s `.lathe/…/lsp-params-classes.json` at `release: null` and compiler arguments starting `-source 17 -target 17 -Werror -Xlint:all`, every file of the module opens with only `error: warnings found and -Werror specified` (the compile's options carry no `--system`).
+Command-line `javac --system <JDK 25> -source 17 -target 17 -Werror -Xlint:all` compiles it cleanly.
+What a normal sync records holds since #466: with `--system` naming the server's JDK or a JDK that is gone, the same arguments give no diagnostics.
+
+### Cause (read from the code, not fixed)
+
+`CompileCapture.withCompileJdk` records no `--system` when the arguments already carry a version flag, and `ModuleSourceCompiler.hoistOption` replaces a `--system` only when one is present; so #466's always-a-`--system` never applies.
+
+### Expected
+
+The module compiles as the build does: a `--system` is given whenever there is no `--release`, wherever the level came from.
 
 ### Regression targets
 
