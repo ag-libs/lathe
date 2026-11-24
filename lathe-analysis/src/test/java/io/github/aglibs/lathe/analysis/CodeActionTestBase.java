@@ -35,14 +35,21 @@ abstract class CodeActionTestBase {
         TempSourceCompiler.typeIndex(
             tmp.resolve("index.json"),
             new TypeIndexEntry(
-                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()),
+                "ArrayList",
+                "java.util.ArrayList",
+                "java.util",
+                TypeKind.CLASS,
+                true,
+                List.of(),
+                null),
             new TypeIndexEntry(
                 "Generated",
                 "javax.annotation.processing.Generated",
                 "javax.annotation.processing",
                 TypeKind.ANNOTATION,
                 true,
-                List.of()));
+                List.of(),
+                null));
     session = new SourceAnalysisSession(new TempSourceCompiler());
   }
 

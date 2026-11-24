@@ -76,6 +76,6 @@ class TypeImplementationTest {
 
   private static TypeIndexEntry entry(final String binaryName, final String... directSupertypes) {
     return new TypeIndexEntry(
-        binaryName, binaryName, "", TypeKind.CLASS, true, List.of(directSupertypes));
+        binaryName, binaryName, "", TypeKind.CLASS, true, List.of(directSupertypes), null);
   }
 }

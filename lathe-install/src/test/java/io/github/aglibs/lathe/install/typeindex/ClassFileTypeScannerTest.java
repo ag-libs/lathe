@@ -98,6 +98,35 @@ class ClassFileTypeScannerTest {
   }
 
   @Test
+  void scanReactorDirectory_secondaryTopLevelType_recordsItsSourceFile() throws Exception {
+    final Path classes =
+        compile(
+            Map.of(
+                "Host.java",
+                "package com.example; class Host { static class Inner {} } class Sibling { static class Deep {} }"));
+
+    final Map<String, TypeIndexEntry> entries =
+        ClassFileTypeScanner.scanReactorDirectory(classes).entries().stream()
+            .collect(Collectors.toMap(TypeIndexEntry::binaryName, Function.identity()));
+
+    assertThat(entries.get("com.example.Sibling").sourceFileName()).isEqualTo("Host.java");
+    assertThat(entries.get("com.example.Sibling$Deep").sourceFileName()).isEqualTo("Host.java");
+    assertThat(entries.get("com.example.Host").sourceFileName()).isNull();
+    assertThat(entries.get("com.example.Host$Inner").sourceFileName()).isNull();
+  }
+
+  // Only a reactor has the sources to find; an index of jars or the JDK records no file.
+  @Test
+  void scanDirectory_secondaryTopLevelType_recordsNoSourceFile() throws Exception {
+    final Path classes =
+        compile(Map.of("Host.java", "package com.example; class Host {} class Sibling {}"));
+
+    assertThat(ClassFileTypeScanner.scanDirectory(classes))
+        .extracting(TypeIndexEntry::sourceFileName)
+        .containsOnlyNulls();
+  }
+
+  @Test
   void scanReactorDirectory_missingDirectory_returnsEmpty() throws Exception {
     final ClassFileTypeScanner.ReactorScan scan =
         ClassFileTypeScanner.scanReactorDirectory(tmp.resolve("missing"));

@@ -200,6 +200,7 @@ class TypeHierarchyTest {
 
   private static TypeIndexEntry entry(
       final String binaryName, final TypeKind kind, final String... directSupertypes) {
-    return new TypeIndexEntry(binaryName, binaryName, "", kind, true, List.of(directSupertypes));
+    return new TypeIndexEntry(
+        binaryName, binaryName, "", kind, true, List.of(directSupertypes), null);
   }
 }

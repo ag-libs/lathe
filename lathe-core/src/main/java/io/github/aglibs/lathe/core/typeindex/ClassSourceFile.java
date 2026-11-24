@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core.typeindex;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -18,9 +19,17 @@ public final class ClassSourceFile {
 
   // Empty when the class was compiled without the attribute (-g:none) or cannot be read.
   public static Optional<String> of(final Path classFile) {
-    try (final var data =
-        new DataInputStream(new BufferedInputStream(Files.newInputStream(classFile)))) {
-      return read(data);
+    try (final var in = Files.newInputStream(classFile)) {
+      return of(in);
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
+  }
+
+  // Empty when the class was compiled without the attribute (-g:none) or cannot be read.
+  public static Optional<String> of(final InputStream in) {
+    try {
+      return read(new DataInputStream(new BufferedInputStream(in)));
     } catch (final IOException | IllegalArgumentException e) {
       return Optional.empty();
     }
@@ -52,6 +61,13 @@ public final class ClassSourceFile {
     // access_flags, this_class, super_class
     data.skipNBytes(6);
     data.skipNBytes(2L * data.readUnsignedShort());
+    return afterInterfaces(data, utf8Entries);
+  }
+
+  // The attribute read from a class file positioned just past its interfaces, with its constant
+  // pool's strings by index.
+  static Optional<String> afterInterfaces(final DataInputStream data, final String[] utf8Entries)
+      throws IOException {
     skipMembers(data);
     skipMembers(data);
     final int attributeCount = data.readUnsignedShort();

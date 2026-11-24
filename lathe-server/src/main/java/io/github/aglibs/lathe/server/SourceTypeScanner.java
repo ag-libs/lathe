@@ -44,7 +44,8 @@ public final class SourceTypeScanner {
     final String binaryName =
         packageName.isEmpty() ? simpleName : "%s.%s".formatted(packageName, simpleName);
     return Optional.of(
-        new TypeIndexEntry(simpleName, binaryName, packageName, TypeKind.UNKNOWN, true, List.of()));
+        new TypeIndexEntry(
+            simpleName, binaryName, packageName, TypeKind.UNKNOWN, true, List.of(), null));
   }
 
   private static String packageOf(final Path relativeDir) {

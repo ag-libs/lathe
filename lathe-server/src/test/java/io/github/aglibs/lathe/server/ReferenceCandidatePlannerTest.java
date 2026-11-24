@@ -67,7 +67,7 @@ class ReferenceCandidatePlannerTest {
     final var packageName = dot < 0 ? "" : binaryName.substring(0, dot);
     final var simpleName = dot < 0 ? binaryName : binaryName.substring(dot + 1);
     return new TypeIndexEntry(
-        simpleName, binaryName, packageName, TypeKind.CLASS, true, List.of(directSupertypes));
+        simpleName, binaryName, packageName, TypeKind.CLASS, true, List.of(directSupertypes), null);
   }
 
   private static ReferenceTarget target(
@@ -468,7 +468,8 @@ class ReferenceCandidatePlannerTest {
                             "com.example",
                             TypeKind.INTERFACE,
                             true,
-                            List.of()))));
+                            List.of(),
+                            null))));
 
     final var plan =
         candidatePlan(

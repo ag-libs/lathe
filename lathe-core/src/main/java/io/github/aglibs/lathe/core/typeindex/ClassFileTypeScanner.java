@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core.typeindex;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -58,11 +59,15 @@ public final class ClassFileTypeScanner {
 
   public static List<TypeIndexEntry> scanDirectory(final Path root) throws IOException {
     return sorted(
-        readDirectory(root).stream().map(ClassFileTypeScanner::toEntry).flatMap(Optional::stream));
+        readDirectory(root, false).stream()
+            .map(ClassFileTypeScanner::toEntry)
+            .flatMap(Optional::stream));
   }
 
+  // A reactor class also records the source it was compiled from, as its type may not be named
+  // after the file: only a reactor has the sources to go to.
   public static ReactorScan scanReactorDirectory(final Path root) throws IOException {
-    final List<ClassMetadata> classes = readDirectory(root);
+    final List<ClassMetadata> classes = readDirectory(root, true);
     final List<TypeIndexEntry> entries =
         sorted(classes.stream().map(ClassFileTypeScanner::toEntry).flatMap(Optional::stream));
     final Map<String, Integer> referenceCounts =
@@ -84,9 +89,10 @@ public final class ClassFileTypeScanner {
     return metadata.lambdaTargets().stream().map(iface -> Map.entry(iface, metadata.binaryName()));
   }
 
-  private static List<ClassMetadata> readDirectory(final Path root) throws IOException {
+  private static List<ClassMetadata> readDirectory(final Path root, final boolean withSourceFile)
+      throws IOException {
     return FileUtil.walkFiles(root, file -> true).stream()
-        .flatMap(file -> readClassFile(root, file).stream())
+        .flatMap(file -> readClassFile(root, file, withSourceFile).stream())
         .toList();
   }
 
@@ -119,14 +125,15 @@ public final class ClassFileTypeScanner {
         });
   }
 
-  private static Optional<ClassMetadata> readClassFile(final Path root, final Path file) {
+  private static Optional<ClassMetadata> readClassFile(
+      final Path root, final Path file, final boolean withSourceFile) {
     final Optional<String> className = standardClassEntryName(classEntryName(root, file), false);
     if (className.isEmpty()) {
       return Optional.empty();
     }
 
-    try (final InputStream in = Files.newInputStream(file)) {
-      return readMetadata(className.get(), in);
+    try (final InputStream in = new BufferedInputStream(Files.newInputStream(file))) {
+      return readMetadata(className.get(), in, withSourceFile);
     } catch (final IOException | IllegalArgumentException e) {
       return Optional.empty();
     }
@@ -134,12 +141,13 @@ public final class ClassFileTypeScanner {
 
   private static Optional<TypeIndexEntry> scanClassEntry(
       final String className, final InputStream in) throws IOException {
-    return readMetadata(className, in).flatMap(ClassFileTypeScanner::toEntry);
+    return readMetadata(className, in, false).flatMap(ClassFileTypeScanner::toEntry);
   }
 
-  private static Optional<ClassMetadata> readMetadata(final String className, final InputStream in)
+  private static Optional<ClassMetadata> readMetadata(
+      final String className, final InputStream in, final boolean withSourceFile)
       throws IOException {
-    final Optional<ClassMetadata> metadata = ClassMetadataReader.read(in);
+    final Optional<ClassMetadata> metadata = ClassMetadataReader.read(in, withSourceFile);
     if (metadata.isEmpty() || !className(metadata.get()).equals(className)) {
       return Optional.empty();
     }
@@ -226,6 +234,29 @@ public final class ClassFileTypeScanner {
             : metadata.directSupertypes();
     return Optional.of(
         new TypeIndexEntry(
-            simpleName, binaryName, packageName, kind, typeNameCandidate, directSupertypes));
+            simpleName,
+            binaryName,
+            packageName,
+            kind,
+            typeNameCandidate,
+            directSupertypes,
+            unconventionalSource(metadata.sourceFile(), binaryName, packageEnd)));
+  }
+
+  // The source file's name when it is not the top-level type's own: a secondary top-level type. A
+  // class compiled from another language, or naming a path, has no Java file to go to.
+  private static String unconventionalSource(
+      final String sourceFile, final String binaryName, final int packageEnd) {
+    if (sourceFile == null
+        || !sourceFile.endsWith(".java")
+        || sourceFile.contains("/")
+        || sourceFile.contains("\\")) {
+      return null;
+    }
+
+    final String className = binaryName.substring(packageEnd + 1);
+    final int nested = className.indexOf('$');
+    final String topLevel = nested >= 0 ? className.substring(0, nested) : className;
+    return sourceFile.equals("%s.java".formatted(topLevel)) ? null : sourceFile;
   }
 }

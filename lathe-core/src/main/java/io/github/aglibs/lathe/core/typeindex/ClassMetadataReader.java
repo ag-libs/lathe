@@ -24,6 +24,13 @@ final class ClassMetadataReader {
   private ClassMetadataReader() {}
 
   static Optional<ClassMetadata> read(final InputStream in) throws IOException {
+    return read(in, false);
+  }
+
+  // withSourceFile reads on past the members to the SourceFile attribute, which only a reactor
+  // scan needs: the rest of the file is skipped otherwise.
+  static Optional<ClassMetadata> read(final InputStream in, final boolean withSourceFile)
+      throws IOException {
     final var data = new DataInputStream(in);
     final Optional<ConstantPool> pool = readConstantPool(data);
     if (pool.isEmpty()) {
@@ -65,12 +72,26 @@ final class ClassMetadataReader {
       directSupertypes.add(interfaceName);
     }
 
+    final String sourceFile = withSourceFile ? sourceFile(data, utf8Entries) : null;
     final Set<String> referencedTypes =
         referencedTypes(binaryName, constantPoolCount, utf8Entries, classNameIndexes);
     final Set<String> lambdaTargets =
         lambdaTargets(invokeDynamicNameAndTypes, nameAndTypeDescriptors, utf8Entries);
     return Optional.of(
-        new ClassMetadata(access, binaryName, directSupertypes, referencedTypes, lambdaTargets));
+        new ClassMetadata(
+            access, binaryName, directSupertypes, referencedTypes, lambdaTargets, sourceFile));
+  }
+
+  // The class's metadata is complete by now: a SourceFile attribute that is blank, or members that
+  // cannot be read, lose only the file name, never the class.
+  private static String sourceFile(final DataInputStream data, final String[] utf8Entries) {
+    try {
+      return ClassSourceFile.afterInterfaces(data, utf8Entries)
+          .filter(name -> !name.isBlank())
+          .orElse(null);
+    } catch (final IOException e) {
+      return null;
+    }
   }
 
   // Every string of the class's constant pool: its class names, member names, descriptors and

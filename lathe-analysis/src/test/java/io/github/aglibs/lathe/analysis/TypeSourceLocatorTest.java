@@ -126,6 +126,7 @@ class TypeSourceLocatorTest {
         packageName,
         TypeKind.CLASS,
         true,
-        List.of());
+        List.of(),
+        null);
   }
 }

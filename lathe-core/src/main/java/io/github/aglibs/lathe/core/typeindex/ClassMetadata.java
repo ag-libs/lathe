@@ -11,7 +11,9 @@ record ClassMetadata(
     Set<String> referencedTypes,
     // Functional-interface binary names this class converts a lambda / method reference to (the
     // return type of each invokedynamic descriptor); present even when the source never names them.
-    Set<String> lambdaTargets) {
+    Set<String> lambdaTargets,
+    // The SourceFile attribute's name; null when not read (only a reactor scan reads it) or absent.
+    String sourceFile) {
 
   ClassMetadata {
     ValidCheck.check()
@@ -20,6 +22,7 @@ record ClassMetadata(
         .notNull(directSupertypes, "directSupertypes")
         .notNull(referencedTypes, "referencedTypes")
         .notNull(lambdaTargets, "lambdaTargets")
+        .nullOrNotBlank(sourceFile, "sourceFile")
         .validate();
     directSupertypes = List.copyOf(directSupertypes);
     referencedTypes = Set.copyOf(referencedTypes);

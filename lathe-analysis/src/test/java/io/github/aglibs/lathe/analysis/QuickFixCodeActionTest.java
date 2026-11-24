@@ -170,25 +170,27 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     return TempSourceCompiler.typeIndex(
         tmp.resolve("qualifier_index.json"),
         new TypeIndexEntry(
-            "Objects", "java.util.Objects", "java.util", TypeKind.CLASS, true, List.of()),
+            "Objects", "java.util.Objects", "java.util", TypeKind.CLASS, true, List.of(), null),
         new TypeIndexEntry(
-            "Duration", "java.time.Duration", "java.time", TypeKind.CLASS, true, List.of()),
+            "Duration", "java.time.Duration", "java.time", TypeKind.CLASS, true, List.of(), null),
         new TypeIndexEntry(
             "Duration",
             "javax.xml.datatype.Duration",
             "javax.xml.datatype",
             TypeKind.CLASS,
             true,
-            List.of()),
+            List.of(),
+            null),
         new TypeIndexEntry(
             "TimeUnit",
             "java.util.concurrent.TimeUnit",
             "java.util.concurrent",
             TypeKind.ENUM,
             true,
-            List.of()),
+            List.of(),
+            null),
         new TypeIndexEntry(
-            "Map", "java.util.Map", "java.util", TypeKind.INTERFACE, true, List.of()));
+            "Map", "java.util.Map", "java.util", TypeKind.INTERFACE, true, List.of(), null));
   }
 
   // The qualifier itself is classified as one, and so is the type a chain starts with, which javac
@@ -414,11 +416,12 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                         "com.example.dep",
                         TypeKind.CLASS,
                         true,
-                        List.of()));
+                        List.of(),
+                        null));
     final var jdkList =
         Stream.of(
             new TypeIndexEntry(
-                "List", "java.util.List", "java.util", TypeKind.CLASS, true, List.of()));
+                "List", "java.util.List", "java.util", TypeKind.CLASS, true, List.of(), null));
     final WorkspaceTypeIndex listIndex =
         TempSourceCompiler.typeIndex(
             tmp.resolve("list_index.json"),
@@ -548,14 +551,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                 "com.other",
                 TypeKind.CLASS,
                 true,
-                List.of()),
+                List.of(),
+                null),
             new TypeIndexEntry(
                 "PublicClass",
                 "com.other.PublicClass",
                 "com.other",
                 TypeKind.CLASS,
                 true,
-                List.of()));
+                List.of(),
+                null));
 
     final var source =
         """
@@ -619,20 +624,33 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         TempSourceCompiler.typeIndex(
             tmp.resolve("nested_index.json"),
             new TypeIndexEntry(
-                "Entry", "java.util.Map$Entry", "java.util", TypeKind.INTERFACE, true, List.of()),
+                "Entry",
+                "java.util.Map$Entry",
+                "java.util",
+                TypeKind.INTERFACE,
+                true,
+                List.of(),
+                null),
             new TypeIndexEntry(
-                "Item", "com.other.A$Item", "com.other", TypeKind.CLASS, true, List.of()),
+                "Item", "com.other.A$Item", "com.other", TypeKind.CLASS, true, List.of(), null),
             new TypeIndexEntry(
                 "Item",
                 "com.example.items.Item",
                 "com.example.items",
                 TypeKind.CLASS,
                 true,
-                List.of()),
+                List.of(),
+                null),
             new TypeIndexEntry(
-                "Tool", "com.other.A$Tool", "com.other", TypeKind.CLASS, true, List.of()),
+                "Tool", "com.other.A$Tool", "com.other", TypeKind.CLASS, true, List.of(), null),
             new TypeIndexEntry(
-                "Hidden", "com.other.A$Hidden", "com.other", TypeKind.CLASS, true, List.of()));
+                "Hidden",
+                "com.other.A$Hidden",
+                "com.other",
+                TypeKind.CLASS,
+                true,
+                List.of(),
+                null));
     final var learned =
         new LearnedStaticImports(Map.of("java.util.Map.Entry", 3, "com.other.A.*", 1));
     final var source =
@@ -737,7 +755,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                                     "com.other",
                                     TypeKind.CLASS,
                                     true,
-                                    List.of())),
+                                    List.of(),
+                                    null)),
                     Stream.of(
                         new TypeIndexEntry(
                             "Entry",
@@ -745,7 +764,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                             "java.util",
                             TypeKind.INTERFACE,
                             true,
-                            List.of())))
+                            List.of(),
+                            null)))
                 .toArray(TypeIndexEntry[]::new));
 
     assertThat(
@@ -793,7 +813,8 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
             "com.example",
             TypeKind.CLASS,
             true,
-            List.of());
+            List.of(),
+            null);
     final var reactorIndex =
         WorkspaceTypeIndex.build(
             List.of(), TempSourceCompiler.reactorShards(List.of(reactorEntry)));
@@ -831,11 +852,17 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         TempSourceCompiler.typeIndex(
             tmp.resolve("mixed_index.json"),
             new TypeIndexEntry(
-                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()),
+                "ArrayList",
+                "java.util.ArrayList",
+                "java.util",
+                TypeKind.CLASS,
+                true,
+                List.of(),
+                null),
             new TypeIndexEntry(
-                "List", "java.util.List", "java.util", TypeKind.CLASS, true, List.of()),
+                "List", "java.util.List", "java.util", TypeKind.CLASS, true, List.of(), null),
             new TypeIndexEntry(
-                "List", "java.awt.List", "java.awt", TypeKind.CLASS, true, List.of()));
+                "List", "java.awt.List", "java.awt", TypeKind.CLASS, true, List.of(), null));
 
     final var source =
         """
