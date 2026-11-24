@@ -784,7 +784,7 @@ None yet.
 
 ## EG-124 — A position on a package segment of an import resolves to the imported type
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-24: low; the answer is wrong but harmless, and the type's own name still answers right)
 
 **Kind: bug**
 
@@ -809,7 +809,7 @@ None yet.
 
 ## EG-125 — An unused local is reported twice once the module's compiler plugins have run
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-24: low; noise only, both reports are right)
 
 **Kind: bug**
 
@@ -833,7 +833,7 @@ None yet.
 
 ## EG-126 — After the test `module-info.java` is opened, its errors are reported in every other file of the tree, at unrelated positions
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-24: medium; one saved mistake in a module-info.java shows as a false error, misplaced, in every file of the tree; rechecked independent of WS-49)
 
 **Kind: bug**
 
@@ -847,7 +847,7 @@ In a fresh session, `src/test/java/org/junitpioneer/testkit/PioneerTestKitTests.
 After `src/test/java/module-info.java` is opened (6 errors of its own, see [WS-49](gaps-archive.md#ws-49--a-test-tree-with-its-own-module-infojava-loses-the-main-classes-the-build-patches-into-it--done)) and closed, `PioneerTestKitTests.java` has 6 errors: the module-info's messages (`cannot find symbol … class IssueExtensionExecutionListener … location: package org.junitpioneer.jupiter.issue`), placed at lines 60, 64, 66, 68, 69 and 76 of the test file, on unrelated text (`assertThat(results).hasNumberOfStartedTests(1);`).
 Every test file opened later in the session gets them; closing the module-info does not clear them.
 
-Since WS-49's fix the module-info compiles cleanly, and an error typed into its buffer no longer shows in another test file opened after it (2026-11-24); recheck with an error the module-info has on disk before fixing.
+Rechecked 2026-11-24 with WS-49's fix (a server built on `b6801a4c`): with an error saved in the module-info (`uses org.junitpioneer.jupiter.NoSuchQaType;`), `PioneerTestKitTests.java` reports it at 80:2 and `TestNameFormatterTests.java` at 70:40; an error only typed into the module-info's buffer shows in no other file, so the compile reads the module-info from disk.
 
 ### Expected
 
@@ -1120,7 +1120,7 @@ None yet.
 
 ## FR-039 — A source root shared by two trees doubles every reference in it, and rename then fails with an internal error
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-24: high; rename fails with an internal error, and references and MCP counts are doubled, wherever a Gradle source set reuses another's folder)
 
 **Kind: bug**
 
@@ -1691,7 +1691,7 @@ None yet.
 
 ## TE-28 — A captured test launch Lathe can no longer read fails the run with "see the server log", and the module still counts as captured
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-24: medium; most of Dropwizard's modules could not run a test and nothing said why; reporting it as a missing capture is enough)
 
 **Kind: bug**
 
@@ -2441,7 +2441,7 @@ Both directions with two sites and `maxResults: 1`: which site and snippet survi
 
 ## MC-105 — `search_symbols` finds nothing for a binary name (`Outer$Inner`) or a member name, without saying why
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-24: low; the dotted form works, and a hint that the tool finds types only is the cheap half)
 
 **Kind: bug**
 
@@ -2466,7 +2466,7 @@ None yet.
 
 ## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-24: low; ranking and case, the type is still listed)
 
 **Kind: bug**
 
@@ -2492,7 +2492,7 @@ None yet.
 
 ## MC-107 — `analyze_change` lists only the tests that reference the symbol directly, sorted by name
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-24: medium; an agent runs the first tests it lists, and a private member's are none)
 
 **Kind: bug**
 
