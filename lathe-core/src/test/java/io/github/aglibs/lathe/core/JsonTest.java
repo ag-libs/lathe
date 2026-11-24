@@ -34,7 +34,8 @@ final class JsonTest {
 
       assertThatThrownBy(() -> Json.read(file, ContentFingerprint.class))
           .isInstanceOf(IOException.class)
-          .hasMessageContaining(file.toString());
+          .hasMessageContaining(file.toString())
+          .satisfies(failure -> assertThat(Json.isDamaged((IOException) failure)).isTrue());
     }
   }
 
@@ -45,7 +46,11 @@ final class JsonTest {
 
     assertThatThrownBy(() -> Json.read(file, ContentFingerprint.class))
         .isInstanceOf(IOException.class)
-        .hasMessage("unreadable JSON file %s".formatted(file));
+        .hasMessage("unreadable JSON file %s".formatted(file))
+        .satisfies(failure -> assertThat(Json.isDamaged((IOException) failure)).isFalse());
+    assertThatThrownBy(() -> Json.read(tmp.resolve("absent.json"), ContentFingerprint.class))
+        .isInstanceOf(IOException.class)
+        .satisfies(failure -> assertThat(Json.isDamaged((IOException) failure)).isFalse());
   }
 
   // Well-formed but incomplete, or written by another schema: the record's validation fails.
@@ -55,6 +60,7 @@ final class JsonTest {
 
     assertThatThrownBy(() -> Json.read(file, TypeIndexFile.class))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining(file.toString());
+        .hasMessageContaining(file.toString())
+        .satisfies(failure -> assertThat(Json.isDamaged((IOException) failure)).isTrue());
   }
 }
