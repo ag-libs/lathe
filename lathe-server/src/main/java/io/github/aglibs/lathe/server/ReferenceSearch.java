@@ -30,6 +30,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -394,10 +395,56 @@ final class ReferenceSearch {
   // loop. The search then routes open documents, which is loop state again, so it rejoins the loop.
   private CompletableFuture<List<ModuleSearchInputs>> readSearchInputs(
       final List<ModuleSearchPlan> plans) {
-    final List<ModuleSearchPlan> checked = checkingExposureOnlyWhenDeferred(plans);
+    final List<ModuleSearchPlan> checked = checkingExposureOnlyWhenDeferred(searchedOnce(plans));
     return eventLoop.rejoin(
         CompletableFuture.supplyAsync(
             () -> checked.stream().map(ReferenceSearch::readCandidates).toList()));
+  }
+
+  // A folder two trees compile (a Gradle test suite adding another source set's folder) puts its
+  // files in both trees' plans: each is searched once, by the first planned tree holding it (the
+  // scope lists the declaring tree first), or every use there is reported twice and a rename edits
+  // it twice. A file to search at once wins over the same file deferred.
+  private static List<ModuleSearchPlan> searchedOnce(final List<ModuleSearchPlan> plans) {
+    final Set<String> taken = new HashSet<>();
+    for (final ModuleSearchPlan plan : plans) {
+      for (final OpenDocument doc : plan.openDocuments()) {
+        taken.add(doc.uri());
+      }
+    }
+
+    final List<List<String>> candidates = new ArrayList<>();
+    for (final ModuleSearchPlan plan : plans) {
+      final List<String> kept = new ArrayList<>();
+      for (final String uri : plan.candidateUris()) {
+        if (taken.add(uri)) {
+          kept.add(uri);
+        }
+      }
+
+      candidates.add(kept);
+    }
+
+    final List<ModuleSearchPlan> once = new ArrayList<>();
+    for (int i = 0; i < plans.size(); i++) {
+      final ModuleSearchPlan plan = plans.get(i);
+      final List<String> deferred = new ArrayList<>();
+      for (final String uri : plan.deferredUris()) {
+        if (taken.add(uri)) {
+          deferred.add(uri);
+        }
+      }
+
+      once.add(
+          new ModuleSearchPlan(
+              plan.worker(),
+              plan.openDocuments(),
+              candidates.get(i),
+              deferred,
+              plan.exposureFamily()));
+    }
+
+    return List.copyOf(once);
   }
 
   // With nothing deferred in any module, an exposure would change nothing: skip the check.

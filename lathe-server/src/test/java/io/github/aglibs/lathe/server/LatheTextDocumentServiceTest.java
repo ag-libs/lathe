@@ -72,6 +72,7 @@ import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.SemanticTokensParams;
 import org.eclipse.lsp4j.SymbolInformation;
@@ -86,6 +87,7 @@ import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
+import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
@@ -885,8 +887,100 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .contains("more than one source set of app", "test", "integrationTest");
   }
 
-  // A source set's tree of module app as a sync leaves it: its params and one compiled class.
+  // FR-039: a folder two trees compile (Gradle's demoTests suite adding src/demo/java, as JUnit
+  // Pioneer's build does) is searched once, in the tree owning it: each use there of a type both
+  // trees depend on is one reference, and a rename edits it once.
+  @Test
+  void referencesAndRename_sourceRootOfTwoTrees_eachUseOnce() throws Exception {
+    writeManifest();
+    final Path target = tmp.resolve("app/src/lib/java/com/example/Target.java");
+    final String targetContent =
+        "package com.example;\npublic class Target { public static void target() {} }\n";
+    final Path user = tmp.resolve("app/src/demo/java/com/example/User.java");
+    final String userContent =
+        "package com.example;\nclass User { void use() { Target.target(); Target.target(); } }\n";
+    Files.createDirectories(target.getParent());
+    Files.createDirectories(user.getParent());
+    Files.writeString(target, targetContent);
+    Files.writeString(user, userContent);
+    final List<String> lib =
+        List.of(
+            tmp.resolve(LatheLayout.LATHE_DIR)
+                .resolve("app")
+                .resolve(LatheLayout.sourceSetTree("lib"))
+                .toString());
+    sourceSetTree("lib", "com.example.Target");
+    sourceSetTree("demo", "com.example.User", List.of("demo"), lib);
+    sourceSetTree("demoTests", "com.example.UserTest", List.of("demoTests", "demo"), lib);
+    host.initialize(tmp);
+    openDoc(target, targetContent);
+    final int offset = targetContent.indexOf("target()");
+
+    final List<? extends Location> locations =
+        service
+            .references(referenceParams(target, targetContent, offset, null))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+    final WorkspaceEdit edit =
+        service
+            .rename(
+                new RenameParams(
+                    new TextDocumentIdentifier(target.toUri().toString()),
+                    offsetToPosition(targetContent, offset),
+                    "renamed"))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(locations)
+        .filteredOn(location -> location.getUri().equals(user.toUri().toString()))
+        .hasSize(2);
+    assertThat(locations).doesNotHaveDuplicates();
+    assertThat(edit.getChanges().get(user.toUri().toString())).hasSize(2);
+  }
+
+  // FR-039: searched from the tree that does not own the shared folder, its uses there are still
+  // found, once: a type declared in src/demo/java is both trees' own, so the scope is the asking
+  // tree alone, and the shared files are its to search.
+  @Test
+  void references_typeInASharedSourceRootFromTheOtherTree_findsItsUsesThereOnce() throws Exception {
+    writeManifest();
+    final Path helper = tmp.resolve("app/src/demo/java/com/example/Helper.java");
+    final Path user = tmp.resolve("app/src/demo/java/com/example/User.java");
+    final Path test = tmp.resolve("app/src/demoTests/java/com/example/HelperTest.java");
+    final String testContent =
+        "package com.example;\nclass HelperTest { Helper helper = new Helper(); }\n";
+    Files.createDirectories(helper.getParent());
+    Files.createDirectories(test.getParent());
+    Files.writeString(helper, "package com.example;\npublic class Helper {}\n");
+    Files.writeString(user, "package com.example;\nclass User { Helper helper; }\n");
+    Files.writeString(test, testContent);
+    sourceSetTree("demo", "com.example.Helper");
+    sourceSetTree("demoTests", "com.example.HelperTest", List.of("demoTests", "demo"), List.of());
+    host.initialize(tmp);
+    openDoc(test, testContent);
+
+    final List<? extends Location> locations =
+        service
+            .references(
+                referenceParams(test, testContent, testContent.indexOf("Helper helper"), null))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(locations)
+        .filteredOn(location -> location.getUri().equals(user.toUri().toString()))
+        .hasSize(1);
+    assertThat(locations).doesNotHaveDuplicates();
+  }
+
+  // A source set's tree of module app as a sync leaves it: its params and one compiled class. Its
+  // source roots are its own folder, or the folders of the source sets named.
   private void sourceSetTree(final String sourceSet, final String className) throws Exception {
+    sourceSetTree(sourceSet, className, List.of(sourceSet), List.of());
+  }
+
+  private void sourceSetTree(
+      final String sourceSet,
+      final String className,
+      final List<String> rootSourceSets,
+      final List<String> classpath)
+      throws Exception {
     final String tree = LatheLayout.sourceSetTree(sourceSet);
     final Path moduleDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("app");
     final Path classFile = moduleDir.resolve(tree).resolve(className.replace('.', '/') + ".class");
@@ -897,8 +991,10 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             tree,
             tmp.resolve("app/build/classes/java").resolve(sourceSet).toString(),
             null,
-            List.of(tmp.resolve("app/src").resolve(sourceSet).resolve("java").toString()),
-            List.of(),
+            rootSourceSets.stream()
+                .map(root -> tmp.resolve("app/src").resolve(root).resolve("java").toString())
+                .toList(),
+            classpath,
             List.of(),
             List.of(),
             null,
