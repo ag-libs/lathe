@@ -25,7 +25,7 @@ class WorkspaceTypeIndexTest {
 
   private static TypeIndexEntry entry(final String simpleName, final String pkg) {
     return new TypeIndexEntry(
-        simpleName, "%s.%s".formatted(pkg, simpleName), pkg, TypeKind.CLASS, true, List.of());
+        simpleName, "%s.%s".formatted(pkg, simpleName), pkg, TypeKind.CLASS, true, List.of(), null);
   }
 
   private static TypeIndexEntry graphEntry(
@@ -40,7 +40,8 @@ class WorkspaceTypeIndexTest {
         packageName,
         TypeKind.CLASS,
         typeNameCandidate,
-        List.of(directSupertypes));
+        List.of(directSupertypes),
+        null);
   }
 
   private static TypeIndexFile shard(final TypeIndexEntry... entries) {
@@ -300,7 +301,8 @@ class WorkspaceTypeIndexTest {
                     "com.example",
                     TypeKind.CLASS,
                     false,
-                    List.of()),
+                    List.of(),
+                    null),
                 graphEntry("com.example.Outer$Helper", false)));
 
     final var index = WorkspaceTypeIndex.build(List.of(shard));
@@ -328,7 +330,13 @@ class WorkspaceTypeIndexTest {
   void build_nonTypeNameCandidateInReactor_includedInSearch() {
     final var packagePrivate =
         new TypeIndexEntry(
-            "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of());
+            "FooTest",
+            "com.example.FooTest",
+            "com.example",
+            TypeKind.CLASS,
+            false,
+            List.of(),
+            null);
 
     final var index =
         WorkspaceTypeIndex.build(
@@ -347,7 +355,13 @@ class WorkspaceTypeIndexTest {
             "dep.json",
             shard(
                 new TypeIndexEntry(
-                    "Hidden", "com.dep.Hidden", "com.dep", TypeKind.CLASS, false, List.of())));
+                    "Hidden",
+                    "com.dep.Hidden",
+                    "com.dep",
+                    TypeKind.CLASS,
+                    false,
+                    List.of(),
+                    null)));
 
     final var index = WorkspaceTypeIndex.build(List.of(shardPath));
 

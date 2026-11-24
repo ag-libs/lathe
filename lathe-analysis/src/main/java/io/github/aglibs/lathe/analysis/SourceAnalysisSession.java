@@ -336,7 +336,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   private static TypeIndexEntry typeEntry(final String simpleName, final String pkg) {
     final String fqName = pkg.isEmpty() ? simpleName : "%s.%s".formatted(pkg, simpleName);
-    return new TypeIndexEntry(simpleName, fqName, pkg, TypeKind.CLASS, true, List.of());
+    return new TypeIndexEntry(simpleName, fqName, pkg, TypeKind.CLASS, true, List.of(), null);
   }
 
   // The open file's attributed analysis: the cached one when it has this content, else a fresh

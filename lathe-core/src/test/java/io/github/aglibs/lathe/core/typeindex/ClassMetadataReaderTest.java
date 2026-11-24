@@ -109,6 +109,36 @@ class ClassMetadataReaderTest {
   }
 
   @Test
+  void read_withSourceFile_readsTheAttribute() throws IOException {
+    final var metadata =
+        ClassMetadataReader.read(
+            new ByteArrayInputStream(classWithSourceFile("Host.java", true)), true);
+
+    assertThat(metadata.orElseThrow().sourceFile()).isEqualTo("Host.java");
+    assertThat(
+            ClassMetadataReader.read(
+                    new ByteArrayInputStream(classWithSourceFile("Host.java", true)))
+                .orElseThrow()
+                .sourceFile())
+        .isNull();
+  }
+
+  // The rest of the class is read by then: a blank name or members cut short lose only the name.
+  @Test
+  void read_withSourceFileBlankOrCutShort_keepsTheClassWithoutAName() throws IOException {
+    final var blank =
+        ClassMetadataReader.read(new ByteArrayInputStream(classWithSourceFile("", true)), true);
+    final var cutShort =
+        ClassMetadataReader.read(
+            new ByteArrayInputStream(classWithSourceFile("Host.java", false)), true);
+
+    assertThat(blank.orElseThrow().binaryName()).isEqualTo("Bare");
+    assertThat(blank.orElseThrow().sourceFile()).isNull();
+    assertThat(cutShort.orElseThrow().binaryName()).isEqualTo("Bare");
+    assertThat(cutShort.orElseThrow().sourceFile()).isNull();
+  }
+
+  @Test
   void read_invalidThisClassIndex_returnsEmpty() throws IOException {
     final var bytes = classHeader(7, 3);
 
@@ -118,16 +148,22 @@ class ClassMetadataReaderTest {
   @Test
   void metadata_invalidValues_throws() {
     assertThatThrownBy(
-            () -> new ClassMetadata(new ClassAccess(0), " ", List.of(), Set.of(), Set.of()))
+            () -> new ClassMetadata(new ClassAccess(0), " ", List.of(), Set.of(), Set.of(), null))
         .hasMessageContaining("binaryName");
     assertThatThrownBy(
-            () -> new ClassMetadata(new ClassAccess(0), "example.Type", null, Set.of(), Set.of()))
+            () ->
+                new ClassMetadata(
+                    new ClassAccess(0), "example.Type", null, Set.of(), Set.of(), null))
         .hasMessageContaining("directSupertypes");
     assertThatThrownBy(
-            () -> new ClassMetadata(new ClassAccess(0), "example.Type", List.of(), null, Set.of()))
+            () ->
+                new ClassMetadata(
+                    new ClassAccess(0), "example.Type", List.of(), null, Set.of(), null))
         .hasMessageContaining("referencedTypes");
     assertThatThrownBy(
-            () -> new ClassMetadata(new ClassAccess(0), "example.Type", List.of(), Set.of(), null))
+            () ->
+                new ClassMetadata(
+                    new ClassAccess(0), "example.Type", List.of(), Set.of(), null, null))
         .hasMessageContaining("lambdaTargets");
   }
 
@@ -152,6 +188,40 @@ class ClassMetadataReaderTest {
       data.writeShort(thisClassIndex);
       data.writeShort(0);
       data.writeShort(0);
+    }
+    return bytes.toByteArray();
+  }
+
+  // A class Bare whose SourceFile attribute names sourceFile; without its members table when not
+  // complete, as a file cut short after the interfaces.
+  private static byte[] classWithSourceFile(final String sourceFile, final boolean complete)
+      throws IOException {
+    final var bytes = new ByteArrayOutputStream();
+    try (final var data = new DataOutputStream(bytes)) {
+      data.writeInt(0xCAFEBABE);
+      data.writeShort(0);
+      data.writeShort(61);
+      data.writeShort(5);
+      data.writeByte(1);
+      data.writeUTF("Bare");
+      data.writeByte(7);
+      data.writeShort(1);
+      data.writeByte(1);
+      data.writeUTF("SourceFile");
+      data.writeByte(1);
+      data.writeUTF(sourceFile);
+      data.writeShort(0x0020);
+      data.writeShort(2);
+      data.writeShort(0);
+      data.writeShort(0);
+      if (complete) {
+        data.writeShort(0);
+        data.writeShort(0);
+        data.writeShort(1);
+        data.writeShort(3);
+        data.writeInt(2);
+        data.writeShort(4);
+      }
     }
     return bytes.toByteArray();
   }

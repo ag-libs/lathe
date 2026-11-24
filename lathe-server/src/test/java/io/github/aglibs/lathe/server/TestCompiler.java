@@ -628,7 +628,8 @@ public final class TestCompiler {
         lastDot < 0 ? "" : binaryName.substring(0, lastDot),
         TypeKind.CLASS,
         true,
-        List.of());
+        List.of(),
+        null);
   }
 
   /**

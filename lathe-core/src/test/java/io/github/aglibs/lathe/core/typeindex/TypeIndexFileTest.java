@@ -24,7 +24,8 @@ class TypeIndexFileTest {
                     "com.google.common.collect",
                     TypeKind.CLASS,
                     true,
-                    List.of("java.lang.Object"))));
+                    List.of("java.lang.Object"),
+                    null)));
 
     final TypeIndexFile roundTrip = Json.fromJson(Json.toJson(file), TypeIndexFile.class);
 

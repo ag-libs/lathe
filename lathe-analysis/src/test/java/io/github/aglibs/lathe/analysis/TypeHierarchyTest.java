@@ -60,6 +60,51 @@ class TypeHierarchyTest {
     }
   }
 
+  // Sibling is declared in Direct.java: only the file the index records leads to it.
+  @Test
+  void hierarchy_secondaryTopLevelSubtype_listedOnlyWhenTheIndexRecordsItsFile()
+      throws IOException {
+    final String content = "interface Service {}\n";
+    write("Service.java", content);
+    write(
+        "Direct.java", "class Direct implements Service {}\nclass Sibling implements Service {}\n");
+    final var request = request(content, new Position(0, 12));
+    final var unrecorded = entry("Sibling", TypeKind.CLASS, "Service");
+    final var recorded =
+        new TypeIndexEntry(
+            "Sibling", "Sibling", "", TypeKind.CLASS, false, List.of("Service"), "Direct.java");
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+
+      for (final var sibling : List.of(recorded, unrecorded)) {
+        final var index =
+            WorkspaceTypeIndex.build(
+                List.of(),
+                TempSourceCompiler.reactorShards(
+                    List.of(
+                        entry("Service", TypeKind.INTERFACE),
+                        entry("Direct", TypeKind.CLASS, "Service"),
+                        sibling)));
+        final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+        final List<TypeHierarchyItem> subtypes =
+            session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot));
+
+        if (sibling == recorded) {
+          assertThat(subtypes)
+              .extracting(TypeHierarchyItem::getName)
+              .containsExactlyInAnyOrder("Direct", "Sibling");
+          assertThat(subtypes)
+              .filteredOn(subtype -> subtype.getName().equals("Sibling"))
+              .singleElement()
+              .satisfies(subtype -> assertThat(subtype.getUri()).endsWith("Direct.java"));
+        } else {
+          assertThat(subtypes).extracting(TypeHierarchyItem::getName).containsExactly("Direct");
+        }
+      }
+    }
+  }
+
   @Test
   void explore_typeCursor_returnsTransitiveSupertypesSelfAndSubtypes() throws IOException {
     final String content = "interface Service {}\n";
@@ -200,6 +245,7 @@ class TypeHierarchyTest {
 
   private static TypeIndexEntry entry(
       final String binaryName, final TypeKind kind, final String... directSupertypes) {
-    return new TypeIndexEntry(binaryName, binaryName, "", kind, true, List.of(directSupertypes));
+    return new TypeIndexEntry(
+        binaryName, binaryName, "", kind, true, List.of(directSupertypes), null);
   }
 }

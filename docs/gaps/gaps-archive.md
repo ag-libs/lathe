@@ -7,6 +7,59 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-121 — A secondary top-level type is missing from workspace symbol, definition from another file, type hierarchy and implementations — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: workspace symbol, definition, type hierarchy and implementations in the editor; MCP `search_symbols` and `find_implementations`.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B1).
+
+### Observed behaviour
+
+`dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/DropwizardExtensionsSupportTest.java` declares nine top-level types and none named after the file (`CountingExtension`, `DelayedAssertionsTest`, `ParentClass_ChildHasExtension` with a nested `NestedClass_OnlyInParent`, …); `HttpClientBuilderTest.java` in `dropwizard-client` declares one more, `AnotherHttpClientBuilder`.
+All are compiled into the module's `.lathe/` class output.
+
+- `workspace/symbol` finds none of them, even by exact name; MCP `search_symbols` (also with `scope: reactor`) answers "No symbols matching".
+- Definition of `CountingExtension` from another file of the package gives nothing (`[definition] … element=io.dropwizard.testing.junit5.CountingExtension overloads=0 → not found`), while hover and completion at the same position work.
+- `prepareTypeHierarchy` gives nothing for them, even in their own file (`new AnotherHttpClientBuilder()`).
+- MCP `find_implementations` on `interface DelayedAssertionsTest` answers "No implementations found."; five classes in the same file implement it.
+
+Definition within the file, references, rename, document symbols, MCP `outline` and runnables work.
+
+### Expected
+
+A secondary top-level type is a reactor type like any other: each feature above finds it.
+
+### Resolution
+
+Each feature found a type's file by its top-level type's name (`<package>/<TopLevel>.java`), which a secondary type does not have; the class file's `SourceFile` attribute names the file it is in.
+The reactor scan (`ClassFileTypeScanner.scanReactorDirectory`) now reads that attribute and records the file on `TypeIndexEntry.sourceFileName` when it is not the top-level type's own, null otherwise; jar and JDK indexes read and record nothing, and a null is left out of an index file.
+`TypeSourceLocator.findSourceFile` tries the conventional file, then the recorded one, which brings workspace symbol, MCP `search_symbols`, type hierarchy and implementations to the type.
+The recorded file is tried before the conventional one, as a file of the type's name in another root is another type.
+Only a plain `*.java` name is recorded (a class compiled from Kotlin or Groovy names no Java file), and a blank attribute or a class file cut short after its interfaces loses only the name, never the class.
+Definition starts from a javac element, not an index entry: when no source file is found for it, it reads the `SourceFile` attribute of the class file the compile loaded it from (the element's module on the module path, the module's own compiled output, or the class path), skipping a class read from a jar.
+
+Not covered:
+- The other features that start from an element still look for the conventional file (`DefinitionLocator.findSourceFile`): preparing a call hierarchy on a call from another file (`CallHierarchyItemDataCodec`) and a declaration's Javadoc and parameter names read from source (`SourceParser.parseDeclaration`); the class-file lookup needs the compile's file manager, which those static paths do not have.
+- The definition fallback looks only under `<root>/<package>`, not under a module-prefixed root (`<root>/<module>/<package>`), the OpenJDK layout.
+- The features that start from a bare binary name rather than an index entry: a stack frame's source, the debugger's source lookup, lambdas and method references inside a secondary type for a functional interface's implementations (`ReferenceSearch`'s lambda index), and parts of rename, which finds secondary types its own way.
+- A class compiled without the attribute (`-g:none`) records no file and stays missing, as before.
+
+### Regression targets
+
+- `ClassMetadataReaderTest.read_withSourceFile_readsTheAttribute`, `ClassMetadataReaderTest.read_withSourceFileBlankOrCutShort_keepsTheClassWithoutAName`
+- `ClassFileTypeScannerTest.scanReactorDirectory_secondaryTopLevelType_recordsItsSourceFile`
+- `ClassFileTypeScannerTest.scanDirectory_secondaryTopLevelType_recordsNoSourceFile`
+- `TypeSourceLocatorTest.locate_secondaryTopLevelTypeRecordedInTheIndex_returnsItsDeclarationInThatFile`
+- `TypeSourceLocatorTest.findSourceFile_recordedFileAndAnotherRootsFileOfTheName_returnsTheRecordedFile`
+- `TypeHierarchyTest.hierarchy_secondaryTopLevelSubtype_listedOnlyWhenTheIndexRecordsItsFile`
+- `LatheEngineNavigationTest.secondaryTopLevelTypes_searchDefinitionAndImplementations_findTheirFile`
+
+---
+
 ## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow — done
 
 **Status: done** (2026-11-23)

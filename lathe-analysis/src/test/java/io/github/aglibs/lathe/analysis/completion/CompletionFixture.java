@@ -146,7 +146,8 @@ final class CompletionFixture implements AutoCloseable {
       final List<String> directSupertypes) {
     final int packageEnd = qualifiedName.lastIndexOf('.');
     final String packageName = packageEnd >= 0 ? qualifiedName.substring(0, packageEnd) : "";
-    return new TypeIndexEntry(simpleName, qualifiedName, packageName, kind, true, directSupertypes);
+    return new TypeIndexEntry(
+        simpleName, qualifiedName, packageName, kind, true, directSupertypes, null);
   }
 
   private AttributedFileAnalysis compile(final String source) {

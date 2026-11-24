@@ -652,6 +652,57 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             });
   }
 
+  // Types declared in a file named after none of them: found in that file by symbol search,
+  // definition from another file and implementations, as the file's own type is.
+  @Test
+  void secondaryTopLevelTypes_searchDefinitionAndImplementations_findTheirFile() throws Exception {
+    final String hostSource =
+        """
+        package com.example;
+        class Host {}
+        interface Delayed {}
+        class FirstDelayed implements Delayed {}
+        class SecondDelayed implements Delayed {}
+        """;
+    final String callerSource = "package com.example; class Caller { Delayed delayed; }";
+    final Path host = TestCompiler.writeModuleSource(tmp, "com/example/Host.java", hostSource);
+    final Path caller =
+        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
+    compileIntoMirror(host, caller);
+    engine = new LatheEngine(tmp);
+    final String hostUri = host.toUri().toString();
+
+    assertThat(engine.searchSymbols("Delayed", SymbolScope.REACTOR, 50).value())
+        .extracting(symbol -> symbol.name(), symbol -> symbol.location().uri())
+        .containsExactlyInAnyOrder(
+            tuple("Delayed", hostUri),
+            tuple("FirstDelayed", hostUri),
+            tuple("SecondDelayed", hostUri));
+    assertThat(engine.searchSymbols("Host", SymbolScope.REACTOR, 50).value())
+        .extracting(symbol -> symbol.location().uri())
+        .containsExactly(hostUri);
+
+    final var use = positionOf(callerSource, "Delayed");
+    assertThat(engine.definition(caller, use.getLine(), use.getCharacter()).value().targets())
+        .singleElement()
+        .satisfies(
+            target -> {
+              assertThat(target.uri()).isEqualTo(hostUri);
+              assertThat(target.snippet()).isEqualTo("interface Delayed {}");
+            });
+
+    final var declaration = positionOf(hostSource, "Delayed {}");
+    assertThat(
+            engine
+                .findImplementations(host, declaration.getLine(), declaration.getCharacter(), 50)
+                .value()
+                .implementations())
+        .extracting(location -> location.snippet())
+        .containsExactlyInAnyOrder(
+            "class FirstDelayed implements Delayed {}",
+            "class SecondDelayed implements Delayed {}");
+  }
+
   @Test
   void findImplementations_interface_findsImplementingClass() throws Exception {
     final GreeterFixture greeter = greeterFixture();

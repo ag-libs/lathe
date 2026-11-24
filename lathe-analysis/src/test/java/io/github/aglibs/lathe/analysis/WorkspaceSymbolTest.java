@@ -23,7 +23,7 @@ class WorkspaceSymbolTest {
 
   private static TypeIndexEntry entry(final String simpleName, final String pkg) {
     final String qualName = pkg.isEmpty() ? simpleName : pkg + "." + simpleName;
-    return new TypeIndexEntry(simpleName, qualName, pkg, TypeKind.CLASS, true, List.of());
+    return new TypeIndexEntry(simpleName, qualName, pkg, TypeKind.CLASS, true, List.of(), null);
   }
 
   private WorkspaceTypeIndex indexOf(final TypeIndexEntry... entries) {
@@ -160,7 +160,13 @@ class WorkspaceSymbolTest {
             entry("Duration", "io.dropwizard.util"),
             entry("Duration", "java.time"),
             new TypeIndexEntry(
-                "Entry", "java.util.Map$Entry", "java.util", TypeKind.INTERFACE, true, List.of()),
+                "Entry",
+                "java.util.Map$Entry",
+                "java.util",
+                TypeKind.INTERFACE,
+                true,
+                List.of(),
+                null),
             entry("Entry", "com.example"));
 
     assertThat(
@@ -224,7 +230,13 @@ class WorkspaceSymbolTest {
         indexOf(
             entry("Foo", "com.example"),
             new TypeIndexEntry(
-                "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of()));
+                "FooTest",
+                "com.example.FooTest",
+                "com.example",
+                TypeKind.CLASS,
+                false,
+                List.of(),
+                null));
 
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Foo", index, List.of(src), entry -> true);
@@ -289,14 +301,16 @@ class WorkspaceSymbolTest {
                 "com.example",
                 TypeKind.CLASS,
                 true,
-                List.of()),
+                List.of(),
+                null),
             new TypeIndexEntry(
                 "Builder",
                 "com.example.Api$Response$Builder",
                 "com.example",
                 TypeKind.CLASS,
                 true,
-                List.of()));
+                List.of(),
+                null));
 
     assertThat(WorkspaceSymbolResolver.resolve("Builder", index, List.of(src), entry -> true))
         .extracting(

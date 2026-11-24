@@ -54,6 +54,57 @@ class TypeSourceLocatorTest {
   }
 
   @Test
+  void locate_secondaryTopLevelTypeRecordedInTheIndex_returnsItsDeclarationInThatFile()
+      throws IOException {
+    final var sourceFile =
+        write(
+            "com/example/Host.java",
+            """
+            package com.example;
+            class Host {}
+            class Sibling {
+              interface Deep {}
+            }
+            """);
+
+    try (var parser = new SourceParser()) {
+      final var sibling =
+          TypeSourceLocator.locate(
+              recorded("com.example.Sibling", "Host.java"), List.of(sourceRoot), parser);
+      assertThat(sibling.orElseThrow().getUri()).isEqualTo(sourceFile.toUri().toString());
+      assertThat(sibling.orElseThrow().getRange().getStart().getLine()).isEqualTo(2);
+
+      final var deep =
+          TypeSourceLocator.locate(
+              recorded("com.example.Sibling$Deep", "Host.java"), List.of(sourceRoot), parser);
+      assertThat(deep.orElseThrow().getRange().getStart().getLine()).isEqualTo(3);
+
+      assertThat(
+              TypeSourceLocator.locate(entry("com.example.Sibling"), List.of(sourceRoot), parser))
+          .isEmpty();
+    }
+  }
+
+  // Another module's com/example/Sibling.java is another type; the recorded file comes first.
+  @Test
+  void findSourceFile_recordedFileAndAnotherRootsFileOfTheName_returnsTheRecordedFile(
+      @TempDir final Path otherRoot) throws IOException {
+    final var host = write("com/example/Host.java", "package com.example;\nclass Sibling {}\n");
+    final var other = otherRoot.resolve("com/example/Sibling.java");
+    Files.createDirectories(other.getParent());
+    Files.writeString(other, "package com.example;\nclass Sibling {}\n");
+
+    assertThat(
+            TypeSourceLocator.findSourceFile(
+                recorded("com.example.Sibling", "Host.java"), List.of(otherRoot, sourceRoot)))
+        .contains(host);
+    assertThat(
+            TypeSourceLocator.findSourceFile(
+                entry("com.example.Sibling"), List.of(otherRoot, sourceRoot)))
+        .contains(other);
+  }
+
+  @Test
   void locate_missingSourceOrUnsupportedLocalClass_returnsEmpty() throws IOException {
     write(
         "com/example/Outer.java",
@@ -126,6 +177,19 @@ class TypeSourceLocatorTest {
         packageName,
         TypeKind.CLASS,
         true,
-        List.of());
+        List.of(),
+        null);
+  }
+
+  private static TypeIndexEntry recorded(final String binaryName, final String sourceFileName) {
+    final var plain = entry(binaryName);
+    return new TypeIndexEntry(
+        plain.simpleName(),
+        plain.binaryName(),
+        plain.packageName(),
+        plain.kind(),
+        plain.typeNameCandidate(),
+        plain.directSupertypes(),
+        sourceFileName);
   }
 }

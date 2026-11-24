@@ -36,9 +36,17 @@ public final class TypeSourceLocator {
                     (trees, tree) -> declarationLocation(entry, sourceFile, trees, tree)));
   }
 
+  // A secondary top-level type (Helper in Foo.java) and the types nested in it are not in a file of
+  // their top-level type's name; the reactor index records the file they are in, which comes
+  // first, as a file of the type's name in another root is another type.
   public static Optional<Path> findSourceFile(
       final TypeIndexEntry entry, final List<Path> sourceRoots) {
-    return findSourceFile(entry.packageName(), entry.className(), sourceRoots);
+    if (entry.sourceFileName() == null) {
+      return findSourceFile(entry.packageName(), entry.className(), sourceRoots);
+    }
+
+    return findDeclaringFile(entry.packageName(), entry.sourceFileName(), sourceRoots)
+        .or(() -> findSourceFile(entry.packageName(), entry.className(), sourceRoots));
   }
 
   /**
@@ -57,10 +65,16 @@ public final class TypeSourceLocator {
       final String packageName, final String className, final List<Path> sourceRoots) {
     final int nestedType = className.indexOf('$');
     final String topLevelName = nestedType >= 0 ? className.substring(0, nestedType) : className;
+    return findDeclaringFile(packageName, "%s.java".formatted(topLevelName), sourceRoots);
+  }
+
+  // The file of the given name in the package's directory under the first root that has it.
+  public static Optional<Path> findDeclaringFile(
+      final String packageName, final String fileName, final List<Path> sourceRoots) {
     final String relativePath =
         packageName.isEmpty()
-            ? topLevelName + ".java"
-            : "%s/%s.java".formatted(packageName.replace('.', '/'), topLevelName);
+            ? fileName
+            : "%s/%s".formatted(packageName.replace('.', '/'), fileName);
     return sourceRoots.stream()
         .map(root -> root.resolve(relativePath))
         .filter(Files::isRegularFile)

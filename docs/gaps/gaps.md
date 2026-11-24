@@ -759,43 +759,6 @@ None yet.
 
 ---
 
-## EG-121 — A secondary top-level type is missing from workspace symbol, definition from another file, type hierarchy and implementations
-
-**Status: accepted** (triaged 2026-11-24: high; MCP answers "No implementations found" for an interface with five, and an agent takes that as fact)
-
-**Kind: bug**
-
-**Affects: workspace symbol, definition, type hierarchy and implementations in the editor; MCP `search_symbols` and `find_implementations`.**
-
-Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B1).
-
-### Observed behaviour
-
-`dropwizard-testing/src/test/java/io/dropwizard/testing/junit5/DropwizardExtensionsSupportTest.java` declares nine top-level types and none named after the file (`CountingExtension`, `DelayedAssertionsTest`, `ParentClass_ChildHasExtension` with a nested `NestedClass_OnlyInParent`, …); `HttpClientBuilderTest.java` in `dropwizard-client` declares one more, `AnotherHttpClientBuilder`.
-All are compiled into the module's `.lathe/` class output.
-
-- `workspace/symbol` finds none of them, even by exact name; MCP `search_symbols` (also with `scope: reactor`) answers "No symbols matching".
-- Definition of `CountingExtension` from another file of the package gives nothing (`[definition] … element=io.dropwizard.testing.junit5.CountingExtension overloads=0 → not found`), while hover and completion at the same position work.
-- `prepareTypeHierarchy` gives nothing for them, even in their own file (`new AnotherHttpClientBuilder()`).
-- MCP `find_implementations` on `interface DelayedAssertionsTest` answers "No implementations found."; five classes in the same file implement it.
-
-Definition within the file, references, rename, document symbols, MCP `outline` and runnables work.
-
-### Expected
-
-A secondary top-level type is a reactor type like any other: each feature above finds it.
-
-### Fix direction
-
-The features that miss it look a type up by its file; a secondary type has no file of its own name.
-Rename already handles this through the workspace type index and the class file's `SourceFile` attribute (`ClassSourceFile`); the same lookup would serve the others.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-122 — Incoming calls leave out calls in a top-level or member class's initializers and in enum constant arguments
 
 **Status: accepted** (triaged 2026-11-24: medium; both QA rounds hit it on real code, and MCP `call_hierarchy` feeds change impact; references already find the calls)

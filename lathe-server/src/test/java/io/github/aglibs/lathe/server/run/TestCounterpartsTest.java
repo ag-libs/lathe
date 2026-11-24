@@ -62,7 +62,8 @@ class TestCounterpartsTest {
                             name.substring(0, name.lastIndexOf('.')),
                             io.github.aglibs.lathe.core.typeindex.TypeKind.CLASS,
                             true,
-                            List.of()))
+                            List.of(),
+                            null))
                 .toList());
     final Function<Path, Optional<ModuleSourceConfig>> configOf =
         path ->

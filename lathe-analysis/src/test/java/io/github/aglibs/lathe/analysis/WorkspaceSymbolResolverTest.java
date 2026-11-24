@@ -30,7 +30,8 @@ class WorkspaceSymbolResolverTest {
           "com.example.impl",
           TypeKind.CLASS,
           false,
-          List.of());
+          List.of(),
+          null);
 
   private Path writeWidgetSource() throws IOException {
     final var srcRoot = tmp.resolve("src");
@@ -103,7 +104,8 @@ class WorkspaceSymbolResolverTest {
                         "com.example",
                         TypeKind.CLASS,
                         true,
-                        List.of()))
+                        List.of(),
+                        null))
             .toArray(TypeIndexEntry[]::new));
     // Ranked after them all: a longer name, as the ranking puts the shorter name first.
     TempSourceCompiler.typeIndex(
@@ -114,7 +116,8 @@ class WorkspaceSymbolResolverTest {
             "com.example",
             TypeKind.CLASS,
             true,
-            List.of()));
+            List.of(),
+            null));
     final var index =
         WorkspaceTypeIndex.build(List.of(sourced, sourceless), Map.of(), Set.of(sourceless));
 
