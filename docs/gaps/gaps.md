@@ -1172,27 +1172,6 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0068 — A qualified name in a type argument completes nothing
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: completion of a qualified type inside `<…>`, in the editor.**
-
-Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-`class Test { java.util.List<java.util.Ma§> x; }` offers nothing; the same qualifier outside a type argument, `java.util.Ma§ x;`, offers `Map`.
-`SentinelInjector`'s receiver scan runs back across the `<`, so the receiver is `java.util.List<java.util`, which resolves to nothing.
-
-### Expected
-
-The members of `java.util` matching `Ma` (`Map`), as for the qualifier outside a type argument.
-
----
-
 ## CQ-0071 — A type parameter's second bound offers classes
 
 **Status: documented**

@@ -4632,6 +4632,46 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0068 — A qualified name in a type argument completes nothing — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: completion of a qualified type inside `<…>`, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Test { java.util.List<java.util.Ma§> x; }` offers nothing; the same qualifier outside a type argument, `java.util.Ma§ x;`, offers `Map`.
+`SentinelInjector`'s receiver scan runs back across the `<`, so the receiver is `java.util.List<java.util`, which resolves to nothing.
+
+### Expected
+
+The members of `java.util` matching `Ma` (`Map`), as for the qualifier outside a type argument.
+
+### Fix
+
+javac parsed the position right; only the receiver text was wrong.
+`SentinelInjector` collects the text before the dot back to a space, `;`, `{` or `,`, keeping parentheses balanced, so after a `<` with no space it ran on into the type the argument belongs to: `java.util.List<java.util`.
+A `<` the scan meets before any `>` now ends the receiver, as such a `<` cannot be matched: it opens the type argument (`List<java.util.`, `Collections.<java.util.`) or is a comparison (`a<b.` gives `b`).
+Past a `>` the `<` may be its match (`Collections.<String>emptyList().`), and past a quote it may sit in a literal or a comment, so there the scan keeps to parentheses as before.
+The receiver text stays a text scan, which cannot tell a generic `<…>` from a comparison in general, and member access, qualified type and import completion all read it beside the parse tree, so the rule is kept to the one case that is never a match.
+
+Checked in the editor on Dropwizard: `java.util.List<java.util.Ma` in a field offers `Map` (it offered nothing), while `java.util.Map<String, java.util.concurrent.Con` and `Collections.<String>emptyList().ite` complete as before.
+
+Not covered: past a `>` or a quote the receiver text is unchanged, so an operator written without spaces before the receiver still joins it (`a>b.`, `x<y&&a>b.`, `y=s.`), and a space in a witness or a literal still cuts it (`Collections.<String, Integer>emptyMap().`); `a<=b.` gives `=b`, where it gave `a<=b`, neither of which resolves; the compiled tree resolves these receivers.
+
+### Regression targets
+
+- `SentinelInjectorTest.receiverText_afterUnmatchedAngleBracket_startsThere`
+- `SentinelInjectorTest.receiverText_holdingAngleBrackets_keepsThemWhole`
+- `SentinelInjectorTest.receiverText_pastQuote_ignoresAngleBrackets`
+- `CompletionTypeReferenceTest.typeArgument_qualifiedName_completesQualifierMembers`
+
+---
+
 ## CQ-0069 — A method call's explicit type argument completes as an expression — done
 
 **Status: done** (2026-11-23)
@@ -4662,7 +4702,7 @@ Checked in the editor on Dropwizard's `CachingAuthorizer<P>`: in a method body, 
 Not covered:
 
 - a call's type argument still being typed, with no `>` or method name after it (`Collections.<i`), completes nothing, before and after this fix: javac's recovery leaves the sentinel out of the tree, though it keeps it after `this.<`, `new <` and `String::<`;
-- a qualified name there (`Collections.<java.util.Ma`) still completes nothing, which is CQ-0068.
+- a qualified name there (`Collections.<java.util.Ma`) still completed nothing; CQ-0068 has since fixed it.
 
 ### Regression targets
 
