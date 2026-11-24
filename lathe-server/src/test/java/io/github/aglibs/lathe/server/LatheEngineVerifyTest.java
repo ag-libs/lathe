@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.schema.LaunchMode;
+import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact.Family;
@@ -442,9 +445,27 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
   @Test
   void modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture() throws Exception {
     apiReactor(List.of("app1"), List.of("tool1"));
+    // A capture counts only when it reads; one that does not is told like a missing one (TE-28).
+    Json.write(
+        new TestLaunchData(
+            "surefire",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of(),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            ""),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve("app1").resolve(LatheLayout.TEST_LAUNCH_FILE));
     Files.writeString(
-        tmp.resolve(LatheLayout.LATHE_DIR).resolve("app1").resolve(LatheLayout.TEST_LAUNCH_FILE),
-        "{}");
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve("tool1").resolve(LatheLayout.TEST_LAUNCH_FILE),
+        "{}",
+        StandardCharsets.UTF_8);
     engine = new LatheEngine(tmp);
 
     assertThat(engine.modules().value())

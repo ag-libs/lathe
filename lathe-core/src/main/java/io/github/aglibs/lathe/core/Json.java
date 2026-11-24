@@ -12,6 +12,7 @@ import com.google.gson.stream.MalformedJsonException;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Serial;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -61,7 +62,7 @@ public final class Json {
     try (final Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
       final T value = GSON.fromJson(reader, type);
       if (value == null) {
-        throw new IOException("empty JSON file %s".formatted(path));
+        throw new DamagedJsonException("empty JSON file %s".formatted(path), null);
       }
 
       return value;
@@ -72,12 +73,29 @@ public final class Json {
               || (e.getCause() instanceof IOException
                   && !(e.getCause() instanceof MalformedJsonException)
                   && !(e.getCause() instanceof EOFException));
-      throw new IOException(
-          "%s JSON file %s".formatted(readFailure ? "unreadable" : "malformed", path), e);
+      if (readFailure) {
+        throw new IOException("unreadable JSON file %s".formatted(path), e);
+      }
+
+      throw new DamagedJsonException("malformed JSON file %s".formatted(path), e);
     } catch (final RuntimeException e) {
       // Gson reports a record's compact constructor rejecting what the file holds (a field left
       // out, another schema's shape) as a plain RuntimeException.
-      throw new IOException("invalid JSON file %s".formatted(path), e);
+      throw new DamagedJsonException("invalid JSON file %s".formatted(path), e);
+    }
+  }
+
+  // Whether read failed on what the file holds (empty, cut off, or another schema's shape), which
+  // writing the file again mends, rather than on reading it (permissions, an I/O error).
+  public static boolean isDamaged(final IOException failure) {
+    return failure instanceof DamagedJsonException;
+  }
+
+  private static final class DamagedJsonException extends IOException {
+    @Serial private static final long serialVersionUID = 1L;
+
+    private DamagedJsonException(final String message, final Throwable cause) {
+      super(message, cause);
     }
   }
 
