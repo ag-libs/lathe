@@ -19,9 +19,12 @@ import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -900,6 +903,111 @@ class ModuleSourceCompilerTest {
           .extracting(ModuleSourceCompilerTest::hasError)
           .containsExactly(false, false);
     }
+  }
+
+  // A test tree that declares the main module again (its own module-info.java) is compiled with the
+  // main output patched in, as JUnit Pioneer's Gradle build does. The module is then the test
+  // sources plus the patch alone, so the patch must keep the main classes, from their mirror, or
+  // every main type the module-info or a test names is missing.
+  @Test
+  void compile_testTreeModuleInfoWithMainPatchedIn_resolvesMainTypesFromTheMirror()
+      throws Exception {
+    final Path mainSources = td.resolve("lib/src/main/java");
+    final Path moduleInfo = mainSources.resolve("module-info.java");
+    final Path service = mainSources.resolve("a/Svc.java");
+    Files.createDirectories(service.getParent());
+    Files.writeString(moduleInfo, "module m { exports a; }");
+    Files.writeString(service, "package a; public interface Svc {}");
+    TestJavac.compileToDir(td.resolve(".lathe/lib/classes"), moduleInfo, service);
+
+    // Beside the main output, the build's value names a directory no tree outputs, whose class must
+    // stay out as an OpenJDK module's source directories do, and an entry that is no path at all.
+    final Path mainOutput = td.resolve("lib/target/classes");
+    final Path strayDir = td.resolve("stray");
+    final Path stray = td.resolve("stray-src/a/Stray.java");
+    Files.createDirectories(stray.getParent());
+    Files.writeString(stray, "package a; public interface Stray {}");
+    TestJavac.compileToDir(strayDir, stray);
+    final String patch =
+        String.join(File.pathSeparator, mainOutput.toString(), strayDir.toString(), "bad\0entry");
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            testTreePatching(patch, TestCompiler.targetRewrite(td, "lib")),
+            new CompilationAdmission(1))) {
+      assertThat(moduleInfoErrors(compiler, "uses a.Svc;")).isEmpty();
+      assertThat(moduleInfoErrors(compiler, "uses a.Missing;"))
+          .singleElement()
+          .asString()
+          .contains("cannot find symbol");
+      assertThat(moduleInfoErrors(compiler, "uses a.Stray;"))
+          .singleElement()
+          .asString()
+          .contains("cannot find symbol");
+    }
+  }
+
+  // A jar holding classes javac's mirror lacks (Kotlin, Groovy) is patched in as a class path takes
+  // it: the mirror, then the jar.
+  @Test
+  void compile_testTreeWithExtraClassesJarPatchedIn_resolvesTheMirrorAndTheJar() throws Exception {
+    final Path mainSources = td.resolve("lib/src/main/java");
+    final Path moduleInfo = mainSources.resolve("module-info.java");
+    final Path service = mainSources.resolve("a/Svc.java");
+    final Path other = td.resolve("kotlin-out/a/FromKotlin.java");
+    Files.createDirectories(service.getParent());
+    Files.createDirectories(other.getParent());
+    Files.writeString(moduleInfo, "module m { exports a; }");
+    Files.writeString(service, "package a; public interface Svc {}");
+    Files.writeString(other, "package a; public interface FromKotlin {}");
+    TestJavac.compileToDir(td.resolve(".lathe/lib/classes"), moduleInfo, service);
+    final Path jar = td.resolve("lib/build/libs/lib.jar");
+    Files.createDirectories(jar.getParent());
+    TestJavac.compileToJar(jar, td.resolve("kotlin-classes"), List.of(), other);
+    final ReactorRewrite rewrite =
+        ReactorRewrite.of(
+            td, List.of(new OutputData("lib/build/libs/lib.jar", "lib", "classes", null, true)));
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            testTreePatching(jar.toString(), rewrite), new CompilationAdmission(1))) {
+      assertThat(moduleInfoErrors(compiler, "uses a.Svc; uses a.FromKotlin;")).isEmpty();
+    }
+  }
+
+  // The test tree of module lib, declaring module m again, with the build's --patch-module value.
+  private ModuleSourceConfig testTreePatching(final String patch, final ReactorRewrite rewrite)
+      throws Exception {
+    Files.createDirectories(td.resolve("lib/src/test/java"));
+    final ModuleSourceConfig testTree = TestCompiler.testTreeConfig(td, "lib", "src/test/java");
+    return new ModuleSourceConfig(
+        testTree.moduleDir(),
+        testTree.sourceTree(),
+        testTree.outputDir(),
+        testTree.originalGenSourcesDir(),
+        testTree.sourceRoots(),
+        List.of(),
+        List.of(),
+        List.of(),
+        testTree.release(),
+        testTree.encoding(),
+        false,
+        false,
+        LatheFlags.PROC_NONE,
+        List.of("--patch-module=m=%s".formatted(patch)),
+        null,
+        false,
+        null,
+        rewrite,
+        null);
+  }
+
+  private List<String> moduleInfoErrors(
+      final ModuleSourceCompiler compiler, final String directives) {
+    final String uri = td.resolve("lib/src/test/java/module-info.java").toUri().toString();
+    return errorMessages(
+        compiler.compile(
+            uri, "module m { exports a; %s }".formatted(directives), CompileMode.OPEN));
   }
 
   @Test
