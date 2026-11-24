@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.File;
@@ -21,8 +22,10 @@ import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -560,21 +563,60 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   // Repoint each patched module at tempDir (edited buffers, first so they win) plus the module's
   // compiled output, so cross-file references and module-info exports/opens see the module's own
-  // packages — which the overlay alone (just the open file) does not contain.
+  // packages — which the overlay alone (just the open file) does not contain. A reactor output the
+  // build patched in stays, as its mirror: a test tree declaring the main module again in its own
+  // module-info.java is that module only with the main classes patched in.
   private List<String> processPatchModules(
       final List<String> args, final StandardJavaFileManager fm) {
-    final String patch = tempDir + File.pathSeparator + config.outputDir();
+    final String own = tempDir + File.pathSeparator + config.outputDir();
     return consumeFileManagerFlags(
-        args, Set.of(PATCH_MODULE), (flag, spec) -> patchModule(fm, spec, patch));
+        args,
+        Set.of(PATCH_MODULE),
+        (flag, spec) -> patchModule(fm, spec, own, config.reactorRewrite()));
   }
 
   private static boolean patchModule(
-      final StandardJavaFileManager fm, final String spec, final String patch) {
+      final StandardJavaFileManager fm,
+      final String spec,
+      final String own,
+      final ReactorRewrite rewrite) {
     final int eq = spec.indexOf('=');
     if (eq > 0) {
+      final String patch =
+          Stream.concat(Stream.of(own), patchedReactorMirrors(spec.substring(eq + 1), rewrite))
+              .distinct()
+              .collect(Collectors.joining(File.pathSeparator));
       applyOption(fm, PATCH_MODULE, "%s=%s".formatted(spec.substring(0, eq), patch));
     }
     return true;
+  }
+
+  // Only reactor outputs: any other entry (an OpenJDK module's source directories, a relative
+  // path) stays dropped, as the overlay and the module's output stand for what the tree compiles.
+  // An output takes what a class path takes for it: every mirror, then a jar that holds classes no
+  // mirror has (Kotlin, Groovy) or that is shaded.
+  private static Stream<String> patchedReactorMirrors(
+      final String paths, final ReactorRewrite rewrite) {
+    final Set<Path> outputs = rewrite.mirrors().keySet();
+    return Arrays.stream(paths.split(File.pathSeparator))
+        .flatMap(ModuleSourceCompiler::patchEntryPath)
+        .filter(outputs::contains)
+        .flatMap(output -> rewrite.expand(output).stream())
+        .map(Path::toString);
+  }
+
+  // The build's value is its own text: an entry no path on this OS can hold (a wildcard on Windows)
+  // is no reactor output, and must not fail the module's compiler.
+  private static Stream<Path> patchEntryPath(final String entry) {
+    if (entry.isBlank()) {
+      return Stream.empty();
+    }
+
+    try {
+      return Stream.of(Path.of(entry).normalize());
+    } catch (final InvalidPathException e) {
+      return Stream.empty();
+    }
   }
 
   private static boolean applyOption(

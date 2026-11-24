@@ -910,8 +910,10 @@ Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at 
 ### Observed behaviour
 
 In a fresh session, `src/test/java/org/junitpioneer/testkit/PioneerTestKitTests.java` opens with 0 errors.
-After `src/test/java/module-info.java` is opened (6 errors of its own, see [WS-49](#ws-49--a-test-tree-with-its-own-module-infojava-loses-the-main-classes-the-build-patches-into-it)) and closed, `PioneerTestKitTests.java` has 6 errors: the module-info's messages (`cannot find symbol … class IssueExtensionExecutionListener … location: package org.junitpioneer.jupiter.issue`), placed at lines 60, 64, 66, 68, 69 and 76 of the test file, on unrelated text (`assertThat(results).hasNumberOfStartedTests(1);`).
+After `src/test/java/module-info.java` is opened (6 errors of its own, see [WS-49](gaps-archive.md#ws-49--a-test-tree-with-its-own-module-infojava-loses-the-main-classes-the-build-patches-into-it--done)) and closed, `PioneerTestKitTests.java` has 6 errors: the module-info's messages (`cannot find symbol … class IssueExtensionExecutionListener … location: package org.junitpioneer.jupiter.issue`), placed at lines 60, 64, 66, 68, 69 and 76 of the test file, on unrelated text (`assertThat(results).hasNumberOfStartedTests(1);`).
 Every test file opened later in the session gets them; closing the module-info does not clear them.
+
+Since WS-49's fix the module-info compiles cleanly, and an error typed into its buffer no longer shows in another test file opened after it (2026-11-24); recheck with an error the module-info has on disk before fixing.
 
 ### Expected
 
@@ -1584,42 +1586,6 @@ What a normal sync records holds since #466: with `--system` naming the server's
 ### Expected
 
 The module compiles as the build does: a `--system` is given whenever there is no `--release`, wherever the level came from.
-
-### Regression targets
-
-None yet.
-
----
-
-## WS-49 — A test tree with its own `module-info.java` loses the main classes the build patches into it
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: diagnostics and every feature of such a test tree in the editor and MCP; MCP `run_test`, which refuses code that does not compile; references and rename, which miss the tree.**
-
-Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P1).
-
-### Observed behaviour
-
-Pioneer's test tree declares the module again (`src/test/java/module-info.java`, `module org.junitpioneer { … provides … with org.junitpioneer.jupiter.issue.IssueExtensionExecutionListener; … }`), and the build compiles it with the main output patched in (`--patch-module=org.junitpioneer=build/classes/java/main`, recorded in `.lathe/lsp-params-test-classes.json`).
-Command-line javac with the descriptor's own options, module path and class path compiles the whole test tree, and the module-info alone, with exit 0.
-
-- MCP `get_diagnostics` reports errors in all 76 test files and in none of the 123 main and 32 demo files; `CartesianTestExtensionTests.java` has 198, from its first import, `import org.junitpioneer.jupiter.ReportEntry;` (public, in an exported package).
-- MCP `run_test` refuses every test: `CartesianTestExtensionTests.java was not run: code it runs does not compile: …:35: cannot find symbol`.
-- In the editor, the module-info has 6 errors, `cannot find symbol` on each `provides … with` and `uses` of a main type; in a fresh session `TestNameFormatterTests.java` (13) and `EnvironmentVariableUtilsTests.java` (3) do not find main types of their own package.
-- References of `@CartesianTest` list 95 uses in `main` and `demo` and none in `test`, which uses it throughout; a rename would leave them all behind.
-
-### Expected
-
-The test tree compiles as the build compiles it: the module made of the test sources with the main classes patched in.
-
-### Fix direction
-
-The server's log shows `CLASS_PATH=[.lathe/test-classes, .lathe/classes]` and `MODULE_PATH=[.lathe/classes, …]` for the test compile.
-`ModuleSourceCompiler.processPatchModules` repoints each `--patch-module` at `tempDir` plus the tree's own output (`.lathe/test-classes`), dropping the build's value, the main output (remapped, `.lathe/classes`).
-Keeping the build's patch entries, remapped, after the overlay and the tree's output would give javac the module the build compiled.
 
 ### Regression targets
 

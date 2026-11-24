@@ -11397,6 +11397,50 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-49 — A test tree with its own `module-info.java` loses the main classes the build patches into it — done
+
+**Status: done** (2026-11-24; triaged accepted, high: it breaks every test file of such a tree)
+
+**Kind: bug**
+
+**Affects: diagnostics and every feature of such a test tree in the editor and MCP; MCP `run_test`, which refuses code that does not compile; references and rename, which miss the tree.**
+
+Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P1).
+
+### Observed behaviour
+
+Pioneer's test tree declares the module again (`src/test/java/module-info.java`, `module org.junitpioneer { … provides … with org.junitpioneer.jupiter.issue.IssueExtensionExecutionListener; … }`), and the build compiles it with the main output patched in (`--patch-module=org.junitpioneer=build/classes/java/main`, recorded in `.lathe/lsp-params-test-classes.json`).
+Command-line javac with the descriptor's own options, module path and class path compiles the whole test tree, and the module-info alone, with exit 0.
+
+- MCP `get_diagnostics` reports errors in all 76 test files and in none of the 123 main and 32 demo files; `CartesianTestExtensionTests.java` has 198, from its first import, `import org.junitpioneer.jupiter.ReportEntry;` (public, in an exported package).
+- MCP `run_test` refuses every test: `CartesianTestExtensionTests.java was not run: code it runs does not compile: …:35: cannot find symbol`.
+- In the editor, the module-info has 6 errors, `cannot find symbol` on each `provides … with` and `uses` of a main type; in a fresh session `TestNameFormatterTests.java` (13) and `EnvironmentVariableUtilsTests.java` (3) do not find main types of their own package.
+- References of `@CartesianTest` list 95 uses in `main` and `demo` and none in `test`, which uses it throughout; a rename would leave them all behind.
+
+### Expected
+
+The test tree compiles as the build compiles it: the module made of the test sources with the main classes patched in.
+
+### Fix
+
+`ModuleSourceCompiler.processPatchModules` repointed each `--patch-module` at `tempDir` (the edited buffers) plus the tree's own output, and dropped the build's value.
+For Pioneer's test tree the build's value is the main output, so once the tree's `module-info.java` defines the module from source, the module held the test sources alone and no main type.
+The patch now keeps, after the overlay and the tree's output, each entry of the build's value that is a reactor output, as a class path takes it (`ReactorRewrite.expand`): its `.lathe/` mirrors, then the jar itself when it also holds classes no mirror has (Kotlin, Groovy) or is shaded.
+An entry no path on the OS can hold (a wildcard on Windows) is skipped, so it cannot fail the module's compiler.
+Any other entry stays dropped as before: an OpenJDK module's patch names its source directories (or `.`, as the module-system fixtures do), which the overlay stands for.
+
+Checked on JUnit Pioneer (`af8ebb2`) with a server built from the branch: MCP `get_diagnostics` reports errors in 0 of the 76 test files (all 76 before), and in none of the main and demo files as before; opening the test `module-info.java` first leaves every later test file clean; references of `@CartesianTest` list 162 uses in the test tree (none before); `run_test` runs `TestNameFormatterTests` (7 passed), which it refused.
+
+Not covered: a patch entry written as a relative path (possible only in a hand-written Maven `<compilerArgs>`; the Gradle plugin records absolute ones) matches no reactor output and stays dropped.
+A class run of `CartesianTestExtensionTests` also runs its nested `…TestCases` fixtures, which Pioneer's Gradle filter (`includeTestsMatching("*Tests")`) leaves out, so 95 of them fail; the run ignores a Gradle test filter for nested classes.
+
+### Regression targets
+
+- `ModuleSourceCompilerTest.compile_testTreeModuleInfoWithMainPatchedIn_resolvesMainTypesFromTheMirror`
+- `ModuleSourceCompilerTest.compile_testTreeWithExtraClassesJarPatchedIn_resolvesTheMirrorAndTheJar`
+
+---
+
 ## WS-46 — A server older than a module's JDK or language level cannot check it as the build does — done
 
 **Status: done** (2026-11-21)
