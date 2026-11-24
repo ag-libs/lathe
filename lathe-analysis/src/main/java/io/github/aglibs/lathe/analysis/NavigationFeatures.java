@@ -5,7 +5,11 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -15,11 +19,17 @@ import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import javax.tools.JavaFileManager;
+import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.StandardLocation;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MarkupContent;
@@ -198,21 +208,87 @@ public final class NavigationFeatures {
             cur.analysis().tree());
     if (result.isEmpty()) {
       result =
+          secondaryTypeSource(element, cur.analysis().elements(), request.sourceRoots())
+              .flatMap(file -> declarationIn(file, element));
+    }
+
+    if (result.isEmpty()) {
+      result =
           request
               .libraries()
               .externalSourceRoot(element, compiler.fileManager())
               .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
-              .flatMap(
-                  file ->
-                      definitionLocator
-                          .parsePosition(file, element)
-                          .map(
-                              lspPos ->
-                                  new Location(
-                                      LatheUri.fromPath(file), new Range(lspPos, lspPos))));
+              .flatMap(file -> declarationIn(file, element));
     }
 
     return result;
+  }
+
+  private Optional<Location> declarationIn(final Path file, final Element element) {
+    return definitionLocator
+        .parsePosition(file, element)
+        .map(lspPos -> new Location(LatheUri.fromPath(file), new Range(lspPos, lspPos)));
+  }
+
+  // A secondary top-level type (Helper in Foo.java) read from a class file is in no file of its
+  // top-level type's name; the class file names the source it was compiled from.
+  private Optional<Path> secondaryTypeSource(
+      final Element element, final Elements elements, final List<Path> sourceRoots) {
+    final TypeElement topLevel = DefinitionLocator.topLevelClass(element);
+    if (topLevel == null) {
+      return Optional.empty();
+    }
+
+    final String packageName = elements.getPackageOf(topLevel).getQualifiedName().toString();
+    return classFileOf(topLevel, elements)
+        .flatMap(NavigationFeatures::sourceFileName)
+        .flatMap(name -> TypeSourceLocator.findDeclaringFile(packageName, name, sourceRoots));
+  }
+
+  // Where the compile reads a reactor class from: another module's on the module path, this
+  // module's own in its compiled output, the rest on the class path.
+  private Optional<JavaFileObject> classFileOf(final TypeElement type, final Elements elements) {
+    final StandardJavaFileManager fm = compiler.fileManager();
+    final String binaryName = elements.getBinaryName(type).toString();
+    final ModuleElement module = elements.getModuleOf(type);
+    try {
+      final var locations = new ArrayList<JavaFileManager.Location>();
+      if (module != null && !module.isUnnamed()) {
+        final JavaFileManager.Location moduleLocation =
+            fm.getLocationForModule(
+                StandardLocation.MODULE_PATH, module.getQualifiedName().toString());
+        if (moduleLocation != null) {
+          locations.add(moduleLocation);
+        }
+      }
+
+      locations.add(StandardLocation.CLASS_OUTPUT);
+      locations.add(StandardLocation.CLASS_PATH);
+      for (final JavaFileManager.Location location : locations) {
+        final JavaFileObject file =
+            fm.getJavaFileForInput(location, binaryName, JavaFileObject.Kind.CLASS);
+        if (file != null) {
+          return Optional.of(file).filter(NavigationFeatures::isReactorClassFile);
+        }
+      }
+    } catch (final IOException | IllegalArgumentException e) {
+      return Optional.empty();
+    }
+
+    return Optional.empty();
+  }
+
+  // A class read from a jar is a dependency's, whose sources are not the workspace's.
+  private static boolean isReactorClassFile(final JavaFileObject classFile) {
+    return "file".equals(classFile.toUri().getScheme());
+  }
+
+  private static Optional<String> sourceFileName(final JavaFileObject classFile) {
+    try (final InputStream in = classFile.openInputStream()) {
+      return ClassSourceFile.of(in);
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
   }
 
   // The declaration of the symbol at the cursor; on a call whose arguments match no overload, or
