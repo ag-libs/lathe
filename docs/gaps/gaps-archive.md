@@ -7,6 +7,43 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-126 — After the test `module-info.java` is opened, its errors are reported in every other file of the tree, at unrelated positions — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: diagnostics in the editor, for a source tree with its own `module-info.java`.**
+
+Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P2).
+
+### Observed behaviour
+
+In a fresh session, `src/test/java/org/junitpioneer/testkit/PioneerTestKitTests.java` opens with 0 errors.
+After `src/test/java/module-info.java` is opened (6 errors of its own, see [WS-49](gaps-archive.md#ws-49--a-test-tree-with-its-own-module-infojava-loses-the-main-classes-the-build-patches-into-it--done)) and closed, `PioneerTestKitTests.java` has 6 errors: the module-info's messages (`cannot find symbol … class IssueExtensionExecutionListener … location: package org.junitpioneer.jupiter.issue`), placed at lines 60, 64, 66, 68, 69 and 76 of the test file, on unrelated text (`assertThat(results).hasNumberOfStartedTests(1);`).
+Every test file opened later in the session gets them; closing the module-info does not clear them.
+
+Rechecked 2026-11-24 with WS-49's fix (a server built on `b6801a4c`): with an error saved in the module-info (`uses org.junitpioneer.jupiter.NoSuchQaType;`), `PioneerTestKitTests.java` reports it at 80:2 and `TestNameFormatterTests.java` at 70:40; an error only typed into the module-info's buffer shows in no other file, so the compile reads the module-info from disk.
+
+### Expected
+
+A file's diagnostics are its own: an error in `module-info.java` is reported there only, at its own position.
+
+### Resolution
+
+Opening a document writes its text to the module's overlay, which the module is patched with so the other files see unsaved edits; a module-info's copy stays there after it is closed, and every later compile of the tree reads it.
+javac then reports the module-info's errors too, with the module-info as their source, and the single-file path mapped every error into the file compiled, at the module-info's offsets: `JavacDiagnosticMapper` kept any error, whatever file it was about. A batch compile filtered by source already.
+A compile of one file now keeps only the diagnostics of the file it parsed, and errors of no file (`-Werror`'s "warnings found"), which fail the compile: `JavacDiagnosticMapper.filterAndMap(CompilerResult, content)`, on the open-document path (`SourceAnalysisSession`) and the per-file write (`JavaSourceCompiler`).
+An error in another file is reported by that file's own compile, not moved to this one's first line.
+Checked on JUnit Pioneer (`af8ebb2`) with a server built from the branch: with `uses org.junitpioneer.jupiter.NoSuchQaType;` saved in the test `module-info.java`, it reports that error, and `PioneerTestKitTests.java` opened after it reports none (7 before).
+
+### Regression targets
+
+- `JavacDiagnosticMapperTest.filterAndMap_ofOneFile_dropsAnotherFilesError_keepsItsOwnAndAFilelessOne`
+- `ModuleSourceCompilerTest.compile_testTreeAfterItsModuleInfoWasOpened_reportsNoneOfTheModuleInfosErrors`
+
+---
+
 ## FR-039 — A source root shared by two trees doubles every reference in it, and rename then fails with an internal error — done
 
 **Status: done** (2026-11-24; triaged accepted, high: rename failed with an internal error)
