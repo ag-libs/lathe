@@ -188,7 +188,7 @@ Engines that need no jars:
 
 You can run Lathe side by side with Eclipse JDT LS (`nvim-jdtls` / the VS Code Java extension) on the same project — useful when migrating, or for comparing behaviour.
 
-On a Maven build, first keep Lathe's build injection out of jdtls's own Maven import, or jdtls answers nothing: see [Lathe for Maven](maven.md#coexisting-with-jdtls-keep-lathe-out-of-its-maven-import).
+jdtls imports a Maven or Gradle build that registers Lathe as it would without Lathe: on Maven, Lathe stays out of jdtls's embedded Maven by itself ([Lathe for Maven](maven.md#coexisting-with-jdtls)).
 On every build, keep jdtls from indexing `.lathe/`:
 
 `.lathe/` is generated build output.

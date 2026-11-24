@@ -120,6 +120,11 @@ Put properties every build needs in `gradle.properties`.
 
 The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build print a `[lathe] Off:` line that names the one in force.
 
+## Coexisting with jdtls
+
+jdtls imports a Gradle build through Buildship, which reads the compile settings Lathe leaves as they are, so jdtls works on a build that applies the Lathe plugin with no setting of its own.
+Keep jdtls from indexing `.lathe/`, as [Installing Lathe](installation.md#coexisting-with-another-java-language-server-jdtls) describes.
+
 ## Known limits
 
 - **Every Java source set is a tree of its own.**

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven.extension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -89,6 +90,42 @@ class LatheLifecycleParticipantTest {
         .isFalse();
     assertThat(LatheLifecycleParticipant.isPomOptOut(projectWithDisabled("false"), latheDir))
         .isFalse();
+  }
+
+  @Test
+  void insideM2e_m2eSetsItsVersion_true() {
+    final var session = session(List.of());
+    session
+        .getUserProperties()
+        .setProperty(LatheLifecycleParticipant.M2E_VERSION_PROPERTY, "2.8.0");
+
+    assertThat(LatheLifecycleParticipant.insideM2e(session)).isTrue();
+  }
+
+  @Test
+  void insideM2e_commandLineMaven_false() {
+    final var session = session(List.of());
+    session.getUserProperties().setProperty(LatheFlags.DISABLED, "false");
+
+    assertThat(LatheLifecycleParticipant.insideM2e(session)).isFalse();
+  }
+
+  @Test
+  void afterProjectsRead_insideM2e_leavesTheReactorUntouched(@TempDir final Path root)
+      throws Exception {
+    // With CI or lathe.disabled set, afterProjectsRead returns before injecting either way.
+    assumeFalse(LatheFlags.isDisabled(), "Lathe is off in this JVM; the m2e check is not reached");
+    final var project = new MavenProject(new Model());
+    project.setFile(root.resolve("pom.xml").toFile());
+    final var session = session(List.of(project));
+    session
+        .getUserProperties()
+        .setProperty(LatheLifecycleParticipant.M2E_VERSION_PROPERTY, "2.8.0");
+
+    participant.afterProjectsRead(session);
+
+    assertThat(project.getModel().getBuild()).isNull();
+    assertThat(root.resolve(LatheLayout.LATHE_DIR)).doesNotExist();
   }
 
   @Test
