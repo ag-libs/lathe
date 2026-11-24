@@ -32,6 +32,10 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
   private static final Set<String> TEST_ANNOTATIONS =
       Set.of("Test", "ParameterizedTest", "TestFactory", "RepeatedTest");
+  // JUnit Platform's mark for a test annotation: Jupiter's own carry it, and so does any annotation
+  // built on them. The names above still cover JUnit 4 and TestNG, which do not carry it.
+  private static final String TESTABLE_ANNOTATION =
+      "org.junit.platform.commons.annotation.Testable";
   // A JUnit Platform suite has no test methods of its own; run as a class, it runs its selection.
   // By its full name: other frameworks have a Suite too (JUnit 4's is a runner, not this).
   private static final String SUITE_ANNOTATION = "org.junit.platform.suite.api.Suite";
@@ -188,7 +192,34 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
   private static boolean isTestAnnotation(final AnnotationMirror mirror) {
     return mirror.getAnnotationType().asElement() instanceof final TypeElement type
-        && TEST_ANNOTATIONS.contains(type.getSimpleName().toString());
+        && (TEST_ANNOTATIONS.contains(type.getSimpleName().toString()) || isTestable(type));
+  }
+
+  // A project's own test annotation (Kafka's @ClusterTest) reaches @Testable through others
+  // (@TestTemplate), so the walk goes up every level; @Retention and @Documented annotate
+  // themselves, hence the visited set.
+  private static boolean isTestable(final TypeElement annotation) {
+    final var visited = new HashSet<String>();
+    final var pending = new ArrayDeque<TypeElement>();
+    pending.push(annotation);
+    while (!pending.isEmpty()) {
+      final TypeElement type = pending.pop();
+      if (type.getQualifiedName().contentEquals(TESTABLE_ANNOTATION)) {
+        return true;
+      }
+
+      if (!visited.add(type.getQualifiedName().toString())) {
+        continue;
+      }
+
+      for (final AnnotationMirror meta : type.getAnnotationMirrors()) {
+        if (meta.getAnnotationType().asElement() instanceof final TypeElement metaType) {
+          pending.push(metaType);
+        }
+      }
+    }
+
+    return false;
   }
 
   private RunTarget mainTarget(final MethodTree node, final TypeElement enclosing) {

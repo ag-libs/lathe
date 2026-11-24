@@ -212,6 +212,111 @@ class RunnableScannerTest {
             tuple(RunnableKind.TEST_PACKAGE, "demo"));
   }
 
+  // A project's own test annotation (Kafka's @ClusterTest) is a test when it reaches JUnit's
+  // @Testable at any depth: @ClusterTest -> @TestTemplate -> @Testable.
+  @Test
+  void runnables_customAnnotationBuiltOnTestable_returnsMethodTargets() {
+    final String source =
+        """
+        package demo;
+
+        import java.lang.annotation.Documented;
+        import java.lang.annotation.Retention;
+        import java.lang.annotation.RetentionPolicy;
+        import org.junit.jupiter.api.Tag;
+        import org.junit.jupiter.api.TestTemplate;
+        import org.junit.platform.commons.annotation.Testable;
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @TestTemplate
+        @interface ClusterTest {}
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @ClusterTest
+        @interface SlowClusterTest {}
+
+        @Documented
+        @Retention(RetentionPolicy.RUNTIME)
+        @Tag("integration")
+        @interface Integration {}
+
+        class FooTest {
+          @ClusterTest
+          void cluster_condition_result(String cluster) {}
+
+          @SlowClusterTest
+          void slow_condition_result() {}
+
+          @TestTemplate
+          void template_condition_result() {}
+
+          @Integration
+          void tagged_condition_result() {}
+
+          @Testable
+          void testable_condition_result() {}
+        }
+        """;
+
+    assertThat(scan(source))
+        .extracting(RunTarget::kind, RunTarget::id)
+        .containsExactly(
+            tuple(
+                RunnableKind.TEST_METHOD,
+                "demo.FooTest#cluster_condition_result(java.lang.String)"),
+            tuple(RunnableKind.TEST_METHOD, "demo.FooTest#slow_condition_result()"),
+            tuple(RunnableKind.TEST_METHOD, "demo.FooTest#template_condition_result()"),
+            tuple(RunnableKind.TEST_METHOD, "demo.FooTest#testable_condition_result()"),
+            tuple(RunnableKind.TEST_CLASS, "demo.FooTest"),
+            tuple(RunnableKind.TEST_PACKAGE, "demo"));
+  }
+
+  // A library annotation may carry one the classpath lacks (Spring's @NonNull carries JSR-305's
+  // @Nonnull): the walk skips what it cannot load, and the file keeps its other tests.
+  @Test
+  void runnables_metaAnnotationMissingFromClasspath_keepsOtherTests() throws Exception {
+    final Path lib = tmp.resolve("lib");
+    final Path src = Files.createDirectories(tmp.resolve("src/lib"));
+    TestJavac.compileToDir(
+        lib,
+        Files.writeString(
+            src.resolve("Missing.java"),
+            """
+            package lib;
+            @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+            public @interface Missing {}
+            """),
+        Files.writeString(
+            src.resolve("NonNull.java"),
+            """
+            package lib;
+            @Missing
+            @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+            public @interface NonNull {}
+            """));
+    Files.delete(lib.resolve("lib/Missing.class"));
+    final String source =
+        """
+        package demo;
+
+        import lib.NonNull;
+        import org.junit.jupiter.api.Test;
+
+        class FooTest {
+          @NonNull
+          String helper() { return ""; }
+
+          @Test
+          @NonNull
+          String bar_condition_result() { return ""; }
+        }
+        """;
+
+    assertThat(scan(source, MODULE_REL, List.of(lib)))
+        .extracting(RunTarget::id)
+        .containsExactly("demo.FooTest#bar_condition_result()", "demo.FooTest", "demo");
+  }
+
   @Test
   void runnables_parameterizedTestWithGenericParams_erasesToFullyQualifiedTypes() {
     final String source =

@@ -13294,6 +13294,45 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry — done
+
+**Status: done** (2026-11-23)
+
+**Kind: bug**
+
+**Affects: the editor's runnables of a test file (run and debug entries, neotest) and MCP `run_test` on a file, for tests a project marks with its own annotation: Apache Kafka's `@ClusterTest`, `@ClusterTests` and `@ClusterTemplate` (about 150 files).**
+
+Found evaluating Lathe on Apache Kafka (2026-11-18), from the code; not run live, as Kafka's `@ClusterTest` files are in `clients-integration-tests`, which needs the Scala `core` built.
+
+### Observed behaviour
+
+Kafka's `@ClusterTest` is annotated `@TestTemplate`, `@Tag("integration")` and `@Timeout(60)`; JUnit runs each such method as a test template.
+`RunnableScanner.isTestAnnotation` takes a method as a test only by its annotation's simple name (`Test`, `ParameterizedTest`, `TestFactory`, `RepeatedTest`), so these methods get no run entry, and a file holding only them has no test to run.
+A module run, through JUnit's own discovery of the captured launch, should still run them; not checked.
+
+### Fix direction
+
+Take a method as a test when one of its annotations is, or is itself annotated with, JUnit Platform's `org.junit.platform.commons.annotation.Testable`, which `@Test`, `@TestTemplate` and `@TestFactory` carry, keeping the names for JUnit 4's `org.junit.Test`, which does not.
+That covers any custom test annotation built on JUnit's own; ArchUnit's `@ArchTest` (TE-18), on fields, likely carries `@Testable` too (to check).
+
+### Resolution
+
+A method is a test when one of its annotations is JUnit Platform's `@Testable` or reaches it through the annotations on it, at any depth (`@ClusterTest` → `@TestTemplate` → `@Testable`), as JUnit's own annotation search does.
+The names it was recognized by before stay, for JUnit 4's and TestNG's `@Test`, which do not carry `@Testable`.
+An annotation the classpath lacks is still known by its name in the class file that uses it, so the walk does not fail on it.
+
+Checked on JUnit Pioneer (`af8ebb2`), whose `@CartesianTest` and `@RetryingTest` are built on `@TestTemplate`: `CartesianTestExtensionDemo.java`, 27 `@CartesianTest` methods and no `@Test`, gives 23 run targets where 0.3.1 gives none ("no test in CartesianTestExtensionDemo.java").
+Its run then stops at the missing capture of Pioneer's `demo` source set, as any test there does.
+
+Not covered: `@Testable` on a class or a field (ArchUnit's `@AnalyzeClasses` and `@ArchTest` fields), which the scan does not look at (TE-18).
+
+### Regression targets
+
+- `RunnableScannerTest.runnables_customAnnotationBuiltOnTestable_returnsMethodTargets`
+- `RunnableScannerTest.runnables_metaAnnotationMissingFromClasspath_keepsOtherTests`
+
+---
+
 ## TE-26 — A run that only some of its code fails to compile still runs on the old classes — done
 
 **Status: done** (2026-11-18)

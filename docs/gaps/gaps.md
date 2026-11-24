@@ -1493,7 +1493,7 @@ These tests cannot be run from the editor at all.
 ### Cause (verified against the code, 2026-11-16)
 
 - Module discovery (`RunCoordinator.launchDiscovery` through `SourceLayout.testConfigs()`) keeps the `test-classes` tree only.
-- `RunnableScanner` knows `@Test`, `@ParameterizedTest`, `@TestFactory`, `@RepeatedTest`, suites, `@Nested` and JUnit 3 classes, not `@ArchTest` fields.
+- `RunnableScanner` knows test methods (by `@Test`, or any annotation built on JUnit's `@Testable`), suites, `@Nested` and JUnit 3 classes, not `@ArchTest` fields.
 - neotest finds an unopened file's module through `lathe.workspace.context`, which answers `null` for a source-set file (EG-109), so such a file has no module to discover in.
 
 Running is not the missing part: `checkedTestLaunch` reads `test-launch-classes-<set>.json`, which the Gradle plugin captures; the editor has no target to run.
@@ -1536,33 +1536,6 @@ A module run covering several source sets needs one launch per source set.
 ### Regression targets
 
 `LatheWorkspaceServiceTest.executeCommand_listRunnables_sourceSetFile_noPackageRun` (the package run is not offered).
-
----
-
-## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry
-
-**Status: deferred** (triaged 2026-11-18: custom test annotations built on `@Testable` are mostly in large projects like Kafka; the fix is small and clear when it is picked)
-
-**Kind: bug**
-
-**Affects: the editor's runnables of a test file (run and debug entries, neotest) and MCP `run_test` on a file, for tests a project marks with its own annotation: Apache Kafka's `@ClusterTest`, `@ClusterTests` and `@ClusterTemplate` (about 150 files).**
-
-Found evaluating Lathe on Apache Kafka (2026-11-18), from the code; not run live, as Kafka's `@ClusterTest` files are in `clients-integration-tests`, which needs the Scala `core` built.
-
-### Observed behaviour
-
-Kafka's `@ClusterTest` is annotated `@TestTemplate`, `@Tag("integration")` and `@Timeout(60)`; JUnit runs each such method as a test template.
-`RunnableScanner.isTestAnnotation` takes a method as a test only by its annotation's simple name (`Test`, `ParameterizedTest`, `TestFactory`, `RepeatedTest`), so these methods get no run entry, and a file holding only them has no test to run.
-A module run, through JUnit's own discovery of the captured launch, should still run them; not checked.
-
-### Fix direction
-
-Take a method as a test when one of its annotations is, or is itself annotated with, JUnit Platform's `org.junit.platform.commons.annotation.Testable`, which `@Test`, `@TestTemplate` and `@TestFactory` carry, keeping the names for JUnit 4's `org.junit.Test`, which does not.
-That covers any custom test annotation built on JUnit's own; ArchUnit's `@ArchTest` (TE-18), on fields, likely carries `@Testable` too (to check).
-
-### Regression targets
-
-None yet.
 
 ---
 
@@ -1622,7 +1595,7 @@ Ask the runner, rather than guess from the source: Lathe already has a discover-
 Only the client's test tree uses it today; `run_test` and the editor's run entries use the source scan alone.
 Use a discovery's tests for a file the scan finds none in (and for the methods a class with some `@Test` methods also has), so whatever any runner selects becomes runnable, at the cost of one discovery JVM per module, run one at a time and kept until the module's test classes change.
 A source-only alternative, `test*` methods in a class whose hierarchy carries `@TestMethodProviders` with a JUnit 3-style provider, covers randomizedtesting alone.
-Related: TE-24, the same gap for custom annotations built on `@Testable`, which discovery would close too.
+Related: TE-24 (done) made custom annotations built on `@Testable` runnable from the source scan; discovery would have covered them too.
 
 ### Regression targets
 

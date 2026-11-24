@@ -577,8 +577,8 @@ editor: "what can I run in this file?"  →  RunnableScanner.scan(uri)
   →  List<Runnable> { id, kind, label, moduleRel, uri, range }   (id carries erased param types)
 ```
 
-`@Test`, `@ParameterizedTest`, `@TestFactory`, `@RepeatedTest`, and JUnit 4 / TestNG `@Test` are all
-recognized.
+`@Test`, `@ParameterizedTest`, `@TestFactory`, `@RepeatedTest`, JUnit 4 / TestNG `@Test`, and any
+annotation built on JUnit Platform's `@Testable` (a project's own `@TestTemplate`) are all recognized.
 Each runnable carries a stable id (with erased parameter types for methods), a kind, a label, the module
 rel path, and its source range.
 
