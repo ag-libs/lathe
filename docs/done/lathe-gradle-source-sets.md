@@ -224,7 +224,7 @@ Small Gradle fixtures, each a case where the build fails to compile:
 a consumer of `testFixtures(project(":x"))` using one of `x`'s ordinary test classes;
 two source sets built against different versions of one library, each using an API only its version has.
 Lathe must report what Gradle reports in each.
-The [jdtls comparison](lathe-jdtls-comparison.md), narrowed on 2026-11-19, runs no Gradle project and leaves these fixtures out;
+The [jdtls comparison](../planned/lathe-jdtls-comparison.md), narrowed on 2026-11-19, runs no Gradle project and leaves these fixtures out;
 by §2.2 jdtls is expected to report none of them, but nothing is claimed about jdtls on them until they are run under that plan's rule.
 
 ## 8. Spike results (2026-11-07)

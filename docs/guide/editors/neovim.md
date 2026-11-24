@@ -19,18 +19,19 @@ If you use lazy.nvim, `ft = "java"` loads the plugin when you open a Java file, 
    Ordinary Java edits are picked up automatically.
    Use `:LatheSyncOutput` to read the build output.
 
-<details>
-<summary>Set up a project from Neovim with a client that provides <code>:LatheInit</code></summary>
+### Set up a project from Neovim
 
 Run `:LatheInit` from a project file to start the first build.
 Confirm the build root and Lathe version in the prompt.
 Maven and Gradle projects can use this setup without changing their build files.
 For OpenJDK, build the JDK first with `make jdk`.
+To choose the build yourself, pass it: `:LatheInit maven`, `:LatheInit gradle` or `:LatheInit openjdk`.
+On a project already set up at this Lathe version, or one whose build registers Lathe, `:LatheInit` builds nothing and points to `:LatheSync`.
+`:LatheInit!` runs the build anyway.
+On a project set up at another version, `:LatheInit` sets it up again at this one.
 In a development checkout, set `LATHE_VERSION` to the version to install.
-See `:help :LatheInit` in clients that ship the command.
+See `:help :LatheInit`.
 With lazy.nvim, write `cmd = { "LatheStart", "LatheInit" }` in the spec so the command also works before a Java file is open.
-
-</details>
 
 ## Editing Java
 
@@ -66,6 +67,7 @@ Press Enter on a stack-trace frame in that split to open the source line.
 
 Use `:LatheRunStop` to stop a run or debug session and `:LatheRunOutput` to reopen its output.
 To reuse program arguments, JVM flags, or environment variables, save the target with `:LatheRunSave dev` and launch it again with `:LatheRun dev`.
+`:LatheRunLast` runs the last saved configuration you ran again.
 [Run configuration](../run-configuration.md)
 
 ## Tests (neotest)
@@ -126,6 +128,7 @@ Pass these to `require("lathe").setup()`, or as `opts` with lazy.nvim, for examp
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| `capabilities` | `vim.lsp.protocol.make_client_capabilities()` | The LSP client capabilities Lathe advertises. Pass your completion plugin's, for example `require("blink.cmp").get_lsp_capabilities()`. |
 | `format_on_save` | `false` | Formats a Java file with the project’s formatter when you save it. |
 | `style.indent` | `{ profile = "editorconfig" }` | Indentation for a project that declares none. Use `profile = "editorconfig"` or `"google"`, and optionally `block` and `continuation` widths. |
 | `pom` | `{ validate = true, format = false }` | Checks `pom.xml` against the Maven schema as you edit. Set `format = true` to reformat it with `gq`. |

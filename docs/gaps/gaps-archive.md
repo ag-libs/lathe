@@ -11976,7 +11976,7 @@ Such source sets are common: test fixtures consumed across projects, JVM test su
 
 ### Fix direction
 
-[Gradle Source Sets](../planned/lathe-gradle-source-sets.md): a tree per source set, compiled against its own classpath,
+[Gradle Source Sets](../done/lathe-gradle-source-sets.md): a tree per source set, compiled against its own classpath,
 rather than folding them into main and test as jdtls does through Buildship's Eclipse model, which lets the editor accept code the build rejects.
 
 ### Resolution
@@ -13716,7 +13716,7 @@ since [WS-33](#ws-33--gradle-source-sets-beyond-main-and-test-get-no-editor-feat
 
 ### Fix direction
 
-Step 2 of [Gradle Source Sets](../planned/lathe-gradle-source-sets.md#49-runs): a launch per source set's tree, captured by the test task that runs its classes, and runs routed by the tree a class is in.
+Step 2 of [Gradle Source Sets](../done/lathe-gradle-source-sets.md#49-runs): a launch per source set's tree, captured by the test task that runs its classes, and runs routed by the tree a class is in.
 
 ### Resolution
 

@@ -25,7 +25,8 @@ To run that build with Lathe disabled, use `-Dlathe.disabled=true` on Maven or `
 
 **The server uses an unexpected JDK.**
 Look at `java=` and `java.home=` in the server's `[startup]` log line.
-The MCP server reports its JDK there too, and Maven reports its JVM in the build's `[lathe]` lines.
+The MCP server reports its JDK there too.
+The JDK the build recorded for the server is in `.lathe/java-home`.
 Compare the paths with the JDK you intended to use.
 [Choose the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home)
 

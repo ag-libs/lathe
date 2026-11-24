@@ -16,7 +16,7 @@ It is based on a read-only audit of the code done on 2026-10-18.
 The full test suite and the invoker fixtures run on the `windows-latest` CI row, and human session 1 checked what CI cannot, the editors themselves, on the maintainer's Windows machine.
 
 It supersedes the Windows non-goal notes in
-[Sync Launcher](../planned/lathe-sync-launcher.md), [Workspace Java Home](lathe-workspace-java-home.md),
+[Sync Launcher](lathe-sync-launcher.md), [Workspace Java Home](lathe-workspace-java-home.md),
 [Standalone Neovim Plugin](lathe-standalone-nvim-plugin.md) and
 [Shared Workspace Server](../potential/lathe-shared-workspace-server.md),
 and it changes the [Workspace Contract](../lathe-workspace-contract.md) (launcher files, the "executable" check, persisted relative paths).

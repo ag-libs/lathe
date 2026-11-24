@@ -2,8 +2,10 @@
 
 ## Status
 
-**In progress.** Slices 1–3 are done for Maven: sync writes the script, the Neovim client runs it, and server and MCP texts name it. OpenJDK writes its own script (slice 4, done with the [build-agnostic step](../done/lathe-build-agnostic-core.md)); only Gradle's remains, as part of the Gradle work.
-Prepares Lathe for [Gradle support](../done/lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
+**Done.**
+Slices 1–3 are done for Maven: sync writes the script, the Neovim client runs it, and server and MCP texts name it.
+OpenJDK writes its own script (slice 4, done with the [build-agnostic step](lathe-build-agnostic-core.md)), and Gradle's came with the [Gradle support](lathe-gradle-support.md).
+Prepares Lathe for [Gradle support](lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
 
 ## Problem
 
@@ -36,7 +38,7 @@ This has three costs:
 ## Non-goals
 
 - **The formatter.**
-  Formatting runs the project's pinned formatter in-process (see [Pinned Formatters](../done/lathe-pinned-formatters.md)), so it never runs the build.
+  Formatting runs the project's pinned formatter in-process (see [Pinned Formatters](lathe-pinned-formatters.md)), so it never runs the build.
   The one exception is the opt-in `command-file` engine: its `%MVN%` token still picks `mvnd` / `./mvnw` / `mvn` in the server, for teams that choose to run `spotless:apply` on save.
   That is a deliberate exception to the goal above, since the user configured a Maven command explicitly; routing it through a build-written script is possible later but not part of this design.
 - **The first sync.**
@@ -132,7 +134,7 @@ A build-file change, the case that alters dependents' classpaths, always runs a 
 
 ### Other build front-ends
 
-- **Gradle** (`latheSync`, see [Gradle support](../done/lathe-gradle-support.md)) writes a script running `./gradlew --no-build-cache latheSync`; `--tests` and modules map to whatever that design settles on.
+- **Gradle** (`latheSync`, see [Gradle support](lathe-gradle-support.md)) writes a script running `./gradlew --no-build-cache latheSync`; `--tests` and modules map to whatever that design settles on.
   `--no-build-cache` is the Gradle side of the cache rule: without it, a build-cache hit on `compileJava` or `test` skips the task and its capture.
 - **OpenJDK** (`lathe-openjdk-maven-plugin:sync`) writes a script that re-runs its own sync goal, pinned: `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:<version>:sync -Dlathe.buildDir=<build dir>`, with the version and build directory recorded when the script is written, so a re-sync never switches Lathe versions or JDK configurations.
   - It **never runs `make`**: building the JDK is the user's call and can take hours, so the script refreshes `.lathe/` from the latest build only.
@@ -172,7 +174,7 @@ The JDK prologue is therefore a per-front-end choice, not part of the contract: 
 3. **Server and MCP texts.**
    Remediation strings and `suggestedSync` reference the script.
 4. **Gradle and OpenJDK** write their own scripts as part of their own work.
-   OpenJDK: *Done* (`lathe-openjdk-maven-plugin` `sync`). Gradle: pending.
+   OpenJDK: *Done* (`lathe-openjdk-maven-plugin` `sync`). Gradle: *Done* (`latheWorkspace` writes it).
 
 ## Decisions
 

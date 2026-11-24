@@ -2,10 +2,11 @@
 
 ## Status
 
-**Potential; v1 scope agreed, spikes partly run (2026-11-11).**
+**v1 implemented in Neovim:** `:LatheInit [maven|gradle|openjdk]` sets up Maven and Gradle personal mode and OpenJDK, and `:LatheInit!` rebuilds a project set up already (see [status](../status.md)).
+Plain Java and the team modes remain potential, so the design stays in `potential/` until they are decided.
 Merges two earlier designs on 2026-10-28: Personal Setup (Lathe on a Maven project without changing it; discussed 2026-10-18 and 2026-10-24) and Plain Java Without a Build Tool (discussed 2026-10-25 to 2026-10-29).
 Personal mode was requested by another user, and plain mode turned out to be personal mode on a generated POM, so they are one design and one change.
-Nothing here is approved for implementation; [What changes](#what-changes) needs a design summary and approval first.
+Beyond v1, nothing here is approved for implementation; [What changes](#what-changes) needs a design summary and approval first.
 [Open issues](#open-issues) remain; the two blockers concern plain mode only, which is not in v1.
 
 **Agreed:**

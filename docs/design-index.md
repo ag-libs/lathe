@@ -26,7 +26,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
 Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for scope.
 
 - [Gaps](gaps/gaps.md) — active gap registry; the triaged M2 correctness/completion/code-action gaps
-  are all resolved (see [gaps-archive.md](gaps/gaps-archive.md)). EG-003 is deferred until after M2.
+  are all resolved (see [gaps-archive.md](gaps/gaps-archive.md)).
 - [Completion Expectations](done/lathe-completion-expectations.md) — completion behavioral contract (reference).
 - [Gap Workflow](gaps/gap-workflow.md) — reproducible gap discovery and triage (all areas).
 - [Rename](done/lathe-rename.md) — **shipped.** `textDocument/rename` + `prepareRename` on the Find
@@ -118,9 +118,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Build-tool front-ends** (new front-ends onto the existing `.lathe/` contract; everything downstream
 reused):
 
-- [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven, OpenJDK and Gradle write it, Neovim runs it). The build integration writes
+- [Sync Launcher](done/lathe-sync-launcher.md) — **done** (Maven, OpenJDK and Gradle write it, Neovim runs it). The build integration writes
   `.lathe/lathe-sync.sh [--tests] [module ...]`, which clients, the server, and the MCP server run instead
-  of composing Maven commands; runs the build on the recorded JDK, scopes with `-am`. Prepares Gradle.
+  of composing Maven commands; runs the build on the recorded JDK, scopes with `-am`.
 - [Build-Tool-Agnostic Core](done/lathe-build-agnostic-core.md) — **done (2026-10-11), the prerequisite
   for Gradle.** Maven-only step that makes `.lathe/` the real seam: a front-end-written `outputs` map in
   `workspace.json` replaces `target/`-shape path guessing, `pomPaths` → `buildFiles`, neutral texts,
@@ -282,7 +282,7 @@ reused):
   through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,
   Gradle's own module placement rule, polyglot Maven-orchestrated build. No formatter detection (a committed
   `lathe-style.json`); Lathe artifacts from a reactor-filled repository, never `~/.m2`. User guide: [Gradle](guide/gradle.md).
-- [Gradle Source Sets Beyond `main` and `test`](planned/lathe-gradle-source-sets.md) — **implemented (2026-11-07, runs 2026-11-08).**
+- [Gradle Source Sets Beyond `main` and `test`](done/lathe-gradle-source-sets.md) — **implemented (2026-11-07, runs 2026-11-08).**
   A tree per source set (`classes-<name>`), each compiled against its own class path, a `testCode` flag in `lsp-params`
   set by Gradle's own test convention, visibility between trees by class path; compares jdtls's folding (Buildship's Eclipse model).
   Step 1 editor features, step 2 runs (TE-12).
@@ -430,8 +430,7 @@ reused):
 
 - [Potential Design Policy](potential/README.md)
 - [Redundancy in production code and tests](potential/lathe-redundancy-audit.md) — proposed cleanups from the November 21 audit, starting with call hierarchy snippet reads and repeated external-compiler test fixtures.
-- [`:LatheInit`: Set Up Any Folder](potential/lathe-init.md) — **potential; v1 scope agreed,
-  spikes partly run (2026-11-11).** Merges Personal Setup and Plain Java Without a Build Tool. One
+- [`:LatheInit`: Set Up Any Folder](potential/lathe-init.md) — **v1 implemented in Neovim (Maven and Gradle personal, Sync, OpenJDK); plain Java and team modes remain potential.** Merges Personal Setup and Plain Java Without a Build Tool. One
   `:LatheInit` dialog, its default detected from the opened folder: Plain Java (a generated,
   user-owned `.lathe-pom.xml` run by a bundled Maven Wrapper), Maven personal (Lathe activated with
   `-Dmaven.ext.class.path` and the extension's runtime jars, no project change), Gradle personal (`--init-script`),

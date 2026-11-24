@@ -62,8 +62,8 @@ after the JVM expanded Surefire's argfile.
 
 ## On Gradle
 
-The [Gradle plugin](gradle.md) loads `lathe-junit` into each project's `test` task JVM as a Java agent, through
-the `JDK_JAVA_OPTIONS` environment variable, which leaves the task's cache key alone.
+The [Gradle plugin](gradle.md) loads `lathe-junit` as a Java agent into the JVM of each test task that runs a source set's tests: `test`, and a task such as `integrationTest` for its own source set.
+It does so through the `JDK_JAVA_OPTIONS` environment variable, which leaves the task's cache key alone.
 `test`, `check` and `build` capture; Gradle passes the task's `jvmArgs` and `systemProperty` values to the test
 JVM as real arguments, so they are captured too.
 
@@ -87,9 +87,10 @@ On every build:
 - **A test JVM on JDK 17 or newer.**
   Tests the build runs on an older JDK (Surefire's `<jvm>`, or a toolchain) run as usual but are not
   captured, so they can't be run from the editor; `lathe-junit` does nothing there.
-- **JUnit Platform (JUnit 5/6, or the JUnit 4 vintage engine).**
+- **JUnit Platform (JUnit 5/6, or JUnit 3/4 through the vintage engine).**
   Capture rides the JUnit Platform launcher; pure TestNG runs, and Gradle test tasks on `useJUnit()` or
   `useTestNG()`, are not captured.
+  A JUnit 3 class that builds its tests in `suite()` shows no tests to run from the editor.
 - **A test JVM must start.**
   Skipping the test task entirely leaves the module without a new launch.
   Use [capture-only mode](#capture-without-running-tests) to record the launch without executing the tests.

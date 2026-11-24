@@ -32,7 +32,8 @@ Several projects can share downloaded sources and installed server versions unde
 | `.lathe/java-home` and `.lathe/jvm.args` | The JDK and JVM options the launcher uses. |
 | `~/.cache/lathe/` | Installed server versions, extracted library and JDK sources, type indexes, and MCP session logs. |
 
-To move the machine cache on Maven, pass `-Dlathe.cache=<dir>` to the build.
+To move the machine cache on Maven, set `-Dlathe.cache=<dir>` for every build, for example in `MAVEN_OPTS` in your shell profile, so the editor's sync script uses it too.
+`.mvn/maven.config` also works, but it applies to everyone who builds the project.
 MCP session logs stay in `~/.cache/lathe/logs/`.
 In Neovim, also start the editor with `LATHE_CACHE=<dir>` so dependency sources there still open read-only.
 In VS Code, add the directory to `files.readonlyInclude`.
@@ -98,8 +99,8 @@ described under [Declaring it](#declaring-it), and the sync resolves it the same
 | `eclipse` | `eclipse` | yes | honours `version` and the `<file>` profile (Eclipse XML export or `.prefs`); member sorting is not applied |
 | anything else | `none` | — | sync warns; select an external command below |
 
-palantir-java-format has no release that runs on JDK 27 yet (2.102.0 is the latest as of October
-2026): it reads a javac field JDK 27 removed.
+palantir-java-format has no release that runs on JDK 27 yet (2.103.0 is the latest as of November
+2026, [palantir-java-format#1785](https://github.com/palantir/palantir-java-format/issues/1785)): it reads a javac field JDK 27 removed.
 Lathe runs the formatter on your build's JDK (`.lathe/java-home`, unless `LATHE_JAVA_HOME` overrides
 it), so it fails exactly where `spotless:apply` itself fails; the buffer is left unchanged and the
 first failure names the cause.
