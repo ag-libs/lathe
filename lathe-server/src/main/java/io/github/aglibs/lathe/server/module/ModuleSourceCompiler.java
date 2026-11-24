@@ -85,7 +85,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       this.compilerArgs =
           processPatchModules(
               hoistFileManagerOptions(
-                  dropForkedLauncherArgs(config.compilerArgs()), fm, JdkSupport.released(config)),
+                  dropForkedLauncherArgs(config.compilerArgs()),
+                  fm,
+                  JdkSupport.released(config),
+                  config.analysisMode() == AnalysisMode.MODULE_SYSTEM),
               fm);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
@@ -492,11 +495,25 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   // Reused file manager: javac rejects re-applying --module-source-path, so set these once and drop
   // them from the per-compile options (keeping any the file manager doesn't accept).
   private static List<String> hoistFileManagerOptions(
-      final List<String> args, final StandardJavaFileManager fm, final boolean released) {
-    return consumeFileManagerFlags(
-        args,
-        Set.of(MODULE_SOURCE_PATH, SYSTEM),
-        (flag, value) -> hoistOption(fm, flag, value, released));
+      final List<String> args,
+      final StandardJavaFileManager fm,
+      final boolean released,
+      final boolean moduleSystem) {
+    final boolean systemGiven =
+        args.stream().anyMatch(arg -> arg.equals(SYSTEM) || arg.startsWith(SYSTEM + "="));
+    final List<String> remaining =
+        consumeFileManagerFlags(
+            args,
+            Set.of(MODULE_SOURCE_PATH, SYSTEM),
+            (flag, value) -> hoistOption(fm, flag, value, released));
+    // A build that sets its level in its own compiler arguments (-source 17) records no --system,
+    // and javac warns without one all the same: the server's own JDK stands in. The OpenJDK mode
+    // compiles against the host JDK's module system on purpose, and names its own.
+    if (!systemGiven && !released && !moduleSystem) {
+      applyOption(fm, SYSTEM, System.getProperty(LatheLayout.JAVA_HOME_PROPERTY));
+    }
+
+    return remaining;
   }
 
   private static boolean hoistOption(

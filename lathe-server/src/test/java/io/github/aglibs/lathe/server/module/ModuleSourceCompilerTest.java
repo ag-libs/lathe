@@ -465,6 +465,26 @@ class ModuleSourceCompilerTest {
         .contains("incompatible types");
   }
 
+  // A build that sets its level in its own compiler arguments records no --system: the server's
+  // own JDK is given all the same, so javac's [options] warning does not stop the compile.
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_18)
+  void compile_levelInTheBuildsOwnArgsUnderWerror_noSystemRecorded_attributesTheFile()
+      throws Exception {
+    final var config = TestCompiler.mainTreeConfig(td, "module");
+    final Path sourceRoot = config.sourceRoots().get(0);
+    Files.createDirectories(sourceRoot);
+    final String uri = sourceRoot.resolve("Names.java").toUri().toString();
+    final List<String> args = List.of("-source", "17", "-target", "17", "-Werror", "-Xlint:all");
+
+    assertThat(
+            compileNamesWithTypeError(
+                withOptions(config, null, config.proc(), config.encoding(), args), uri))
+        .singleElement()
+        .asString()
+        .contains("incompatible types");
+  }
+
   private static List<String> compileNamesWithTypeError(
       final ModuleSourceConfig config, final String uri) {
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {

@@ -1526,36 +1526,6 @@ None yet.
 
 ---
 
-## WS-48 — A module whose build passes `-source` in its own compiler arguments gets no `--system`, and `-Werror` then fails the compile
-
-**Status: accepted** (triaged 2026-11-24: medium; it fails every file of such a module, and it completes #466's own fix)
-
-**Kind: bug**
-
-**Affects: diagnostics and every feature of the module, for a build that sets the language level through `<compilerArgs>` with `-Werror`.**
-
-Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B6), with the module's compile descriptor edited by hand to the shape such a build records, then restored.
-
-### Observed behaviour
-
-With `dropwizard-util`'s `.lathe/…/lsp-params-classes.json` at `release: null` and compiler arguments starting `-source 17 -target 17 -Werror -Xlint:all`, every file of the module opens with only `error: warnings found and -Werror specified` (the compile's options carry no `--system`).
-Command-line `javac --system <JDK 25> -source 17 -target 17 -Werror -Xlint:all` compiles it cleanly.
-What a normal sync records holds since #466: with `--system` naming the server's JDK or a JDK that is gone, the same arguments give no diagnostics.
-
-### Cause (read from the code, not fixed)
-
-`CompileCapture.withCompileJdk` records no `--system` when the arguments already carry a version flag, and `ModuleSourceCompiler.hoistOption` replaces a `--system` only when one is present; so #466's always-a-`--system` never applies.
-
-### Expected
-
-The module compiles as the build does: a `--system` is given whenever there is no `--release`, wherever the level came from.
-
-### Regression targets
-
-None yet.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
