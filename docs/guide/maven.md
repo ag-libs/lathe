@@ -10,23 +10,19 @@ Choose the [manual POM setup](#method-2--manual-pom-configuration) if you want t
 ## Requirements
 
 - **JDK 17+** to run the build (and so the server, which runs on the build's JDK).
-- **Maven 3.6.3+** and **`maven-compiler-plugin` 3.6.2+**; with the extension, an older Maven or
-  compiler plugin fails the build with a message naming the fix (or add `-Dlathe.disabled=true` to build
-  without Lathe). CI verifies Maven 3.6.3, 3.8.8, 3.9 and 3.10.
-- Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not
-  captured, so they can't be run or debugged from the editor; see [test capture](test-capture.md) for
-  the other test requirements.
+- **Maven 3.6.3+** and **`maven-compiler-plugin` 3.6.2+**; with the extension, an older Maven or compiler plugin fails the build with a message naming the fix (or add `-Dlathe.disabled=true` to build without Lathe).
+  CI verifies Maven 3.6.3, 3.8.8, 3.9 and 3.10.
+- Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not captured, so they can't be run or debugged from the editor; see [test capture](test-capture.md) for the other test requirements.
 
-Lathe stays out of CI builds: when the `CI` environment variable is set, it injects nothing, unless
-you pass `-Dlathe.disabled=false`.
+Lathe stays out of CI builds: when the `CI` environment variable is set, it injects nothing, unless you pass `-Dlathe.disabled=false`.
 `-Dlathe.disabled=true` turns it off anywhere (see [jdtls](#coexisting-with-jdtls-keep-lathe-out-of-its-maven-import)).
 
 ## Method 1 — Maven extension (recommended)
 
-Register `lathe-maven-extension` once, in either location. Both drive the same in-memory injection.
+Register `lathe-maven-extension` once, in either location.
+Both drive the same in-memory injection.
 
-As a **core extension**, in `.mvn/extensions.xml` at the reactor root (the directory you run `mvn`
-from) — the earliest, most reliable hook, with no `pom.xml` changes anywhere:
+As a **core extension**, in `.mvn/extensions.xml` at the reactor root (the directory you run `mvn` from) — the earliest, most reliable hook, with no `pom.xml` changes anywhere:
 
 ```xml
 <extensions>
@@ -38,8 +34,8 @@ from) — the earliest, most reliable hook, with no `pom.xml` changes anywhere:
 </extensions>
 ```
 
-Or as a **build extension**, in the reactor-root `pom.xml` — one POM edit, no `.mvn/` directory. It
-must live in the reactor-root (or parent) POM to cover every module:
+Or as a **build extension**, in the reactor-root `pom.xml` — one POM edit, no `.mvn/` directory.
+It must live in the reactor-root (or parent) POM to cover every module:
 
 ```xml
 <build>
@@ -53,10 +49,8 @@ must live in the reactor-root (or parent) POM to cover every module:
 </build>
 ```
 
-Before the build runs, the extension injects the three pieces into the effective model, in memory, for
-every resolved project — including modules with their own compiler configuration or a separate parent
-POM. All injected artifacts use the extension's own version, so they stay in lockstep with the version
-you register, and a stale Lathe version already in a POM is overwritten.
+Before the build runs, the extension injects the three pieces into the effective model, in memory, for every resolved project — including modules with their own compiler configuration or a separate parent POM.
+All injected artifacts use the extension's own version, so they stay in lockstep with the version you register, and a stale Lathe version already in a POM is overwritten.
 
 ## Initialize
 
@@ -100,18 +94,16 @@ Modules restored from that cache skip the compilation Lathe needs to observe.
 
 Both methods add the same three pieces, for the whole reactor:
 
-- the **`lathe-compiler` shim** on `maven-compiler-plugin`, selected by `compilerId=lathe`, for every
-  module that compiles Java (`pom` modules are left alone) — it records the exact `javac` inputs the language server reads;
-- the **`lathe-maven-plugin` goals** `init` (bound to `initialize`) and `sync` (bound to
-  `process-test-classes`), once at the reactor root;
+- the **`lathe-compiler` shim** on `maven-compiler-plugin`, selected by `compilerId=lathe`, for every module that compiles Java (`pom` modules are left alone) — it records the exact `javac` inputs the language server reads;
+- the **`lathe-maven-plugin` goals** `init` (bound to `initialize`) and `sync` (bound to `process-test-classes`), once at the reactor root;
 - the **`lathe-junit` test-scoped dependency**, for every module that compiles Java — it enables run/test capture.
 
-Coordinates: groupId `io.github.ag-libs`; artifacts `lathe-compiler`, `lathe-maven-plugin`,
-`lathe-junit`; use one Lathe version throughout.
+Coordinates: groupId `io.github.ag-libs`; artifacts `lathe-compiler`, `lathe-maven-plugin`, `lathe-junit`; use one Lathe version throughout.
 
 ## Method 2 — Manual POM configuration
 
-Declare the same three pieces in your **parent `pom.xml`**. Pin one version with a property:
+Declare the same three pieces in your **parent `pom.xml`**.
+Pin one version with a property:
 
 ```xml
 <properties>
@@ -138,9 +130,8 @@ Declare the same three pieces in your **parent `pom.xml`**. Pin one version with
 </plugin>
 ```
 
-**2. Init/sync goals** — at the reactor root only, so `<inherited>false</inherited>` keeps them from
-running once per module. The goals carry their own default phases (`init` → `initialize`,
-`sync` → `process-test-classes`), so no `<phase>` is needed:
+**2. Init/sync goals** — at the reactor root only, so `<inherited>false</inherited>` keeps them from running once per module.
+The goals carry their own default phases (`init` → `initialize`, `sync` → `process-test-classes`), so no `<phase>` is needed:
 
 ```xml
 <plugin>
@@ -172,10 +163,8 @@ running once per module. The goals carry their own default phases (`init` → `i
 </dependency>
 ```
 
-Each block is easy to get subtly wrong — a wrong phase, a missing `inherited`, a `compilerId` typo, or
-a module that overrides `maven-compiler-plugin` and drops the `compilerId` — which is exactly the
-class of mistake the extension removes. If a module declares its own compiler configuration, preserve `<compilerId>lathe</compilerId>`
-there too.
+Each block is easy to get subtly wrong — a wrong phase, a missing `inherited`, a `compilerId` typo, or a module that overrides `maven-compiler-plugin` and drops the `compilerId` — which is exactly the class of mistake the extension removes.
+If a module declares its own compiler configuration, preserve `<compilerId>lathe</compilerId>` there too.
 
 ## What the build writes to `.lathe/`
 
@@ -197,19 +186,16 @@ See [workspace files](installation.md#what-and-where-lathe-writes), [formatter s
 
 ## Coexisting with jdtls: keep Lathe out of its Maven import
 
-jdtls imports a project with its own embedded Maven (m2e). The Lathe extension injects
-`compilerId=lathe` into the effective POM (see [What Lathe needs](#what-lathe-needs-in-the-build)),
-and m2e does not recognise that compiler id — so it imports the modules but **cannot configure their
-Java build path**, and every jdtls request (hover, definition, completion, …) then returns empty, with
-no error. Lathe itself is unaffected: it serves from the already-captured `.lathe/` and never runs
-Maven at query time.
+jdtls imports a project with its own embedded Maven (m2e).
+The Lathe extension injects `compilerId=lathe` into the effective POM (see [What Lathe needs](#what-lathe-needs-in-the-build)), and m2e does not recognise that compiler id — so it imports the modules but **cannot configure their Java build path**, and every jdtls request (hover, definition, completion, …) then returns empty, with no error.
+Lathe itself is unaffected: it serves from the already-captured `.lathe/` and never runs Maven at query time.
 
-The fix is to disable Lathe's injection **for jdtls's Maven only**. Lathe honours the
-`-Dlathe.disabled=true` system property and skips all injection when it is set — so jdtls imports a
-normal plain-`javac` build path, while your command-line `mvn` and the Lathe server stay fully enabled.
+The fix is to disable Lathe's injection **for jdtls's Maven only**.
+Lathe honours the `-Dlathe.disabled=true` system property and skips all injection when it is set — so jdtls imports a normal plain-`javac` build path, while your command-line `mvn` and the Lathe server stay fully enabled.
 
-**Recommended — a jdtls-only JVM arg (no effect on your CLI builds).** m2e runs in-process in the
-jdtls JVM, so a `-D` on the jdtls process reaches it. With `nvim-jdtls`:
+**Recommended — a jdtls-only JVM arg (no effect on your CLI builds).**
+m2e runs in-process in the jdtls JVM, so a `-D` on the jdtls process reaches it.
+With `nvim-jdtls`:
 
 ```lua
 require("jdtls").start_or_attach({
@@ -227,8 +213,7 @@ require("jdtls").start_or_attach({
 -Dlathe.disabled=true
 ```
 
-This is read by jdtls's embedded Maven *and* your CLI `mvn`, so plain `mvn` builds also skip Lathe;
-refresh `.lathe/` explicitly by overriding on the command line:
+This is read by jdtls's embedded Maven *and* your CLI `mvn`, so plain `mvn` builds also skip Lathe; refresh `.lathe/` explicitly by overriding on the command line:
 
 ```bash
 mvn -Dlathe.disabled=false clean test -Dlathe.capture.only=true
@@ -262,10 +247,8 @@ Either one makes the build print a `[lathe] Off:` line that names it.
 
 ## Verify
 
-After the recommended first run above, confirm `.lathe/` exists at the reactor root and that each
-module directory holds its parameter files plus a `test-launch.json` (proof that capture ran). If
-`.lathe/` is missing, see [Troubleshooting](troubleshooting.md) (and confirm you are running `mvn`
-from the directory that contains `.mvn/`).
+After the recommended first run above, confirm `.lathe/` exists at the reactor root and that each module directory holds its parameter files plus a `test-launch.json` (proof that capture ran).
+If `.lathe/` is missing, see [Troubleshooting](troubleshooting.md) (and confirm you are running `mvn` from the directory that contains `.mvn/`).
 
 ## See also
 
