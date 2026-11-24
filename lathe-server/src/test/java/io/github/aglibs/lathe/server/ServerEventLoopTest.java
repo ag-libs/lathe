@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.Stopwatch;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -31,21 +32,32 @@ class ServerEventLoopTest {
   }
 
   // The scan's pace reads it: a request makes the server busy, its own timers and the results its
-  // workers deliver do not.
+  // workers deliver do not. No bound is a fixed time, which a stalled CI runner overran (206ms
+  // against 50ms): a request's idle time is bounded by the test's own clock, started before it.
   @Test
   void idleMs_requestResetsIt_timerAndDeliveryDoNot() {
-    final var onRequest = new CompletableFuture<Long>();
-    worker.execute(() -> onRequest.complete(worker.idleMs()));
-    assertThat(onRequest.join()).isLessThan(DELAY_MS);
-    assertThat(worker.submit(worker::idleMs).join()).isLessThan(DELAY_MS);
+    final long onTimer = idleOnATimer();
+    final var onDelivery = new CompletableFuture<Long>();
+    worker.deliver(() -> onDelivery.complete(worker.idleMs()));
+    assertThat(onDelivery.join()).isGreaterThanOrEqualTo(onTimer);
 
+    // Without the reset, a request would read the timer's wait on top of the test's own.
+    final var sinceSubmit = Stopwatch.start();
+    assertThat(worker.submit(worker::idleMs).join()).isLessThanOrEqualTo(sinceSubmit.elapsedMs());
+
+    idleOnATimer();
+    final var sinceExecute = Stopwatch.start();
+    final var onExecute = new CompletableFuture<Long>();
+    worker.execute(() -> onExecute.complete(worker.idleMs()));
+    assertThat(onExecute.join()).isLessThanOrEqualTo(sinceExecute.elapsedMs());
+  }
+
+  private long idleOnATimer() {
     final var onTimer = new CompletableFuture<Long>();
     worker.schedule(URI, DELAY_MS, () -> onTimer.complete(worker.idleMs()));
     // Less a millisecond: the stopwatch reads the wall clock, which the executor's delay does not.
     assertThat(onTimer.join()).isGreaterThanOrEqualTo(DELAY_MS - 1);
-    final var onDelivery = new CompletableFuture<Long>();
-    worker.deliver(() -> onDelivery.complete(worker.idleMs()));
-    assertThat(onDelivery.join()).isGreaterThanOrEqualTo(DELAY_MS - 1);
+    return onTimer.join();
   }
 
   @Test
