@@ -120,7 +120,7 @@ The agent discovers these tools when it connects to the project’s MCP launcher
 | `find_implementations` | Finds implementations of an interface or overrides of a method. |
 | `call_hierarchy` | Lists incoming or outgoing calls. |
 | `get_diagnostics` | Checks one Java file for errors, warnings, and unused declarations. |
-| `analyze_change` | For a method, lists the declarations it overrides and the methods that override or redeclare it. For a type, lists its subtypes. Reports production and test reference counts, affected modules, and relevant tests. |
+| `analyze_change` | For a method, lists the declarations it overrides and the methods that override or redeclare it. For a type, lists its subtypes. Reports production and test reference counts, affected modules, and the test classes that reference or implement it. |
 | `verify_change` | Recompiles changed files and their callers and reports the errors that remain. |
 | `rename_symbol` | Renames the symbol and updates references on disk. |
 | `fix_imports` | Adds unambiguous missing imports to the file and reports names that need a choice. |
