@@ -1174,7 +1174,7 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ## CQ-0071 — A type parameter's second bound offers classes
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-24: low; a second bound is rare, and javac flags a class picked there at once)
 
 **Kind: bug**
 
