@@ -15418,6 +15418,41 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-107 — `analyze_change` lists only the tests that reference the symbol directly, sorted by name — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: MCP `analyze_change` (`relevant tests`).**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N11).
+
+### Observed behaviour
+
+- On the private field `Duration.count`: `references: 17 production, 0 test`, `relevant tests: none`, though `DurationTest` exercises every use of it.
+- On `Duration.toNanoseconds`: `DurationTest` only, not `SlowRequestFilterTest` or `DurationValidatorTest`, whose subjects (`SlowRequestFilter`, `MaxDurationValidator`) call it.
+- On the class `Duration`: 24 tests in alphabetical order, `AbstractRequestLogPatternIntegrationTest` first and `DurationTest` seventh.
+
+[FR-034](#fr-034--renaming-a-member-a-processor-derives-another-from-leaves-the-derived-members-callers-broken) records the same blast radius on a generated builder (`relevant tests: none`).
+
+### Expected
+
+The tests of the classes that hold the references (a private member: its own class's counterpart test), with the declaring class's counterpart first, so an agent that runs the first few runs the right ones.
+
+### Resolution
+
+The list is what javac resolves: the test classes that reference the symbol, or implement it. The defect was its name: the tool described it as "the relevant test classes" and printed `relevant tests:`, so a private member's `none` read as "nothing tests it".
+The answer now says what it lists: `tests referencing it:`, and the tool's description names the test classes that reference or implement the symbol, not those that test it only through other classes.
+
+Not covered: the tests that exercise a symbol through other classes (a private member's own class's test, the tests of the classes that call it), ranked so the most direct come first. Finding them is a feature, deferred with the feature freeze, and the obvious way, test classes named after the subject (`FooTest` for `Foo`), is a guess that would sit beside what javac resolved with nothing to tell them apart; it wants a design that keeps the two apart, such as a separate list derived from resolved calls, or coverage from test runs.
+
+### Regression targets
+
+- `McpTextTest` (`tests referencing it:` with a test, and `none`)
+
+---
+
 ## MC-101 — `find_references` lists every override's declaration as a use — done
 
 **Status: done** (2026-11-19)
