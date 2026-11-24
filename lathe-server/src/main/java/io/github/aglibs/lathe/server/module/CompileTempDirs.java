@@ -66,7 +66,8 @@ final class CompileTempDirs {
           FileUtil.deleteDir(dir);
           LOG.fine(() -> "[cache] orphaned temp dir %s deleted".formatted(dir));
         } catch (final IOException e) {
-          LOG.log(Level.FINE, e, () -> "[cache] orphaned temp dir %s not deleted".formatted(dir));
+          // Another user's dir on a shared temp dir is expected here: its reason, not its trace.
+          LOG.fine(() -> "[cache] orphaned temp dir %s not deleted: %s".formatted(dir, e));
         }
       }
     }
