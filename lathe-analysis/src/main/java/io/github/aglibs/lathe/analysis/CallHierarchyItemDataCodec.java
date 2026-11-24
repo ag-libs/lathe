@@ -30,8 +30,9 @@ public final class CallHierarchyItemDataCodec {
 
   private CallHierarchyItemDataCodec() {}
 
-  // The item for a method or constructor declared in an attributed file: its whole declaration as
-  // the range, its name as the selection (the declaration's start when the name is not found).
+  // The item for a method or constructor declared in an attributed file, or for a field or enum
+  // constant whose initializer holds a call: its whole declaration as the range, its name as the
+  // selection (the declaration's start when the name is not found).
   static CallHierarchyItem itemAt(
       final Element element,
       final String uri,
@@ -82,6 +83,45 @@ public final class CallHierarchyItemDataCodec {
             });
   }
 
+  // The item for a class's initializer block a call runs in (EG-122), named as jdtls names it: the
+  // block is its range, and its first token the selection.
+  static CallHierarchyItem initializerItemAt(
+      final TypeElement owner,
+      final boolean isStatic,
+      final String uri,
+      final TreePath block,
+      final Trees trees,
+      final Elements elements) {
+    final CompilationUnitTree cu = block.getCompilationUnit();
+    final var positions = trees.getSourcePositions();
+    final var start =
+        Positions.offsetToPosition(cu, positions.getStartPosition(cu, block.getLeaf()));
+    final var end = Positions.offsetToPosition(cu, positions.getEndPosition(cu, block.getLeaf()));
+    final String ownerBinaryName = elements.getBinaryName(owner).toString();
+    final var item =
+        new CallHierarchyItem(
+            isStatic ? "static {...}" : "{...}",
+            SymbolKind.Constructor,
+            uri,
+            new Range(start, end),
+            Positions.nameRange(start, isStatic ? "static" : "{"));
+    item.setDetail(ownerBinaryName);
+    item.setData(
+        encode(
+            new CallHierarchyItemData(
+                ownerBinaryName,
+                isStatic ? "<clinit>" : "<init>",
+                "",
+                isStatic ? ElementKind.STATIC_INIT : ElementKind.INSTANCE_INIT,
+                uri,
+                ReferenceTarget.SearchScope.DECLARING_FILE,
+                isStatic,
+                List.of(),
+                List.of(),
+                positions.getStartPosition(cu, block.getLeaf()))));
+    return item;
+  }
+
   static CallHierarchyItem buildItem(
       final Element element,
       final String uri,
@@ -89,8 +129,11 @@ public final class CallHierarchyItemDataCodec {
       final Range selectionRange,
       final Types types,
       final Elements elements) {
+    if (!(element instanceof final ExecutableElement ee)) {
+      return fieldItem(element, uri, range, selectionRange, types, elements);
+    }
+
     final var kind = element.getKind();
-    final var ee = (ExecutableElement) element;
     final var owner = (TypeElement) ee.getEnclosingElement();
     final var displayName = DeclarationNames.declarationName(element).toString();
     final var ownerBinaryName = elements.getBinaryName(owner).toString();
@@ -116,7 +159,46 @@ public final class CallHierarchyItemDataCodec {
                 target.scope(),
                 target.staticMember(),
                 overridden,
-                receiverTypes(owner, overriddenMethods, types, elements))));
+                receiverTypes(owner, overriddenMethods, types, elements),
+                -1)));
+    return item;
+  }
+
+  // A field or enum constant whose initializer holds a call (EG-122): it has no descriptor and is
+  // never called itself.
+  private static CallHierarchyItem fieldItem(
+      final Element element,
+      final String uri,
+      final Range range,
+      final Range selectionRange,
+      final Types types,
+      final Elements elements) {
+    final var kind = element.getKind();
+    final var owner = (TypeElement) element.getEnclosingElement();
+    final String ownerBinaryName = elements.getBinaryName(owner).toString();
+    final String name = element.getSimpleName().toString();
+    final ReferenceTarget target = ReferenceTarget.from(element, types, elements);
+    final var item =
+        new CallHierarchyItem(
+            name,
+            kind == ElementKind.ENUM_CONSTANT ? SymbolKind.EnumMember : SymbolKind.Field,
+            uri,
+            range,
+            selectionRange);
+    item.setDetail(ownerBinaryName);
+    item.setData(
+        encode(
+            new CallHierarchyItemData(
+                ownerBinaryName,
+                name,
+                "",
+                kind,
+                uri,
+                target.scope(),
+                target.staticMember(),
+                List.of(),
+                List.of(),
+                -1)));
     return item;
   }
 
@@ -187,6 +269,7 @@ public final class CallHierarchyItemDataCodec {
     final var receiverTypes = new JsonArray();
     data.receiverTypes().forEach(receiverTypes::add);
     json.add("receiverTypes", receiverTypes);
+    json.addProperty("declarationOffset", data.declarationOffset());
     return json;
   }
 
@@ -221,7 +304,8 @@ public final class CallHierarchyItemDataCodec {
               ? json.getAsJsonArray("receiverTypes").asList().stream()
                   .map(JsonElement::getAsString)
                   .toList()
-              : List.of());
+              : List.of(),
+          json.has("declarationOffset") ? json.get("declarationOffset").getAsLong() : -1);
     }
 
     return null;

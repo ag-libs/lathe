@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
@@ -34,8 +35,16 @@ import org.eclipse.lsp4j.Range;
 
 final class CallHierarchyIncomingLocator extends SourceTreeLocator {
 
-  private final Map<Element, TreePath> callerPaths = new LinkedHashMap<>();
-  private final Map<Element, List<Range>> callerRanges = new LinkedHashMap<>();
+  private static final Set<ElementKind> CALLER_KINDS =
+      Set.of(
+          ElementKind.METHOD,
+          ElementKind.CONSTRUCTOR,
+          ElementKind.FIELD,
+          ElementKind.ENUM_CONSTANT);
+
+  // Keyed by the caller's declaration: an initializer block has no element of its own.
+  private final Map<Tree, TreePath> callerPaths = new LinkedHashMap<>();
+  private final Map<Tree, List<Range>> callerRanges = new LinkedHashMap<>();
   private final ExecutableElement targetMethod;
   private final List<ReferenceTarget> overriddenTargets;
   private final Set<String> receiverTypes;
@@ -69,6 +78,10 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   static List<CallHierarchyIncomingCall> scan(
       final AttributedFileAnalysis analysis, final CallHierarchyItemData item, final String fileUri)
       throws IOException {
+    if (!item.callable()) {
+      return List.of();
+    }
+
     final var content = sourceContent(analysis);
     final ReferenceTarget target = item.target();
     final ExecutableElement targetMethod =
@@ -222,53 +235,75 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   }
 
   private void addCallSite(final Range callSite) {
-    final TreePath callerPath = enclosingMethod(getCurrentPath());
+    final TreePath callerPath = callerOf(getCurrentPath());
     if (callerPath == null) {
       return;
     }
-    final var callerElement = trees.getElement(callerPath);
-    if (callerElement == null) {
-      return;
-    }
-    callerPaths.putIfAbsent(callerElement, callerPath);
-    callerRanges.computeIfAbsent(callerElement, k -> new ArrayList<>()).add(callSite);
+
+    callerPaths.putIfAbsent(callerPath.getLeaf(), callerPath);
+    callerRanges.computeIfAbsent(callerPath.getLeaf(), k -> new ArrayList<>()).add(callSite);
   }
 
-  // The method or constructor a call runs in. One outside the methods of an anonymous or local
-  // class (in an initializer block, a field's initializer) is credited to the method declaring the
-  // class, as a call in a lambda is: that is where an anonymous class is created, and where a local
-  // one mostly is, though a method nested there may create it too.
-  private TreePath enclosingMethod(final TreePath path) {
-    return TreePaths.nearest(
-        path.getParentPath(),
-        MethodTree.class,
-        current ->
-            current.getLeaf() instanceof ClassTree
-                && !(trees.getElement(current) instanceof final TypeElement type
-                    && (type.getNestingKind() == NestingKind.ANONYMOUS
-                        || type.getNestingKind() == NestingKind.LOCAL)));
+  // The declaration a call is credited to: the method or constructor it runs in. One outside the
+  // methods of an anonymous or local class (in an initializer block, a field's initializer) is
+  // credited to the method declaring the class, as a call in a lambda is: that is where an
+  // anonymous class is created, and where a local one mostly is, though a method nested there may
+  // create it too. One outside any method of a named class is credited, as jdtls credits it, to
+  // the field or enum constant whose initializer holds it, or to the initializer block (EG-122).
+  private TreePath callerOf(final TreePath path) {
+    TreePath member = path;
+    for (TreePath current = path.getParentPath();
+        current != null;
+        current = current.getParentPath()) {
+      final Tree leaf = current.getLeaf();
+      if (leaf instanceof MethodTree) {
+        return current;
+      }
+
+      if (leaf instanceof ClassTree && !localOrAnonymous(current)) {
+        return member.getLeaf() instanceof VariableTree || member.getLeaf() instanceof BlockTree
+            ? member
+            : null;
+      }
+
+      member = current;
+    }
+
+    return null;
+  }
+
+  private boolean localOrAnonymous(final TreePath classPath) {
+    return trees.getElement(classPath) instanceof final TypeElement type
+        && (type.getNestingKind() == NestingKind.ANONYMOUS
+            || type.getNestingKind() == NestingKind.LOCAL);
   }
 
   private List<CallHierarchyIncomingCall> buildResults(final String fileUri) {
     final var results = new ArrayList<CallHierarchyIncomingCall>();
-    for (final var callerElement : callerPaths.keySet()) {
-      final var methodPath = callerPaths.get(callerElement);
-      final var ranges = callerRanges.get(callerElement);
-      final var callerItem = buildCallerItem(callerElement, methodPath, fileUri);
+    for (final var caller : callerPaths.keySet()) {
+      final var callerItem = buildCallerItem(callerPaths.get(caller), fileUri);
       if (callerItem != null) {
-        results.add(new CallHierarchyIncomingCall(callerItem, List.copyOf(ranges)));
+        results.add(
+            new CallHierarchyIncomingCall(callerItem, List.copyOf(callerRanges.get(caller))));
       }
     }
     return List.copyOf(results);
   }
 
-  private CallHierarchyItem buildCallerItem(
-      final Element callerElement, final TreePath methodPath, final String fileUri) {
-    final var kind = callerElement.getKind();
-    if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
+  private CallHierarchyItem buildCallerItem(final TreePath callerPath, final String fileUri) {
+    if (callerPath.getLeaf() instanceof final BlockTree block) {
+      return trees.getElement(callerPath.getParentPath()) instanceof final TypeElement owner
+          ? CallHierarchyItemDataCodec.initializerItemAt(
+              owner, block.isStatic(), fileUri, callerPath, trees, elements)
+          : null;
+    }
+
+    final Element callerElement = trees.getElement(callerPath);
+    if (callerElement == null || !CALLER_KINDS.contains(callerElement.getKind())) {
       return null;
     }
+
     return CallHierarchyItemDataCodec.itemAt(
-        callerElement, fileUri, methodPath, trees, types, elements);
+        callerElement, fileUri, callerPath, trees, types, elements);
   }
 }

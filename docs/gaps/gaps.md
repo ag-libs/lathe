@@ -759,35 +759,6 @@ None yet.
 
 ---
 
-## EG-122 — Incoming calls leave out calls in a top-level or member class's initializers and in enum constant arguments
-
-**Status: accepted** (triaged 2026-11-24: medium; both QA rounds hit it on real code, and MCP `call_hierarchy` feeds change impact; references already find the calls)
-
-**Kind: bug**
-
-**Affects: call hierarchy (incoming calls) in the editor, and MCP `call_hierarchy`.**
-
-Found by the 2026-11-24 QA round on both Dropwizard and Helidon (`0.1.0-SNAPSHOT` at `7a4ab21`; reports `dev/reports/qa-2026-11-24-dropwizard.md` B2 and `dev/reports/qa-2026-11-24-helidon.md` B-4).
-EG-117 left this out as not covered: it credits a call in an anonymous or local class's initializer to the method declaring the class, and here no method holds the call.
-
-### Observed behaviour
-
-Incoming calls of `Duration.toNanoseconds` (`dropwizard-util`) list 8 callers over LSP and 9 caller lines over MCP; `dropwizard-jersey`'s `RuntimeFilter.java:26`, `private static final float NANOS_IN_SECOND = Duration.seconds(1).toNanoseconds();`, is in neither, while references list it.
-
-In-buffer probes (Dropwizard's `Generics.java`, Helidon's `LoomServer.java`) drop a call in each of: a field initializer (`static final int F = target();`, `int y = target();`), a lambda in a field initializer, an anonymous class created in a field initializer, an instance initializer and a static initializer, of a top-level or a member class, and an enum constant's arguments (`A(target())`).
-A call in a method, in an anonymous class's method, and in an anonymous or local class inside a method is credited (EG-117).
-References find every one of them, and outgoing calls disagree with incoming.
-
-### Expected
-
-Every call that references list appears as an incoming call: credited to the field, or to the class's initializer, as jdtls credits it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-123 — The method name in a method reference gets no semantic token
 
 **Status: deferred** (triaged 2026-11-24: low; highlighting only, hover and navigation on the name work)

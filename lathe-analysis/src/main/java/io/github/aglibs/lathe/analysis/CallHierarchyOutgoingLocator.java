@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
+import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberReferenceTree;
@@ -9,6 +11,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import java.io.IOException;
@@ -18,7 +21,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.NestingKind;
+import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
@@ -30,7 +36,9 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
 
   private final Map<Element, List<Range>> callSites = new LinkedHashMap<>();
   // The scan still walks the class's field initializers, enum constants among them (each an
-  // implicit constructor call); only calls inside the target method's body are its own.
+  // implicit constructor call); only calls inside the target's body are its own: a method's, or a
+  // field's initializer or an initializer block when a call there is the target (EG-122), with the
+  // anonymous classes and lambdas they create, as incoming calls credit those.
   private boolean inTarget;
 
   private CallHierarchyOutgoingLocator(
@@ -72,6 +80,50 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
     scan(node.getBody(), null);
     inTarget = enclosing;
     return null;
+  }
+
+  // A named class nested in the target (a member of an anonymous class there) makes its own calls,
+  // which incoming calls credit to its own fields, blocks and methods.
+  @Override
+  public Void visitClass(final ClassTree node, final Void ignored) {
+    final boolean enclosing = inTarget;
+    inTarget = enclosing && localOrAnonymous();
+    super.visitClass(node, ignored);
+    inTarget = enclosing;
+    return null;
+  }
+
+  private boolean localOrAnonymous() {
+    return trees.getElement(getCurrentPath()) instanceof final TypeElement type
+        && (type.getNestingKind() == NestingKind.ANONYMOUS
+            || type.getNestingKind() == NestingKind.LOCAL);
+  }
+
+  @Override
+  public Void visitVariable(final VariableTree node, final Void ignored) {
+    final boolean enclosing = inTarget;
+    inTarget = enclosing || target.matches(trees.getElement(getCurrentPath()), types, elements);
+    super.visitVariable(node, ignored);
+    inTarget = enclosing;
+    return null;
+  }
+
+  @Override
+  public Void visitBlock(final BlockTree node, final Void ignored) {
+    final boolean enclosing = inTarget;
+    inTarget = enclosing || isTargetInitializer(node);
+    super.visitBlock(node, ignored);
+    inTarget = enclosing;
+    return null;
+  }
+
+  private boolean isTargetInitializer(final BlockTree block) {
+    final TreePath parent = getCurrentPath().getParentPath();
+    return parent.getLeaf() instanceof ClassTree
+        && target.kind() == (block.isStatic() ? ElementKind.STATIC_INIT : ElementKind.INSTANCE_INIT)
+        && positions.getStartPosition(cu, block) == target.declarationOffset()
+        && trees.getElement(parent) instanceof final TypeElement owner
+        && target.qualifiedName().equals(elements.getBinaryName(owner).toString());
   }
 
   @Override

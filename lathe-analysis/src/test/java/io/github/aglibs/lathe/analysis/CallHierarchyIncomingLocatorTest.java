@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.SymbolKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -397,7 +398,7 @@ class CallHierarchyIncomingLocatorTest {
 
   // EG-117: a call outside the methods of an anonymous or local class is credited to the method
   // declaring the class, even where a method nested there creates it; one in a method of the class
-  // is that method's own. A named class's field initializer has no method to credit.
+  // is that method's own. A named class's field initializer is credited to the field (EG-122).
   @Test
   void searchIncomingCalls_callInAnAnonymousOrLocalClassInitializer_creditsTheMethodDeclaringIt() {
     final String content =
@@ -444,8 +445,85 @@ class CallHierarchyIncomingLocatorTest {
               tuple("doubleBrace", SampleFixture.posOf(content, "name(\"Dog", "name")),
               tuple("field", SampleFixture.posOf(content, "name(\"Cat", "name")),
               tuple("local", SampleFixture.posOf(content, "name(\"Bird", "name")),
-              tuple("run", SampleFixture.posOf(content, "name(\"Fish", "name")));
+              tuple("run", SampleFixture.posOf(content, "name(\"Fish", "name")),
+              tuple("member", SampleFixture.posOf(content, "name(\"Ant", "name")));
     }
+  }
+
+  // EG-122: a call outside any method of a named class, top-level or member, is credited as jdtls
+  // credits it: to the field or enum constant whose initializer holds it (with the lambdas and
+  // anonymous classes created there), or to the initializer block. A field is read, not called,
+  // so its own incoming calls are none.
+  @Test
+  void searchIncomingCalls_callInANamedClassInitializer_creditsTheFieldOrTheInitializer() {
+    final String content =
+        """
+        class Lib {
+            static int target(String s) { return 1; }
+            static final int CONSTANT = target("constant");
+            final int instance = target("instance");
+            static { target("static"); }
+            { target("block"); }
+            final Runnable lambda = () -> target("lambda");
+            final Object anonymous = new Object() {{ target("anonymous"); }};
+            int method() { return target("method"); }
+            int reader() { return CONSTANT; }
+            static class Member { static int nested = target("nested"); { target("member"); } }
+            enum Kind { A(target("enum")); Kind(int i) {} }
+        }
+        """;
+    final var targetRequest =
+        request(content, SampleFixture.posOf(content, "target(String", "target"));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
+      final var analysis = session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {});
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyIncomingCall> calls =
+          session
+              .references()
+              .incomingCalls(
+                  analysis, TempSourceCompiler.TEST_URI, itemData(items.get(0)), Set.of())
+              .hits();
+
+      assertThat(calls)
+          .extracting(
+              call -> call.getFrom().getName(),
+              call -> call.getFrom().getKind(),
+              call -> call.getFrom().getDetail(),
+              call -> call.getFromRanges().get(0).getStart())
+          .containsExactlyInAnyOrder(
+              tuple("CONSTANT", SymbolKind.Field, "Lib", callAt(content, "constant")),
+              tuple("instance", SymbolKind.Field, "Lib", callAt(content, "instance")),
+              tuple("static {...}", SymbolKind.Constructor, "Lib", callAt(content, "static")),
+              tuple("{...}", SymbolKind.Constructor, "Lib", callAt(content, "block")),
+              tuple("lambda", SymbolKind.Field, "Lib", callAt(content, "lambda")),
+              tuple("anonymous", SymbolKind.Field, "Lib", callAt(content, "anonymous")),
+              tuple("method", SymbolKind.Function, "Lib", callAt(content, "method")),
+              tuple("nested", SymbolKind.Field, "Lib$Member", callAt(content, "nested")),
+              tuple("{...}", SymbolKind.Constructor, "Lib$Member", callAt(content, "member")),
+              tuple("A", SymbolKind.EnumMember, "Lib$Kind", callAt(content, "enum")));
+
+      final CallHierarchyItem constant =
+          calls.stream()
+              .map(CallHierarchyIncomingCall::getFrom)
+              .filter(from -> from.getName().equals("CONSTANT"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(constant.getSelectionRange().getStart())
+          .isEqualTo(SampleFixture.posOf(content, "CONSTANT =", "CONSTANT"));
+      assertThat(
+              session
+                  .references()
+                  .incomingCalls(
+                      analysis, TempSourceCompiler.TEST_URI, itemData(constant), Set.of())
+                  .hits())
+          .isEmpty();
+    }
+  }
+
+  private static Position callAt(final String content, final String argument) {
+    return SampleFixture.posOf(content, "target(\"%s".formatted(argument), "target");
   }
 
   private static CallHierarchyItemData itemData(final CallHierarchyItem item) {
