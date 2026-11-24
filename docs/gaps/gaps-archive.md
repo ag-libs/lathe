@@ -13647,6 +13647,50 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-28 — A captured test launch Lathe can no longer read fails the run with "see the server log", and the module still counts as captured — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: editor test runs (`lathe.run.test`), MCP `run_test` and `workspace_summary`, on a module whose `test-launch.json` was captured by an older Lathe.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B7).
+
+### Observed behaviour
+
+22 of Dropwizard's 30 `.lathe/<module>/test-launch.json` were captured on 2026-08-16, before `TestLaunchData` gained `workingDir`; only the 8 recaptured on 2026-11-16 run.
+MCP `run_test` on `dropwizard-core`'s `ApplicationTest.java` answers `isError` with `the request failed; see the server log`; the log has a SEVERE for `invalid JSON file …/.lathe/dropwizard-core/test-launch.json`, caused by `ValidationException: 'workingDir' must not be null`.
+Over LSP, `lathe.run.test` answers `-32603 Internal error` whose `data` holds the whole stack trace and the module's full classpath (some 20 KB).
+`workspace_summary` reports `tests: captured` for these modules, and a sync (`mvn process-test-classes`) leaves the old files without a word.
+The battery's `run_test` checks use `dropwizard-util`, which was recaptured, so they pass.
+
+### Expected
+
+No old format needs to be read, but an unreadable capture is told like a missing one: the run is blocked with `run .lathe/lathe-sync.sh --tests <module> to capture it`, and `workspace_summary` does not count it as captured.
+
+### Resolution
+
+A test run read the capture through `Json.read`, whose failure on a file of an older schema (a field this Lathe requires left out) or a damaged one went up as the request's error; the summary counted any file that existed.
+`Json.isDamaged` now tells a failure on what a file holds (empty, cut off, another schema's shape) from one on reading it, and `LaunchReader` takes a damaged capture as none: a run is blocked with the same `no captured test launch for <module>; run <sync> --tests <module> to capture it` as for a missing one, with the reason in the server log, and `workspace_summary` (`testCaptured`) counts a capture only when it reads.
+A file that cannot be read at all (permissions, an I/O error) still fails the run, as a new capture would not mend it, and the summary counts it as it stands; so it does a file a build holding the module may be writing.
+Waiting for a build that holds the module is not part of it either: that failure still reaches the run as it did.
+
+Not covered: a sync that does not capture tests (`mvn process-test-classes`) still leaves an old capture in place without a word; the run now names the command that replaces it.
+The main launch (`main-launch.json`) is read as before.
+The summary looks at the test tree's capture only, so a Gradle module captured for a source set alone reads as not captured, as before.
+The summary reads every module's capture on the event loop, some 20 KB each: tens of milliseconds on a reactor of a few hundred modules, once per `workspace_summary` call.
+
+### Regression targets
+
+- `LaunchReaderTest.test_captureThisLatheCannotRead_readsAsNotCaptured`
+- `LaunchReaderTest.test_captureThatCannotBeReadAtAll_failsTheRunAndStillCounts`
+- `JsonTest` (`Json.isDamaged` for an empty, cut-off, zero-filled or invalid file; not for an undecodable or missing one)
+- `LatheTextDocumentServiceTest.runTestFuture_captureThisLatheCannotRead_blockedWithTheCommandThatCapturesIt`
+- `LatheEngineVerifyTest.modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture` (a capture that does not read is not counted)
+
+---
+
 ## TE-24 — A test method marked by a custom annotation built on JUnit's `@Testable` gets no run entry — done
 
 **Status: done** (2026-11-23)

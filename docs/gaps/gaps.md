@@ -1689,34 +1689,6 @@ None yet.
 
 ---
 
-## TE-28 — A captured test launch Lathe can no longer read fails the run with "see the server log", and the module still counts as captured
-
-**Status: accepted** (triaged 2026-11-24: medium; most of Dropwizard's modules could not run a test and nothing said why; reporting it as a missing capture is enough)
-
-**Kind: bug**
-
-**Affects: editor test runs (`lathe.run.test`), MCP `run_test` and `workspace_summary`, on a module whose `test-launch.json` was captured by an older Lathe.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B7).
-
-### Observed behaviour
-
-22 of Dropwizard's 30 `.lathe/<module>/test-launch.json` were captured on 2026-08-16, before `TestLaunchData` gained `workingDir`; only the 8 recaptured on 2026-11-16 run.
-MCP `run_test` on `dropwizard-core`'s `ApplicationTest.java` answers `isError` with `the request failed; see the server log`; the log has a SEVERE for `invalid JSON file …/.lathe/dropwizard-core/test-launch.json`, caused by `ValidationException: 'workingDir' must not be null`.
-Over LSP, `lathe.run.test` answers `-32603 Internal error` whose `data` holds the whole stack trace and the module's full classpath (some 20 KB).
-`workspace_summary` reports `tests: captured` for these modules, and a sync (`mvn process-test-classes`) leaves the old files without a word.
-The battery's `run_test` checks use `dropwizard-util`, which was recaptured, so they pass.
-
-### Expected
-
-No old format needs to be read, but an unreadable capture is told like a missing one: the run is blocked with `run .lathe/lathe-sync.sh --tests <module> to capture it`, and `workspace_summary` does not count it as captured.
-
-### Regression targets
-
-None yet.
-
----
-
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
