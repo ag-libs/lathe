@@ -1377,5 +1377,175 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(labels.indexOf("RESOURCE")).isLessThan(labels.indexOf("Random"));
   }
 
+  // ── a cache that predates the edit ───────────────────────────────────────────
+
+  private static final String EMPTY_METHOD =
+      """
+      class Test {
+          void m() {
+          }
+      }""";
+
+  @ParameterizedTest
+  @MethodSource("namesDeclaredSinceTheCache")
+  void simpleName_staleCacheBeforeTheName_offersNamesDeclaredSince(
+      final String markedSource, final String name) {
+    assertThat(labels(fixture.completeWithCache(EMPTY_METHOD, markedSource))).contains(name);
+  }
+
+  static Stream<Arguments> namesDeclaredSinceTheCache() {
+    return Stream.of(
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    String zqxLocal = "";
+                    zqx§
+                }
+            }""",
+            "zqxLocal"),
+        Arguments.of(
+            """
+            class Test {
+                int zqxField;
+                void m() {
+                    zqx§
+                }
+            }""",
+            "zqxField"),
+        Arguments.of(
+            """
+            class Test {
+                void m(int zqxParam) {
+                    zqx§
+                }
+            }""",
+            "zqxParam"),
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    java.util.function.IntUnaryOperator op = zqxValue -> zqx§;
+                }
+            }""",
+            "zqxValue"),
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    String zqxLocal = "";
+                    System.out.println(zqx§);
+                }
+            }""",
+            "zqxLocal"),
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    String zqxLocal = "";
+                    System.out.println(zqx§
+                }
+            }""",
+            "zqxLocal"),
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    String zqxLocal = "";
+                    new StringBuilder(zqx§);
+                }
+            }""",
+            "zqxLocal"));
+  }
+
+  // The name typed at the cursor is already in the cache; the edit since is below it.
+  @Test
+  void simpleName_staleCacheAfterTheName_offersAMemberAddedBelow() {
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    """
+                    class Test {
+                        void m() {
+                            z
+                        }
+                    }""",
+                    """
+                    class Test {
+                        void m() {
+                            zqx§
+                        }
+                        int zqxBelow;
+                    }""")))
+        .contains("zqxBelow");
+  }
+
+  @ParameterizedTest
+  @MethodSource("namesDeletedSinceTheCache")
+  void simpleName_staleCache_dropsANameDeletedSince(final String cached, final String marked) {
+    assertThat(labels(fixture.completeWithCache(cached, marked))).doesNotContain("zqxGone");
+  }
+
+  static Stream<Arguments> namesDeletedSinceTheCache() {
+    return Stream.of(
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    String zqxGone = "";
+                }
+            }""",
+            """
+            class Test {
+                void m() {
+                    zqx§
+                }
+            }"""),
+        Arguments.of(
+            """
+            class Test {
+                void m() {
+                    z
+                }
+                int zqxGone;
+            }""",
+            """
+            class Test {
+                void m() {
+                    zqx§
+                }
+            }"""));
+  }
+
+  // Further keystrokes of the name leave the cache matching up to it: no recompile, so typing a
+  // name costs one recompile, not one per character.
+  @Test
+  void simpleName_cacheMatchesUpToTheName_recompilesOnlyWhenStale() {
+    final String typed =
+        """
+        class Test {
+            void m() {
+                String zqxLocal = "";
+                zqx
+            }
+        }""";
+    final String marked =
+        """
+        class Test {
+            void m() {
+                String zqxLocal = "";
+                zqxL§
+            }
+        }""";
+
+    final var fresh = fixture.outcomeWithCache(typed, marked);
+    assertThat(labels(fresh.items())).contains("zqxLocal");
+    assertThat(fresh.freshAnalysis()).isNull();
+
+    final var stale = fixture.outcomeWithCache(EMPTY_METHOD, marked);
+    assertThat(labels(stale.items())).contains("zqxLocal");
+    assertThat(stale.freshAnalysis()).isNotNull();
+  }
+
   // ── presentation details ─────────────────────────────────────────────────────
 }

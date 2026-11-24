@@ -103,13 +103,15 @@ public final class CompletionEngine {
           injected, parsed.directiveKeyword(), req.typeIndex(), req.moduleNames());
     }
 
-    // A case label finds its enum through the switch selector at the cursor. While typing, the
-    // cached tree predates the edit and no longer has the switch there, so the current text is
-    // recompiled; the recompile is returned for caching, as member access caches its own.
+    // A simple name is looked up in the cached tree (the locals, parameters and members at the
+    // cursor), and a case label finds its enum through the switch selector there. While typing,
+    // that tree predates the edit, which may have declared or removed the name above or below the
+    // cursor, or moved the switch, so the current text is recompiled; the recompile is returned
+    // for caching, as member access caches its own, and the next keystrokes of the same name find
+    // a cache that differs only in the name.
+    final boolean simpleName = completesSimpleName(parsed, injected);
     final var recompiled =
-        parsed.sentinelContext() == SentinelContext.CASE_LABEL
-                && compiler != null
-                && MemberAccessCompleter.staleBeforeCompletionToken(req, injected)
+        simpleName && compiler != null && staleOutsideCompletionToken(req, injected)
             ? compiler.reattribute(req.uri(), req.content())
             : null;
     final var request =
@@ -131,12 +133,12 @@ public final class CompletionEngine {
           case SIMPLE_NAME, ARGUMENT_POSITION, CASE_LABEL ->
               completeSimpleName(parsed, injected, request, site);
           case CONSTRUCTOR_CALL ->
-              parsed.argIndex() >= 0
+              simpleName
                   ? completeSimpleName(parsed, injected, request, site)
                   : typeReferenceCompleter.completeConstructorTypeReference(
                       injected, request, parsed, site);
           case TYPE_REFERENCE ->
-              shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected)
+              simpleName
                   ? completeSimpleName(parsed, injected, request, site)
                   : typeReferenceCompleter.completeTypeReference(parsed, injected, request);
           case ANNOTATION_CONTEXT ->
@@ -154,9 +156,9 @@ public final class CompletionEngine {
           case MEMBER_ACCESS, STATIC_IMPORT, MEMBER_REFERENCE ->
               memberAccessCompleter.complete(parsed, injected, request, site);
           case LAMBDA_BODY ->
-              parsed.receiverText() != null
-                  ? memberAccessCompleter.complete(parsed, injected, request, site)
-                  : completeSimpleName(parsed, injected, request, site);
+              simpleName
+                  ? completeSimpleName(parsed, injected, request, site)
+                  : memberAccessCompleter.complete(parsed, injected, request, site);
           default -> CompletionOutcome.of(List.of());
         };
     final var withOverrides = mergeOverrideCandidates(outcome, parsed, injected, request);
@@ -727,6 +729,40 @@ public final class CompletionEngine {
     return !injected.prefix().isEmpty()
         && Character.isUpperCase(injected.prefix().charAt(0))
         && injected.receiverText() == null;
+  }
+
+  // A cache that differs from the text only in the name at the cursor still holds every name around
+  // it; any other difference, above or below the cursor, may have declared or removed one.
+  private static boolean staleOutsideCompletionToken(
+      final CompletionRequest req, final SentinelInjectionResult injected) {
+    if (req.cached() == null || req.noDiff()) {
+      return false;
+    }
+
+    final String content = req.content();
+    final String cachedContent = req.cached().content();
+    final int tokenStart = injected.tokenStart();
+    final int suffixLength = content.length() - injected.tokenEnd();
+    return cachedContent.length() < tokenStart + suffixLength
+        || !content.regionMatches(0, cachedContent, 0, tokenStart)
+        || !content.regionMatches(
+            injected.tokenEnd(),
+            cachedContent,
+            cachedContent.length() - suffixLength,
+            suffixLength);
+  }
+
+  // The recompile of a stale cache and the routing read this one rule, so a route that ends in
+  // simple-name completion cannot miss the recompile.
+  private static boolean completesSimpleName(
+      final ParsedSentinel parsed, final SentinelInjectionResult injected) {
+    return switch (parsed.sentinelContext()) {
+      case SIMPLE_NAME, ARGUMENT_POSITION, CASE_LABEL -> true;
+      case CONSTRUCTOR_CALL -> parsed.argIndex() >= 0;
+      case TYPE_REFERENCE -> shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
+      case LAMBDA_BODY -> parsed.receiverText() == null;
+      default -> false;
+    };
   }
 
   private static boolean shouldTreatTypeReferenceAsMixedSimpleName(

@@ -4632,6 +4632,49 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0077 — A name declared since the last compile is not offered by simple-name completion, and the list is marked complete — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: completion of simple names in the editor, while typing.**
+
+Found by the 2026-11-24 QA round on both Helidon and Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; reports `dev/reports/qa-2026-11-24-helidon.md` B-1, with its evaluation, and `dev/reports/qa-2026-11-24-dropwizard.md` N1).
+
+### Observed behaviour
+
+In Helidon's `LoomServer.java`, inside `validateRoutingsHaveNamedListener`, one `didChange` adding `String zqxLocal = "";` and a next line `zqx§`, then completion at once, gives nothing; from about 0.6 s after the change (the 500 ms debounce plus the compile) it gives `zqxLocal`.
+Every keystroke restarts the debounce, so typing the declaration, Enter and `zqx` at 120 ms a character still gets nothing.
+Dropwizard's round adds that the empty list is marked `incomplete=false`, so a client that narrows the list does not ask again as the name is typed.
+
+The same holds for a new field, method, parameter, block, `for`, enhanced-`for`, lambda, catch and pattern variable.
+Member access on the new local (`zqxLocal.§`) works at once.
+
+The unit fixture reproduces it: `CompletionFixture.completeWithCache(old, current)`, with `old` an empty method and `current` declaring `zqxLocal`, `zqxField` or `zqxParam`, gives `[]`; `complete(current)` gives the name.
+
+### Cause
+
+`SimpleNameProvider` takes every name from the cached snapshot (the method's locals by scanning its tree, class members from its `Scope`), and a name typed since that compile is not in it.
+`CompletionEngine` recompiles the current text when the cache differs before the completion token (`MemberAccessCompleter.staleBeforeCompletionToken`) and returns the recompile as `freshAnalysis`, which `SourceAnalysisSession` caches, but only for a case label; member access does the same on its own.
+
+### Resolution
+
+The recompile now runs for every request that ends in simple-name completion: a simple name, an argument, a case label, a constructor call's argument, a lambda body without a receiver, and a type reference read as a mixed simple name.
+One rule (`CompletionEngine.completesSimpleName`) decides both the recompile and the routing, so the two cannot drift apart.
+It runs when the cache differs from the text anywhere but in the name at the cursor, above it or below (a member added or removed further down counts); the recompile is returned as `freshAnalysis` and cached, so the next keystrokes of the name, which change only the name, stay on the fast path.
+That is about one recompile per word typed in a burst: about 30 ms more in a 650-line file and 210 ms more in a 3127-line one, measured on a shared machine.
+The `incomplete` flag is unchanged: the list now holds the name, so it is no longer empty.
+
+### Regression targets
+
+- `CompletionSimpleNameTest.simpleName_staleCacheBeforeTheName_offersNamesDeclaredSince` (a local, a field, a parameter, a lambda parameter, an argument, an unclosed argument list, a constructor argument)
+- `CompletionSimpleNameTest.simpleName_staleCacheAfterTheName_offersAMemberAddedBelow`
+- `CompletionSimpleNameTest.simpleName_staleCache_dropsANameDeletedSince` (above and below the cursor)
+- `CompletionSimpleNameTest.simpleName_cacheMatchesUpToTheName_recompilesOnlyWhenStale`
+
+---
+
 ## CQ-0068 — A qualified name in a type argument completes nothing — done
 
 **Status: done** (2026-11-24)

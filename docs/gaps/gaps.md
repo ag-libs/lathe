@@ -1409,44 +1409,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0077 — A name declared since the last compile is not offered by simple-name completion, and the list is marked complete
-
-**Status: accepted** (triaged 2026-11-24: high; it is the everyday declare-then-use flow, and the fix widens an existing recompile)
-
-**Kind: bug**
-
-**Affects: completion of simple names in the editor, while typing.**
-
-Found by the 2026-11-24 QA round on both Helidon and Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; reports `dev/reports/qa-2026-11-24-helidon.md` B-1, with its evaluation, and `dev/reports/qa-2026-11-24-dropwizard.md` N1).
-
-### Observed behaviour
-
-In Helidon's `LoomServer.java`, inside `validateRoutingsHaveNamedListener`, one `didChange` adding `String zqxLocal = "";` and a next line `zqx§`, then completion at once, gives nothing; from about 0.6 s after the change (the 500 ms debounce plus the compile) it gives `zqxLocal`.
-Every keystroke restarts the debounce, so typing the declaration, Enter and `zqx` at 120 ms a character still gets nothing.
-Dropwizard's round adds that the empty list is marked `incomplete=false`, so a client that narrows the list does not ask again as the name is typed.
-
-The same holds for a new field, method, parameter, block, `for`, enhanced-`for`, lambda, catch and pattern variable.
-Member access on the new local (`zqxLocal.§`) works at once.
-
-The unit fixture reproduces it: `CompletionFixture.completeWithCache(old, current)`, with `old` an empty method and `current` declaring `zqxLocal`, `zqxField` or `zqxParam`, gives `[]`; `complete(current)` gives the name.
-
-### Cause
-
-`SimpleNameProvider` takes every name from the cached snapshot (the method's locals by scanning its tree, class members from its `Scope`), and a name typed since that compile is not in it.
-`CompletionEngine` recompiles the current text when the cache differs before the completion token (`MemberAccessCompleter.staleBeforeCompletionToken`) and returns the recompile as `freshAnalysis`, which `SourceAnalysisSession` caches, but only for a case label; member access does the same on its own.
-
-### Fix direction
-
-Widen that recompile to the simple-name contexts (`SIMPLE_NAME`, `ARGUMENT_POSITION`, a constructor call's argument, a lambda body without a receiver).
-As the recompile is cached, the next keystrokes of the word find a cache matching up to the token and stay on the fast path: about one recompile per word typed in a burst.
-Measured as member access on a new local (the same recompile): 56 ms against 28 ms in a 652-line file, 256 ms against 46 ms in a 3127-line one, on a shared machine.
-
-### Regression targets
-
-None yet; `CompletionMemberAccessTest.memberAccess_staleCacheNewLine_typeResolved` is the pattern.
-
----
-
 ## CQ-0078 — Completion offers package-private `java.lang` types
 
 **Status: deferred** (triaged 2026-11-24: low; two JDK types, offered only on a prefix or an empty list that matches them)
