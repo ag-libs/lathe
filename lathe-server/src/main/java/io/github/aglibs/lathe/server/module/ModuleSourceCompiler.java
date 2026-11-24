@@ -501,23 +501,31 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final String flag,
       final String value,
       final boolean released) {
-    if (SYSTEM.equals(flag) && !isUsableOtherJdk(value, released)) {
+    if (!SYSTEM.equals(flag)) {
+      return applyOption(fm, flag, value);
+    }
+
+    // --release takes its API from the server's JDK, and javac refuses --system beside it.
+    if (released) {
       return true;
     }
 
-    return applyOption(fm, flag, value);
+    // Always a --system, the server's own when the build's cannot be used: without one, javac warns
+    // of a -source older than itself, and a build's -Werror turns that warning into an error that
+    // stops the compile before attribution.
+    final String serverJdk = System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
+    return applyOption(fm, SYSTEM, isUsableOtherJdk(value, serverJdk) ? value : serverJdk);
   }
 
-  // The JDK a build compiled against (--system): the server's own is javac's default, already open,
-  // so it is not applied again. One gone since the sync cannot be, and one newer than the server's
-  // cannot be read by its javac (its class files are of a later version, and javac then fails
-  // every compile of the module with an assertion): the compile runs against the server's JDK. With
-  // --release that is right, as its API comes from the server's own JDK, so it is no warning; a
-  // module without --release that needs a newer JDK is left out at load (JdkSupport), so reaching
-  // here with one is unexpected, and still warned about.
-  private static boolean isUsableOtherJdk(final String home, final boolean released) {
+  // The JDK a build compiled against (--system), when it is not the server's own. One gone since
+  // the sync cannot be opened, and one newer than the server's cannot be read by its javac (its
+  // class files are of a later version, and javac then fails every compile of the module with an
+  // assertion): the compile runs against the server's JDK, with a warning. A module without
+  // --release that needs a newer JDK is left out at load (JdkSupport), so reaching here with one is
+  // unexpected.
+  private static boolean isUsableOtherJdk(final String home, final String serverJdk) {
     final Path jdk = Path.of(home);
-    if (isSameFile(jdk, Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY)))) {
+    if (isSameFile(jdk, Path.of(serverJdk))) {
       return false;
     }
 
@@ -532,8 +540,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     final int feature = JdkSupport.jdkFeature(jdk);
     final int serverFeature = Runtime.version().feature();
     if (feature > serverFeature) {
-      LOG.log(
-          released ? Level.FINE : Level.WARNING,
+      LOG.warning(
           () ->
               "[compile] JDK %s the build compiled against is %d, newer than the server's %d; compiling against the server's"
                   .formatted(home, feature, serverFeature));
