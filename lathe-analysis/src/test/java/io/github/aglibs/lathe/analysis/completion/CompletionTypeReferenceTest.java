@@ -10,6 +10,24 @@ import org.junit.jupiter.api.Test;
 
 class CompletionTypeReferenceTest extends CompletionTestSupport {
 
+  // java.lang's package-private types (NamedPackage, AbstractStringBuilder) cannot be used outside
+  // it; its public ones still complete beside them.
+  @Test
+  void langType_packagePrivate_notOffered_publicStillOffered() {
+    for (final String source :
+        List.of(
+            "class Test { void m() { Named§ x; } }",
+            "class Test { java.util.List<§> x; }",
+            "class Test { void m() { AbstractS§ x; } }")) {
+      assertThat(labels(fixture.complete(source)))
+          .as(source)
+          .doesNotContain("NamedPackage", "AbstractStringBuilder");
+    }
+
+    assertThat(labels(fixture.complete("class Test { void m() { StringB§ x; } }")))
+        .contains("StringBuilder", "StringBuffer");
+  }
+
   @Test
   void typeReference_variableInitializer_uppercasePrefixSuggestsTypes() {
     assertThat(

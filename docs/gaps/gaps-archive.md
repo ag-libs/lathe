@@ -4734,6 +4734,39 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0078 — Completion offers package-private `java.lang` types — done
+
+**Status: done** (2026-11-24)
+
+**Kind: bug**
+
+**Affects: completion of type names in the editor.**
+
+Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B5).
+
+### Observed behaviour
+
+In `dropwizard-util`'s `Generics.java` (in-buffer), `java.util.List<§> x;` lists `java.lang.NamedPackage` and `java.lang.AbstractStringBuilder` among its 107 items, and `Named§ x;` at a statement start offers `NamedPackage`.
+Both are package-private, so picking one does not compile.
+The MCP battery's KNOWN `search_symbols: only usable types` is the same kind of leak in the MCP search.
+
+### Expected
+
+Only types the code can use: a `java.lang` type outside `java.lang` only when it is public.
+
+### Resolution
+
+The implicit `java.lang` types were listed by dropping only `private` ones, which no top-level type is, so every package-private one came along.
+A `java.lang` type is now offered only when javac says the code at the cursor can use it (`Trees.isAccessible`), as the file's own types already were, so code in `java.lang` itself still gets them; where no scope is known, only the public ones.
+
+Not covered: the MCP `search_symbols` leak the battery marks KNOWN is a separate path.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.langType_packagePrivate_notOffered_publicStillOffered`
+
+---
+
 ## CQ-0077 — A name declared since the last compile is not offered by simple-name completion, and the list is marked complete — done
 
 **Status: done** (2026-11-24)

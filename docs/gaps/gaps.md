@@ -1345,32 +1345,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0078 — Completion offers package-private `java.lang` types
-
-**Status: deferred** (triaged 2026-11-24: low; two JDK types, offered only on a prefix or an empty list that matches them)
-
-**Kind: bug**
-
-**Affects: completion of type names in the editor.**
-
-Found by the 2026-11-24 QA round on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B5).
-
-### Observed behaviour
-
-In `dropwizard-util`'s `Generics.java` (in-buffer), `java.util.List<§> x;` lists `java.lang.NamedPackage` and `java.lang.AbstractStringBuilder` among its 107 items, and `Named§ x;` at a statement start offers `NamedPackage`.
-Both are package-private, so picking one does not compile.
-The MCP battery's KNOWN `search_symbols: only usable types` is the same kind of leak in the MCP search.
-
-### Expected
-
-Only types the code can use: a `java.lang` type outside `java.lang` only when it is public.
-
-### Regression targets
-
-None yet.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
