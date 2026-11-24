@@ -1118,33 +1118,6 @@ None yet.
 
 ---
 
-## FR-039 — A source root shared by two trees doubles every reference in it, and rename then fails with an internal error
-
-**Status: accepted** (triaged 2026-11-24: high; rename fails with an internal error, and references and MCP counts are doubled, wherever a Gradle source set reuses another's folder)
-
-**Kind: bug**
-
-**Affects: references and rename in the editor; MCP `find_references` (and what counts its rows); probably every answer merged across trees.**
-
-Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P3).
-
-### Observed behaviour
-
-Pioneer's `src/demo/java` is a source root of both the `demo` source set and the `demoTests` JVM test suite (`.lathe/lsp-params-classes-demo.json` and `lsp-params-classes-demoTests.json` both list it).
-References of `@CartesianTest` (`src/main/java/org/junitpioneer/jupiter/cartesian/CartesianTest.java:55:19`) list every use in `CartesianTestExtensionDemo.java` twice: 58 rows for 29 positions, over LSP and in MCP `find_references`, whose header ("95 reference(s)") counts the duplicates.
-`textDocument/rename` of it answers `-32603 Internal error`: `StringIndexOutOfBoundsException: Range [1432, 1419) out of bounds for length 8682` in `Positions.segment`, from `Positions.applyEdits` in `RenameBindingCheck$EditedFile.of`, as two identical edits reach one file.
-The battery's "find_references: no duplicate rows" check passes on Dropwizard, which shares no source root.
-
-### Expected
-
-One reference per position in a file, whichever trees compile it, and a rename edit with one edit per use.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in

@@ -7,6 +7,44 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-039 — A source root shared by two trees doubles every reference in it, and rename then fails with an internal error — done
+
+**Status: done** (2026-11-24; triaged accepted, high: rename failed with an internal error)
+
+**Kind: bug**
+
+**Affects: references and rename in the editor; MCP `find_references` (and what counts its rows); probably every answer merged across trees.**
+
+Found by the 2026-11-24 exploratory round on JUnit Pioneer (`0.1.0-SNAPSHOT` at `7a4ab21`, Pioneer at `af8ebb2`, Gradle 9.7.1, JDK 26; report `dev/reports/qa-2026-11-24-junit-pioneer.md`, P3).
+
+### Observed behaviour
+
+Pioneer's `src/demo/java` is a source root of both the `demo` source set and the `demoTests` JVM test suite (`.lathe/lsp-params-classes-demo.json` and `lsp-params-classes-demoTests.json` both list it).
+References of `@CartesianTest` (`src/main/java/org/junitpioneer/jupiter/cartesian/CartesianTest.java:55:19`) list every use in `CartesianTestExtensionDemo.java` twice: 58 rows for 29 positions, over LSP and in MCP `find_references`, whose header ("95 reference(s)") counts the duplicates.
+`textDocument/rename` of it answers `-32603 Internal error`: `StringIndexOutOfBoundsException: Range [1432, 1419) out of bounds for length 8682` in `Positions.segment`, from `Positions.applyEdits` in `RenameBindingCheck$EditedFile.of`, as two identical edits reach one file.
+The battery's "find_references: no duplicate rows" check passes on Dropwizard, which shares no source root.
+
+### Expected
+
+One reference per position in a file, whichever trees compile it, and a rename edit with one edit per use.
+
+### Fix
+
+A reference search plans each tree in its scope on its own: the open documents it owns, and the files on disk under its source roots that name the target.
+A file under a root two trees share was in both plans, so both trees searched it and every hit came back twice; a rename then held two identical edits per use, which its meaning check could not apply.
+Every plan list a search reads now goes through one step that keeps each file in the first planned tree holding it (the scope lists the declaring tree first), and a file to search at once over the same file deferred, so a file is searched once whichever trees share its folder, nested roots included.
+References, rename and incoming calls read their plans through it; implementations take their files from the type index and merge them per file, and were not doubled.
+A tree owning the file is not required: searched from the tree that does not own the shared folder (a type declared there is both trees' own, so the scope is the asking tree alone), its uses there are found.
+
+Checked on JUnit Pioneer with a server built from the branch: references of `@CartesianTest` are 228, each once (29 in `CartesianTestExtensionDemo.java`, 58 before), as MCP `find_references` counts them; rename edits 229 places in 14 files instead of failing.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.referencesAndRename_sourceRootOfTwoTrees_eachUseOnce`
+- `LatheTextDocumentServiceTest.references_typeInASharedSourceRootFromTheOtherTree_findsItsUsesThereOnce`
+
+---
+
 ## EG-121 — A secondary top-level type is missing from workspace symbol, definition from another file, type hierarchy and implementations — done
 
 **Status: done** (2026-11-24)
