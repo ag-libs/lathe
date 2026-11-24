@@ -116,11 +116,8 @@ All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-ar
 
 ### Not in M2
 
-The broader editing-feature set (inlay hints, on-type indentation, semantic-highlighting expansion,
-generic-bound completion, `typeDefinition`) and
-source-browsing references are **not** M2 scope — they are in the [Backlog](#backlog).
-(Declaration-name completion, new-type creation, the no-Maven freshness model and incomplete-call
-definition ([EG-048](gaps/gaps-archive.md)) were once listed here; all four have since shipped.)
+The broader editing-feature set (inlay hints, on-type indentation, semantic-highlighting expansion) and source-browsing references are **not** M2 scope — they are in the [Backlog](#backlog).
+(Declaration-name completion, new-type creation, the no-Maven freshness model, incomplete-call definition ([EG-048](gaps/gaps-archive.md)), generic-bound completion and `typeDefinition` were once listed here; all six have since shipped.)
 
 ### Exit criteria
 
@@ -177,8 +174,7 @@ when cut. Items are grouped, not ordered.
 ### Editing features (deferred from M2)
 
 - Rename beyond the M2 common cases; inlay hints; conservative on-type indentation.
-- Generic-bound receiver completion; snippet (template) completion.
-- `textDocument/typeDefinition` (Neovim `grt`).
+- Snippet (template) completion.
 - Semantic-token modifiers (`readonly` for locals, `abstract`, visibility) and `recordComponent`/`annotationMember`.
 
 ### Reliability and freshness
@@ -213,11 +209,6 @@ when cut. Items are grouped, not ordered.
 - The scaled MCP-value benchmark run (the local pilot has run; see
   [lathe-mcp-value-benchmark.md](planned/lathe-mcp-value-benchmark.md)), MCP streaming/cancel, and the thin
   Claude Code LSP plugin (see [lathe-ai-agent-integration.md](planned/lathe-ai-agent-integration.md)).
-
-### Quality tooling
-
-- Fewer cold compiles in the test suite and a faster invoker suite — done
-  (see [lathe-test-framework.md](done/lathe-test-framework.md)).
 
 ### Exploration
 

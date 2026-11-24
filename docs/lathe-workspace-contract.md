@@ -214,7 +214,7 @@ A script (executable on POSIX) that re-runs this front-end's sync from the works
 The Neovim client runs it for the server's sync prompts and `:LatheSync`;
 server and MCP remediation messages name it.
 A front-end that cannot honor `--tests` or modules accepts and ignores them with a note on stderr.
-Full specification: [Sync Launcher](planned/lathe-sync-launcher.md).
+Full specification: [Sync Launcher](done/lathe-sync-launcher.md).
 
 The script runs the tool that ran the last build, on that build's JDK, both written in as absolute paths; it chooses nothing at runtime, and stops with a hint to rebuild if the tool is gone.
 Every front-end renders it from one model, `lathe-install`'s `SyncScript` ([Multi-OS](done/lathe-multi-os.md) D3).

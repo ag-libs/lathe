@@ -9,11 +9,8 @@ For a JUnit Platform test, Lathe also records the JVM arguments and working dire
 - **Gradle 8.8 or newer**, its daemon on **JDK 17 or newer** (Gradle 9 requires that anyway).
   An older Gradle stops the build with a message naming the problem and the way out.
 - Projects applying `java` or `java-library` (or a plugin that applies one).
-  They may compile and test on any JDK their toolchain names; the server needs JDK 17+, and uses the JDK
-  Gradle runs on when every project compiles on an older one (navigation into the JDK then shows that
-  JDK's sources).
-- For test capture, tests on the **JUnit Platform** (`useJUnitPlatform()`: JUnit 5 and 6, and JUnit 4 through
-  the vintage engine).
+  They may compile and test on any JDK their toolchain names; the server needs JDK 17+, and uses the JDK Gradle runs on when every project compiles on an older one (navigation into the JDK then shows that JDK's sources).
+- For test capture, tests on the **JUnit Platform** (`useJUnitPlatform()`: JUnit 5 and 6, and JUnit 4 through the vintage engine).
   A `Test` task on `useJUnit()` or `useTestNG()` is not captured.
 
 ## Setup
@@ -70,8 +67,7 @@ Git ignores the generated `.lathe/` directory through the `.gitignore` that Lath
 Exclude the directory from whole-project checks.
 [Troubleshooting](troubleshooting.md#build-checks-and-compiler-settings)
 
-A build that rejects skipped tests (a test listener that fails the task, as Caffeine's does) ends this run with
-failed test tasks, but `.lathe/` is complete and every test task's launch is captured; see [Syncing](#syncing).
+A build that rejects skipped tests (a test listener that fails the task, as Caffeine's does) ends this run with failed test tasks, but `.lathe/` is complete and every test task's launch is captured; see [Syncing](#syncing).
 
 Later builds refresh each source set they compile.
 [What the build keeps current](#what-the-build-keeps-current)
@@ -79,8 +75,7 @@ Later builds refresh each source set they compile.
 If you configure `failOnError = false` so a failed compile can still sync, turn off incremental compilation for that task as well.
 Otherwise Gradle can omit class files even after you fix the error, and Lathe has to compile that source set itself against its last good capture.
 
-Lathe resolves its server from your build's repositories, and adds Maven Central to the root project only when
-the build declares no repository of its own.
+Lathe resolves its server from your build's repositories, and adds Maven Central to the root project only when the build declares no repository of its own.
 
 ## What the build keeps current
 
@@ -92,10 +87,8 @@ As on Maven, the build itself keeps `.lathe/` current; there is no separate step
 | A build that compiles tests | the workspace files: the module list, the libraries and their sources, the JDK, the server install |
 | A test run (`test`, `check`, `build`) | each project's test launch, captured inside the test JVM while the tests run |
 
-A task served from the build cache or up to date does no work, and Lathe keeps what it captured from the run
-that produced it.
-To capture the test launches again, run the tests with `--rerun` (`./gradlew test --rerun`), or a capture-only
-build (`-Plathe.capture.only=true`, or the editor's sync with tests), which always starts the test task.
+A task served from the build cache or up to date does no work, and Lathe keeps what it captured from the run that produced it.
+To capture the test launches again, run the tests with `--rerun` (`./gradlew test --rerun`), or a capture-only build (`-Plathe.capture.only=true`, or the editor's sync with tests), which always starts the test task.
 
 Lathe never changes the inputs of your build's own tasks, so a build cache shared with CI keeps working:
 a Lathe-enabled build takes the same cache entries as one without Lathe.
@@ -130,49 +123,27 @@ The two absolute switches, `-Plathe.disabled=true` and `CI`, make the build prin
 ## Known limits
 
 - **Every Java source set is a tree of its own.**
-  A source set beyond `main` and `test` (test fixtures, a JVM test suite, an `integrationTest`, `jmh`) is compiled
-  against its own classpath, so diagnostics, navigation and references there match the build; a sync compiles it.
+  A source set beyond `main` and `test` (test fixtures, a JVM test suite, an `integrationTest`, `jmh`) is compiled against its own classpath, so diagnostics, navigation and references there match the build; a sync compiles it.
   The test task that runs its classes captures its launch whenever it runs (without running its tests:
-  `./gradlew integrationTest -Plathe.capture.only=true`), so its tests run and debug from the editor too;
-  the editor's sync does not start that task, package, folder and module runs there are not offered yet, and a
-  test task of no source set Lathe captures (a second task on `test`'s classes) is skipped by a capture-only build; see
-  [Test capture](test-capture.md#requirements-and-current-limits).
-- **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
-  captured, so they can't be run or debugged from the editor; a capture-only build (the editor's sync with tests)
-  skips each such test task and names it.
+  `./gradlew integrationTest -Plathe.capture.only=true`), so its tests run and debug from the editor too; the editor's sync does not start that task, package, folder and module runs there are not offered yet, and a test task of no source set Lathe captures (a second task on `test`'s classes) is skipped by a capture-only build; see [Test capture](test-capture.md#requirements-and-current-limits).
+- **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not captured, so they can't be run or debugged from the editor; a capture-only build (the editor's sync with tests) skips each such test task and names it.
 - **A notice on every test run.**
-  Lathe loads its capture listener into the test JVM through the `JDK_JAVA_OPTIONS` environment variable, which
-  leaves the test task's cache key alone; the JVM announces it with
-  `NOTE: Picked up JDK_JAVA_OPTIONS: -javaagent:…/lathe-junit.jar`, and nothing suppresses that line.
-  JVMs the tests start inherit the variable: they print the notice too, and one that runs JUnit inside
-  the project's directory captures its own launch over the test JVM's.
-- **Develocity's test acceleration** (Predictive Test Selection or Test Distribution, as JUnit's own build uses)
-  runs the tests in a JVM of its own.
-  That JVM may not load Lathe at all: nothing is captured, the capture-only sync runs every test in full, and the
-  sync warns `[lathe] :x:test captured no test launch`.
-  Or the launch captured comes from its test-selection JVM and names jars in a temporary directory that is gone after
-  the run: the sync warns `[lathe] :x:test captured a launch naming …, a temporary jar`, and a run from the
-  editor is blocked with a reason naming the missing jar.
+  Lathe loads its capture listener into the test JVM through the `JDK_JAVA_OPTIONS` environment variable, which leaves the test task's cache key alone; the JVM announces it with `NOTE: Picked up JDK_JAVA_OPTIONS: -javaagent:…/lathe-junit.jar`, and nothing suppresses that line.
+  JVMs the tests start inherit the variable: they print the notice too, and one that runs JUnit inside the project's directory captures its own launch over the test JVM's.
+- **Develocity's test acceleration** (Predictive Test Selection or Test Distribution, as JUnit's own build uses) runs the tests in a JVM of its own.
+  That JVM may not load Lathe at all: nothing is captured, the capture-only sync runs every test in full, and the sync warns `[lathe] :x:test captured no test launch`.
+  Or the launch captured comes from its test-selection JVM and names jars in a temporary directory that is gone after the run: the sync warns `[lathe] :x:test captured a launch naming …, a temporary jar`, and a run from the editor is blocked with a reason naming the missing jar.
   Turn those features off for the capture-only sync (JUnit's build:
   `-Pjunit.develocity.predictiveTestSelection.enabled=false`).
-- **A project whose jar is shaded** (its `jar` task disabled, and a Shadow jar relocating a library written in its
-  place, as JUnit's build does): the editor gives the projects using it its latest classes and then the shaded jar,
-  for the relocated classes.
-  A run, test or debug uses the shaded jar alone, as its classes call the relocated ones, so it runs that project's
-  own code as the last build left it.
-- **Gradle 8.x with Isolated Projects on:** only a build of the root's `build`, `check`, or `test` refreshes the
-  workspace files; a build of one project refreshes that project's part, and the rest waits for the next root
-  build or sync. Gradle 9 has no such limit.
-- **The formatter is declared, not detected.** Lathe cannot read Spotless's settings on Gradle, so the project declares
-  its formatter in a `lathe-style.json`, and `latheSync` resolves it through the build's repositories;
-  a build that applies Spotless gets a warning until it does.
-  Without a version there, the formatter is the default of the root project's Spotless, or of the
-  Spotless release Lathe pins, chosen for the daemon's JDK; when only subprojects apply Spotless, or a
-  toolchain compiles on an older JDK than the daemon runs, declare the version (the sync warns when the
-  server's JDK cannot run the formatter).
+- **A project whose jar is shaded** (its `jar` task disabled, and a Shadow jar relocating a library written in its place, as JUnit's build does): the editor gives the projects using it its latest classes and then the shaded jar, for the relocated classes.
+  A run, test or debug uses the shaded jar alone, as its classes call the relocated ones, so it runs that project's own code as the last build left it.
+- **Gradle 8.x with Isolated Projects on:** only a build of the root's `build`, `check`, or `test` refreshes the workspace files; a build of one project refreshes that project's part, and the rest waits for the next root build or sync.
+  Gradle 9 has no such limit.
+- **The formatter is declared, not detected.**
+  Lathe cannot read Spotless's settings on Gradle, so the project declares its formatter in a `lathe-style.json`, and `latheSync` resolves it through the build's repositories; a build that applies Spotless gets a warning until it does.
+  Without a version there, the formatter is the default of the root project's Spotless, or of the Spotless release Lathe pins, chosen for the daemon's JDK; when only subprojects apply Spotless, or a toolchain compiles on an older JDK than the daemon runs, declare the version (the sync warns when the server's JDK cannot run the formatter).
   See [The formatter version](installation.md#the-formatter-version).
-- **Composite builds:** only the main build's projects are covered; an included build of Java projects the editor
-  should see is not yet.
+- **Composite builds:** only the main build's projects are covered; an included build of Java projects the editor should see is not yet.
 
 ## See also
 

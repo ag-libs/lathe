@@ -30,6 +30,7 @@ Use a buildable OpenJDK checkout and Maven 3.6.3 or later running on JDK 17 or n
    ```
 
    If you have several configured builds, add `-Dlathe.buildDir=build/<conf>` to select one.
+   The sync does nothing when `-Dlathe.disabled=true` is set, or when the `CI` environment variable is set unless `-Dlathe.disabled=false` is passed; it says so in its `[sync] disabled` line.
    Sync writes the workspace under `.lathe/`, installs the server under `~/.cache/lathe/`, and records the JDK you built in `.lathe/java-home`.
 
 3. Open `src/java.base/share/classes/java/util/ArrayList.java` in your editor's Lathe client.

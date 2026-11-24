@@ -29,7 +29,7 @@ If your config imports `lua/plugins/`, save this as `~/.config/nvim/lua/plugins/
 return {
   "ag-libs/lathe.nvim",
   ft = "java",
-  cmd = "LatheStart",
+  cmd = { "LatheStart", "LatheInit" },
   main = "lathe",
   opts = {},
 }
@@ -42,6 +42,7 @@ The `ft = "java"` setting loads the plugin when you open a Java file.
 
 1. Run the first build from the project root using the instructions for [Maven](https://github.com/ag-libs/lathe/blob/main/docs/guide/maven.md), [Gradle](https://github.com/ag-libs/lathe/blob/main/docs/guide/gradle.md#setup), or an [OpenJDK checkout](https://github.com/ag-libs/lathe/blob/main/docs/guide/openjdk.md#setup).
    This installs the language server and records how your project compiles.
+   Or run `:LatheInit` from any file in the project: it runs the first build for you, without changing a Maven or Gradle project's build files.
 2. Open a Java source file in that project.
    Neovim starts Lathe automatically.
 3. Once the workspace has loaded, use **Go to Definition** on a call to a method in your project.

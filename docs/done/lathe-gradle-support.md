@@ -1025,7 +1025,7 @@ What they found:
 1. **Lathe reached `buildSrc` and included builds** (Micronaut's `buildSrc`, Hibernate's `local-build-plugins`, JUnit's `gradle/base`), each writing a `.lathe/` of its own, because an init script applies to every build.
    *Fixed in slice 1:* the settings plugin acts only on the root build. Included builds holding application code are not captured yet.
 2. **Source sets other than `main` and `test` are not captured** — Caffeine's `codeGen` and `testFixtures`; `integrationTest` and `jmh` are common elsewhere.
-   This historical limitation is resolved: [Gradle Source Sets](../planned/lathe-gradle-source-sets.md) captures every Java source set as its own tree and captures its test-task launch (PRs #127 and #131).
+   This historical limitation is resolved: [Gradle Source Sets](lathe-gradle-source-sets.md) captures every Java source set as its own tree and captures its test-task launch (PRs #127 and #131).
 3. **Siblings reach the classpath as jars more often than the spike suggested**: a modular consumer, and every Micronaut module, compile against `build/libs/*.jar`, and Micronaut's processor path holds sibling jars too. The `workspace.json` `outputs` map of slice 2 must remap both shapes.
 4. **Mixed Kotlin/Groovy modules** compile Java against `build/classes/kotlin/main`, which Lathe does not mirror; Kotlin sources themselves are out of scope.
 

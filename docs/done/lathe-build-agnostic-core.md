@@ -12,7 +12,7 @@ Lathe's design says `.lathe/` is the seam between the build and everything else:
 the server, `lathe-test-runner`, the MCP server, and the editor clients read `.lathe/` and never the build.
 Two shipped changes already moved the biggest pieces behind that seam:
 
-- **Sync** runs `.lathe/lathe-sync.sh`, written by the build integration ([Sync Launcher](../planned/lathe-sync-launcher.md)).
+- **Sync** runs `.lathe/lathe-sync.sh`, written by the build integration ([Sync Launcher](lathe-sync-launcher.md)).
   No client, server, or MCP code composes a Maven command any more.
 - **Formatting** runs the project's pinned formatter in-process from `.lathe/style.json` ([Pinned Formatters](../done/lathe-pinned-formatters.md)).
   The server no longer delegates to `mvn spotless:apply`.
@@ -139,7 +139,7 @@ A reference document ([`docs/lathe-workspace-contract.md`](../lathe-workspace-co
 | `workspace.json` | `WorkspaceManifestData` (with `outputs`, `buildFiles`) |
 | `java-home`, `jvm.args` | plain text |
 | `style.json` | `WorkspaceStyle` |
-| `lathe-sync.sh` | sync script contract ([Sync Launcher](../planned/lathe-sync-launcher.md)) |
+| `lathe-sync.sh` | sync script contract ([Sync Launcher](lathe-sync-launcher.md)) |
 | `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | launcher links into `~/.cache/lathe/servers/` |
 | `lathe.lock` | build lock: held while a build writes `.lathe/`, heartbeated, considered stale after 2 minutes (`LatheLock`) |
 

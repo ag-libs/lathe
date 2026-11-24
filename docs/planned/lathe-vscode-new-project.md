@@ -19,7 +19,7 @@ Without a project that hurdle is the whole experience: the user opens a `Main.ja
 | Have a JDK | §4 here: detected and explained, never installed. |
 | Have Maven | Not needed: the generated project carries the Maven Wrapper (§5). |
 | Start a new project | This design. |
-| Open an existing project | [`:LatheInit`](../potential/lathe-init.md) (personal mode), potential. |
+| Open an existing project | [`:LatheInit`](../potential/lathe-init.md) (personal mode), implemented in Neovim. |
 | First build | §6 here, and the client's first-run UX (§7 there) for existing projects. |
 | Lathe starts | Picked up without a reload (§7), shared with the client's first-run UX. |
 | Run `main`, run tests | [Run and Test in VS Code](lathe-vscode-run-test.md), phase 3. |

@@ -32,7 +32,8 @@ Several projects can share downloaded sources and installed server versions unde
 | `.lathe/java-home` and `.lathe/jvm.args` | The JDK and JVM options the launcher uses. |
 | `~/.cache/lathe/` | Installed server versions, extracted library and JDK sources, type indexes, and MCP session logs. |
 
-To move the machine cache on Maven, pass `-Dlathe.cache=<dir>` to the build.
+To move the machine cache on Maven, set `-Dlathe.cache=<dir>` for every build, for example in `MAVEN_OPTS` in your shell profile, so the editor's sync script uses it too.
+`.mvn/maven.config` also works, but it applies to everyone who builds the project.
 MCP session logs stay in `~/.cache/lathe/logs/`.
 In Neovim, also start the editor with `LATHE_CACHE=<dir>` so dependency sources there still open read-only.
 In VS Code, add the directory to `files.readonlyInclude`.
@@ -88,8 +89,7 @@ The server uses the captured compile options for modules targeting older release
 
 The formatter is the project's own; there is no editor-wide formatter setting.
 On Maven, the sync derives it from your `spotless-maven-plugin` `<java>` config.
-Elsewhere — a Gradle build, or Maven without Spotless — you declare it in a `lathe-style.json`, as
-described under [Declaring it](#declaring-it), and the sync resolves it the same way.
+Elsewhere — a Gradle build, or Maven without Spotless — you declare it in a `lathe-style.json`, as described under [Declaring it](#declaring-it), and the sync resolves it the same way.
 
 | Spotless step | Lathe engine | Range formatting | Notes |
 |---|---|---|---|
@@ -98,35 +98,24 @@ described under [Declaring it](#declaring-it), and the sync resolves it the same
 | `eclipse` | `eclipse` | yes | honours `version` and the `<file>` profile (Eclipse XML export or `.prefs`); member sorting is not applied |
 | anything else | `none` | — | sync warns; select an external command below |
 
-palantir-java-format has no release that runs on JDK 27 yet (2.102.0 is the latest as of October
-2026): it reads a javac field JDK 27 removed.
-Lathe runs the formatter on your build's JDK (`.lathe/java-home`, unless `LATHE_JAVA_HOME` overrides
-it), so it fails exactly where `spotless:apply` itself fails; the buffer is left unchanged and the
-first failure names the cause.
+palantir-java-format has no release that runs on JDK 27 yet (2.103.0 is the latest as of November 2026, [palantir-java-format#1785](https://github.com/palantir/palantir-java-format/issues/1785)): it reads a javac field JDK 27 removed.
+Lathe runs the formatter on your build's JDK (`.lathe/java-home`, unless `LATHE_JAVA_HOME` overrides it), so it fails exactly where `spotless:apply` itself fails; the buffer is left unchanged and the first failure names the cause.
 
-The formatter is the exact release the project's Spotless pins (its `<version>`, else that Spotless
-version's default), resolved by sync and run in-process from an isolated classloader — no Maven at
-format time, so a format takes milliseconds (the first one in a session also loads the formatter).
+The formatter is the exact release the project's Spotless pins (its `<version>`, else that Spotless version's default), resolved by sync and run in-process from an isolated classloader — no Maven at format time, so a format takes milliseconds (the first one in a session also loads the formatter).
 A change of formatter takes effect when the sync finishes.
 An editor whose session started without a formatter needs a restart of the language server to format, and Lathe says so.
 
 Lathe runs the **formatter step only**.
-Other steps in the same `<java>` section — `importOrder`, `removeUnusedImports` (beyond what
-google-java-format and palantir already do), `licenseHeader`, `formatAnnotations`, `toggleOffOn`
-(`spotless:off` regions), whitespace steps — and Spotless `<includes>`/`<excludes>` are **not** applied,
-so a saved file can still differ from `spotless:apply`.
+Other steps in the same `<java>` section — `importOrder`, `removeUnusedImports` (beyond what google-java-format and palantir already do), `licenseHeader`, `formatAnnotations`, `toggleOffOn` (`spotless:off` regions), whitespace steps — and Spotless `<includes>`/`<excludes>` are **not** applied, so a saved file can still differ from `spotless:apply`.
 If you need every step on save, use the `command-file` recipe below.
 
 Other limits:
 
-- One formatter serves the whole workspace: the root project's Spotless, or, when the root only manages it
-  (`<pluginManagement>`), the one every Java module runs.
+- One formatter serves the whole workspace: the root project's Spotless, or, when the root only manages it (`<pluginManagement>`), the one every Java module runs.
   If some Java modules run no Spotless or a different configuration, formatting is off and the sync says so.
-- An Eclipse profile must be a local file (Spotless also accepts URLs and classpath resources), and only
-  Eclipse releases Spotless pins with a lockfile are supported.
+- An Eclipse profile must be a local file (Spotless also accepts URLs and classpath resources), and only Eclipse releases Spotless pins with a lockfile are supported.
 - After editing an Eclipse profile, restart the language server.
-- If the formatter cannot run (a missing jar, an unsupported JDK), the first failure shows a message with
-  the reason; later ones are only logged.
+- If the formatter cannot run (a missing jar, an unsupported JDK), the first failure shows a message with the reason; later ones are only logged.
 
 ### Declaring it
 
@@ -138,27 +127,20 @@ A `lathe-style.json` at the repo root names the formatter, for any build tool:
 
 - `engine`: `google`, `aosp`, `palantir`, `eclipse`, or one of the engines below that need no jars.
 - `version` (optional): the formatter's release, not Spotless's — see [The formatter version](#the-formatter-version).
-- `options` (optional): the Spotless step's options from the table above (`reorderImports`,
-  `reflowLongStrings`, `formatJavadoc`, `style`, `groupArtifact`); for `eclipse`, `file` names the
-  profile, relative to the repo root.
+- `options` (optional): the Spotless step's options from the table above (`reorderImports`, `reflowLongStrings`, `formatJavadoc`, `style`, `groupArtifact`); for `eclipse`, `file` names the profile, relative to the repo root.
 
 #### The formatter version
 
-`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for
-palantir-java-format, `4.41` for Eclipse.
+`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for palantir-java-format, `4.41` for Eclipse.
 It is what the jars are resolved at, so pin it when the editor must format exactly as your CI does.
 
 Left out, it is the default Spotless picks:
 
-- the default of the build's Spotless when the build has one (on Gradle, only a Spotless applied in the
-  root project is seen; when only subprojects apply it, declare the version, and the sync warns until
-  you do);
+- the default of the build's Spotless when the build has one (on Gradle, only a Spotless applied in the root project is seen; when only subprojects apply it, declare the version, and the sync warns until you do);
 - otherwise the default of the Spotless release Lathe pins.
 
-Spotless picks the newest release that runs on the JVM it runs on: the JVM that runs the build (on
-Gradle, the daemon's JDK, not a toolchain's).
-The language server runs the formatter on the build's compiling JDK instead (`.lathe/java-home`), which
-a Gradle toolchain can make older.
+Spotless picks the newest release that runs on the JVM it runs on: the JVM that runs the build (on Gradle, the daemon's JDK, not a toolchain's).
+The language server runs the formatter on the build's compiling JDK instead (`.lathe/java-home`), which a Gradle toolchain can make older.
 When the formatter needs a newer Java than that, the sync says so on every run, for example:
 
 ```text
@@ -168,24 +150,18 @@ to a JDK 21 or later
 ```
 
 The sync reads `LATHE_JAVA_HOME` when the build sees it, so setting it there also silences the warning.
-Declare a release that runs on that JDK, or run the server on a newer one with
-[`LATHE_JAVA_HOME`](#choosing-the-server-jdk-lathe_java_home); the second keeps the formatter your build runs.
+Declare a release that runs on that JDK, or run the server on a newer one with [`LATHE_JAVA_HOME`](#choosing-the-server-jdk-lathe_java_home); the second keeps the formatter your build runs.
 
-Every sync resolves the declared formatter's jars through your build (its repositories, mirrors and
-credentials) and writes them to the generated `.lathe/style.json`, with the indentation the formatter
-implies; nobody writes a classpath.
+Every sync resolves the declared formatter's jars through your build (its repositories, mirrors and credentials) and writes them to the generated `.lathe/style.json`, with the indentation the formatter implies; nobody writes a classpath.
 Editing `lathe-style.json` makes the editor ask for a sync, as a build-file change does.
 
-Commit the file so the whole team gets the formatter, or keep a personal one out of version control
-with `.git/info/exclude`.
+Commit the file so the whole team gets the formatter, or keep a personal one out of version control with `.git/info/exclude`.
 
 On a Gradle build that applies Spotless, the sync warns until a `lathe-style.json` declares a formatter:
 Lathe cannot read Spotless's settings there.
 Declare the one Spotless runs, or `none` to keep formatting off.
 
-The file overrides the generated `.lathe/style.json` **section by section**: a `formatter` section
-replaces the detected formatter, and an `indent` section replaces the detected indent, while a section
-you leave out still comes from sync.
+The file overrides the generated `.lathe/style.json` **section by section**: a `formatter` section replaces the detected formatter, and an `indent` section replaces the detected indent, while a section you leave out still comes from sync.
 Edit `lathe-style.json`, not `.lathe/style.json`, which every sync regenerates.
 
 Engines that need no jars:
@@ -203,26 +179,20 @@ Engines that need no jars:
 ```
 
 - `command` pipes the buffer through the command (10 s timeout).
-- `command-file` writes the buffer to a hidden temporary file beside the edited one (so Spotless's
-  includes still match it), runs the command, and reads the result back (60 s timeout).
-  Its tokens: `%MVN%` → the build tool that ran your last build: on Maven, `mvnd`, the wrapper's Maven or `mvn`;
-  on Gradle, the Gradle distribution's `gradle`; `%MODULE%` → the edited file's module directory; `%FILE%` → the
-  temporary file.
+- `command-file` writes the buffer to a hidden temporary file beside the edited one (so Spotless's includes still match it), runs the command, and reads the result back (60 s timeout).
+  Its tokens: `%MVN%` → the build tool that ran your last build: on Maven, `mvnd`, the wrapper's Maven or `mvn`; on Gradle, the Gradle distribution's `gradle`; `%MODULE%` → the edited file's module directory; `%FILE%` → the temporary file.
   Running the build per save takes seconds; with `mvnd`, or a running Gradle daemon, it is far less.
 - Both run from the workspace root, format whole files only, and pay process startup on every format.
 
 ## Coexisting with another Java language server (jdtls)
 
-You can run Lathe side by side with Eclipse JDT LS (`nvim-jdtls` / the VS Code Java extension) on the
-same project — useful when migrating, or for comparing behaviour.
+You can run Lathe side by side with Eclipse JDT LS (`nvim-jdtls` / the VS Code Java extension) on the same project — useful when migrating, or for comparing behaviour.
 
-On a Maven build, first keep Lathe's build injection out of jdtls's own Maven import, or jdtls answers
-nothing: see [Lathe for Maven](maven.md#coexisting-with-jdtls-keep-lathe-out-of-its-maven-import).
+On a Maven build, first keep Lathe's build injection out of jdtls's own Maven import, or jdtls answers nothing: see [Lathe for Maven](maven.md#coexisting-with-jdtls-keep-lathe-out-of-its-maven-import).
 On every build, keep jdtls from indexing `.lathe/`:
 
-`.lathe/` is generated build output. Add `**/.lathe/**` to jdtls's `java.import.exclusions` so it never
-scans the mirror — jdtls scopes imports with explicit globs, not `.gitignore`, so gitignoring `.lathe/`
-alone is not enough:
+`.lathe/` is generated build output.
+Add `**/.lathe/**` to jdtls's `java.import.exclusions` so it never scans the mirror — jdtls scopes imports with explicit globs, not `.gitignore`, so gitignoring `.lathe/` alone is not enough:
 
 ```jsonc
 "java.import.exclusions": [
@@ -232,8 +202,7 @@ alone is not enough:
 ]
 ```
 
-In VS Code this goes in `settings.json`; with `nvim-jdtls` it is the `settings.java.import.exclusions`
-table you pass to `start_or_attach`.
+In VS Code this goes in `settings.json`; with `nvim-jdtls` it is the `settings.java.import.exclusions` table you pass to `start_or_attach`.
 
 > For a systematic behavioural comparison of the two servers, the `dev/jdtls_diff.py` differential
 > harness drives both over identical probe points and reports divergences — see

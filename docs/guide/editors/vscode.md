@@ -48,7 +48,7 @@ Nothing to configure, unless you moved the cache with `-Dlathe.cache=<dir>`: the
 
 ## If the wrong JDK is picked
 
-The extension reads the JDK recorded by the build in `.lathe/java-home`.
+The launcher the extension starts reads the JDK recorded by the build in `.lathe/java-home`.
 To choose another JDK, set `LATHE_JAVA_HOME` in the environment you start VS Code or Cursor from.
 [Choosing the server JDK](../installation.md#choosing-the-server-jdk-lathe_java_home)
 
@@ -61,10 +61,8 @@ Lathe picks up changes to Java sources automatically.
 
 ## Known issues
 
-- **One Lathe project per window.** In a multi-root workspace each Lathe folder starts its own server,
-  but the extension does not scope documents to their folder, so every server may receive every
-  folder's Java files.
-  Open each project in its own window for now.
+- **A folder path with glob characters.** Each Lathe project gets only the Java files under its own root, unless the root's path contains `*`, `?`, `[`, `]`, `{` or `}`.
+  Such a project's server receives the Java files of every open folder, so open it in its own window.
 - **"Add missing imports…" does nothing.** The whole-file action has no effect in VS Code yet; the single-type quick fixes (*Import 'java.util.List'*) work.
 
 ## Not available yet
