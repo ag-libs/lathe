@@ -32,6 +32,7 @@ import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import io.github.aglibs.lathe.server.run.LaunchTarget;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -757,6 +758,25 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.blockedReasons())
         .anyMatch(reason -> reason.startsWith("no lathe-test-runner jar recorded"));
+  }
+
+  // A capture an older Lathe wrote, which this one cannot read, is told like a missing one.
+  @Test
+  void runTestFuture_captureThisLatheCannotRead_blockedWithTheCommandThatCapturesIt()
+      throws Exception {
+    writeManifest();
+    final Path moduleDir =
+        Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR).resolve("app"));
+    Files.writeString(
+        moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE),
+        "{\"framework\": \"surefire\"}",
+        StandardCharsets.UTF_8);
+    host.initialize(tmp);
+
+    assertThat(blockedReasons("com.example.Foo"))
+        .containsExactly(
+            "no captured test launch for app; run `%s` to capture it"
+                .formatted(LatheLayout.captureTestsCommand("app")));
   }
 
   @Test

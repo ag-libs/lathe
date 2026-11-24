@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -8,6 +9,7 @@ import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -25,6 +27,40 @@ final class LaunchReaderTest {
 
     assertThat(reader.test("app", LatheLayout.TEST_CLASSES_DIR)).isEmpty();
     assertThat(reader.main("app")).isEmpty();
+    assertThat(reader.testCaptured("app")).isFalse();
+  }
+
+  // An older Lathe's capture (a field this one requires is missing) and a damaged one are no
+  // capture: nothing to run, and the module does not count as captured.
+  @Test
+  void test_captureThisLatheCannotRead_readsAsNotCaptured() throws IOException {
+    final Path moduleDir =
+        Files.createDirectories(workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve("app"));
+    final var reader = new LaunchReader(workspaceRoot);
+
+    for (final String content : List.of("{\"framework\": \"surefire\"}", "{ not json")) {
+      Files.writeString(
+          moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE), content, StandardCharsets.UTF_8);
+
+      assertThat(reader.test("app", LatheLayout.TEST_CLASSES_DIR)).as(content).isEmpty();
+      assertThat(reader.testCaptured("app")).as(content).isFalse();
+    }
+  }
+
+  // A capture that cannot be read at all (here a directory in its place, as a permission or I/O
+  // error would) is not mended by a new capture: the run fails on it, and the summary counts it.
+  @Test
+  void test_captureThatCannotBeReadAtAll_failsTheRunAndStillCounts() throws IOException {
+    Files.createDirectories(
+        workspaceRoot
+            .resolve(LatheLayout.LATHE_DIR)
+            .resolve("app")
+            .resolve(LatheLayout.TEST_LAUNCH_FILE));
+    final var reader = new LaunchReader(workspaceRoot);
+
+    assertThatThrownBy(() -> reader.test("app", LatheLayout.TEST_CLASSES_DIR))
+        .isInstanceOf(IOException.class);
+    assertThat(reader.testCaptured("app")).isTrue();
   }
 
   @Test
@@ -65,6 +101,7 @@ final class LaunchReaderTest {
     final var reader = new LaunchReader(workspaceRoot);
 
     assertThat(reader.test("app", LatheLayout.TEST_CLASSES_DIR)).contains(testLaunch);
+    assertThat(reader.testCaptured("app")).isTrue();
     assertThat(reader.main("jpms")).contains(mainLaunch);
     // A Gradle source set's tests replay from its tree's own launch, not the module's.
     assertThat(reader.test("gradle", integrationTree)).contains(testLaunch);
