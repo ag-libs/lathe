@@ -416,8 +416,11 @@ def write_report(cfg_name, version, head, results, loaded):
     if not previous:
         return
     before = json.loads(previous[-1].read_text(encoding="utf-8"))
-    times = {c["label"]: c["ms"] for c in before["checks"]}
+    # A check that was skipped never ran: its 0ms is no baseline, and a skipped one now has no time.
+    times = {c["label"]: c["ms"] for c in before["checks"] if c["status"] != "SKIP"}
     for check in results:
+        if check["status"] == "SKIP":
+            continue
         was = times.get(check["label"])
         if was is not None and check["ms"] > 2 * was and check["ms"] - was > 500:
             print("SLOWER      %-56s %6dms  was %dms in %s on %s%s"
