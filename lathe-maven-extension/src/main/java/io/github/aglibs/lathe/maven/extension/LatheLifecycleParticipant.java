@@ -43,6 +43,10 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   // The system property Maven sets to its own version.
   private static final String MAVEN_VERSION_PROPERTY = "maven.version";
 
+  // The user property m2e (Eclipse, jdtls) sets on every request of its embedded Maven. m2e cannot
+  // configure the injected compilerId, so jdtls would get no Java build path and answer nothing.
+  static final String M2E_VERSION_PROPERTY = "m2e.version";
+
   private static final Logger LOG = LoggerFactory.getLogger(LatheLifecycleParticipant.class);
 
   // Single-session-per-JVM state: a Maven session takes the lock in afterProjectsRead and releases
@@ -56,6 +60,11 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   @Override
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
+    if (insideM2e(session)) {
+      LOG.info("[lathe] Off: inside m2e (Eclipse, jdtls); the build is left as it is.");
+      return;
+    }
+
     final Optional<String> off =
         LatheFlags.disabledNotice(
             System.getProperty(LatheFlags.DISABLED),
@@ -290,6 +299,12 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   // multiModuleProjectDirectory, which can lie above it.
   private static Path reactorRoot(final MavenSession session) {
     return session.getTopLevelProject().getBasedir().toPath();
+  }
+
+  // Checked before lathe.disabled: an explicit -Dlathe.disabled=false cannot make m2e configure
+  // the injected compiler, so inside m2e Lathe stays off either way.
+  static boolean insideM2e(final MavenSession session) {
+    return session.getUserProperties().getProperty(M2E_VERSION_PROPERTY) != null;
   }
 
   // Team-wide opt-out committed in the reactor POM (<lathe.disabled>true</...>), read from the

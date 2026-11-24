@@ -15,7 +15,8 @@ Choose the [manual POM setup](#method-2--manual-pom-configuration) if you want t
 - Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not captured, so they can't be run or debugged from the editor; see [test capture](test-capture.md) for the other test requirements.
 
 Lathe stays out of CI builds: when the `CI` environment variable is set, it injects nothing, unless you pass `-Dlathe.disabled=false`.
-`-Dlathe.disabled=true` turns it off anywhere (see [jdtls](#coexisting-with-jdtls-keep-lathe-out-of-its-maven-import)).
+`-Dlathe.disabled=true` turns it off anywhere.
+Inside jdtls's or Eclipse's Maven it stays off by itself (see [jdtls](#coexisting-with-jdtls)).
 
 ## Method 1 — Maven extension (recommended)
 
@@ -184,40 +185,29 @@ Put required `-D` properties or `-P` profiles in `.mvn/maven.config` so they als
 
 See [workspace files](installation.md#what-and-where-lathe-writes), [formatter setup](installation.md#choosing-overriding-or-opting-out-of-the-formatter), and [test capture](test-capture.md) for details.
 
-## Coexisting with jdtls: keep Lathe out of its Maven import
+## Coexisting with jdtls
 
-jdtls imports a project with its own embedded Maven (m2e).
-The Lathe extension injects `compilerId=lathe` into the effective POM (see [What Lathe needs](#what-lathe-needs-in-the-build)), and m2e does not recognise that compiler id — so it imports the modules but **cannot configure their Java build path**, and every jdtls request (hover, definition, completion, …) then returns empty, with no error.
-Lathe itself is unaffected: it serves from the already-captured `.lathe/` and never runs Maven at query time.
+jdtls, and Eclipse, import a project with their own embedded Maven (m2e), which loads the Lathe extension as any Maven build does.
+Lathe recognises m2e by the `m2e.version` property m2e sets, and leaves that build as it is: jdtls imports the project as it would without Lathe.
+Your command-line `mvn` and the Lathe server are not affected.
 
-The fix is to disable Lathe's injection **for jdtls's Maven only**.
-Lathe honours the `-Dlathe.disabled=true` system property and skips all injection when it is set — so jdtls imports a normal plain-`javac` build path, while your command-line `mvn` and the Lathe server stay fully enabled.
+The [manual POM setup](#method-2--manual-pom-configuration) writes `<compilerId>lathe</compilerId>` into the POM itself, which m2e cannot configure, so jdtls answers nothing there.
+Put the three blocks in a profile that m2e does not activate, as its `m2e.version` property is set only inside m2e:
 
-**Recommended — a jdtls-only JVM arg (no effect on your CLI builds).**
-m2e runs in-process in the jdtls JVM, so a `-D` on the jdtls process reaches it.
-With `nvim-jdtls`:
-
-```lua
-require("jdtls").start_or_attach({
-  cmd = { "jdtls", "--jvm-arg=-Dlathe.disabled=true" },
-  -- jdtls 1.51 runs on JDK 21–25, NOT 26 (its bundled ASM rejects class version 70). Point its
-  -- runtime at a JDK <= 25; this is separate from your project's own JDK.
-  cmd_env = { JAVA_HOME = "/path/to/jdk-25" },
-  -- ... your root_dir, settings, etc.
-})
+```xml
+<profile>
+  <id>lathe</id>
+  <activation>
+    <property>
+      <name>!m2e.version</name>
+    </property>
+  </activation>
+  <!-- the <build> and <dependencies> blocks of the manual setup -->
+</profile>
 ```
 
-**Alternative — `.mvn/maven.config`** (one line, no editor config), at the reactor root:
-
-```
--Dlathe.disabled=true
-```
-
-This is read by jdtls's embedded Maven *and* your CLI `mvn`, so plain `mvn` builds also skip Lathe; refresh `.lathe/` explicitly by overriding on the command line:
-
-```bash
-mvn -Dlathe.disabled=false clean test -Dlathe.capture.only=true
-```
+Lathe versions before 0.4.0 inject their build wiring into m2e too, which cannot configure the injected `compilerId=lathe`: jdtls then answers nothing (no definition, hover or completion), with no error.
+With those versions, start jdtls with `-Dlathe.disabled=true`; with `nvim-jdtls`, `cmd = { "jdtls", "--jvm-arg=-Dlathe.disabled=true" }`.
 
 [Installing Lathe](installation.md#coexisting-with-another-java-language-server-jdtls) has the other half:
 keeping jdtls from indexing `.lathe/`.
