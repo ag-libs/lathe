@@ -307,6 +307,25 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
             item -> item.getInsertText() != null && item.getInsertText().contains("@Override"));
   }
 
+  // A qualified name in a type argument completes from its own qualifier, not from the type the
+  // argument belongs to (`java.util.List<java.util` is no receiver).
+  @Test
+  void typeArgument_qualifiedName_completesQualifierMembers() {
+    for (final String source :
+        List.of(
+            "class Test { java.util.List<java.util.Ma§> x; }",
+            "class Test { java.util.Map<java.util.List<java.util.Ma§>, String> x; }",
+            "class Test { Object m() { return java.util.Collections.<java.util.Ma§>emptyList(); } }")) {
+      assertThat(labels(fixture.complete(source)))
+          .as(source)
+          .contains("Map")
+          .doesNotContain("Math");
+    }
+
+    assertThat(labels(fixture.complete("class Test { java.util.List<java.util.Map.En§> x; }")))
+        .contains("Entry");
+  }
+
   // A type parameter's name declares a new name: nothing completes there.
   @Test
   void typeParameterName_declaredName_offersNothing() {

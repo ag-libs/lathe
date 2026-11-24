@@ -210,17 +210,22 @@ final class SentinelInjector {
       return null;
     }
 
+    // A `<` the scan meets before any `>` or quote is unmatched: it opens the type argument the
+    // receiver is written in (`List<java.util.`), or is a comparison (`a<b.`). Past a `>` it may
+    // pair with it, and past a quote sit in a literal, so there the scan keeps to parentheses.
     int depth = 0;
+    boolean bracketsKnown = true;
     int i = end;
     while (i >= 0) {
       final char c = content.charAt(i);
+      bracketsKnown &= c != '>' && c != '"' && c != '\'';
       if (c == ')' || c == ']') {
         depth++;
       } else if (c == '(' || c == '[') {
         depth--;
       }
 
-      if (depth < 0) {
+      if (depth < 0 || depth == 0 && bracketsKnown && c == '<') {
         break;
       }
 
