@@ -12,3 +12,9 @@ node_modules/
 lathe-gradle-plugin/build/
 /dev/reports/battery/
 /dev/reports/release-*.md
+# Dated QA and pre-release notes stay local; findings go to the gap registry.
+/dev/reports/prerelease-*.md
+/dev/reports/qa-*.md
+/dev/reports/wip-*/
+# Neovim writes its log to the working directory when its state directory is not writable.
+nvim.log
