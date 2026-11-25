@@ -4,7 +4,7 @@
 ([Rename](../done/lathe-rename.md), [Extract Variable](../done/lathe-extract-variable.md),
 [Extract Method](../done/lathe-extract-method.md)).
 Move remains a request.
-A comparison with jdtls on spring-petclinic (2026-11-25, below) lists the code actions jdtls offers and Lathe does not; they are requests, not planned work.
+A comparison with jdtls on spring-petclinic (2026-11-25, below) lists the code actions jdtls offers and Lathe does not; they are requests, not planned work, tracked as [EG-114](../gaps/gaps.md), deferred while the feature freeze holds.
 
 ## Problem / motivation
 
