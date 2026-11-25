@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -20,6 +21,92 @@ import org.junit.jupiter.params.provider.CsvSource;
 class TypeHierarchyTest {
 
   @TempDir private Path sourceRoot;
+
+  // The index knows an anonymous or local class only as Outer$1 or Outer$1Local: each is listed
+  // where its file creates or declares it (spring-petclinic's two `new PetType() {` were missing),
+  // and stands for its own entry. An anonymous class of another type, and a same-named local class
+  // that is no subtype, are not listed.
+  @Test
+  void subtypes_anonymousAndLocalSubclasses_listedWhereTheFileCreatesThem() throws IOException {
+    final String content = "interface Service {}\n";
+    write("Service.java", content);
+    write(
+        "Direct.java",
+        """
+        class Direct {
+          Service made = new Service() {};
+          Runnable other = new Runnable() { public void run() {} };
+          void m() {
+            class Local implements Service {}
+          }
+          void n() {
+            class Local {}
+          }
+          void o(int x) {
+            switch (x) {
+              case 1:
+                class Cased implements Service {}
+            }
+          }
+        }
+        """);
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                List.of(
+                    entry("Service", TypeKind.INTERFACE),
+                    entry("Direct", TypeKind.CLASS, "java.lang.Object"),
+                    entry("Direct$1", TypeKind.CLASS, "java.lang.Object", "Service"),
+                    entry("Direct$2", TypeKind.CLASS, "java.lang.Object", "java.lang.Runnable"),
+                    entry("Direct$1Local", TypeKind.CLASS, "java.lang.Object", "Service"),
+                    entry("Direct$2Local", TypeKind.CLASS, "java.lang.Object"),
+                    entry("Direct$1Cased", TypeKind.CLASS, "java.lang.Object", "Service"))));
+    final var request = request(content, new Position(0, 12));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+
+      assertThat(session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot)))
+          .extracting(
+              TypeHierarchyItem::getName,
+              subtype -> subtype.getSelectionRange().getStart(),
+              subtype -> TypeHierarchyItemDataCodec.decode(subtype.getData()).binaryName())
+          .containsExactlyInAnyOrder(
+              tuple("new Service() {...}", new Position(1, 17), "Direct$1"),
+              tuple("Local", new Position(4, 10), "Direct$1Local"),
+              tuple("Cased", new Position(12, 14), "Direct$1Cased"));
+    }
+  }
+
+  // An enum constant's body is an anonymous subclass of its enum, named after its constant.
+  @Test
+  void subtypes_enumConstantBody_listedAsTheEnumsSubtype() throws IOException {
+    final String content = "enum Mode {\n  PLAIN,\n  CUSTOM {}\n}\n";
+    write("Mode.java", content);
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                List.of(
+                    entry("Mode", TypeKind.ENUM, "java.lang.Enum"),
+                    entry("Mode$1", TypeKind.CLASS, "Mode"))));
+    final var request = request(content, new Position(0, 6));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+
+      assertThat(session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot)))
+          .singleElement()
+          .satisfies(
+              subtype -> {
+                assertThat(subtype.getName()).isEqualTo("CUSTOM");
+                assertThat(subtype.getSelectionRange().getStart().getLine()).isEqualTo(2);
+              });
+    }
+  }
 
   @Test
   void hierarchy_typeCursor_preparesAndReturnsDirectSourceBackedRelations() throws IOException {
