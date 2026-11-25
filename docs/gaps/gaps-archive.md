@@ -7,6 +7,44 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-040 — Rename's text review lists a resource match once per declared resource folder, and at column 1 — done
+
+**Status: done** (2026-11-25; triaged 2026-11-25: low, for the release; the review list is advisory, but a doubled row and a wrong column make it look unreliable; size S)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `rename_symbol`'s "Not renamed — review" list (and every caller of `TextMentions.inResources`).**
+
+Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2).
+
+### Observed behaviour
+
+Renaming the field `Owner.city` to `town` lists `src/main/resources/templates/owners/ownersList.html:25:1: <td th:text="${owner.city}" />` twice, and at column 1 (`owner.city` starts at column 23).
+Petclinic's pom declares `src/main/resources` twice, filtered and not (`workspace.json` `resourceRoots`), a common Maven pattern; `TextMentions.inResources` walks each declared folder, and `resourceMentions` reports every match at `new Position(i, 0)`.
+
+### Expected
+
+Each match once, at the column of the name.
+
+### Fix
+
+`TextMentions.inResources` reads each file once, whichever listed folders hold it (a folder declared twice, or one inside another), and `ResourceRootIndex.sourceDirs()` lists each declared folder once, which `ResourceMirror` reads too.
+A resource match is reported at the first qualified occurrence on its line, the one that made it a mention, with the column counted after a byte order mark; `TextMentions.find` lists each place once, as a literal in a Java folder a build also declares as a resource root came from both scans.
+
+Checked on Petclinic with a server built from the branch: renaming `Owner.city` lists `ownersList.html:25:30` once (11 rows, 12 before).
+
+Not covered: a line holding the name qualified twice is one row, at the first; two declarations of one folder that differ only in letter case are still two folders on a case-insensitive file system.
+
+### Regression targets
+
+- `TextMentionsTest.inResources_folderListedTwiceAndMatchMidLine_oncePerMatchAtItsColumn`
+- `TextMentionsTest.find_byteOrderMarkAndJavaFolderAsResourceRoot_eachPlaceOnceAtItsColumn`
+- `ResourceRootIndexTest.sourceDirs_folderDeclaredTwice_listsItOnce`
+
+---
+
 ## EG-127 — Workspace symbol drops the project's own type for a short initials query — done
 
 **Status: done** (2026-11-25)
