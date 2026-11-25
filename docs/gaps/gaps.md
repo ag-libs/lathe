@@ -2432,35 +2432,3 @@ A type whose initials are exactly the query ranks above one that only contains t
 ### Regression targets
 
 None yet.
-
----
-
-## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind
-
-**Status: accepted** (triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M)
-
-**Kind: bug**
-
-**Value: medium — Size: S–M**
-
-**Affects: MCP `find_references` and `analyze_change`.**
-
-Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P3).
-
-### Observed behaviour
-
-`find_references` on `Owner.getCity()` answers "No uses: the symbol is declared, and nothing in the project uses it."; `analyze_change` answers `references: 0 production, 0 test`, `tests referencing it: none`.
-The templates bind its property: `ownersList.html:25` `${owner.city}`, `ownerDetails.html:28` `*{city}`; `getTelephone()` is used the same way, and by string in `OwnerControllerTests` (`hasProperty("telephone")`, `.param("telephone", …)`).
-
-### Expected
-
-No Java use is said as such, and where a getter, setter or field has none, the places its JavaBean property name is still text are listed, as rename lists an old name (`TextMentions`).
-
-### Fix direction
-
-Resolve the target at the position; for a field, its name, for a `get`/`is`/`set` accessor, its property name by JavaBeans rules; scan with `TextMentions.find` only when there is no Java use, so the cost stays rare.
-FR-036 (rename of an accessor) needs the same property name, and could reuse it.
-
-### Regression targets
-
-None yet.
