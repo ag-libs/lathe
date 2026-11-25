@@ -98,20 +98,28 @@ final class TypeHierarchyResolver {
 
   // A named type at its declaration; an anonymous or local class, which the index knows only as
   // Outer$1 or Outer$1Local and TypeSourceLocator cannot place, from its file's parse.
+  // In the index's order, which the explorer's lists keep (nearest subtypes first).
   private List<TypeHierarchyItem> typeHierarchyItems(
-      final List<TypeIndexEntry> entries, final List<java.nio.file.Path> sourceRoots) {
-    final Stream<TypeHierarchyItem> named =
-        entries.stream()
-            .filter(TypeSourceLocator::isNamedDeclaration)
-            .flatMap(entry -> typeHierarchyItem(entry, sourceRoots).stream());
-    final List<TypeIndexEntry> unnamed =
-        entries.stream().filter(entry -> !TypeSourceLocator.isNamedDeclaration(entry)).toList();
-    return Stream.concat(named, unnamedItems(unnamed, sourceRoots).stream()).toList();
+      final List<TypeIndexEntry> entries, final List<Path> sourceRoots) {
+    final Map<TypeIndexEntry, TypeHierarchyItem> unnamed =
+        unnamedItems(
+            entries.stream().filter(entry -> !TypeSourceLocator.isNamedDeclaration(entry)).toList(),
+            sourceRoots);
+    final var items = new ArrayList<TypeHierarchyItem>();
+    for (final TypeIndexEntry entry : entries) {
+      if (TypeSourceLocator.isNamedDeclaration(entry)) {
+        typeHierarchyItem(entry, sourceRoots).ifPresent(items::add);
+      } else if (unnamed.containsKey(entry)) {
+        items.add(unnamed.get(entry));
+      }
+    }
+
+    return List.copyOf(items);
   }
 
   // javac numbers anonymous and local classes, and a compiled class's number need not match the
   // edited source's, so each is found by what its file says, one parse per file.
-  private List<TypeHierarchyItem> unnamedItems(
+  private Map<TypeIndexEntry, TypeHierarchyItem> unnamedItems(
       final List<TypeIndexEntry> unnamed, final List<Path> sourceRoots) {
     final Map<Path, List<TypeIndexEntry>> byFile = new LinkedHashMap<>();
     for (final TypeIndexEntry entry : unnamed) {
@@ -119,22 +127,22 @@ final class TypeHierarchyResolver {
           .ifPresent(file -> byFile.computeIfAbsent(file, ignored -> new ArrayList<>()).add(entry));
     }
 
-    final var items = new ArrayList<TypeHierarchyItem>();
+    final var items = new LinkedHashMap<TypeIndexEntry, TypeHierarchyItem>();
     for (final Map.Entry<Path, List<TypeIndexEntry>> file : byFile.entrySet()) {
-      items.addAll(
+      items.putAll(
           parser
               .parseFile(
                   file.getKey(),
                   (trees, tree) ->
                       new UnnamedClassScanner(file.getKey(), file.getValue(), trees, tree).scan())
-              .orElse(List.of()));
+              .orElse(Map.of()));
     }
 
-    return List.copyOf(items);
+    return Map.copyOf(items);
   }
 
   private Optional<TypeHierarchyItem> typeHierarchyItem(
-      final TypeIndexEntry entry, final List<java.nio.file.Path> sourceRoots) {
+      final TypeIndexEntry entry, final List<Path> sourceRoots) {
     return TypeSourceLocator.locate(entry, sourceRoots, parser)
         .map(
             location -> {
@@ -168,7 +176,7 @@ final class TypeHierarchyResolver {
     // whose own number the parse cannot tell.
     private final ArrayDeque<String> enclosing = new ArrayDeque<>();
     private final Set<TypeIndexEntry> used = new HashSet<>();
-    private final List<TypeHierarchyItem> items = new ArrayList<>();
+    private final Map<TypeIndexEntry, TypeHierarchyItem> items = new LinkedHashMap<>();
 
     private UnnamedClassScanner(
         final Path file,
@@ -181,9 +189,9 @@ final class TypeHierarchyResolver {
       this.tree = tree;
     }
 
-    private List<TypeHierarchyItem> scan() {
+    private Map<TypeIndexEntry, TypeHierarchyItem> scan() {
       scan(tree, null);
-      return List.copyOf(items);
+      return Map.copyOf(items);
     }
 
     @Override
@@ -194,7 +202,7 @@ final class TypeHierarchyResolver {
                 entry -> {
                   final Range whole = Positions.range(trees, tree, node);
                   final Range at = new Range(whole.getStart(), whole.getStart());
-                  items.add(item(entry, anonymousName(node), whole, at));
+                  add(entry, item(entry, anonymousName(node), whole, at));
                 });
       }
 
@@ -214,7 +222,8 @@ final class TypeHierarchyResolver {
                     localNameRange(name)
                         .ifPresent(
                             range ->
-                                items.add(
+                                add(
+                                    entry,
                                     item(entry, name, Positions.range(trees, tree, node), range))));
       }
 
@@ -226,7 +235,9 @@ final class TypeHierarchyResolver {
       }
     }
 
-    // The entry an unnamed class stands for, each used once while another is left.
+    // The entry an unnamed class stands for, each at most once, so a class the index does not know
+    // yet (typed since the compile) lists nothing rather than another's entry twice; one whose
+    // supertypes are exactly the class's first, as two same-named local classes may share one.
     private Optional<TypeIndexEntry> match(final String localName, final Set<String> supertypes) {
       final String outer = enclosing.isEmpty() ? "" : enclosing.peek();
       if (outer.isEmpty()) {
@@ -238,11 +249,13 @@ final class TypeHierarchyResolver {
               .filter(entry -> outer.equals(outerBinaryName(entry)))
               .filter(entry -> localName.equals(localName(entry)))
               .filter(entry -> namesASupertype(entry, supertypes))
+              .filter(entry -> !used.contains(entry))
               .toList();
-      final Optional<TypeIndexEntry> fresh =
-          candidates.stream().filter(entry -> !used.contains(entry)).findFirst();
       final Optional<TypeIndexEntry> chosen =
-          fresh.isPresent() ? fresh : candidates.stream().findFirst();
+          candidates.stream()
+              .filter(entry -> supertypeNames(entry).equals(supertypes))
+              .findFirst()
+              .or(() -> candidates.stream().findFirst());
       chosen.ifPresent(used::add);
       return chosen;
     }
@@ -297,6 +310,10 @@ final class TypeHierarchyResolver {
       return item;
     }
 
+    private void add(final TypeIndexEntry entry, final TypeHierarchyItem item) {
+      items.put(entry, item);
+    }
+
     private static Set<String> declaredSupertypes(final ClassTree node) {
       return Stream.concat(
               Stream.ofNullable(node.getExtendsClause()), node.getImplementsClause().stream())
@@ -306,9 +323,16 @@ final class TypeHierarchyResolver {
 
     private static boolean namesASupertype(
         final TypeIndexEntry entry, final Set<String> supertypes) {
+      return supertypeNames(entry).stream().anyMatch(supertypes::contains);
+    }
+
+    // The names a source spells the entry's supertypes with; Object, which it need not spell, left
+    // out.
+    private static Set<String> supertypeNames(final TypeIndexEntry entry) {
       return entry.directSupertypes().stream()
+          .filter(supertype -> !"java.lang.Object".equals(supertype))
           .map(UnnamedClassScanner::simpleName)
-          .anyMatch(supertypes::contains);
+          .collect(Collectors.toUnmodifiableSet());
     }
 
     // Outer$1 and Outer$1Local are both Outer's; the number is the compile's, not the source's.
@@ -328,9 +352,17 @@ final class TypeHierarchyResolver {
       return last.substring(digits);
     }
 
+    // A local supertype's binary name (Outer$1Local) carries the compile's number before its name.
     private static String simpleName(final String binaryName) {
-      return binaryName.substring(
-          Math.max(binaryName.lastIndexOf('.'), binaryName.lastIndexOf('$')) + 1);
+      final String last =
+          binaryName.substring(
+              Math.max(binaryName.lastIndexOf('.'), binaryName.lastIndexOf('$')) + 1);
+      int digits = 0;
+      while (digits < last.length() && Character.isDigit(last.charAt(digits))) {
+        digits++;
+      }
+
+      return last.substring(digits);
     }
 
     private static String simpleTypeName(final Tree type) {

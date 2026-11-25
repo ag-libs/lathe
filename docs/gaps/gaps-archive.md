@@ -33,16 +33,19 @@ An anonymous subclass is a subtype, listed at its `new` expression, as jdtls and
 ### Resolution
 
 An unnamed subtype is now placed from its file's parse, one parse per file, and matched to the index entry it stands for, not by javac's number (a compiled class's need not match the edited source's): by the named class enclosing it (the entry's binary name before its number) and the type its `new`, or its `extends`/`implements`, names (one of the entry's supertypes).
-An anonymous class is listed at its `new` (the item's range is the whole expression), an enum constant's body under its constant's name, a local class at its name, declared in a block or an old-style `case` group; each item carries its own entry's binary name and kind.
+An anonymous class is listed at its `new` (the item's range is the whole expression), an enum constant's body under its constant's name, a local class at its name, declared in a block or an old-style `case` group; each item carries its own entry's binary name and kind, and the list keeps the index's order.
+Each entry stands for one class at most, an entry whose supertypes are exactly the class's first (two same-named local classes), so a class typed since the compile, which the index does not know yet, lists nothing rather than another's entry again; a local class's subclass names it without the compile's number (`Outer$1Local`), so it is found too.
 Checked on spring-petclinic with a server built from the branch: `PetType` lists both `new PetType() {...}`, at `PetTypeFormatterTests.java` 84 and 89.
 
 Not covered: the match reads the parse, unattributed, so an anonymous or local class of a same-named type from another package, in the same outer class, would be listed too.
 A class nested in an anonymous or local class (`Outer$1Local$Inner`) is not placed: the parse cannot tell the outer one's number.
+The explorer's truncation still counts every transitive subtype, the ones it cannot place among them.
 
 ### Regression targets
 
 - `TypeHierarchyTest.subtypes_anonymousAndLocalSubclasses_listedWhereTheFileCreatesThem`
 - `TypeHierarchyTest.subtypes_enumConstantBody_listedAsTheEnumsSubtype`
+- `TypeHierarchyTest.subtypes_localSubclassesAndSameNamedLocals_eachStandsForItsOwnEntry`
 
 ---
 

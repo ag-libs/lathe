@@ -66,7 +66,8 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+      final TypeHierarchyItem item =
+          session.hierarchy().prepareTypeHierarchy(request, index).get(0);
 
       assertThat(session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot)))
           .extracting(
@@ -77,6 +78,70 @@ class TypeHierarchyTest {
               tuple("new Service() {...}", new Position(1, 17), "Direct$1"),
               tuple("Local", new Position(4, 10), "Direct$1Local"),
               tuple("Cased", new Position(12, 14), "Direct$1Cased"));
+    }
+  }
+
+  // A local class's subclass names it without the compile's number (Outer$1Local); two same-named
+  // local classes each stand for the entry whose supertypes are theirs; and a class the index does
+  // not know yet (typed since the compile) takes no other's entry.
+  @Test
+  void subtypes_localSubclassesAndSameNamedLocals_eachStandsForItsOwnEntry() throws IOException {
+    final String content = "interface Service {}\n";
+    write("Service.java", content);
+    write(
+        "Outer.java",
+        """
+        class Outer {
+          Service first = new Service() {};
+          Service typedSince = new Service() {};
+          void m() {
+            class Local implements Service {}
+            class Sub extends Local {}
+          }
+          void n() {
+            class Local implements Service, Runnable { public void run() {} }
+          }
+        }
+        """);
+    final var index =
+        WorkspaceTypeIndex.build(
+            List.of(),
+            TempSourceCompiler.reactorShards(
+                List.of(
+                    entry("Service", TypeKind.INTERFACE),
+                    entry("Outer", TypeKind.CLASS, "java.lang.Object"),
+                    entry("Outer$1", TypeKind.CLASS, "java.lang.Object", "Service"),
+                    entry(
+                        "Outer$2Local",
+                        TypeKind.CLASS,
+                        "java.lang.Object",
+                        "Service",
+                        "java.lang.Runnable"),
+                    entry("Outer$1Local", TypeKind.CLASS, "java.lang.Object", "Service"),
+                    entry("Outer$1Sub", TypeKind.CLASS, "Outer$1Local"))));
+    final var request = request(content, new Position(0, 12));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final TypeHierarchyItem service =
+          session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+      final List<TypeHierarchyItem> subtypes =
+          session.hierarchy().typeHierarchySubtypes(service, index, List.of(sourceRoot));
+
+      assertThat(subtypes)
+          .extracting(
+              subtype -> subtype.getSelectionRange().getStart().getLine(),
+              subtype -> TypeHierarchyItemDataCodec.decode(subtype.getData()).binaryName())
+          .containsExactlyInAnyOrder(
+              tuple(1, "Outer$1"), tuple(4, "Outer$1Local"), tuple(8, "Outer$2Local"));
+      final TypeHierarchyItem local =
+          subtypes.stream()
+              .filter(subtype -> subtype.getSelectionRange().getStart().getLine() == 4)
+              .findFirst()
+              .orElseThrow();
+      assertThat(session.hierarchy().typeHierarchySubtypes(local, index, List.of(sourceRoot)))
+          .extracting(TypeHierarchyItem::getName)
+          .containsExactly("Sub");
     }
   }
 
@@ -96,7 +161,8 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+      final TypeHierarchyItem item =
+          session.hierarchy().prepareTypeHierarchy(request, index).get(0);
 
       assertThat(session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot)))
           .singleElement()
@@ -173,7 +239,8 @@ class TypeHierarchyTest {
                         entry("Service", TypeKind.INTERFACE),
                         entry("Direct", TypeKind.CLASS, "Service"),
                         sibling)));
-        final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+        final TypeHierarchyItem item =
+            session.hierarchy().prepareTypeHierarchy(request, index).get(0);
         final List<TypeHierarchyItem> subtypes =
             session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot));
 
@@ -214,7 +281,8 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+      final TypeHierarchyItem item =
+          session.hierarchy().prepareTypeHierarchy(request, index).get(0);
 
       final var result =
           session.hierarchy().typeHierarchyExplore(item, index, List.of(sourceRoot), 2000);
@@ -248,7 +316,8 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
+      final TypeHierarchyItem item =
+          session.hierarchy().prepareTypeHierarchy(request, index).get(0);
 
       final var result =
           session.hierarchy().typeHierarchyExplore(item, index, List.of(sourceRoot), 1);
