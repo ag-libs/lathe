@@ -933,6 +933,9 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     sourceSetTree("demo", "com.example.User", List.of("demo"), lib);
     sourceSetTree("demoTests", "com.example.UserTest", List.of("demoTests", "demo"), lib);
     host.initialize(tmp);
+    // The startup pass writes these trees into .lathe/; ended mid-write, the test left a file
+    // being created there, which Windows would not let the temp dir's cleanup delete.
+    awaitStartup();
     openDoc(target, targetContent);
     final int offset = targetContent.indexOf("target()");
 
@@ -975,6 +978,9 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     sourceSetTree("demo", "com.example.Helper");
     sourceSetTree("demoTests", "com.example.HelperTest", List.of("demoTests", "demo"), List.of());
     host.initialize(tmp);
+    // The startup pass writes these trees into .lathe/; ended mid-write, the test left a file
+    // being created there, which Windows would not let the temp dir's cleanup delete.
+    awaitStartup();
     openDoc(test, testContent);
 
     final List<? extends Location> locations =
