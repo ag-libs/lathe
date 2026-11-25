@@ -831,35 +831,6 @@ None yet.
 
 ---
 
-## EG-128 — Type hierarchy leaves out anonymous subclasses
-
-**Status: accepted** (triaged 2026-11-25: low; a subtype is missing from the hierarchy that go to implementation finds)
-
-**Kind: bug**
-
-**Affects: type hierarchy subtypes in the editor (and the explorer, whose truncation counts them).**
-
-Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`), and reproduced from the code.
-
-### Observed behaviour
-
-`PetType`'s hierarchy lists its supertype `NamedEntity` and no subtypes, without the two `new PetType() { … }` in `PetTypeFormatterTests.java:84` and `:89`; jdtls lists them as subtypes (`new PetType() {...}`).
-Go to implementation finds anonymous classes (`LatheEngineNavigationTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`), so the two disagree.
-
-### Cause (read from the code, not fixed)
-
-`TypeHierarchyResolver` builds each item through `TypeSourceLocator.locate`, which returns empty for an entry that is not a named declaration (`PetTypeFormatterTests$1`), so the subtype is dropped; the explorer still counts it in `allSubtypes` when it decides whether the list is truncated.
-
-### Expected
-
-An anonymous subclass is a subtype, listed at its `new` expression, as jdtls and go to implementation give it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-129 — CamelHumps symbol matching matches letters that start no word
 
 **Status: documented**
