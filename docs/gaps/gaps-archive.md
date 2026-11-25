@@ -15085,6 +15085,40 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-14 — On a project with both a Maven and a Gradle build, `:LatheInit` picks Gradle without saying Maven is there — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheInit` without a kind on a folder whose root holds both `pom.xml` and a Gradle settings script; the Neovim client.**
+
+Found testing `:LatheInit` on spring-petclinic (2026-11-25), which ships both builds.
+
+### Observed behaviour
+
+`M.find_build` prefers the Gradle root when both roots are the same folder, and the prompt says only "set up Lathe 0.1.0-SNAPSHOT for the Gradle build in: <root>".
+Nothing tells the user the project also has a Maven build, or that `:LatheInit maven` would choose it; a Maven user accepts the prompt and gets a Gradle setup, here one that fails on the Gradle build's Java 17 toolchain.
+
+### Expected
+
+With both builds at the same root, the prompt names both and how to choose the other (`:LatheInit maven`), or asks which to set up.
+
+### Resolution
+
+At one root with both builds, Gradle still wins, as a project that ships both usually keeps both working, but the prompt now names the other: "set up Lathe 9.9.9 for the Gradle build (a Maven build is there too: `:LatheInit maven`) in: ".
+`find_build` marks the Gradle build it returns with `also = "maven"`; a forced kind, and a Maven build nested below the Gradle root, name nothing.
+
+Not covered: a root the user types into the prompt, which `build_at` takes by the first kind found there.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "both builds at one root: Gradle", "and the prompt names the other build", "a forced kind names no other build", "a Maven build below the Gradle root is not named".
+
+---
+
 ## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first — done
 
 **Status: done** (2026-11-19)
@@ -15658,6 +15692,46 @@ Not covered: an exact match in a dependency without sources, which still follows
 
 ---
 
+## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing — done
+
+**Status: done** (2026-11-25; triaged 2026-11-24: low, deferred; re-triaged 2026-11-25: for the release, as EG-129's IntelliJ matching put the example fourth on Dropwizard)
+
+**Kind: bug**
+
+**Affects: MCP `search_symbols` and editor workspace symbol.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N10).
+
+### Observed behaviour
+
+The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
+`asf` matches nothing; since EG-129 it matches, as a lowercase query spans words, so the ranking is what remains.
+Related: [EG-119](#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](gaps.md#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
+
+### Expected
+
+A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
+
+### Fix
+
+The lowercase half was fixed by EG-129, which made the matcher IntelliJ's: `asf` reaches `AbstractServerFactory`.
+That matching also let `ASF` reach `AsyncAppenderFactory` and `AsyncLoggingEventAppenderFactory` (`S` continuing `As`), and the 2026-11-25 release check found the example fourth.
+`CamelCaseMatcher.degree` now scores a match as IntelliJ's `matchingDegree` does (its terms measured, not copied: a capital on a capital counts most, a skipped word and a lowercase letter starting a word cost less), and `WorkspaceSymbolResolver` orders the prefix and CamelHumps hits by the exact name, then the degree, then top-level, then use.
+A query capital a run would take onto a lowercase letter is tried at a later word first, as in IntelliJ, so `SSH`'s `H` lands on `Handler`.
+
+Checked against IntelliJ 2025.3's own scores on 570 queries over 4,000 type names: the same order for 84 % of 7.1 million pairs, a tie IntelliJ splits by a point for 14 %, opposite for 1.2 % (nearly all IntelliJ's middle matching scoring a mid-word occurrence); the top result has IntelliJ's top score for 497 of 570 queries.
+With a server built from the branch: on Dropwizard `ASF` lists `AbstractServerFactory` first, then its test, then `AbstractOutputStreamAppenderFactory`; `DSF` lists `DataSourceFactory`, `DefaultServerFactory` and `DualSessionFactory` first; on Helidon `SSH` lists `ServerShutdownHandler` with the two other exact-initials types IntelliJ ties it with, before the JMH types.
+
+Not covered: IntelliJ's ±1 terms (ties broken here by top-level and use instead), and its matching from inside a word. Kept as IntelliJ has them: a name scores on the match found, not its best one (`TM` ranks `TestTaskManager` below `TaskManager`), and a word right after a one-letter word or a digit gets no word-start credit, so `Service` lists `IService` and `Encoder` lists `Base64Encoder` below names that only contain the word, in IntelliJ too.
+
+### Regression targets
+
+- `WorkspaceSymbolTest.resolve_initialsQuery_ranksTheBestMatchFirst`
+- `WorkspaceSymbolTest.resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn`
+- `CamelCaseMatcherTest.degree_betterMatch_ranksHigher`
+- `CamelCaseMatcherTest.degree_sameShapeOfMatch_ties`
+
+---
 
 ## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind — done
 

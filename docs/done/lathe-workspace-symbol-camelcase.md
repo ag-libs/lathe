@@ -47,11 +47,11 @@ IntelliJ also matches a query from inside a word (`ana` in `TaskManager`, with a
   index structure to keep in sync with reactor reload/refresh, and the scan itself is cheap
   (reactor-scoped, not the full index) — the real cost driver, the per-result `declarationRange`
   parse, is unaffected since it only runs on whatever survives the existing result cap.
-- **No result scoring.** Multiple hump matches for one query are returned in index-iteration order
-  (alphabetical by binary name), not ranked by match quality. IntelliJ's own matcher
-  (`MinusculeMatcher`) does support ranking (`matchingDegree`), but adding a scorer here was
-  deferred as unproven-needed complexity — correctness (does it match at all) was the actual gap;
-  ranking is a separate, optional refinement if it turns out to matter in practice.
+- **Ranked by match quality ([MC-106](../gaps/gaps-archive.md)).** The first version left the order to the index; once [EG-129](../gaps/gaps-archive.md) made the matcher IntelliJ's, `ASF` ranked `AbstractServerFactory`, the `search_symbols` description's own example, fourth on Dropwizard, behind `AsyncAppenderFactory`, whose `S` only continues `As`.
+  `CamelCaseMatcher.degree` now scores a match as IntelliJ's `MinusculeMatcher.matchingDegree` does, its terms measured, not copied: a word-start credit (none for a word right after a one-letter word or a digit), +50 for each query capital on a capital of the name, −10 for each word skipped between two runs and for each lowercase query letter that starts a word, +1 each for starting and ending with the name.
+  A query capital that a run would take onto a lowercase letter is tried at a later word first, as IntelliJ does (`SSH`'s `H` on `Handler`, not on `Shutdown`'s `h`).
+  `WorkspaceSymbolResolver` orders the prefix and CamelHumps hits together by: the exact name, the degree, top-level before nested, then the index's ranking (use).
+  Against IntelliJ 2025.3's own scores on 570 queries over 4,000 type names (7.1 million pairs of names both match), the order is the same for 84 %, a tie IntelliJ splits by a point for 14 %, and opposite for 1.2 %, nearly all where IntelliJ's middle matching scores its own first, mid-word occurrence (`Test` in `LspRoutesTest`, from `Routes`); the top result has IntelliJ's top score for 497 of the 570.
 - **CamelCase-hump matching only, not general infix/substring matching.** The original gap title
   mentioned both. A raw substring that doesn't align to a hump boundary (e.g. `"erverFac"`) is not
   covered — that's a distinct feature (plain `contains()`, no hump structure), not implemented

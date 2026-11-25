@@ -1862,31 +1862,6 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
-## NV-14 — On a project with both a Maven and a Gradle build, `:LatheInit` picks Gradle without saying Maven is there
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: `:LatheInit` without a kind on a folder whose root holds both `pom.xml` and a Gradle settings script; the Neovim client.**
-
-Found testing `:LatheInit` on spring-petclinic (2026-11-25), which ships both builds.
-
-### Observed behaviour
-
-`M.find_build` prefers the Gradle root when both roots are the same folder, and the prompt says only "set up Lathe 0.1.0-SNAPSHOT for the Gradle build in: <root>".
-Nothing tells the user the project also has a Maven build, or that `:LatheInit maven` would choose it; a Maven user accepts the prompt and gets a Gradle setup, here one that fails on the Gradle build's Java 17 toolchain.
-
-### Expected
-
-With both builds at the same root, the prompt names both and how to choose the other (`:LatheInit maven`), or asks which to set up.
-
-### Regression targets
-
-None yet.
-
 # MCP / Agent Facade Gaps (MC)
 
 Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
@@ -2472,29 +2447,6 @@ None yet.
 
 ---
 
-## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing
-
-**Status: deferred** (triaged 2026-11-24: low; ranking and case, the type is still listed)
-
-**Kind: bug**
-
-**Affects: MCP `search_symbols` and editor workspace symbol.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N10).
-
-### Observed behaviour
-
-The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
-`asf` matches nothing; since EG-129 it matches, as a lowercase query spans words, so the ranking is what remains.
-Related: [EG-119](gaps-archive.md#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
-
-### Expected
-
-A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
-
-### Regression targets
-
-None yet.
 ## MC-111 — A file tool given `path:line` says only that it is not a `.java` file
 
 **Status: documented**

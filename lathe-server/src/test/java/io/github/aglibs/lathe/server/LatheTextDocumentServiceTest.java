@@ -102,6 +102,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   // Through Path.toUri, the form the server keeps every URI in (on Windows it gains a drive).
   private static final String URI = Path.of("/workspace/src/main/java/Foo.java").toUri().toString();
+  // The module the run fixtures put their source sets in.
+  private static final String MODULE = "app";
 
   @Test
   void didChange_rapidKeystrokes_compilesOnlyOnce() {
@@ -862,6 +864,20 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .contains("more than one source set of app", "integrationTest", "jakartaData");
   }
 
+  @Test
+  void runTestFuture_rootModuleClassesOfSourceSetTrees_blockedNamingTheRootModule()
+      throws Exception {
+    writeManifest();
+    sourceSetTree("", "integrationTest", "com.example.BookIT");
+    sourceSetTree("", "jakartaData", "com.example.DataTest");
+    host.initialize(tmp);
+
+    assertThat(blockedReasonsIn("", "com.example.BookIT", "com.example.DataTest"))
+        .singleElement()
+        .asString()
+        .contains("more than one source set of . (", "integrationTest", "jakartaData");
+  }
+
   // With its launch captured, a source set's class replays from it, a test and a main alike: here
   // the launch names a jar that is gone, which the gate reports, so no JVM starts. A run of a test
   // class and a source set's together is refused.
@@ -930,8 +946,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 .resolve(LatheLayout.sourceSetTree("lib"))
                 .toString());
     sourceSetTree("lib", "com.example.Target");
-    sourceSetTree("demo", "com.example.User", List.of("demo"), lib);
-    sourceSetTree("demoTests", "com.example.UserTest", List.of("demoTests", "demo"), lib);
+    sourceSetTree(MODULE, "demo", "com.example.User", List.of("demo"), lib);
+    sourceSetTree(MODULE, "demoTests", "com.example.UserTest", List.of("demoTests", "demo"), lib);
     host.initialize(tmp);
     // The startup pass writes these trees into .lathe/; ended mid-write, the test left a file
     // being created there, which Windows would not let the temp dir's cleanup delete.
@@ -976,7 +992,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     Files.writeString(user, "package com.example;\nclass User { Helper helper; }\n");
     Files.writeString(test, testContent);
     sourceSetTree("demo", "com.example.Helper");
-    sourceSetTree("demoTests", "com.example.HelperTest", List.of("demoTests", "demo"), List.of());
+    sourceSetTree(
+        MODULE, "demoTests", "com.example.HelperTest", List.of("demoTests", "demo"), List.of());
     host.initialize(tmp);
     // The startup pass writes these trees into .lathe/; ended mid-write, the test left a file
     // being created there, which Windows would not let the temp dir's cleanup delete.
@@ -995,30 +1012,39 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(locations).doesNotHaveDuplicates();
   }
 
-  // A source set's tree of module app as a sync leaves it: its params and one compiled class. Its
+  // A source set's tree of a module (app unless named) as a sync leaves it: its params and one
+  // compiled class. Its
   // source roots are its own folder, or the folders of the source sets named.
   private void sourceSetTree(final String sourceSet, final String className) throws Exception {
-    sourceSetTree(sourceSet, className, List.of(sourceSet), List.of());
+    sourceSetTree(MODULE, sourceSet, className);
+  }
+
+  private void sourceSetTree(final String module, final String sourceSet, final String className)
+      throws Exception {
+    sourceSetTree(module, sourceSet, className, List.of(sourceSet), List.of());
   }
 
   private void sourceSetTree(
+      final String module,
       final String sourceSet,
       final String className,
       final List<String> rootSourceSets,
       final List<String> classpath)
       throws Exception {
     final String tree = LatheLayout.sourceSetTree(sourceSet);
-    final Path moduleDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("app");
+    final Path moduleDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve(module);
     final Path classFile = moduleDir.resolve(tree).resolve(className.replace('.', '/') + ".class");
     Files.createDirectories(classFile.getParent());
     Files.writeString(classFile, "");
     Json.write(
         new ModuleConfigData(
             tree,
-            tmp.resolve("app/build/classes/java").resolve(sourceSet).toString(),
+            tmp.resolve(module).resolve("build/classes/java").resolve(sourceSet).toString(),
             null,
             rootSourceSets.stream()
-                .map(root -> tmp.resolve("app/src").resolve(root).resolve("java").toString())
+                .map(
+                    root ->
+                        tmp.resolve(module).resolve("src").resolve(root).resolve("java").toString())
                 .toList(),
             classpath,
             List.of(),
@@ -1127,6 +1153,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   private List<String> blockedReasons(final String... selected) throws Exception {
+    return blockedReasonsIn(MODULE, selected);
+  }
+
+  private List<String> blockedReasonsIn(final String module, final String... selected)
+      throws Exception {
     final List<TestSelection> selections =
         Arrays.stream(selected)
             .map(
@@ -1137,7 +1168,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .toList();
     final var outcome =
         host.onLoopFuture(
-                session -> session.runs().runFuture(new LaunchTarget.Tests("app", selections), ""))
+                session -> session.runs().runFuture(new LaunchTarget.Tests(module, selections), ""))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(outcome.launched()).isFalse();
     return outcome.blockedReasons();

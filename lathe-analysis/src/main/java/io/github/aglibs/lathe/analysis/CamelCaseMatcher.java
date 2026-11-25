@@ -1,5 +1,11 @@
 package io.github.aglibs.lathe.analysis;
 
+import io.github.aglibs.validcheck.ValidCheck;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.OptionalInt;
+
 // IntelliJ's CamelHumps, as its Go to Class matches a type name: the query starts at a word of the
 // name, and each of its letters either continues the run it is in or starts a later word, case
 // ignored. So TaskMan, tm and taskMan reach TaskManager, and ServerFactory AbstractServerFactory,
@@ -10,7 +16,33 @@ package io.github.aglibs.lathe.analysis;
 // '_' or '$' in the query, or a lowercase letter right after one, may start a word again; the
 // separator skips to the next one in the name. IntelliJ also matches a query from inside a word
 // (ana in TaskManager); that is not done here.
+//
+// A match is ranked as IntelliJ ranks it (MinusculeMatcher.matchingDegree, its terms measured, not
+// copied): a query capital on a capital of the name counts most, so ASF ranks AbstractServerFactory
+// above AsyncAppenderFactory, whose S only continues As; each word skipped between two runs and
+// each lowercase letter that starts a word cost less; starting and ending with the name decide
+// what is left.
 final class CamelCaseMatcher {
+
+  private static final int WORD_START = 1000;
+  private static final int CAPITAL = 50;
+  private static final int SKIPPED_WORD = 10;
+  private static final int LOWERCASE_WORD_START = 10;
+
+  // Where a run of the query, from queryAt, lies in the name, from nameAt.
+  private record Run(int queryAt, int nameAt, int length) {
+    private Run {
+      ValidCheck.check()
+          .isNonNegative(queryAt, "queryAt")
+          .isNonNegative(nameAt, "nameAt")
+          .isPositive(length, "length")
+          .validate();
+    }
+
+    int end() {
+      return nameAt + length;
+    }
+  }
 
   private final String query;
   private final String name;
@@ -19,6 +51,8 @@ final class CamelCaseMatcher {
   // words that start alike is backtracked through again and again. Made on the first failure, as
   // most names of a search fail at once and most matches never backtrack.
   private boolean[][] failed;
+  // The runs of the match found, the last first, as each is added once the rest has matched.
+  private final List<Run> runs = new ArrayList<>();
 
   private CamelCaseMatcher(final String query, final String name) {
     this.query = query;
@@ -27,11 +61,53 @@ final class CamelCaseMatcher {
   }
 
   static boolean matches(final String query, final String candidateSimpleName) {
+    return !query.isEmpty() && new CamelCaseMatcher(query, candidateSimpleName).fromWordStart(0, 0);
+  }
+
+  // How well the query matches the name, higher is better; empty when it does not match. Scored on
+  // the match found, not the best one a name allows, as IntelliJ does: TM ranks TestTaskManager
+  // (T on Test) below TaskManager.
+  static OptionalInt degree(final String query, final String candidateSimpleName) {
     if (query.isEmpty()) {
-      return false;
+      return OptionalInt.empty();
     }
 
-    return new CamelCaseMatcher(query, candidateSimpleName).fromWordStart(0, 0);
+    final var matcher = new CamelCaseMatcher(query, candidateSimpleName);
+    return matcher.fromWordStart(0, 0) ? OptionalInt.of(matcher.score()) : OptionalInt.empty();
+  }
+
+  private int score() {
+    final List<Run> ordered = runs.stream().sorted(Comparator.comparingInt(Run::queryAt)).toList();
+    final int start = ordered.get(0).nameAt();
+    // IntelliJ's: no word-start credit for a word right after another one-letter word or a digit
+    // (JobKOctets' O, after K), as such a word is likely a letter of an acronym. It sinks IService
+    // and Base64Encoder for Service and Encoder too, in IntelliJ as here.
+    int score = start == 0 || !isWordStart(start - 1) ? WORD_START : 0;
+    int previousEnd = start;
+    for (final Run run : ordered) {
+      for (int i = 0; i < run.length(); i++) {
+        final char letter = query.charAt(run.queryAt() + i);
+        if (Character.isUpperCase(letter) && letter == name.charAt(run.nameAt() + i)) {
+          score += CAPITAL;
+        }
+      }
+
+      for (int at = previousEnd; at < run.nameAt(); at++) {
+        if (isWordStart(at)) {
+          score -= SKIPPED_WORD;
+        }
+      }
+
+      // A later word the query starts lowercase was not marked by the user.
+      if (run.queryAt() > 0 && Character.isLowerCase(query.charAt(run.queryAt()))) {
+        score -= LOWERCASE_WORD_START;
+      }
+
+      previousEnd = run.end();
+    }
+
+    final boolean endsTheName = previousEnd == name.length();
+    return score + (start == 0 ? 1 : 0) + (endsTheName ? 1 : 0);
   }
 
   private boolean fromWordStart(final int queryAt, final int nameFrom) {
@@ -72,7 +148,9 @@ final class CamelCaseMatcher {
 
   // The query from queryAt on, its first letter at nameAt: the longest run of letters that
   // continue there, then the rest from a later word; a shorter run when the rest needs a letter
-  // the longer one took (TaskMa reaches TaskManager's M only when the run stops at Task).
+  // the longer one took (TaskMa reaches TaskManager's M only when the run stops at Task). A query
+  // capital the run would take onto a lowercase letter is tried at a later word first, as IntelliJ
+  // does: SSH's H lands on ServerShutdownHandler's Handler, not on Shutdown's h.
   private boolean runFrom(final int queryAt, final int nameAt) {
     if (failed != null && failed[queryAt][nameAt]) {
       return false;
@@ -85,12 +163,20 @@ final class CamelCaseMatcher {
       run++;
     }
 
-    if (queryAt + run == query.length()) {
+    int capital = 0;
+    for (int i = 1; i < run && capital == 0; i++) {
+      final char letter = query.charAt(queryAt + i);
+      if (Character.isUpperCase(letter) && letter != name.charAt(nameAt + i)) {
+        capital = i;
+      }
+    }
+
+    if (capital > 0 && runOf(queryAt, nameAt, capital)) {
       return true;
     }
 
     for (int length = run; length > 0; length--) {
-      if (fromWordStart(queryAt + length, nameAt + length)) {
+      if (length != capital && runOf(queryAt, nameAt, length)) {
         return true;
       }
     }
@@ -101,6 +187,15 @@ final class CamelCaseMatcher {
 
     failed[queryAt][nameAt] = true;
     return false;
+  }
+
+  private boolean runOf(final int queryAt, final int nameAt, final int length) {
+    if (queryAt + length < query.length() && !fromWordStart(queryAt + length, nameAt + length)) {
+      return false;
+    }
+
+    runs.add(new Run(queryAt, nameAt, length));
+    return true;
   }
 
   private static boolean sameLetter(final char a, final char b) {

@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -75,11 +76,12 @@ public final class WorkspaceSymbolResolver {
   // AbstractServerFactory is still reachable via "ServerFactory" or "ASF" even though it doesn't
   // start with either. Both are ordered together before the list is capped at SEARCH_LIMIT: two
   // letters prefix-match a hundred dependency types, which filled the list ahead of the project
-  // type its initials name. The order: a type named exactly so, case and all, whatever its origin
-  // (the hump
-  // matcher is loose); a top-level type before a nested one (a project's many @Nested test classes
-  // must not crowd it out); then the index's ranking, so a type the project uses comes first. The
-  // top of the union comes from the top of each list, so each is cut to the cap first.
+  // type its initials name. The order: a type named exactly so, case and all, whatever its origin;
+  // then how well the name matches, as IntelliJ ranks it (MC-106: ASF's AbstractServerFactory
+  // above AsyncAppenderFactory, whose S only continues As); a top-level type before a nested one
+  // (a project's many @Nested test classes must not crowd it out); then the index's ranking, so a
+  // type the project uses comes first. The top of the union comes from the top of each list, so
+  // each is cut to the cap first.
   private static List<TypeIndexEntry> mergedEntries(
       final String query,
       final WorkspaceTypeIndex typeIndex,
@@ -90,17 +92,30 @@ public final class WorkspaceSymbolResolver {
           query.substring(0, lastDot), query.substring(lastDot + 1), typeIndex, keep);
     }
 
+    final List<TypeIndexEntry> prefixed =
+        typeIndex.searchSymbols(query, Integer.MAX_VALUE).stream().filter(keep).toList();
+    final List<TypeIndexEntry> humped =
+        typeIndex.searchCamelCase(query, Integer.MAX_VALUE).stream().filter(keep).toList();
+    // Each simple name scored once, as a sort compares it many times. A name the matcher does not
+    // reach would rank after every one it does, never dropped; a prefix hit is always reached.
+    final var degrees = new HashMap<String, Integer>();
+    for (final TypeIndexEntry entry : Stream.concat(prefixed.stream(), humped.stream()).toList()) {
+      degrees.computeIfAbsent(
+          entry.simpleName(),
+          name -> CamelCaseMatcher.degree(query, name).orElse(Integer.MIN_VALUE));
+    }
+
     final Comparator<TypeIndexEntry> order =
         Comparator.comparing((TypeIndexEntry entry) -> !entry.simpleName().equals(query))
+            .thenComparing(
+                Comparator.comparingInt((TypeIndexEntry entry) -> degrees.get(entry.simpleName()))
+                    .reversed())
             .thenComparing(entry -> !entry.isTopLevel())
             .thenComparing(typeIndex.ranking());
     final var seen = new LinkedHashSet<String>();
     final var merged = new ArrayList<TypeIndexEntry>();
     for (final TypeIndexEntry entry :
-        Stream.concat(
-                topOf(typeIndex.searchSymbols(query, Integer.MAX_VALUE), keep, order),
-                topOf(typeIndex.searchCamelCase(query, Integer.MAX_VALUE), keep, order))
-            .toList()) {
+        Stream.concat(topOf(prefixed, order), topOf(humped, order)).toList()) {
       if (seen.add(entry.binaryName())) {
         merged.add(entry);
       }
@@ -126,10 +141,8 @@ public final class WorkspaceSymbolResolver {
   }
 
   private static Stream<TypeIndexEntry> topOf(
-      final List<TypeIndexEntry> entries,
-      final Predicate<TypeIndexEntry> keep,
-      final Comparator<TypeIndexEntry> order) {
-    return entries.stream().filter(keep).sorted(order).limit(SEARCH_LIMIT);
+      final List<TypeIndexEntry> entries, final Comparator<TypeIndexEntry> order) {
+    return entries.stream().sorted(order).limit(SEARCH_LIMIT);
   }
 
   private static boolean declaredIn(final String container, final String qualifier) {
