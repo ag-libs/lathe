@@ -45,6 +45,48 @@ Not covered: a line holding the name qualified twice is one row, at the first; t
 
 ---
 
+## EG-129 — CamelHumps symbol matching matches letters that start no word — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Affects: workspace symbol in the editor, and MCP `search_symbols`.**
+
+Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`), and seen in the Helidon QA round of 2026-11-24 (`dev/reports/qa-2026-11-24-helidon.md`, B-3).
+
+### Observed behaviour
+
+`Pet` lists `I18nPropertiesSyncTest` (14th of 15), which has no word starting "Pet": the letters only follow each other inside `Properties` and `Test`.
+On Helidon, `SSH` and `SerSH` list six `ShakespearePlaysScrabbleWithHelidonReactiveOpt…` JMH types before `ServerShutdownHandler`.
+jdtls lists neither.
+
+### Expected
+
+A query's letters match the starts of the type name's words (a hump), its lowercase letters continuing the hump they follow; a type whose words do not start so is not listed.
+
+### Fix
+
+`CamelCaseMatcher` now follows IntelliJ's CamelHumps, as its Go to Class matches a type name: the query starts at a word of the name, and each letter either continues its run or starts a later word, case ignored; a query with a capital past its first letter keeps its lowercase letters within a word, and a `_` or `$` skips to the next one.
+A letter never lands inside a word, so `Pet` no longer reaches `I18nPropertiesSyncTest`, nor `SerSH` the JMH type; IntelliJ refuses an abbreviation that drops letters, so `Mgr` and `TaskMgr` no longer reach `TaskManager` either.
+A lowercase query now spans words (`taskman`, `oc`), which also fixes MC-106's `asf`.
+
+Checked against IntelliJ 2025.3's own matcher (`NameUtil.buildMatcher`, from each word start) on 2,128 queries over 4,000 type names from Helidon, Dropwizard, Petclinic and Lathe: they agree on every pair but IntelliJ's hard-coded `ln` word (`CurrencyNames_kln`).
+On Petclinic, `search_symbols Pet` lists the 13 `Pet…` types, without `I18nPropertiesSyncTest` and `PropertiesLogger`, and `oc` lists `OwnerController` first.
+
+Not covered: IntelliJ also matches a query from inside a word (`ana` in `TaskManager`), which needs results ranked by how well they match; `SSH` still lists the JMH type, which IntelliJ matches too, and its rank is MC-106's.
+
+### Regression targets
+
+- `CamelCaseMatcherTest.matches_letterInsideAWord_returnsFalse`
+- `CamelCaseMatcherTest.matches_lowercaseQuery_startsWordsAnywhere`
+- `CamelCaseMatcherTest.matches_queryMarkingItsWords_lowercaseLettersContinueAWord`
+- `CamelCaseMatcherTest.matches_digits_eachStartsAWord`
+- `CamelCaseMatcherTest.matches_acronym_startsAtItsLastCapitalBeforeLowercase`
+- `CamelCaseMatcherTest.matches_separator_startsAWordAndIsSkippedTo`
+
+---
+
 ## EG-128 — Type hierarchy leaves out anonymous subclasses — done
 
 **Status: done** (2026-11-25)

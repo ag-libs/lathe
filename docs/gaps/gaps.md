@@ -831,32 +831,6 @@ None yet.
 
 ---
 
-## EG-129 — CamelHumps symbol matching matches letters that start no word
-
-**Status: documented**
-
-**Kind: bug**
-
-**Affects: workspace symbol in the editor, and MCP `search_symbols`.**
-
-Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`), and seen in the Helidon QA round of 2026-11-24 (`dev/reports/qa-2026-11-24-helidon.md`, B-3).
-
-### Observed behaviour
-
-`Pet` lists `I18nPropertiesSyncTest` (14th of 15), which has no word starting "Pet": the letters only follow each other inside `Properties` and `Test`.
-On Helidon, `SSH` and `SerSH` list six `ShakespearePlaysScrabbleWithHelidonReactiveOpt…` JMH types before `ServerShutdownHandler`.
-jdtls lists neither.
-
-### Expected
-
-A query's letters match the starts of the type name's words (a hump), its lowercase letters continuing the hump they follow; a type whose words do not start so is not listed.
-
-### Regression targets
-
-None yet.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -2428,7 +2402,7 @@ Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at 
 ### Observed behaviour
 
 The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
-`asf` matches nothing.
+`asf` matches nothing; since EG-129 it matches, as a lowercase query spans words, so the ranking is what remains.
 Related: [EG-119](gaps-archive.md#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
 
 ### Expected
