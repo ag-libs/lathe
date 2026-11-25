@@ -977,6 +977,12 @@ references to a method whose name many files spell are the slowest query Lathe a
 A name spelled in few files stays fast (Hibernate ORM's `registerKeyword`, 1,274 references: 0.37 s), which is the planner cost above.
 The queries and positions are `dev/lsp-bench/cases/hibernate_orm.py` and `fineract.py` ("references: common name", "references: one overload").
 
+### Measured on spring-petclinic (2026-11-25)
+
+A small project shows the same cost: the benchmark's quick run (`dev/lsp-bench`, Lathe `0.1.0-SNAPSHOT` at `bfba80c`, 1 cold and 2 warm runs with 3 repeats, `-Xmx2G`) has references to one overload, `Owner.getPet(String)`, as the only query jdtls answers faster: 218 ms against 98 ms, while `getId` with more callers takes 152 ms against jdtls's 1,053 ms.
+The server's own log (`LATHE_DEBUG=1`) shows both searches attributing 2 open and 5 disk files; `getPet`'s test-module batch, `ClinicServiceTests`, `PetClinicConcurrencyTests` and `OwnerControllerTests` (Spring Boot tests heavy with MockMvc and context imports), takes 180 ms against 87 ms for `getId`'s.
+Every repeat costs the same (190 ms warm): the unchanged disk files are attributed again on each request, which cached answers would end; and `PetController` and `VisitController`, which call another overload with one argument, cannot be left out by name or arity.
+
 ### Progress (2026-11-10)
 
 The design is [Search Speed on Large Codebases](../planned/lathe-search-speed.md).
