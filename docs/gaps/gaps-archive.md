@@ -7,6 +7,45 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-128 — Type hierarchy leaves out anonymous subclasses — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Affects: type hierarchy subtypes in the editor (and the explorer, whose truncation counts them).**
+
+Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`), and reproduced from the code.
+
+### Observed behaviour
+
+`PetType`'s hierarchy lists its supertype `NamedEntity` and no subtypes, without the two `new PetType() { … }` in `PetTypeFormatterTests.java:84` and `:89`; jdtls lists them as subtypes (`new PetType() {...}`).
+Go to implementation finds anonymous classes (`LatheEngineNavigationTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`), so the two disagree.
+
+### Cause (read from the code, not fixed)
+
+`TypeHierarchyResolver` builds each item through `TypeSourceLocator.locate`, which returns empty for an entry that is not a named declaration (`PetTypeFormatterTests$1`), so the subtype is dropped; the explorer still counts it in `allSubtypes` when it decides whether the list is truncated.
+
+### Expected
+
+An anonymous subclass is a subtype, listed at its `new` expression, as jdtls and go to implementation give it.
+
+### Resolution
+
+An unnamed subtype is now placed from its file's parse, one parse per file, and matched to the index entry it stands for, not by javac's number (a compiled class's need not match the edited source's): by the named class enclosing it (the entry's binary name before its number) and the type its `new`, or its `extends`/`implements`, names (one of the entry's supertypes).
+An anonymous class is listed at its `new` (the item's range is the whole expression), an enum constant's body under its constant's name, a local class at its name, declared in a block or an old-style `case` group; each item carries its own entry's binary name and kind.
+Checked on spring-petclinic with a server built from the branch: `PetType` lists both `new PetType() {...}`, at `PetTypeFormatterTests.java` 84 and 89.
+
+Not covered: the match reads the parse, unattributed, so an anonymous or local class of a same-named type from another package, in the same outer class, would be listed too.
+A class nested in an anonymous or local class (`Outer$1Local$Inner`) is not placed: the parse cannot tell the outer one's number.
+
+### Regression targets
+
+- `TypeHierarchyTest.subtypes_anonymousAndLocalSubclasses_listedWhereTheFileCreatesThem`
+- `TypeHierarchyTest.subtypes_enumConstantBody_listedAsTheEnumsSubtype`
+
+---
+
 ## EG-126 — After the test `module-info.java` is opened, its errors are reported in every other file of the tree, at unrelated positions — done
 
 **Status: done** (2026-11-24)
