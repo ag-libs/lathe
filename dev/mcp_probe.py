@@ -232,6 +232,31 @@ def recent_fix_checks(b, probe):
     b.check("probe references(type-use annotated parameter): finds the other file's call",
             probe.caller_file.name in guarded, first(guarded))
     wrong_arguments(b, probe)
+    initializer_callers(b, probe)
+    secondary_type(b, probe)
+
+
+def initializer_callers(b, probe):
+    """EG-122: a call outside any method of a named class is the field's or the block's."""
+    callers = b.raw("call_hierarchy", dict(probe.pos("static int seed(int v)", "seed"), direction="incoming"))[0]
+    b.check("probe incoming(seed): a field's initializer", "SEEDED" in callers, first(callers))
+    b.check("probe incoming(seed): a static initializer", "static {...}" in callers, first(callers))
+
+
+def secondary_type(b, probe):
+    """EG-121: a top-level type in a file named after another is a type like any other."""
+    b.check("probe search(secondary top-level type)", wait_indexed(b, "LatheProbeSecondary"),
+            "search_symbols finds LatheProbeSecondary")
+    impls = b.raw("find_implementations", probe.pos("interface LatheProbeSecondary {", "LatheProbeSecondary"))[0]
+    b.check("probe impls(secondary top-level type)",
+            has_line(impls, probe.line("final class LatheProbeSecondaryImpl")), first(impls))
+    caller = probe.caller_file.read_text(encoding="utf-8")
+    use = {"file": str(probe.caller_file), "line": line_of(caller, "LatheProbeSecondary sized"),
+           "symbol": "LatheProbeSecondary"}
+    definition = b.raw("get_definition", use)[0]
+    b.check("probe definition(secondary top-level type): from another file",
+            probe.file.name in definition and has_line(definition, probe.line("interface LatheProbeSecondary {")),
+            first(definition))
 
 
 def wrong_arguments(b, probe):

@@ -1,8 +1,8 @@
 package @PACKAGE@;
 
 // Copied beside LatheProbe.java by dev/mcp_battery.py and deleted after: a call in another file
-// that a rename of LatheProbe.gauge to measure would capture, and a call of a method whose
-// parameter carries a type-use annotation.
+// that a rename of LatheProbe.gauge to measure would capture, a call of a method whose parameter
+// carries a type-use annotation, and a use of a type declared in a file named after another.
 class LatheProbeCaller {
     long call() {
         return LatheProbe.measure(7);
@@ -10,5 +10,9 @@ class LatheProbeCaller {
 
     int guard() {
         return LatheProbe.guarded("x");
+    }
+
+    int secondary(LatheProbeSecondary sized) {
+        return sized.size();
     }
 }
