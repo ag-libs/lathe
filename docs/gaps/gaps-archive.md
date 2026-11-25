@@ -15085,6 +15085,40 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-14 — On a project with both a Maven and a Gradle build, `:LatheInit` picks Gradle without saying Maven is there — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheInit` without a kind on a folder whose root holds both `pom.xml` and a Gradle settings script; the Neovim client.**
+
+Found testing `:LatheInit` on spring-petclinic (2026-11-25), which ships both builds.
+
+### Observed behaviour
+
+`M.find_build` prefers the Gradle root when both roots are the same folder, and the prompt says only "set up Lathe 0.1.0-SNAPSHOT for the Gradle build in: <root>".
+Nothing tells the user the project also has a Maven build, or that `:LatheInit maven` would choose it; a Maven user accepts the prompt and gets a Gradle setup, here one that fails on the Gradle build's Java 17 toolchain.
+
+### Expected
+
+With both builds at the same root, the prompt names both and how to choose the other (`:LatheInit maven`), or asks which to set up.
+
+### Resolution
+
+At one root with both builds, Gradle still wins, as a project that ships both usually keeps both working, but the prompt now names the other: "set up Lathe 9.9.9 for the Gradle build (a Maven build is there too: `:LatheInit maven`) in: ".
+`find_build` marks the Gradle build it returns with `also = "maven"`; a forced kind, and a Maven build nested below the Gradle root, name nothing.
+
+Not covered: a root the user types into the prompt, which `build_at` takes by the first kind found there.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "both builds at one root: Gradle", "and the prompt names the other build", "a forced kind names no other build", "a Maven build below the Gradle root is not named".
+
+---
+
 ## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first — done
 
 **Status: done** (2026-11-19)

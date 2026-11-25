@@ -1862,31 +1862,6 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
-## NV-14 — On a project with both a Maven and a Gradle build, `:LatheInit` picks Gradle without saying Maven is there
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: `:LatheInit` without a kind on a folder whose root holds both `pom.xml` and a Gradle settings script; the Neovim client.**
-
-Found testing `:LatheInit` on spring-petclinic (2026-11-25), which ships both builds.
-
-### Observed behaviour
-
-`M.find_build` prefers the Gradle root when both roots are the same folder, and the prompt says only "set up Lathe 0.1.0-SNAPSHOT for the Gradle build in: <root>".
-Nothing tells the user the project also has a Maven build, or that `:LatheInit maven` would choose it; a Maven user accepts the prompt and gets a Gradle setup, here one that fails on the Gradle build's Java 17 toolchain.
-
-### Expected
-
-With both builds at the same root, the prompt names both and how to choose the other (`:LatheInit maven`), or asks which to set up.
-
-### Regression targets
-
-None yet.
-
 # MCP / Agent Facade Gaps (MC)
 
 Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
