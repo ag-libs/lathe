@@ -15618,6 +15618,47 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-110 — `search_symbols` lists an exact match below partial ones when the match is generated — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `search_symbols` on a reactor whose public types are processor output (Helidon's builders).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`search_symbols {query: "ListenerConfig", maxResults: 6}` lists `ListenerConfigBlueprint`, `ListenerConfigTest`, `ListenerConfigDecorator`, `ListenerConfigurationParamHandler`, then `ListenerConfig` [GENERATED], fifth.
+The exact qualified name `io.helidon.webserver.ListenerConfig` lists it last of three, and `LiCo` leaves it out of the first six.
+MC-39's rule ranks the reactor's generated types after its hand-written ones; it outranks the match itself.
+In Helidon the generated types are the public API and the blueprints are package-private, so an agent is handed first the type it cannot use.
+The editor's `workspace/symbol` lists `ListenerConfig` first for all three queries ([EG-127](gaps-archive.md)).
+
+### Expected
+
+An exact match of the simple or qualified name comes first, generated or not; MC-39's hand-written-before-generated order applies among the rest, as the editor's search orders exact names first.
+Related: [MC-106](#mc-106--search_symbols-ranks-the-tool-descriptions-own-camelhumps-example-second-and-lowercase-humps-match-nothing) (initials ranked below a looser match).
+
+### Resolution
+
+`LatheEngine.ranked` sorts the hits the query names first: a simple name equal to the query, or a qualified name equal to it or ending in `.` and the query (`ListenerConfig.Builder`, `io.helidon.webserver.ListenerConfig`).
+MC-39's order (hand-written, generated, the JDK's and dependencies', JDK internals) ranks the rest, and an exact JDK-internal match stays among the internals.
+On Helidon, `ListenerConfig`, `io.helidon.webserver.ListenerConfig` and `WebServerConfig` now list the generated type first.
+
+Not covered: an exact match in a dependency without sources, which still follows the located hits; ranking among partial matches, MC-106's.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.searchSymbols_generatedExactMatch_listedBeforeHandWrittenPartialMatches`
+- `LatheEngineNavigationTest.referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten` (its search half: generated last without an exact match, first with one)
+
+---
+
+
 ## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind — done
 
 **Status: done** (2026-11-25; triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M)
