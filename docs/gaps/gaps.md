@@ -831,6 +831,95 @@ None yet.
 
 ---
 
+## EG-127 — Workspace symbol drops the project's own type for a short initials query
+
+**Status: accepted** (triaged 2026-11-25: medium; symbol search is used constantly, and the project's own type is lost outright, not ranked low)
+
+**Kind: bug**
+
+**Affects: workspace symbol in the editor, and MCP `search_symbols`, for a query of a type's initials.**
+
+Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand; the Helidon QA round of 2026-11-24 saw the same ordering (`dev/reports/qa-2026-11-24-helidon.md`, B-3).
+
+### Observed behaviour
+
+| Query | Project type | Lathe | jdtls |
+|---|---|---|---|
+| `BE` | `BaseEntity` | absent from 98 results (`Beans`, `BeanInfo`, `Ber`, …) | `BaseEntity` |
+| `OR` | `OwnerRepository` | absent from 100 (`Order0`, `Order1`, `Or`, …) | `OwnerRepository` |
+| `NE` | `NamedEntity` | absent from 100 (`NegativeArraySizeException`, `Net`, …) | `NamedEntity` |
+| `OC` | `OwnerController` | 20th of 21, after `OctetStreamData`, `OCSP`, … | `OwnerController`, `OwnerControllerTests` |
+| `PC` | `PetController` | 17th of 19, after `PCK`, `PCMM`, … | the project's `P…C…` types |
+
+### Cause (read from the code, not fixed)
+
+`WorkspaceSymbolResolver.mergedEntries` takes every prefix match first, from the JDK, the dependencies and the project alike, and adds the CamelHumps matches (the project's types only) while the list is under `SEARCH_LIMIT` (100); two letters such as `Be` already prefix-match 100 dependency types, so a project type found by its initials never gets in, and one that does comes after the prefix matches.
+
+### Expected
+
+A project type whose initials or prefix match is listed, and before a dependency or JDK type that only shares a prefix, as jdtls lists it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-128 — Type hierarchy leaves out anonymous subclasses
+
+**Status: accepted** (triaged 2026-11-25: low; a subtype is missing from the hierarchy that go to implementation finds)
+
+**Kind: bug**
+
+**Affects: type hierarchy subtypes in the editor (and the explorer, whose truncation counts them).**
+
+Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`), and reproduced from the code.
+
+### Observed behaviour
+
+`PetType`'s hierarchy lists its supertype `NamedEntity` and no subtypes, without the two `new PetType() { … }` in `PetTypeFormatterTests.java:84` and `:89`; jdtls lists them as subtypes (`new PetType() {...}`).
+Go to implementation finds anonymous classes (`LatheEngineNavigationTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`), so the two disagree.
+
+### Cause (read from the code, not fixed)
+
+`TypeHierarchyResolver` builds each item through `TypeSourceLocator.locate`, which returns empty for an entry that is not a named declaration (`PetTypeFormatterTests$1`), so the subtype is dropped; the explorer still counts it in `allSubtypes` when it decides whether the list is truncated.
+
+### Expected
+
+An anonymous subclass is a subtype, listed at its `new` expression, as jdtls and go to implementation give it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-129 — CamelHumps symbol matching matches letters that start no word
+
+**Status: documented**
+
+**Kind: bug**
+
+**Affects: workspace symbol in the editor, and MCP `search_symbols`.**
+
+Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`), and seen in the Helidon QA round of 2026-11-24 (`dev/reports/qa-2026-11-24-helidon.md`, B-3).
+
+### Observed behaviour
+
+`Pet` lists `I18nPropertiesSyncTest` (14th of 15), which has no word starting "Pet": the letters only follow each other inside `Properties` and `Test`.
+On Helidon, `SSH` and `SerSH` list six `ShakespearePlaysScrabbleWithHelidonReactiveOpt…` JMH types before `ServerShutdownHandler`.
+jdtls lists neither.
+
+### Expected
+
+A query's letters match the starts of the type name's words (a hump), its lowercase letters continuing the hump they follow; a type whose words do not start so is not listed.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
