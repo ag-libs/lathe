@@ -30,8 +30,8 @@ reactor-only scope.
 
 - **False-positive volume.** Lowercase hump-spanning is far looser than capital-signalled matching
   and will surface many more candidates. This likely forces the result *ranking* that EG-005
-  deferred (IntelliJ's `MinusculeMatcher.matchingDegree`) so the best matches are not buried; today
-  `searchCamelCase` returns index-iteration order with no scoring.
+  deferred (IntelliJ's `MinusculeMatcher.matchingDegree`) so the best matches are not buried.
+  Resolved by MC-106: symbol search now ranks matches by a degree measured against IntelliJ's.
 - **Preserve or replace the current rule.** Should capital-signalled matching keep its stricter
   semantics (an explicit capital still forces a hump boundary), with lowercase getting the looser
   spanning, or should both collapse into one case-insensitive scheme?

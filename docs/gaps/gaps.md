@@ -2447,29 +2447,6 @@ None yet.
 
 ---
 
-## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing
-
-**Status: deferred** (triaged 2026-11-24: low; ranking and case, the type is still listed)
-
-**Kind: bug**
-
-**Affects: MCP `search_symbols` and editor workspace symbol.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N10).
-
-### Observed behaviour
-
-The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
-`asf` matches nothing; since EG-129 it matches, as a lowercase query spans words, so the ranking is what remains.
-Related: [EG-119](gaps-archive.md#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
-
-### Expected
-
-A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
-
-### Regression targets
-
-None yet.
 ## MC-110 — `search_symbols` lists an exact match below partial ones when the match is generated
 
 **Status: documented**
@@ -2493,7 +2470,7 @@ The editor's `workspace/symbol` lists `ListenerConfig` first for all three queri
 ### Expected
 
 An exact match of the simple or qualified name comes first, generated or not; MC-39's hand-written-before-generated order applies among the rest, as the editor's search orders exact names first.
-Related: [MC-106](#mc-106--search_symbols-ranks-the-tool-descriptions-own-camelhumps-example-second-and-lowercase-humps-match-nothing) (initials ranked below a looser match).
+Related: [MC-106](gaps-archive.md#mc-106--search_symbols-ranks-the-tool-descriptions-own-camelhumps-example-second-and-lowercase-humps-match-nothing--done) (initials ranked below a looser match).
 
 ### Regression targets
 

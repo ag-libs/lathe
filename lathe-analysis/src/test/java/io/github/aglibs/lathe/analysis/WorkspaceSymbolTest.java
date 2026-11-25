@@ -108,8 +108,9 @@ class WorkspaceSymbolTest {
 
   // Two letters prefix-match more dependency types than the list holds: the project's types found
   // by their initials are ranked with them, not added after the cap (spring-petclinic's BE listed
-  // a hundred Bean… types and not BaseEntity). The ranking stands: a java.lang type still leads,
-  // and the project's types come before the other dependencies' alike.
+  // a hundred Bean… types and not BaseEntity). BaseEntity, whose two words the query's capitals
+  // start, matches best and leads (MC-106, as in IntelliJ); among the names that match alike the
+  // ranking stands: a java.lang type leads, and the project's come before the other dependencies'.
   @Test
   void resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn(
       @TempDir final Path shards) throws IOException {
@@ -134,7 +135,7 @@ class WorkspaceSymbolTest {
         WorkspaceSymbolResolver.resolve("BE", index, List.of(src), entry -> true).stream()
             .map(SymbolInformation::getName)
             .toList();
-    assertThat(found).hasSize(100).startsWith("Beacon", "Bench", "BaseEntity");
+    assertThat(found).hasSize(100).startsWith("BaseEntity", "Beacon", "Bench");
     assertThat(found.subList(3, found.size())).allMatch(name -> name.startsWith("Bean"));
 
     assertThat(WorkspaceSymbolResolver.resolve("Bean00", index, List.of(src), entry -> true))
@@ -153,6 +154,67 @@ class WorkspaceSymbolTest {
         WorkspaceSymbolResolver.resolve("Task", index, List.of(src), entry -> true);
 
     assertThat(result).extracting(SymbolInformation::getName).containsExactly("TaskManager");
+  }
+
+  // MC-106: the tool description's own example. ASF also reaches AsyncAppenderFactory, whose S only
+  // continues As, and the others skip words: the names whose words the capitals start lead, as
+  // IntelliJ ranks them, before usage decides.
+  @Test
+  void resolve_initialsQuery_ranksTheBestMatchFirst() throws IOException {
+    final List<TypeIndexEntry> types =
+        List.of(
+            entry("AsyncAppenderFactory", "com.example"),
+            entry("AsyncLoggingEventAppenderFactory", "com.example"),
+            entry("AbstractOutputStreamAppenderFactory", "com.example"),
+            entry("AbstractServerFactory", "com.example"));
+    for (final TypeIndexEntry type : types) {
+      createSourceFile(type.packageName(), type.simpleName());
+    }
+
+    assertThat(
+            WorkspaceSymbolResolver.resolve(
+                "ASF", indexOf(types.toArray(TypeIndexEntry[]::new)), List.of(src), entry -> true))
+        .extracting(SymbolInformation::getName)
+        .containsExactly(
+            "AbstractServerFactory",
+            "AbstractOutputStreamAppenderFactory",
+            "AsyncAppenderFactory",
+            "AsyncLoggingEventAppenderFactory");
+  }
+
+  // The better match leads even when it is nested; between matches alike, the top-level type
+  // still comes first, so a project's many @Nested classes do not crowd it out.
+  @Test
+  void resolve_nestedTypeMatchingBetter_ranksAboveAWeakerTopLevelOne() throws IOException {
+    createSourceFile("com.example", "AbstractServerFactory");
+    createSourceFile("com.example", "AsyncAppenderFactory");
+    Files.writeString(
+        src.resolve("com/example/Holder.java"),
+        """
+        package com.example;
+        class Holder {
+          static class AbstractServerFactory {}
+        }
+        """);
+    final var index =
+        indexOf(
+            entry("AsyncAppenderFactory", "com.example"),
+            new TypeIndexEntry(
+                "AbstractServerFactory",
+                "com.example.Holder$AbstractServerFactory",
+                "com.example",
+                TypeKind.CLASS,
+                true,
+                List.of(),
+                null),
+            entry("AbstractServerFactory", "com.example"));
+
+    assertThat(WorkspaceSymbolResolver.resolve("ASF", index, List.of(src), entry -> true))
+        .extracting(SymbolInformation::getName, SymbolInformation::getContainerName)
+        .containsExactly(
+            tuple("AbstractServerFactory", "com.example"),
+            tuple("AbstractServerFactory", "com.example.Holder"),
+            tuple("AsyncAppenderFactory", "com.example"));
   }
 
   // A type named exactly as the query leads, whatever its origin: the hump matcher is loose, and
