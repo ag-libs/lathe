@@ -15504,6 +15504,48 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-108 — A project whose only module is the workspace root shows a blank module name — done
+
+**Status: done** (2026-11-25; triaged 2026-11-25: medium, for the release; every single-module project shows it, and "affected modules" is what an agent builds; size S)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `workspace_summary`, `analyze_change` (`affected modules:`) and `verify_change`'s module list.**
+
+Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P1).
+
+### Observed behaviour
+
+`workspace_summary` answers `1 module(s)` and then a line with no name, `  tests: captured`.
+`analyze_change` on `OwnerRepository.findByLastNameStartingWith` answers `references: 1 production, 12 test` and `affected modules: ` with nothing after it.
+The root module's path is the empty string; the run messages already print it as `.` (`SourceLayout.displayed`), and `workspace.json` names it `.`.
+
+### Expected
+
+The root module named `.` wherever MCP names modules.
+
+### Fix
+
+The answers printed the root module's empty path as it is.
+`LatheLayout.displayedModule` (`.` as `LatheLayout.ROOT_MODULE`) now names it wherever MCP names a module: `workspace_summary`'s lines and their `depends on:`, `analyze_change`'s `affected modules:` and `verify_change`'s dependent modules; it replaces the server's `SourceLayout.displayed` and the literal `.` the Maven (`ReactorProjects.moduleRel`) and Gradle (`LatheProjectPlugin`) front-ends wrote.
+The raw path still drives `scopedSyncCommand`, where the root means a full sync.
+As an agent may copy the name into `.lathe/lathe-sync.sh [--tests] <module>`, the generated scripts (`SyncScript`, `.sh` and `.cmd`) take `.` as the whole project, whatever else is named; on Gradle `--module .` failed with "no project in directory '.'".
+
+Checked on Petclinic with a server built from the branch: `workspace_summary` lists `.  tests: captured`, and `analyze_change` on `OwnerRepository.findByLastNameStartingWith` answers `affected modules: .`.
+
+### Regression targets
+
+- `LatheLayoutTest.displayedModule_rootAndNested_rootReadsAsDot`
+- `McpTextTest.modulesResult_rootModuleAndADependent_namedAsDot`
+- `McpTextTest.analyzeResult_referencesInTheRootModule_affectedModulesNamesDot`
+- `McpTextTest.crossModuleNote_rootModuleDepends_namedAsDot`
+- `SyncScriptTest.render_scopedFrontEnd_runsTheBuildsToolAndJdk_withTestsGoalsAndModuleArgs` (`.` alone, with `--tests` and another module, on Gradle)
+- `SyncScriptTest.cmd_crlfScriptRunsTheBuildsTool_withTestsAndModuleArgs_quotingAndDoublingPercent`
+
+---
+
 ## MC-107 — `analyze_change` lists only the tests that reference the symbol directly, sorted by name — done
 
 **Status: done** (2026-11-24)

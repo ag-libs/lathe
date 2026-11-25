@@ -546,7 +546,7 @@ final class ChangeVerifier {
                     TreeMap::new,
                     Collectors.mapping(
                         mismatch ->
-                            SourceLayout.displayed(
+                            LatheLayout.displayedModule(
                                 SourceLayout.moduleRel(
                                     state.root(), mismatch.module().moduleDir())),
                         Collectors.toList())));
@@ -561,7 +561,7 @@ final class ChangeVerifier {
   private Optional<UnreadSources> unreadSources(final UnreadLanguage language) {
     final List<String> modules =
         state.manifest().unreadModuleDirs(language).stream()
-            .map(dir -> SourceLayout.displayed(FileUtil.slashed(state.root().relativize(dir))))
+            .map(dir -> LatheLayout.displayedModule(FileUtil.slashed(state.root().relativize(dir))))
             .sorted()
             .toList();
     return modules.isEmpty()
@@ -750,7 +750,7 @@ final class ChangeVerifier {
             moduleRel ->
                 Files.isDirectory(SourceLayout.moduleLatheDir(state.root(), moduleRel))
                     ? "%s is in no source root of module %s, so a sync does not add it"
-                        .formatted(relative, SourceLayout.displayed(moduleRel))
+                        .formatted(relative, LatheLayout.displayedModule(moduleRel))
                     : "%s is in no synced module — run `%s`"
                         .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND))
         .orElseGet(

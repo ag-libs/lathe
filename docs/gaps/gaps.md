@@ -2466,34 +2466,6 @@ None yet.
 
 ---
 
-## MC-108 — A project whose only module is the workspace root shows a blank module name
-
-**Status: accepted** (triaged 2026-11-25: medium, for the release; every single-module project shows it, and "affected modules" is what an agent builds; size S)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `workspace_summary`, `analyze_change` (`affected modules:`) and `verify_change`'s module list.**
-
-Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P1).
-
-### Observed behaviour
-
-`workspace_summary` answers `1 module(s)` and then a line with no name, `  tests: captured`.
-`analyze_change` on `OwnerRepository.findByLastNameStartingWith` answers `references: 1 production, 12 test` and `affected modules: ` with nothing after it.
-The root module's path is the empty string; the run messages already print it as `.` (`SourceLayout.displayed`), and `workspace.json` names it `.`.
-
-### Expected
-
-The root module named `.` wherever MCP names modules.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind
 
 **Status: accepted** (triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M)

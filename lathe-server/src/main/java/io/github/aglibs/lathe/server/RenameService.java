@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -462,7 +463,7 @@ final class RenameService {
             mismatch ->
                 JdkSupport.renameRefusal(
                     target.simpleName(),
-                    SourceLayout.displayed(
+                    LatheLayout.displayedModule(
                         SourceLayout.moduleRel(state.root(), mismatch.module().moduleDir())),
                     mismatch));
   }

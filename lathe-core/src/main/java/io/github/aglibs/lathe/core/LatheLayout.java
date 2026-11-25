@@ -306,6 +306,14 @@ public final class LatheLayout {
     return latheDir.resolve(REACTOR_LOCK_FILE);
   }
 
+  // How the module at the workspace root, whose path is empty, is named to a reader; the sync
+  // script takes it too, as the whole project.
+  public static final String ROOT_MODULE = ".";
+
+  public static String displayedModule(final String moduleRel) {
+    return moduleRel.isEmpty() ? ROOT_MODULE : moduleRel;
+  }
+
   // .lathe/<module>/, relative to the workspace root ("" or "." for the root module).
   public static Path moduleDir(final String module) {
     return Path.of(LATHE_DIR, module);

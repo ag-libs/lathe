@@ -990,7 +990,7 @@ final class RunCoordinator {
     // The editor's sync does not run a source set's test task, so it is never the remedy.
     if (!LatheLayout.TEST_CLASSES_DIR.equals(tree)) {
       return "no captured launch of the %s tests of %s: the test task that runs them captures it whenever it runs (without running the tests with -Plathe.capture.only=true); a source set no test task runs (jmh, say) runs with the build"
-          .formatted(LatheLayout.sourceSetName(tree), SourceLayout.displayed(moduleRel));
+          .formatted(LatheLayout.sourceSetName(tree), LatheLayout.displayedModule(moduleRel));
     }
 
     final boolean classesOnly =
@@ -1006,11 +1006,12 @@ final class RunCoordinator {
         IOUtil.unchecked(() -> new LaunchReader(workspaceRoot).testFilter(moduleRel));
     if (classesOnly && filter.isPresent() && classes.stream().noneMatch(filter.get()::includes)) {
       return "%s: the build's test filter for %s leaves it out (an integration test, for example), so no capture includes it and Lathe cannot run it; run it with the build"
-          .formatted(String.join(", ", classes), SourceLayout.displayed(moduleRel));
+          .formatted(String.join(", ", classes), LatheLayout.displayedModule(moduleRel));
     }
 
     return "no captured test launch for %s; run `%s` to capture it"
-        .formatted(SourceLayout.displayed(moduleRel), LatheLayout.captureTestsCommand(moduleRel));
+        .formatted(
+            LatheLayout.displayedModule(moduleRel), LatheLayout.captureTestsCommand(moduleRel));
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {

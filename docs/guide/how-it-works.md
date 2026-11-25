@@ -102,6 +102,7 @@ Editors and agents sharing a workspace take turns updating the same compiled fil
 
 The sync script uses the build tool and JDK from the first build.
 On Linux or macOS, `.lathe/lathe-sync.sh app core` syncs those modules and their dependencies.
+`.` names the module at the workspace root, as Lathe's answers name it, and syncs the whole project.
 Add `--tests` to refresh test launches too.
 The Windows script is `.lathe\lathe-sync.cmd`.
 

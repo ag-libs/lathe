@@ -525,7 +525,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                                       .getInstallationPath()
                                       .getAsFile()
                                       .getPath()));
-              task.getModule().set(module.isEmpty() ? "." : module);
+              task.getModule().set(LatheLayout.displayedModule(module));
               task.getWorkspaceRoot().set(project.getRootDir());
               useBuildLock(project, task, task.getBuildLock());
             });

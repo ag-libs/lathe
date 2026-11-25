@@ -101,6 +101,7 @@ It uses the same Gradle distribution, JDK, and init scripts as that build.
 ```sh
 .lathe/lathe-sync.sh                # refresh the workspace
 .lathe/lathe-sync.sh app            # refresh app and the projects it depends on
+.lathe/lathe-sync.sh .              # the root project, as Lathe names it: the whole build
 .lathe/lathe-sync.sh --tests        # also record test launches without executing tests
 ```
 
