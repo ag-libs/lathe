@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -72,10 +73,13 @@ public final class WorkspaceSymbolResolver {
   // including package-private top-level types so a stack frame's internal impl class resolves.
   // CamelCase-hump matching is a supplementary, reactor-only layer on top, so a type like
   // AbstractServerFactory is still reachable via "ServerFactory" or "ASF" even though it doesn't
-  // start with either. Both are ranked together, as the index ranks the types it offers, before the
-  // list is capped at SEARCH_LIMIT: two letters prefix-match a hundred dependency types, which
-  // filled the list ahead of the project type its initials name. The top of the union comes from
-  // the top of each list, so each is cut to the cap first, and the per-entry parse cost holds.
+  // start with either. Both are ordered together before the list is capped at SEARCH_LIMIT: two
+  // letters prefix-match a hundred dependency types, which filled the list ahead of the project
+  // type its initials name. The order: a type named exactly so, case and all, whatever its origin
+  // (the hump
+  // matcher is loose); a top-level type before a nested one (a project's many @Nested test classes
+  // must not crowd it out); then the index's ranking, so a type the project uses comes first. The
+  // top of the union comes from the top of each list, so each is cut to the cap first.
   private static List<TypeIndexEntry> mergedEntries(
       final String query,
       final WorkspaceTypeIndex typeIndex,
@@ -86,25 +90,23 @@ public final class WorkspaceSymbolResolver {
           query.substring(0, lastDot), query.substring(lastDot + 1), typeIndex, keep);
     }
 
-    final List<TypeIndexEntry> humps =
-        typeIndex.searchCamelCase(query, Integer.MAX_VALUE).stream()
-            .filter(keep)
-            .sorted(typeIndex.ranking())
-            .limit(SEARCH_LIMIT)
-            .toList();
+    final Comparator<TypeIndexEntry> order =
+        Comparator.comparing((TypeIndexEntry entry) -> !entry.simpleName().equals(query))
+            .thenComparing(entry -> !entry.isTopLevel())
+            .thenComparing(typeIndex.ranking());
     final var seen = new LinkedHashSet<String>();
     final var merged = new ArrayList<TypeIndexEntry>();
     for (final TypeIndexEntry entry :
         Stream.concat(
-                kept(typeIndex.searchSymbols(query, Integer.MAX_VALUE), keep).stream(),
-                humps.stream())
+                topOf(typeIndex.searchSymbols(query, Integer.MAX_VALUE), keep, order),
+                topOf(typeIndex.searchCamelCase(query, Integer.MAX_VALUE), keep, order))
             .toList()) {
       if (seen.add(entry.binaryName())) {
         merged.add(entry);
       }
     }
 
-    merged.sort(typeIndex.ranking());
+    merged.sort(order);
     return List.copyOf(merged.subList(0, Math.min(merged.size(), SEARCH_LIMIT)));
   }
 
@@ -123,9 +125,11 @@ public final class WorkspaceSymbolResolver {
         .toList();
   }
 
-  private static List<TypeIndexEntry> kept(
-      final List<TypeIndexEntry> entries, final Predicate<TypeIndexEntry> keep) {
-    return entries.stream().filter(keep).limit(SEARCH_LIMIT).toList();
+  private static Stream<TypeIndexEntry> topOf(
+      final List<TypeIndexEntry> entries,
+      final Predicate<TypeIndexEntry> keep,
+      final Comparator<TypeIndexEntry> order) {
+    return entries.stream().filter(keep).sorted(order).limit(SEARCH_LIMIT);
   }
 
   private static boolean declaredIn(final String container, final String qualifier) {
