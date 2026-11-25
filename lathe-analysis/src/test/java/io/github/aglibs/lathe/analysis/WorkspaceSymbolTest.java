@@ -109,8 +109,7 @@ class WorkspaceSymbolTest {
   // Two letters prefix-match more dependency types than the list holds: the project's types found
   // by their initials are ranked with them, not added after the cap (spring-petclinic's BE listed
   // a hundred Bean… types and not BaseEntity). The ranking stands: a java.lang type still leads,
-  // and
-  // the project's types come before the other dependencies' alike.
+  // and the project's types come before the other dependencies' alike.
   @Test
   void resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn(
       @TempDir final Path shards) throws IOException {
@@ -154,6 +153,30 @@ class WorkspaceSymbolTest {
         WorkspaceSymbolResolver.resolve("Task", index, List.of(src), entry -> true);
 
     assertThat(result).extracting(SymbolInformation::getName).containsExactly("TaskManager");
+  }
+
+  // A type named exactly as the query leads, whatever its origin: the hump matcher is loose, and
+  // the project's many types it matches would otherwise rank ahead of a dependency's Cache.
+  @Test
+  void resolve_exactNameAndManyProjectHumpMatches_listsTheExactNameFirst(@TempDir final Path shards)
+      throws IOException {
+    createSourceFile("org.dep", "Cache");
+    final List<TypeIndexEntry> projectTypes =
+        IntStream.range(0, 120)
+            .mapToObj(i -> entry("UserCache%03d".formatted(i), "com.example"))
+            .toList();
+    for (final TypeIndexEntry type : projectTypes) {
+      createSourceFile(type.packageName(), type.simpleName());
+    }
+
+    final WorkspaceTypeIndex index =
+        TempSourceCompiler.typeIndex(
+            shards.resolve("dep.json"), List.of(entry("Cache", "org.dep")), projectTypes);
+
+    assertThat(WorkspaceSymbolResolver.resolve("Cache", index, List.of(src), entry -> true))
+        .extracting(SymbolInformation::getName)
+        .hasSize(100)
+        .startsWith("Cache");
   }
 
   @Test

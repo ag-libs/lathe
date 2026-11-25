@@ -37,8 +37,9 @@ A project type whose initials or prefix match is listed, and before a dependency
 
 ### Resolution
 
-The project's CamelHumps matches are now ranked together with the prefix matches, by the index's own ranking (usage, then origin: `java.lang`, the common platform packages, the project, the rest), before the list is capped; each list is cut to the cap first, as the top of their union comes from the top of each.
-So a project type the project uses outranks a dependency type it never references, and `java.lang.String` still leads `Str`, `java.util.List` leads `List`.
+The project's CamelHumps matches and the prefix matches are now ordered together before the list is capped: a type named exactly as the query first, case and all (an initials query `OR` is no `Or`), whatever its origin, as the hump matcher is loose; then a top-level type before a nested one, so a project's many nested test classes do not crowd it out; then the index's ranking (usage, then origin: `java.lang`, the common platform packages, the project, the rest).
+Each list is ordered so and cut to the cap first, as the top of their union comes from the top of each.
+So the project type its initials name is listed, and before a dependency type that only shares a prefix unless the project uses that one more; `java.lang.String` still leads `Str`, `java.util.List` leads `List`, a dependency's `Cache` leads `Cache`.
 Checked on spring-petclinic with a server built from the branch: `BE`, `OR`, `NE`, `OC` and `Ow` list `BaseEntity`, `OwnerRepository`, `NamedEntity`, `OwnerController` and `Owner` first; `PC` lists `PetController` among the project's other `P…C…` types.
 
 Not covered: a JDK or dependency type without sources still takes a place within the cap and is then left out of the symbols (it has no file to open), so the list can come back short of 100 while other matches exist; as before.
@@ -46,6 +47,7 @@ Not covered: a JDK or dependency type without sources still takes a place within
 ### Regression targets
 
 - `WorkspaceSymbolTest.resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn`
+- `WorkspaceSymbolTest.resolve_exactNameAndManyProjectHumpMatches_listsTheExactNameFirst`
 
 ---
 
