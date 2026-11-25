@@ -290,7 +290,8 @@ final class LatheMcpTools {
                 the methods it overrides and those that override or redeclare it, or a type's \
                 subtypes (a field or variable has no family), how many \
                 production vs test references it has, \
-                which reactor modules use or implement it, and the relevant test classes. Use it to scope a rename \
+                which reactor modules use or implement it, and the test classes that reference or implement it \
+                (not those that test it only through other classes). Use it to scope a rename \
                 or signature change before making it.""",
             LatheMcpTools::handleAnalyzeChange),
         tool(

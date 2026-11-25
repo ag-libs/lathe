@@ -2404,31 +2404,3 @@ A type whose initials are exactly the query ranks above one that only contains t
 ### Regression targets
 
 None yet.
-
----
-
-## MC-107 — `analyze_change` lists only the tests that reference the symbol directly, sorted by name
-
-**Status: accepted** (triaged 2026-11-24: medium; an agent runs the first tests it lists, and a private member's are none)
-
-**Kind: bug**
-
-**Affects: MCP `analyze_change` (`relevant tests`).**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N11).
-
-### Observed behaviour
-
-- On the private field `Duration.count`: `references: 17 production, 0 test`, `relevant tests: none`, though `DurationTest` exercises every use of it.
-- On `Duration.toNanoseconds`: `DurationTest` only, not `SlowRequestFilterTest` or `DurationValidatorTest`, whose subjects (`SlowRequestFilter`, `MaxDurationValidator`) call it.
-- On the class `Duration`: 24 tests in alphabetical order, `AbstractRequestLogPatternIntegrationTest` first and `DurationTest` seventh.
-
-[FR-034](#fr-034--renaming-a-member-a-processor-derives-another-from-leaves-the-derived-members-callers-broken) records the same blast radius on a generated builder (`relevant tests: none`).
-
-### Expected
-
-The tests of the classes that hold the references (a private member: its own class's counterpart test), with the declaring class's counterpart first, so an agent that runs the first few runs the right ones.
-
-### Regression targets
-
-None yet.

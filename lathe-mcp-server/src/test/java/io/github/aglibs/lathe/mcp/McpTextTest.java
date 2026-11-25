@@ -919,7 +919,7 @@ class McpTextTest {
                 "int sell(int count)",
                 "references: 4 production, 2 test",
                 "affected modules: app, core",
-                "relevant tests: ShopTest",
+                "tests referencing it: ShopTest",
                 "overrides: app.Seller#sell(int)",
                 "overridden by: 5 (showing first 2)",
                 "app/Base.java:4:1: abstract int sell(int count);",
@@ -947,7 +947,7 @@ class McpTextTest {
                 "(no symbol at that position)",
                 "references: 0 production, 0 test",
                 "affected modules: none",
-                "relevant tests: none"));
+                "tests referencing it: none"));
     assertThat(
             text(
                 McpText.analyzeResult(
@@ -969,7 +969,7 @@ class McpTextTest {
                 "class Shop",
                 "references: 3 production, 0 test",
                 "affected modules: app",
-                "relevant tests: none",
+                "tests referencing it: none",
                 "subtypes: 1",
                 "app/BigShop.java:2:1: class BigShop extends Shop {"));
   }

@@ -671,7 +671,7 @@ final class McpText {
                 "references: %d production, %d test"
                     .formatted(impact.productionRefs(), impact.testRefs()),
                 "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
-                "relevant tests: %s".formatted(joinOrNone(impact.relevantTests()))));
+                "tests referencing it: %s".formatted(joinOrNone(impact.relevantTests()))));
     switch (impact.family()) {
       case METHOD -> {
         lines.add("overrides: %s".formatted(joinOrNone(impact.overrides())));
