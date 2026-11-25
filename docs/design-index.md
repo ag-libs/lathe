@@ -462,9 +462,8 @@ reused):
 - [Analysis Cache Bounding](potential/lathe-analysis-cache-bounding.md) — deferred hard-cap design for
   per-open-file analysis retention (event-loop LRU, eviction delegated to module workers); the issue
   is accepted but a lighter warning-based mitigation is preferred first.
-- [Lowercase CamelCase Symbol Search](potential/lathe-lowercase-camel-symbol-search.md) — let
-  `workspace/symbol` CamelHumps matching span humps from an all-lowercase query, so users need not
-  capitalize boundaries; refines EG-005.
+- [Lowercase CamelCase Symbol Search](potential/lathe-lowercase-camel-symbol-search.md) — let `workspace/symbol` CamelHumps matching span humps from an all-lowercase query, so users need not capitalize boundaries; refines EG-005.
+  The spanning shipped with EG-129; ranking and matching from inside a word remain.
 - [Fuzzy Method-Name Symbol Search in the Reactor](potential/lathe-reactor-method-symbol-search.md) —
   extend `workspace/symbol` beyond type names to fuzzy method-name search by reusing the Find
   References token index (fuzzy key scan) plus a parse-only method collector; moderate, not soon.

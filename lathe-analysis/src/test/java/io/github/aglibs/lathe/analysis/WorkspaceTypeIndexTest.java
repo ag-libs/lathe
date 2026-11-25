@@ -377,7 +377,7 @@ class WorkspaceTypeIndexTest {
             List.of(shardPath),
             TempSourceCompiler.reactorShards(List.of(entry("TaskManager", "com.example"))));
 
-    assertThat(index.searchCamelCase("Mgr", 10))
+    assertThat(index.searchCamelCase("TM", 10))
         .extracting(TypeIndexEntry::binaryName)
         .containsExactly("com.example.TaskManager");
   }
@@ -437,12 +437,12 @@ class WorkspaceTypeIndexTest {
                     entry("TaskManagerTwo", "com.example"),
                     entry("TaskManagerThree", "com.example"))));
 
-    assertThat(index.searchCamelCase("Mgr", 2)).hasSize(2);
+    assertThat(index.searchCamelCase("TM", 2)).hasSize(2);
   }
 
   @Test
   void searchCamelCase_emptyIndex_returnsEmpty() {
-    assertThat(WorkspaceTypeIndex.empty().searchCamelCase("Mgr", 10)).isEmpty();
+    assertThat(WorkspaceTypeIndex.empty().searchCamelCase("TM", 10)).isEmpty();
   }
 
   @Test
