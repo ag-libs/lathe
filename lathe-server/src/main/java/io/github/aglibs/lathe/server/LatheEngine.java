@@ -633,14 +633,19 @@ public final class LatheEngine {
                             new SymbolHits(
                                 session.features().workspaceSymbol(name, reactorOnly),
                                 session.features().sourcelessSymbols(name, reactorOnly))))
-        .map(hits -> ranked(hits).limit(maxResults).toList());
+        .map(hits -> ranked(name, hits).limit(maxResults).toList());
   }
 
-  // The located hits by rank, with the sourceless ones among the dependencies' types, ahead of the
-  // JDK internals. Lazy, so only the hits kept read their snippet.
-  private Stream<LatheSymbol> ranked(final SymbolHits hits) {
+  // The located hits by rank, an exact match of the query first, with the sourceless ones among the
+  // dependencies' types, ahead of the JDK internals. Lazy, so only the hits kept read their
+  // snippet.
+  private Stream<LatheSymbol> ranked(final String query, final SymbolHits hits) {
     final List<SymbolInformation> located =
-        hits.located().stream().sorted(Comparator.comparingInt(this::rank)).toList();
+        hits.located().stream()
+            .sorted(
+                Comparator.comparing((SymbolInformation symbol) -> !names(symbol, query))
+                    .thenComparingInt(this::rank))
+            .toList();
     return Stream.of(
             located.stream()
                 .filter(symbol -> rank(symbol) < JDK_INTERNAL_RANK)
@@ -659,6 +664,20 @@ public final class LatheEngine {
       located = List.copyOf(located);
       sourceless = List.copyOf(sourceless);
     }
+  }
+
+  // Whether the symbol is the one the query names: its simple name, or a qualified name ending in
+  // it (`ListenerConfig.Builder`, `io.helidon.webserver.ListenerConfig`). A generated type is often
+  // the one code uses, its hand-written blueprint package-private (MC-110).
+  private static boolean names(final SymbolInformation symbol, final String query) {
+    final String container = symbol.getContainerName();
+    final String qualified =
+        container == null || container.isEmpty()
+            ? symbol.getName()
+            : "%s.%s".formatted(container, symbol.getName());
+    return symbol.getName().equals(query)
+        || qualified.equals(query)
+        || qualified.endsWith(".%s".formatted(query));
   }
 
   // The reactor's hand-written types first, then its generated ones, then the JDK's and

@@ -651,9 +651,13 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .extracting(reference -> reference.location().origin())
         .containsOnly(LatheLocation.Origin.REACTOR);
     assertThat(callers.calls()).extracting(call -> call.name()).containsExactly("run", "help");
-    assertThat(engine.searchSymbols("Call", SymbolScope.REACTOR, 50).value())
+    assertThat(engine.searchSymbols("Cal", SymbolScope.REACTOR, 50).value())
         .extracting(LatheSymbol::name)
         .containsExactly("Callee", "Caller", "Call");
+    assertThat(engine.searchSymbols("Call", SymbolScope.REACTOR, 50).value())
+        .as("the type the query names comes first, generated or not (MC-110)")
+        .extracting(LatheSymbol::name)
+        .containsExactly("Call", "Callee", "Caller");
   }
 
   @Test
@@ -1021,6 +1025,58 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .as("not the reactor's")
         .extracting(LatheSymbol::name)
         .doesNotContain("Lib");
+  }
+
+  // MC-110: a generated type the query names comes before hand-written ones that only start with
+  // it, as Helidon's generated ListenerConfig before its blueprint; the origin order ranks the
+  // rest.
+  @Test
+  void searchSymbols_generatedExactMatch_listedBeforeHandWrittenPartialMatches() throws Exception {
+    final Path blueprint =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/ConfigBlueprint.java",
+            "package com.example; interface ConfigBlueprint {}");
+    final Path test =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/ConfigTest.java", "package com.example; class ConfigTest {}");
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/Config.java"),
+            """
+            package com.example;
+            public interface Config extends ConfigBlueprint {
+              class Builder {}
+            }
+            """,
+            1_000L);
+    compileIntoMirror(blueprint, test, generated);
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.searchSymbols("Config", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .startsWith("Config")
+        .contains("ConfigBlueprint", "ConfigTest");
+    assertThat(engine.searchSymbols("com.example.Config", SymbolScope.REACTOR, 50).value())
+        .as("a qualified name")
+        .extracting(LatheSymbol::name)
+        .startsWith("Config");
+    assertThat(engine.searchSymbols("Config.Builder", SymbolScope.REACTOR, 50).value())
+        .as("a nested type by its enclosing type")
+        .extracting(LatheSymbol::name)
+        .startsWith("Builder");
+    assertThat(engine.searchSymbols("Conf", SymbolScope.REACTOR, 50).value())
+        .as("no exact match: hand-written first")
+        .extracting(LatheSymbol::name)
+        .containsExactlyInAnyOrder("ConfigBlueprint", "ConfigTest", "Config")
+        .endsWith("Config");
   }
 
   // No project code can use a type in a JDK package its module does not export to everyone.
