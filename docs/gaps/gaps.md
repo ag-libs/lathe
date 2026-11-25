@@ -1298,6 +1298,64 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
+## CQ-0079 — Member completion after `case X x -> x.` answers nothing while the switch block is not closed
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: editor completion in a `switch` with arrow cases, typed line by line (Neovim without auto-pairs leaves the block open).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+In a method of `ServerListener`, with `Object o = null;` before it:
+
+```java
+switch (o) {
+    case ListenerConfig lc -> lc.§
+```
+
+with no `}` yet, completion answers 0 items; `case String str -> str.§` does too.
+The same with the block closed (`}` on the next line, or `; default -> { } }`) answers 43 items, `port` among them.
+An unclosed classic `case String str:` then `str.§`, an `instanceof` pattern, a switch expression's arrow case and a lambda body all complete.
+
+### Expected
+
+Members of the pattern variable's type, as with the block closed: the recovery that closes an unfinished classic case closes an unfinished arrow case too.
+
+### Regression targets
+
+None yet.
+
+## CQ-0080 — `import static Type.` offers `class`
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: editor completion in a static import.**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`import static io.helidon.webserver.WebServer.§` lists `DEFAULT_SOCKET_NAME`, `builder`, `create` and `class`; `import static java.util.List.§` lists `class` among `of` and `copyOf`.
+`import static java.util.List.class;` does not compile: a static import names a static member.
+
+### Expected
+
+Static members and member types only, no `class`.
+
+### Regression targets
+
+None yet.
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
@@ -2412,3 +2470,57 @@ A type whose initials are exactly the query ranks above one that only contains t
 ### Regression targets
 
 None yet.
+## MC-110 — `search_symbols` lists an exact match below partial ones when the match is generated
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `search_symbols` on a reactor whose public types are processor output (Helidon's builders).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`search_symbols {query: "ListenerConfig", maxResults: 6}` lists `ListenerConfigBlueprint`, `ListenerConfigTest`, `ListenerConfigDecorator`, `ListenerConfigurationParamHandler`, then `ListenerConfig` [GENERATED], fifth.
+The exact qualified name `io.helidon.webserver.ListenerConfig` lists it last of three, and `LiCo` leaves it out of the first six.
+MC-39's rule ranks the reactor's generated types after its hand-written ones; it outranks the match itself.
+In Helidon the generated types are the public API and the blueprints are package-private, so an agent is handed first the type it cannot use.
+The editor's `workspace/symbol` lists `ListenerConfig` first for all three queries ([EG-127](gaps-archive.md)).
+
+### Expected
+
+An exact match of the simple or qualified name comes first, generated or not; MC-39's hand-written-before-generated order applies among the rest, as the editor's search orders exact names first.
+Related: [MC-106](#mc-106--search_symbols-ranks-the-tool-descriptions-own-camelhumps-example-second-and-lowercase-humps-match-nothing) (initials ranked below a looser match).
+
+### Regression targets
+
+None yet.
+
+## MC-111 — A file tool given `path:line` says only that it is not a `.java` file
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP file tools (`get_diagnostics`, `outline`, and the position tools' `file`).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`get_diagnostics {file: "webserver/webserver/src/main/java/io/helidon/webserver/ServerListener.java:134"}` answers "…ServerListener.java:134 is not a .java file".
+Agents often copy a location as `path:line` (or `path:line:column`, the form Lathe's own answers print), and the answer does not say what to change.
+
+### Expected
+
+A `.java` path followed by `:line` or `:line:column` gets a note to pass the path alone, with the line and column apart; or the tools that take a position read them from it.
+
+### Regression targets
+
+None yet.
+
