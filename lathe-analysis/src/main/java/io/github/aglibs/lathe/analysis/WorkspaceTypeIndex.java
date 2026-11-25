@@ -384,7 +384,7 @@ public final class WorkspaceTypeIndex {
     return reactorTrees.containsKey(entry.binaryName()) ? 2 : 3;
   }
 
-  // CamelCase-hump matching (e.g. "TaskMgr" -> TaskManager, "ASF" -> AbstractServerFactory) is
+  // CamelCase-hump matching (e.g. "TaMa" -> TaskManager, "ASF" -> AbstractServerFactory) is
   // scoped to reactor-owned types only, not JDK/dependency types: it is a supplementary layer on
   // top of search()'s exact prefix match, not a replacement, so it deliberately does not touch
   // search()'s existing contract or its completion/import-quickfix callers. Every named reactor

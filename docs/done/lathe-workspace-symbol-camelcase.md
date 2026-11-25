@@ -17,28 +17,18 @@ avoids the multi-second uncapped scan the browsing approach required.
 
 ## Algorithm
 
-`CamelCaseMatcher.matches(query, candidateSimpleName)` — IntelliJ's "CamelHumps" scheme:
+`CamelCaseMatcher.matches(query, candidateSimpleName)` follows IntelliJ's CamelHumps, as its Go to Class matches a type name ([EG-129](../gaps/gaps-archive.md) replaced the first version, which let a query's letters fall anywhere inside a word):
 
-1. Split both the query and the candidate simple name into "humps" at every uppercase-letter or
-   digit boundary. `AbstractServerFactory` → `[Abstract, Server, Factory]`; an all-caps query like
-   `ASF` → `[A, S, F]` (every character is its own boundary, since every character is uppercase).
-2. Match query humps against candidate humps as a **subsequence** — candidate humps can be
-   skipped. This is what lets `"ServerFactory"` (humps `[Server, Factory]`) reach
-   `AbstractServerFactory` by skipping `Abstract`.
-3. For each aligned (query-hump, candidate-hump) pair: the **first character must match**
-   (case-insensitive), and the **rest of the query-hump must be a subsequence of the rest of the
-   candidate-hump** — not a prefix. This is what makes `Mgr` match `Manager` (`M` anchors, then
-   `g`, `r` are found in order within `anager`), even though `Mgr` is not a literal prefix of
-   `Manager`.
+1. The name's words start at its first letter, after a `_` or `$`, at a digit, at a capital after a lowercase letter or a digit, and at the last capital of an acronym before a lowercase letter: `AbstractServerFactory` → `Abstract`, `Server`, `Factory`; `URLConnection` → `URL`, `Connection`; `Aes128` → `Aes`, `1`, `2`, `8`.
+2. The query starts at a word of the name, and each of its letters either continues the run it is in or starts a later word, case ignored; words may be skipped.
+   `TaskMan`, `TaMa`, `tm` and `taskman` reach `TaskManager`, and `ServerFactory` reaches `AbstractServerFactory`.
+3. A letter never lands inside a word: `Pet` does not reach `I18nPropertiesSyncTest`, and an abbreviation that drops letters (`Mgr`, `TaskMgr`) reaches nothing, in IntelliJ as here.
+4. A query with a capital past its first letter marks its words itself, so its lowercase letters only continue a word: `oCT` reaches `OwnerControllerTest`, `OcT` does not.
+5. A `_` or `$` in the query skips to the next one in the name.
 
-Matching is greedy left-to-right with no backtracking — for pure subsequence problems with a
-pairwise-independent match predicate, greedy is provably equivalent to backtracking search, so no
-recursion is needed. See `CamelCaseMatcherTest` for the full worked-example coverage.
-
-An all-lowercase query without any internal capitalization (e.g. `"taskmgr"`) is treated as a
-*single* hump and therefore only matches within one candidate hump — it does not span
-`Task`+`Manager` the way `"TaskMgr"` (capital-`M`-signalled) does. Hump boundaries come from the
-query's own capitalization; this is intentional, not a limitation to fix later.
+A run is tried longest first, then shorter, as the rest of the query may need a letter the longer run took; a query and name position that failed once is not tried again.
+The rule was checked against IntelliJ 2025.3's own matcher on 2,128 queries over 4,000 type names from Helidon, Dropwizard, Petclinic and Lathe: they agree on every pair but IntelliJ's hard-coded `ln` word (`CurrencyNames_kln`).
+IntelliJ also matches a query from inside a word (`ana` in `TaskManager`, with a run of at least three letters before a jump); that is not done here, as it needs results ranked by how well they match.
 
 ## Scope decisions
 

@@ -1,5 +1,8 @@
 # Lathe — Lowercase CamelCase Symbol Search
 
+**Status:** the spanning shipped with [EG-129](../gaps/gaps-archive.md), which made the matcher IntelliJ's: `taskman` and `tm` reach `TaskManager`; `taskmgr` does not, in IntelliJ either.
+What remains open below is ranking and matching from inside a word.
+
 ## Problem / motivation
 
 `workspace/symbol` fuzzy search (the CamelHumps matcher shipped for
