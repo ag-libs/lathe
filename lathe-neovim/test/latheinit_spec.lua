@@ -1,6 +1,7 @@
 -- Verifies lathe.latheinit: the build root it finds from a folder (an OpenJDK checkout's markers,
 -- Maven's markers, the topmost of a run of pom.xml folders, Gradle's settings script, the nearer of
--- a Maven and a Gradle root, a forced kind), the root prompt (accepted, edited, cancelled), whether
+-- a Maven and a Gradle root, a forced kind), the root prompt (accepted, edited, cancelled, naming
+-- the other build at the same root), whether
 -- the build registers Lathe, and the commands :LatheInit runs: the Maven fetch then the first build
 -- (clean, tests captured, compile errors kept) with the activation, the Gradle build with the init
 -- script written for the version, the OpenJDK goal on a built JDK, the same first build for a build
@@ -205,6 +206,33 @@ spec.check(
   "a registration in a Gradle comment does not count",
   latheinit.find_build(work .. "/commented-gradle").registered,
   false
+)
+
+-- Both builds at one root: Gradle, and the prompt names the Maven build and how to choose it. A
+-- forced kind, or a Maven build nested deeper, is not named.
+write(work .. "/both/settings.gradle")
+write(work .. "/both/pom.xml")
+spec.check("both builds at one root: Gradle", root_of("/both"), "/both gradle")
+next_answer = false
+run_from("/both")
+spec.check(
+  "and the prompt names the other build",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 for the Gradle build (a Maven build is there too: `:LatheInit maven`) in: "
+)
+next_answer = false
+run_from("/both", "gradle")
+spec.check(
+  "a forced kind names no other build",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 for the Gradle build in: "
+)
+next_answer = false
+run_from("/mixed")
+spec.check(
+  "a Maven build below the Gradle root is not named",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 for the Gradle build in: "
 )
 
 -- Maven personal: fetch, then build with the activation, then attach.

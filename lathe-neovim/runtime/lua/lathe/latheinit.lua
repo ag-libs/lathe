@@ -167,7 +167,7 @@ end
 --- The build around `start` (a folder): `{ root, kind = "maven"|"gradle"|"openjdk", registered }`,
 --- or nil. With `kind`, only that kind's root. Otherwise an OpenJDK checkout first, then the nearer
 --- of a Maven and a Gradle root; at the same folder, Gradle, whose settings script is the more
---- explicit marker.
+--- explicit marker, with `also = "maven"` so the prompt can name the other.
 function M.find_build(start, kind)
   local dirs = upward(start)
   if kind then
@@ -182,7 +182,9 @@ function M.find_build(start, kind)
 
   local gradle, maven = gradle_root(dirs), maven_root(dirs)
   if gradle and (not maven or #gradle >= #maven) then
-    return describe(gradle, "gradle")
+    local found = describe(gradle, "gradle")
+    found.also = maven == gradle and "maven" or nil
+    return found
   end
 
   return maven and describe(maven, "maven") or nil
@@ -700,7 +702,11 @@ end
 -- What :LatheInit is about to do at the root it found, the version it moves from, and whether the
 -- root came from the current file rather than :pwd.
 local function prompt_for(found, from_file, again)
-  local origin = from_file and " (found from the current file)" or ""
+  -- The other build at the same root, which the user may have meant.
+  local also = found.also
+      and (" (a %s build is there too: `:LatheInit %s`)"):format(KINDS[found.also], found.also)
+    or ""
+  local origin = (from_file and " (found from the current file)" or "") .. also
   local repeated = again and " again" or ""
   if found.registered then
     return ("Lathe: build the %s project%s%s, which registers Lathe, in: "):format(
