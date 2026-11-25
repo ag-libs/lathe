@@ -1298,39 +1298,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0079 — Member completion after `case X x -> x.` answers nothing while the switch block is not closed
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: S–M**
-
-**Affects: editor completion in a `switch` with arrow cases, typed line by line (Neovim without auto-pairs leaves the block open).**
-
-Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
-
-### Observed behaviour
-
-In a method of `ServerListener`, with `Object o = null;` before it:
-
-```java
-switch (o) {
-    case ListenerConfig lc -> lc.§
-```
-
-with no `}` yet, completion answers 0 items; `case String str -> str.§` does too.
-The same with the block closed (`}` on the next line, or `; default -> { } }`) answers 43 items, `port` among them.
-An unclosed classic `case String str:` then `str.§`, an `instanceof` pattern, a switch expression's arrow case and a lambda body all complete.
-
-### Expected
-
-Members of the pattern variable's type, as with the block closed: the recovery that closes an unfinished classic case closes an unfinished arrow case too.
-
-### Regression targets
-
-None yet.
-
 ## CQ-0080 — `import static Type.` offers `class`
 
 **Status: documented**

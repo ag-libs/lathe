@@ -4975,6 +4975,68 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0079 — Member completion after `case X x -> x.` answers nothing while the switch block is not closed — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: editor completion in a `switch` with arrow cases, typed line by line (Neovim without auto-pairs leaves the block open).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+In a method of `ServerListener`, with `Object o = null;` before it:
+
+```java
+switch (o) {
+    case ListenerConfig lc -> lc.§
+```
+
+with no `}` yet, completion answers 0 items; `case String str -> str.§` does too.
+The same with the block closed (`}` on the next line, or `; default -> { } }`) answers 43 items, `port` among them.
+An unclosed classic `case String str:` then `str.§`, an `instanceof` pattern, a switch expression's arrow case and a lambda body all complete.
+
+### Expected
+
+Members of the pattern variable's type, as with the block closed: the recovery that closes an unfinished classic case closes an unfinished arrow case too.
+
+### Cause
+
+Completion injects a sentinel where the cursor is, closes what the content leaves open, and reparses; a member access resolves its receiver on an attribution of the text.
+Three things lost the receiver of an arrow or colon case in a switch block not closed yet:
+
+- The backward scan stopped at the label's `->` or `:` and took it for an expression, as a lambda's arrow or a ternary's colon is, so no `;` ended the sentinel: javac read the next statement into the label's body (`case String str -> str.SENTINEL next = 1;`, a declaration whose type is `str.SENTINEL`).
+- The braces the content left open were closed at the end of the file, so the switch took in every member after the method, and javac's recovery lost the enclosing class's own types (a nested type, a type of the same package).
+- The receiver was resolved on a reattribution of the raw content, whose block is still open, where javac's recovery drops the case's pattern variable.
+
+The analysis fixture compiles the injected text, so its tests completed; the editor's module compiler, with the analysis from before the edit, did not.
+
+### Resolution
+
+- `SentinelInjector.closesSwitchLabel`: a `->` or `:` that closes a `case` or `default` label (the keyword before it, at its own nesting, with no statement boundary between, string and character literals skipped) starts a statement, so the sentinel ends with `;`. A lambda's arrow and a ternary's colon still end an expression.
+- In a switch label's body, the braces the content leaves open are the switch being typed: they close right after the label's statement, so the members after it keep their structure. Elsewhere an open brace may be another method's, so it still closes at the end of the file.
+- `MemberAccessCompleter` resolves a switch label's receiver on the injected content when it closed braces there (`SentinelInjectionResult.closedBraces`), as it does for a method chain; that analysis is not cached, and a receiver that does not resolve (a package) falls back on it rather than on the analysis from before the edit.
+
+Checked end to end on Helidon with a server built from the change, in `ServerListener`'s constructor with `switch (o) {` open: arrow cases on `String` (73 items), `ListenerConfig` (45, `port` among them; none before), the enclosing class and a guarded case; a colon case, `default ->`, a `char` label, a package receiver (`java.util.`), a typed prefix; an open `if` block, a closed switch and a brace left open in a later method answer as before.
+The round's other completion, diagnostics, rename and signature probes answer as before.
+Completion in an open switch reattributes on each request the cache cannot answer (about 80–210 ms on Helidon).
+
+Not covered: a lambda block whose `};` is not typed yet (`Runnable r = () -> {` then `x.`), which answers nothing on Helidon before and after this change, though the server test's smaller class completes; and a `case` keyword inside a text block between the label and the cursor.
+
+### Regression targets
+
+- `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedBlockAfterAnEdit_offersTheReceiversMembers` (through the module compiler, with the analysis from before the edit: a switch on a JDK type and on the class's own type, a colon case; an `if` block and a lambda block)
+- `CompletionUnclosedBlockTest.completion_braceLeftOpenInALaterMethod_offersTheReceiversMembers`
+- `CompletionCaseTest.completion_memberAccessInUnclosedSwitchLabel_offersTheReceiversMembers` (arrow, guarded arrow, `default ->`, colon, string, `char` and escaped-quote labels, record pattern)
+- `CompletionCaseTest.completion_memberAccessInLambdaBodyBeforeAStatement_offersTheReceiversMembers` and `completion_memberAccessAfterTernaryColon_offersTheReceiversMembers`
+
+---
+
+
 ## CQ-0078 — Completion offers package-private `java.lang` types — done
 
 **Status: done** (2026-11-24)
