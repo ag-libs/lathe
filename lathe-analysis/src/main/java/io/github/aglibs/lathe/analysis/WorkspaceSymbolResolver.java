@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -71,8 +72,10 @@ public final class WorkspaceSymbolResolver {
   // including package-private top-level types so a stack frame's internal impl class resolves.
   // CamelCase-hump matching is a supplementary, reactor-only layer on top, so a type like
   // AbstractServerFactory is still reachable via "ServerFactory" or "ASF" even though it doesn't
-  // start with either. Prefix matches win on overlap; the combined list stays capped at
-  // SEARCH_LIMIT so the per-entry parse cost is unchanged from before.
+  // start with either. Both are ranked together, as the index ranks the types it offers, before the
+  // list is capped at SEARCH_LIMIT: two letters prefix-match a hundred dependency types, which
+  // filled the list ahead of the project type its initials name. The top of the union comes from
+  // the top of each list, so each is cut to the cap first, and the per-entry parse cost holds.
   private static List<TypeIndexEntry> mergedEntries(
       final String query,
       final WorkspaceTypeIndex typeIndex,
@@ -83,27 +86,26 @@ public final class WorkspaceSymbolResolver {
           query.substring(0, lastDot), query.substring(lastDot + 1), typeIndex, keep);
     }
 
+    final List<TypeIndexEntry> humps =
+        typeIndex.searchCamelCase(query, Integer.MAX_VALUE).stream()
+            .filter(keep)
+            .sorted(typeIndex.ranking())
+            .limit(SEARCH_LIMIT)
+            .toList();
     final var seen = new LinkedHashSet<String>();
     final var merged = new ArrayList<TypeIndexEntry>();
     for (final TypeIndexEntry entry :
-        kept(typeIndex.searchSymbols(query, Integer.MAX_VALUE), keep)) {
+        Stream.concat(
+                kept(typeIndex.searchSymbols(query, Integer.MAX_VALUE), keep).stream(),
+                humps.stream())
+            .toList()) {
       if (seen.add(entry.binaryName())) {
         merged.add(entry);
       }
     }
 
-    for (final TypeIndexEntry entry :
-        kept(typeIndex.searchCamelCase(query, Integer.MAX_VALUE), keep)) {
-      if (merged.size() >= SEARCH_LIMIT) {
-        break;
-      }
-
-      if (seen.add(entry.binaryName())) {
-        merged.add(entry);
-      }
-    }
-
-    return merged;
+    merged.sort(typeIndex.ranking());
+    return List.copyOf(merged.subList(0, Math.min(merged.size(), SEARCH_LIMIT)));
   }
 
   // A qualified name as an import or a stack trace shows it (java.util.Map.Entry, or a tail of it
