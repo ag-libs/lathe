@@ -66,6 +66,8 @@ Lathe copies classes and resources into that directory.
 A check such as nohttp may flag a URL in a copied resource on the next build.
 Where Lathe wires the build, it excludes `.lathe/` from a nohttp check itself, and the build log says so (Gradle's at `--info`): on Maven, the `maven-checkstyle-plugin` that runs `nohttp-checkstyle` gets `**/.lathe/**` added to its excludes for the build; on Gradle, the `io.spring.nohttp` plugin's source gets the same exclude.
 For other checks, and on a build Lathe does not wire (the Maven plugin declared without the extension, or Lathe turned off for the build), exclude the directory yourself, as you would a build output directory.
+A project set up in personal mode (`:LatheInit` on a build that does not register Lathe) is such a build whenever you run it yourself: only Lathe's own builds and syncs are wired, so your `mvn verify` or `gradle build` still flags `.lathe/`.
+`:LatheInit` warns when the root build file or the Gradle version catalog names nohttp (not a check declared in a parent POM or a subproject); the exclusion is then the one change to the project that personal mode needs.
 
 ```xml
 <!-- Maven: the maven-checkstyle-plugin execution that runs nohttp-checkstyle -->

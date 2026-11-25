@@ -11773,6 +11773,40 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-51 — After a personal setup, the project's own build fails a check that scans the whole project — done
+
+**Status: done** (2026-11-25: `:LatheInit` warns; the mirror moving out of the project stays the [External Content Directory](../potential/lathe-external-content-dir.md) design)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: Maven and Gradle projects set up in personal mode (`:LatheInit` on a build that does not register Lathe) whose build runs a check over the project directory (nohttp, license headers, a Docker context).**
+
+Found testing `:LatheInit` on spring-petclinic (2026-11-25, `main` at `bfba80c`, the working-tree Neovim client, a fresh clone with no Lathe registration).
+
+### Observed behaviour
+
+`:LatheInit maven` sets the project up (download 1.7 s, first build 9.2 s, the server attached) and `git status` stays clean, as its message promises ("your project files are not changed").
+`:LatheSync` then passes too, as WS-40 (below) excludes `.lathe/` from the nohttp check in every build Lathe runs.
+The project's own build does not: `./mvnw verify`, or its nohttp execution alone (`./mvnw checkstyle:check@nohttp-checkstyle-validation`), fails on `.lathe/classes/META-INF/sbom/application.cdx.json`, Spring Boot's SBOM, which the class mirror copies and which holds `http://` URLs.
+In personal mode no build the user runs without Lathe is wired, so WS-40's exclusion never reaches it, and nothing said so: the user met it as a broken build after the setup.
+
+### Resolution
+
+A personal setup whose root build file names nohttp (`io.spring.nohttp`, outside comments, in `pom.xml`, `build.gradle`, `build.gradle.kts` or the version catalog `gradle/libs.versions.toml`) ends, once this build set Lathe up (it wrote the workspace manifest), with a warning: the project's own builds will find the classes Lathe copies into `.lathe/`, so exclude `**/.lathe/**` from the check, with a link to the troubleshooting guide's exclusions.
+The exclusion is the one change to the project that personal mode then needs; a build that registers Lathe is wired on every run and is not warned.
+The help text and the troubleshooting guide say the same.
+
+Not covered: a check named only in a parent POM or a subproject's build file, and scanners other than nohttp (license headers, a Docker context), which the guide's exclusion advice covers.
+A project with no change at all needs the mirror outside the project, the External Content Directory design.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "a Maven build with a nohttp check is warned", "a Gradle build with a nohttp check is warned", "a check named in the version catalog is warned", "a build without the check is not warned", "a check commented out is not warned", "a failed build with only an earlier setup's .lathe/ is not warned".
+
+---
+
 ## WS-50 — jdtls answers nothing on a Maven project that registers Lathe — done
 
 **Status: done** (2026-11-24)

@@ -29,6 +29,10 @@ SETTING UP A PROJECT                                    *:LatheInit*
     runs Lathe's OpenJDK goal once the JDK is built. The
     server attaches when the build ends. Run it again to move the project to
     this client's Lathe version; |:LatheSync| refreshes the workspace.
+    On a build that does not register Lathe, only Lathe's own builds
+    exclude `.lathe/` from a nohttp check: when the root build file names
+    nohttp, the setup warns that your own builds will flag `.lathe/` until
+    you exclude it there.
 
 ==============================================================================
 SETUP                                                   *lathe-setup*
