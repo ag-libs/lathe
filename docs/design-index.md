@@ -468,9 +468,9 @@ reused):
 - [Fuzzy Method-Name Symbol Search in the Reactor](potential/lathe-reactor-method-symbol-search.md) —
   extend `workspace/symbol` beyond type names to fuzzy method-name search by reusing the Find
   References token index (fuzzy key scan) plus a parse-only method collector; moderate, not soon.
-- [Basic Refactorings (Rename, Move, Extract)](potential/lathe-basic-refactorings.md) — rename
-  (`prepareRename`/`rename`, already M2), move and extract method/variable/field via
-  `refactor.move`/`refactor.extract` code actions returning `WorkspaceEdit`s.
+- [Refactorings and Code Actions](potential/lathe-basic-refactorings.md) — rename and extract have shipped;
+  move, and the code actions a jdtls comparison on spring-petclinic (2026-11-25) found missing: quick fixes on
+  errors, generate source, inline, change signature; ordered by what users meet first.
 - [Split `WorkspaceSession` by Responsibility](potential/lathe-workspace-session-split.md) — **potential.**
   The class grew to 5,324 lines since M1 flagged it at 1,365; extract layout queries, the reactor type
   index, run/test/debug and the write passes into package-private, event-loop-confined classes, in that order.
