@@ -100,6 +100,38 @@ class CamelCaseMatcherTest {
     assertThat(CamelCaseMatcher.matches("ULC", "URLConnection")).isFalse();
   }
 
+  // MC-106: each pair ordered as IntelliJ's matchingDegree orders it.
+  @Test
+  void degree_betterMatch_ranksHigher() {
+    assertDegreeOrder(
+        "ASF",
+        "AbstractServerFactory",
+        "AbstractOutputStreamAppenderFactory",
+        "AsyncAppenderFactory",
+        "AsyncLoggingEventAppenderFactory");
+    assertDegreeOrder(
+        "SSH", "ServerShutdownHandler", "ShakespearePlaysScrabbleWithHelidonReactiveOpt");
+    assertDegreeOrder(
+        "Pet", "Pet", "PetType", "ThreadPerTaskExecutor", "PersistenceUnitTransactionType");
+    assertDegreeOrder("oc", "OctetStreamData", "OwnerController");
+    assertDegreeOrder("BE", "BaseEntity", "Beacon");
+    assertThat(CamelCaseMatcher.degree("ASF", "ServerFactory")).isEmpty();
+  }
+
+  @Test
+  void degree_sameShapeOfMatch_ties() {
+    assertThat(CamelCaseMatcher.degree("SSH", "ServerShutdownHandler"))
+        .isEqualTo(CamelCaseMatcher.degree("SSH", "SingleSubscriberHolder"));
+  }
+
+  private static void assertDegreeOrder(final String query, final String... bestFirst) {
+    for (int i = 1; i < bestFirst.length; i++) {
+      assertThat(CamelCaseMatcher.degree(query, bestFirst[i - 1]).orElseThrow())
+          .as("%s: %s above %s", query, bestFirst[i - 1], bestFirst[i])
+          .isGreaterThan(CamelCaseMatcher.degree(query, bestFirst[i]).orElseThrow());
+    }
+  }
+
   @Test
   void matches_separator_startsAWordAndIsSkippedTo() {
     assertThat(CamelCaseMatcher.matches("fb", "foo_bar")).isTrue();
