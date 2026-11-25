@@ -7,6 +7,48 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-127 — Workspace symbol drops the project's own type for a short initials query — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Affects: workspace symbol in the editor, and MCP `search_symbols`, for a query of a type's initials.**
+
+Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand; the Helidon QA round of 2026-11-24 saw the same ordering (`dev/reports/qa-2026-11-24-helidon.md`, B-3).
+
+### Observed behaviour
+
+| Query | Project type | Lathe | jdtls |
+|---|---|---|---|
+| `BE` | `BaseEntity` | absent from 98 results (`Beans`, `BeanInfo`, `Ber`, …) | `BaseEntity` |
+| `OR` | `OwnerRepository` | absent from 100 (`Order0`, `Order1`, `Or`, …) | `OwnerRepository` |
+| `NE` | `NamedEntity` | absent from 100 (`NegativeArraySizeException`, `Net`, …) | `NamedEntity` |
+| `OC` | `OwnerController` | 20th of 21, after `OctetStreamData`, `OCSP`, … | `OwnerController`, `OwnerControllerTests` |
+| `PC` | `PetController` | 17th of 19, after `PCK`, `PCMM`, … | the project's `P…C…` types |
+
+### Cause (read from the code, not fixed)
+
+`WorkspaceSymbolResolver.mergedEntries` takes every prefix match first, from the JDK, the dependencies and the project alike, and adds the CamelHumps matches (the project's types only) while the list is under `SEARCH_LIMIT` (100); two letters such as `Be` already prefix-match 100 dependency types, so a project type found by its initials never gets in, and one that does comes after the prefix matches.
+
+### Expected
+
+A project type whose initials or prefix match is listed, and before a dependency or JDK type that only shares a prefix, as jdtls lists it.
+
+### Resolution
+
+The project's CamelHumps matches are now ranked together with the prefix matches, by the index's own ranking (usage, then origin: `java.lang`, the common platform packages, the project, the rest), before the list is capped; each list is cut to the cap first, as the top of their union comes from the top of each.
+So a project type the project uses outranks a dependency type it never references, and `java.lang.String` still leads `Str`, `java.util.List` leads `List`.
+Checked on spring-petclinic with a server built from the branch: `BE`, `OR`, `NE`, `OC` and `Ow` list `BaseEntity`, `OwnerRepository`, `NamedEntity`, `OwnerController` and `Owner` first; `PC` lists `PetController` among the project's other `P…C…` types.
+
+Not covered: a JDK or dependency type without sources still takes a place within the cap and is then left out of the symbols (it has no file to open), so the list can come back short of 100 while other matches exist; as before.
+
+### Regression targets
+
+- `WorkspaceSymbolTest.resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn`
+
+---
+
 ## EG-126 — After the test `module-info.java` is opened, its errors are reported in every other file of the tree, at unrelated positions — done
 
 **Status: done** (2026-11-24)
