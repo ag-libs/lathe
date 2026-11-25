@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.JdkSupport;
@@ -69,7 +70,7 @@ final class FeatureRouter {
                 return new CompilerRoute.UnsupportedJdk(
                     uri,
                     JdkSupport.fileMessage(
-                        SourceLayout.displayed(
+                        LatheLayout.displayedModule(
                             SourceLayout.moduleRel(
                                 state.root(), unsupported.get().module().moduleDir())),
                         unsupported.get()));

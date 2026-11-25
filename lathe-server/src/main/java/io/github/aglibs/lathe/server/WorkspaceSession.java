@@ -918,7 +918,7 @@ final class WorkspaceSession {
         mismatches.stream()
             .map(
                 mismatch ->
-                    SourceLayout.displayed(
+                    LatheLayout.displayedModule(
                         SourceLayout.moduleRel(state.root(), mismatch.module().moduleDir())))
             .distinct()
             .toList();

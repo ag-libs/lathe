@@ -499,11 +499,17 @@ final class McpText {
     final String upstream =
         module.dependsOn().isEmpty()
             ? ""
-            : "  depends on: %s".formatted(listed(module.dependsOn()));
+            : "  depends on: %s".formatted(listed(displayedModules(module.dependsOn())));
     // Every module says, so a missing status never reads as an unknown one.
     final String tests =
         module.hasTests() ? (module.testsCaptured() ? "captured" : "not captured") : "none";
-    return "%s%s  tests: %s".formatted(module.module(), upstream, tests);
+    return "%s%s  tests: %s"
+        .formatted(LatheLayout.displayedModule(module.module()), upstream, tests);
+  }
+
+  // Module paths as a reader is shown them: the workspace root's empty path as ".".
+  static List<String> displayedModules(final List<String> modules) {
+    return modules.stream().map(LatheLayout::displayedModule).toList();
   }
 
   static CallToolResult importsResult(final LatheImports imports, final LatheNotes notes) {
@@ -670,7 +676,8 @@ final class McpText {
                 impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
                 "references: %d production, %d test"
                     .formatted(impact.productionRefs(), impact.testRefs()),
-                "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
+                "affected modules: %s"
+                    .formatted(joinOrNone(displayedModules(impact.affectedModules()))),
                 "tests referencing it: %s".formatted(joinOrNone(impact.relevantTests()))));
     switch (impact.family()) {
       case METHOD -> {
@@ -795,7 +802,7 @@ final class McpText {
       return "";
     }
 
-    final List<String> modules = verify.affectedModules();
+    final List<String> modules = displayedModules(verify.affectedModules());
     final String advice =
         errors > 0
             ? "fix the errors and re-check, or build them with"

@@ -17,6 +17,13 @@ class LatheLayoutTest {
     System.clearProperty(LatheFlags.CACHE_ROOT);
   }
 
+  // The module at the workspace root has the empty path; a reader is shown "." (MC-108).
+  @Test
+  void displayedModule_rootAndNested_rootReadsAsDot() {
+    assertThat(LatheLayout.displayedModule("")).isEqualTo(".");
+    assertThat(LatheLayout.displayedModule("core/util")).isEqualTo("core/util");
+  }
+
   // The guard for LatheLayout.Maven: build-neutral modules never name a Maven-only constant. A
   // front-end module is scanned too, so a wrong path cannot make the guard pass vacuously.
   @Test

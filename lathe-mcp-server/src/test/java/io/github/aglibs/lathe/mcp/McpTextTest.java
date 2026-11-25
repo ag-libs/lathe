@@ -340,6 +340,57 @@ class McpTextTest {
         .doesNotContain("Stale:");
   }
 
+  // The module at the workspace root has the empty path: the summary names it ".", and so does a
+  // module that depends on it (MC-108).
+  @Test
+  void modulesResult_rootModuleAndADependent_namedAsDot() {
+    assertThat(
+            text(
+                McpText.modulesResult(
+                    List.of(
+                        new LatheModuleSummary("", List.of(), true, true),
+                        new LatheModuleSummary("child", List.of(""), true, false)),
+                    McpText.NO_NOTES)))
+        .contains("%n.  tests: captured%n".formatted())
+        .contains("%nchild  depends on: .  tests: not captured".formatted());
+  }
+
+  @Test
+  void analyzeResult_referencesInTheRootModule_affectedModulesNamesDot() {
+    assertThat(
+            text(
+                McpText.analyzeResult(
+                    new LatheChangeImpact(
+                        "void run()",
+                        Family.METHOD,
+                        List.of(),
+                        List.of(),
+                        0,
+                        List.of(),
+                        0,
+                        1,
+                        1,
+                        List.of(""),
+                        List.of("AppTest")),
+                    McpText.NO_NOTES)))
+        .contains("affected modules: .%n".formatted());
+  }
+
+  @Test
+  void crossModuleNote_rootModuleDepends_namedAsDot() {
+    assertThat(
+            McpText.crossModuleNote(
+                new LatheVerifyChange(
+                    null,
+                    List.of(),
+                    List.of("", "lib"),
+                    ".lathe/lathe-sync.sh",
+                    List.of(),
+                    List.of()),
+                0))
+        .contains("2 module(s) depend on your change (., lib)");
+  }
+
   @Test
   void crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded() {
     final List<String> twelve = IntStream.rangeClosed(1, 12).mapToObj("mod%d"::formatted).toList();

@@ -169,7 +169,7 @@ final class FormatService {
         .registry()
         .moduleSourceFor(file)
         .map(state.layout()::moduleRel)
-        .map(SourceLayout::displayed);
+        .map(LatheLayout::displayedModule);
   }
 
   // No edits without a formatter.

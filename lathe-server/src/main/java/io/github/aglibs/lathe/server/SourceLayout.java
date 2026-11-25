@@ -40,11 +40,6 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return moduleRel(workspaceRoot, config.moduleDir());
   }
 
-  // A module path as a person reads it: "." for the module at the reactor root.
-  static String displayed(final String moduleRel) {
-    return moduleRel.isEmpty() ? "." : moduleRel;
-  }
-
   // The module's directory under .lathe/, the inverse of moduleRel.
   static Path moduleLatheDir(final Path workspaceRoot, final String moduleRel) {
     return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
@@ -169,7 +164,8 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
         .orElseThrow(
             () ->
                 new IllegalStateException(
-                    "no %s source root for module '%s'".formatted(scope, moduleRel)));
+                    "no %s source root for module '%s'"
+                        .formatted(scope, LatheLayout.displayedModule(moduleRel))));
   }
 
   // Test selectors to run for a directory, from the real reactor layout, not the path string.

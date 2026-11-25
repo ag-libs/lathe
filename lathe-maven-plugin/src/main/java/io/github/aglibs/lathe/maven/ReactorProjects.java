@@ -347,7 +347,7 @@ public final class ReactorProjects {
 
   public static String moduleRel(final Path workspaceRoot, final MavenProject project) {
     final String rel = FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath()));
-    return rel.isEmpty() ? "." : rel;
+    return LatheLayout.displayedModule(rel);
   }
 
   // A module whose directory lies outside the reactor root (e.g. <module>../shared</module>): its

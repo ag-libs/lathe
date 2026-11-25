@@ -146,6 +146,7 @@ public record SyncScript(
               fi
               """
                 .formatted(String.join(" ", afterModules));
+    // The root module, as the answers name it, is the whole project: no scope.
     return """
         goal="%s"
         if [ "$1" = "%s" ]; then
@@ -153,14 +154,22 @@ public record SyncScript(
           shift
         fi
         scope=
+        whole=
         for module in "$@"; do
+          if [ "$module" = "%s" ]; then
+            whole=1
+          fi
           scope="$scope %s"
         done
+        if [ -n "$whole" ]; then
+          scope=
+        fi
         %s"""
         .formatted(
             String.join(" ", goals),
             LatheLayout.SYNC_TESTS_FLAG,
             String.join(" ", testsGoals),
+            LatheLayout.ROOT_MODULE,
             String.join(" ", moduleArgs).replace(LatheFlags.SYNC_MODULE_TOKEN, "$module"),
             upstream);
   }
@@ -251,17 +260,21 @@ public record SyncScript(
         shift
         :modules
         set "scope="
+        set "whole="
         :next
         if "%%~1"=="" goto run
+        if "%%~1"=="%s" set "whole=1"
         set "scope=%%scope%% %s"
         shift
         goto next
         :run
+        if defined whole set "scope="
         %s"""
         .formatted(
             batch(String.join(" ", goals)),
             LatheLayout.SYNC_TESTS_FLAG,
             batch(String.join(" ", testsGoals)),
+            LatheLayout.ROOT_MODULE,
             batch(String.join(" ", moduleArgs)).replace(LatheFlags.SYNC_MODULE_TOKEN, "%~1"),
             upstream);
   }

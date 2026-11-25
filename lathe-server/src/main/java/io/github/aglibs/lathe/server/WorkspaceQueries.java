@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -81,7 +82,7 @@ final class WorkspaceQueries {
     if (base.isEmpty()) {
       throw new IllegalArgumentException(
           "%s has no package to name its module after; give the module a name"
-              .formatted(SourceLayout.displayed(args.moduleRel())));
+              .formatted(LatheLayout.displayedModule(args.moduleRel())));
     }
 
     return base;

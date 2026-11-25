@@ -69,6 +69,10 @@ class SyncScriptTest {
         .endsWith("args=--quiet -Dcache=false sync -pl app -pl core -am");
     assertThat(run(maven, "--tests", "app").stdout())
         .endsWith("args=--quiet -Dcache=false test -Dcapture=true -pl app -am");
+    // The root module, as the answers name it, is the whole project, whatever else is named.
+    assertThat(run(maven, ".").stdout()).endsWith("args=--quiet -Dcache=false sync");
+    assertThat(run(maven, "--tests", "app", ".").stdout())
+        .endsWith("args=--quiet -Dcache=false test -Dcapture=true");
 
     // A front-end that resolves upstream itself (Gradle) has nothing after the modules, and its
     // module option belongs to the task, so it must follow it.
@@ -82,6 +86,7 @@ class SyncScriptTest {
         .endsWith("args=--quiet -Dcache=false latheSync --module app --module core");
     assertThat(run(gradle, "--tests", "app").stdout())
         .endsWith("args=--quiet -Dcache=false latheSync -Pcapture=true --module app");
+    assertThat(run(gradle, ".").stdout()).endsWith("args=--quiet -Dcache=false latheSync");
   }
 
   @Test
@@ -180,6 +185,8 @@ class SyncScriptTest {
             "if not \"%~1\"==\"--tests\" goto modules",
             "set \"goal=test -Dcapture=true\"",
             "set \"scope=%scope% -pl %~1\"",
+            "if \"%~1\"==\".\" set \"whole=1\"",
+            "if defined whole set \"scope=\"",
             "if defined scope set \"scope=%scope% -am\"",
             "set \"required=%s\"".formatted(tmp.resolve("o'neil tools").resolve("ext 100%%.jar")),
             "if not exist \"%required%\" goto missing",
