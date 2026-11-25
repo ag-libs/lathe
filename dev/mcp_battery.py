@@ -69,7 +69,7 @@ CONFIGS = {
         probe=("equalsverifier-core/src/main/java/nl/jqno/equalsverifier", "nl.jqno.equalsverifier")),
     "helidon": dict(
         pin="27a692eb0d",
-        counts=dict(references=60, callers=54, implementations=4),
+        counts=dict(references=60, callers=59, implementations=4),
         file="common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java",
         symbol="text()", newname="textLatheSmoke", is_method=True,
         iface=("common/media-type/src/main/java/io/helidon/common/media/type/MediaType.java", "MediaType {", "MediaType"),
