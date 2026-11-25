@@ -1,49 +1,53 @@
 #!/usr/bin/env bash
-# Prepare everything the demo tape needs, on a Linux laptop. Idempotent.
+# Prepare everything the demo tapes need, on a Linux laptop. Idempotent.
 #
-#   1. build + install Lathe (server + extension);
-#   2. run the multi-module invoker fixture → a synced copy at
-#      target/it/multi-module (with .lathe/) and an isolated server cache at
-#      target/it home/.cache/lathe (the output dev/debug-e2e.sh drives);
-#   3. take an ISOLATED COPY of the tracked sample config examples/nvim
-#      (dev/demo/.nvim), so the demo is reproducible from the repo and never
-#      leaks anything from your personal ~/.config. Override with
-#      LATHE_DEMO_NVIM_CONFIG to record with a different config. Plugins install
-#      into the copy's own data dir and float to their latest versions.
+#   1. build + install Lathe from this checkout (the client's :LatheInit sets up LATHE_VERSION, the
+#      snapshot this installs into ~/.m2);
+#   2. clone spring-petclinic at a pinned commit into $LATHE_DEMO_WORK (~/lathe-demo, outside this
+#      repo) — a public project with no Lathe in its build, the demo's whole subject;
+#   3. take an ISOLATED COPY of the tracked sample config examples/nvim (dev/demo/.nvim), so the
+#      demo is reproducible from the repo and never leaks anything from your personal ~/.config.
+#      Override with LATHE_DEMO_NVIM_CONFIG to record with a different config;
+#   4. run :LatheInit once, headless, on that clone. It warms what the on-camera :LatheInit (beat 0,
+#      on a fresh clone of it) would otherwise wait for — Maven's wrapper, petclinic's dependencies,
+#      Lathe's bootstrap jars, the server install — and leaves the clone set up for beats 1-6.
 #
-# The tape then runs nvim on that copy with LATHE_NVIM_DIR (client = this
-# checkout) and LATHE_CACHE (server = the invoker cache). Then:
-#   vhs dev/demo/demo.tape        ->   docs/demo.gif
+# Then: ./dev/demo/record.sh
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
-fixture="$repo/lathe-maven-plugin/target/it/multi-module"
-cache="$repo/lathe-maven-plugin/target/it home/.cache/lathe"
 src_cfg="${LATHE_DEMO_NVIM_CONFIG:-$repo/examples/nvim}"
+R="$repo"
+# shellcheck source=env.sh
+source "$here/env.sh"
 
 echo "[demo] building + installing Lathe…"
 (cd "$repo" && mvn -q install -DskipTests)
 
-echo "[demo] building the multi-module invoker fixture…"
-(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module)
-[ -x "$fixture/.lathe/lathe-launcher.sh" ] \
-  || { echo "[demo] server launcher missing at $fixture/.lathe — invoker build failed?" >&2; exit 1; }
-[ -d "$fixture/.lathe" ] \
-  || { echo "[demo] no .lathe/ at $fixture — invoker build failed?" >&2; exit 1; }
+echo "[demo] cloning spring-petclinic at $PETCLINIC_COMMIT…"
+if [ ! -d "$PETCLINIC/.git" ]; then
+  mkdir -p "$(dirname "$PETCLINIC")"
+  git clone -q "$PETCLINIC_URL" "$PETCLINIC"
+fi
+git -C "$PETCLINIC" fetch -q origin
+git -C "$PETCLINIC" checkout -q -B main "$PETCLINIC_COMMIT"
+git -C "$PETCLINIC" reset -q --hard
+git -C "$PETCLINIC" clean -q -fdx
 
 echo "[demo] copying the sample Neovim config from $src_cfg …"
 [ -d "$src_cfg" ] || { echo "[demo] no config at $src_cfg (set LATHE_DEMO_NVIM_CONFIG)" >&2; exit 1; }
-rm -rf "$here/.nvim"
+rm -rf "$here/.nvim" "$LATHE_CACHE"
 mkdir -p "$here/.nvim/config/nvim" "$here/.nvim/state/nvim"
 cp -r "$src_cfg/." "$here/.nvim/config/nvim/"
 
 echo "[demo] warming plugins into the isolated copy…"
-export XDG_CONFIG_HOME="$here/.nvim/config" XDG_DATA_HOME="$here/.nvim/data"
-export XDG_STATE_HOME="$here/.nvim/state" XDG_CACHE_HOME="$here/.nvim/cache"
-export LATHE_NVIM_DIR="$repo/lathe-neovim/runtime" LATHE_CACHE="$cache"
 nvim --headless "+Lazy! sync" +qa || true
 
+echo "[demo] setting petclinic up with :LatheInit (headless)…"
+(cd "$PETCLINIC" && nvim --headless -n "$PETCLINIC_MAIN" -c "luafile $here/init-headless.lua")
+[ -x "$PETCLINIC/.lathe/lathe-launcher.sh" ] \
+  || { echo "[demo] no launcher at $PETCLINIC/.lathe — :LatheInit failed?" >&2; exit 1; }
+
 echo
-echo "[demo] ready. Record with:"
-echo "  vhs dev/demo/demo.tape        # writes docs/demo.gif"
+echo "[demo] ready. Record with: ./dev/demo/record.sh"

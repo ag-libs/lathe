@@ -6,8 +6,8 @@
 --
 -- Requires Neovim 0.12+, plus the `tree-sitter` CLI and a C compiler for nvim-treesitter to build its
 -- parsers. The client is the standalone `ag-libs/lathe.nvim` plugin (installed below like any other);
--- the server still comes from your Maven or Gradle build, which writes it as each project's
--- `.lathe/lathe-launcher.sh`.
+-- the server comes from your Maven or Gradle build (or `:LatheInit`, which runs that build for a
+-- project that does not register Lathe), which writes it as each project's `.lathe/lathe-launcher.sh`.
 
 -- Space as leader: either thumb reaches it, and it does nothing useful in normal mode on its own.
 vim.g.mapleader = " "
@@ -53,6 +53,18 @@ require("lazy").setup({
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
       require("lualine").setup({ options = { theme = "auto" } })
+    end,
+  },
+
+  -- Notifications as toasts. Lathe updates one toast in place while a sync or `:LatheInit` runs;
+  -- the stock message area would stack them into a "Press ENTER" prompt instead.
+  {
+    "rcarriga/nvim-notify",
+    lazy = false,
+    config = function()
+      local notify = require("notify")
+      notify.setup({ render = "wrapped-compact", max_width = 70, stages = "static" })
+      vim.notify = notify
     end,
   },
 

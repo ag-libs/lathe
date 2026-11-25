@@ -1,13 +1,15 @@
 # Beat 1 — Everyday editing. Narration captions (burned in post-render), timed to the on-screen state:
 #   (1) "Code completion — from your build"  (2) "Type mismatch — flagged live"
 #   (3) "Fixed and saved — no diagnostics"  (3 only appears AFTER the save, when the buffer is truly
-#   clean; never over the transient unused-variable hint between the fix and the save).
+#   clean).
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat1-edit.tape
 #
-# Story: the everyday inner loop before the differentiators — complete a statement, make a type
-# mistake, get told instantly, fix it, save clean. All on app/Main.java with line/motion navigation
-# only (never /search: the clips are concatenated, so hlsearch must never bleed across a seam).
+# Story: the everyday inner loop on petclinic's Owner.getPet — retype `pet.getName()` with completion
+# (inherited from NamedEntity, through the build's classpath), make the local an `int`, get told
+# instantly, put `String` back, save clean. Line/motion navigation only (never /search: the clips are
+# concatenated, so hlsearch must never bleed across a seam). Each step waits on the screen, not a
+# fixed time: the machine may be busy.
 Output "docs/videos/beat1-edit.mp4"
 Require nvim
 
@@ -19,76 +21,66 @@ Set Height 1080
 Set Padding 30
 Set TypingSpeed 45ms
 
-# --- hidden setup: isolated config + Lathe from checkout + invoker cache; reset Main, capture fresh,
-# open and warm the index (so completion is ready the instant the clip starts). MAVEN_ARGS keeps the
-# build cache off (a cache hit skips compilation -> nothing captured). `|| exit 1` guards the cd. ---
+# --- hidden setup: the clone prepare.sh set up with :LatheInit, sources reset; open Owner and wait
+# for the workspace, so completion is ready the instant the clip starts. `|| exit 1` guards the cd. ---
 Hide
 Type 'R="$PWD"' Enter
 Type 'source "$R/dev/demo/env.sh"' Enter
-Type 'cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1' Enter
-Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/app/src/main/java/com/example/app/Main.java" app/src/main/java/com/example/app/Main.java' Enter
-Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/app/src/main/java/com/example/app/User.java" app/src/main/java/com/example/app/User.java' Enter
-Type 'mvn -q clean test -Dlathe.capture.only=true >/dev/null 2>&1' Enter
-Sleep 12s
+Type 'renice -n 15 $$ >/dev/null' Enter
+Type 'cd "$PETCLINIC" || exit 1' Enter
+Type 'git checkout -q -- src' Enter
 Type 'clear' Enter
-Type 'nvim -n app/src/main/java/com/example/app/Main.java' Enter
-Sleep 9s          # server start + workspace index warm (completion needs the classpath)
+Type 'nvim -n "$PETCLINIC_MAIN" +149' Enter
+Wait+Screen@60s /workspace ready/
+Sleep 3s                  # the toast fades before Show
 Show
 
 # Navigation notes (this config): the cursor keeps its column after `NG`, so always re-anchor with
 # `_` (first non-blank) before a horizontal motion. And blink.cmp maps <Esc> to "cancel the menu",
 # so after any insert that may pop completion we press Escape TWICE (close menu, then leave insert).
 
-# --- add a statement with completion (record accessor from the reactor) ---
-Type '8G'                 # the `final var user = ...` line
-Type 'o'                  # open a new line below it
-Type 'final var greeting = user.nam'
-Sleep 1400ms              # blink menu: `name() String`
-Enter                     # accept -> user.name()  (cursor lands inside the parens)
+# --- retype the initializer with completion: getName() comes from NamedEntity ---
+Type '149G'
+Type '_'
+Type 'f='
+Type 'w'                  # -> `pet`
+Type 'D'                  # drop `pet.getName();`
+Type 'a'
+Type 'pet.getNa'
+Wait+Screen@10s /getName\(\)/
+Sleep 900ms               # read the menu
+Enter                     # accept -> pet.getName()
 Escape
 Sleep 150ms
 Escape
-Type 'A'                  # append at line end...
-Type ';'                  # ...close the statement
+Type 'A'
+Type ';'
 Escape
-Sleep 1200ms              # valid: greeting inferred String
+Sleep 1000ms
 
-# --- introduce an incompatible type: var -> int (2nd word of the greeting line) ---
-Type '9G'
-Type '_'                  # re-anchor to first non-blank (`final`)
-Type 'w'                  # -> `var`
+# --- an incompatible type: String -> int ---
+Type '149G'
+Type '_'
 Type 'ciw'
 Type 'int'
 Sleep 200ms
 Escape
 Sleep 150ms
-Escape                    # 2nd Escape leaves insert (1st only closed the menu)
-Sleep 2600ms             # live diagnostic: "incompatible types: String cannot be converted to int"
+Escape
+Wait+Screen@15s /cannot be converted to int/
+Sleep 2000ms              # read the live diagnostic
 
-# --- fix it: int -> var ---
-Type '9G'
+# --- fix it: int -> String, then save clean ---
+Type '149G'
 Type '_'
-Type 'w'                  # -> `int`
 Type 'ciw'
-Type 'var'
+Type 'String'
 Sleep 200ms
 Escape
 Sleep 150ms
 Escape
-Sleep 1400ms             # type-mismatch clears (a transient 'unused greeting' hint remains until it's used)
-
-# --- use `greeting` so it isn't unused, then save clean ---
-Type '10G'               # the println line
-Type '_'
-Type 'f('                # first '(' -> println(
-Type 'ci('               # replace the argument
-Type 'greeting'
-Sleep 200ms
-Escape
-Sleep 150ms
-Escape
-Sleep 600ms
+Sleep 1200ms              # the diagnostic clears
 Type ':w'
 Enter
-Sleep 2600ms             # full compile on save: no diagnostics — the clean state caption 3 lands here
-
+Wait+Screen@15s /written/
+Sleep 2000ms              # full compile on save: no diagnostics
