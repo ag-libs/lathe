@@ -60,7 +60,7 @@ class ReceiverResolverTest {
       final String receiverText, final AttributedFileAnalysis snapshot) {
     final var injected =
         new SentinelInjectionResult(
-            "", 0, 0, receiverText, SentinelInjector.Context.STATEMENT, true, false, "", -1);
+            "", 0, 0, receiverText, SentinelInjector.Context.STATEMENT, true, false, "", -1, false);
     final ParsedSentinel sentinel =
         ParsedSentinel.valid(
             injected,

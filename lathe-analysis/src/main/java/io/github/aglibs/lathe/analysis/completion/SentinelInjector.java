@@ -24,7 +24,8 @@ final class SentinelInjector {
       Context context,
       String receiverText,
       boolean hasDot,
-      boolean memberReference) {}
+      boolean memberReference,
+      boolean switchLabelBody) {}
 
   private record ForwardResult(int unclosedParens, int unclosedBraces) {}
 
@@ -48,15 +49,22 @@ final class SentinelInjector {
             && shouldSuppressSemicolon(content, suffixStart);
     final var semicolon =
         back.context() == Context.STATEMENT && !parenFollows && !suppressSemicolon ? ";" : "";
+    // In a switch label's body, the blocks the content leaves open are the switch being typed: they
+    // close right after the label's statement, so the members after it keep their structure. At
+    // the end of the file, javac's recovery reads those members into the switch and loses the
+    // enclosing class's own types (CQ-0079). Elsewhere an open brace may be another method's, so
+    // the braces close at the end of the file, as they always have.
+    final boolean closeHere = back.switchLabelBody() && !semicolon.isEmpty();
     final var injected =
-        "%s%s%s%s%s%s"
+        "%s%s%s%s%s%s%s"
             .formatted(
                 content.substring(0, back.tokenStart()),
                 SENTINEL,
                 ")".repeat(fwd.unclosedParens()),
                 semicolon,
+                closeHere ? "}".repeat(fwd.unclosedBraces()) : "",
                 content.substring(suffixStart),
-                "}".repeat(fwd.unclosedBraces()));
+                closeHere ? "" : "}".repeat(fwd.unclosedBraces()));
     final int memberStubAt =
         semicolon.isEmpty() || fwd.unclosedParens() > 0
             ? -1
@@ -71,7 +79,8 @@ final class SentinelInjector {
         back.hasDot(),
         back.memberReference(),
         injected,
-        memberStubAt);
+        memberStubAt,
+        closeHere && fwd.unclosedBraces() > 0);
   }
 
   private BackwardResult backwardScan(final int cursorOffset) {
@@ -83,6 +92,7 @@ final class SentinelInjector {
     int bracketDepth = 0;
     int angleDepth = 0;
     Context context = Context.STATEMENT;
+    boolean switchLabelBody = false;
     int i = tokenStart - 1;
 
     final boolean hasDot = i >= 0 && content.charAt(i) == '.';
@@ -123,12 +133,14 @@ final class SentinelInjector {
           }
         }
         case ':' -> {
-          context = Context.EXPRESSION;
+          switchLabelBody = closesSwitchLabel(i);
+          context = switchLabelBody ? Context.STATEMENT : Context.EXPRESSION;
           break outer;
         }
         case '>' -> {
           if (i > 0 && content.charAt(i - 1) == '-') {
-            context = Context.EXPRESSION;
+            switchLabelBody = closesSwitchLabel(i - 1);
+            context = switchLabelBody ? Context.STATEMENT : Context.EXPRESSION;
             break outer;
           }
           angleDepth++;
@@ -194,7 +206,75 @@ final class SentinelInjector {
         hasDot
             ? collectReceiver(tokenStart - 2)
             : memberReference ? collectReceiver(tokenStart - 3) : null;
-    return new BackwardResult(prefix, tokenStart, context, receiverText, hasDot, memberReference);
+    return new BackwardResult(
+        prefix, tokenStart, context, receiverText, hasDot, memberReference, switchLabelBody);
+  }
+
+  // Whether the `:` or `->` at `end` closes a switch label: a `case` or `default` before it, at its
+  // own nesting, with no statement boundary between; string and character literals are skipped.
+  // The label's body is a statement (an arrow's expression body ends with `;` too), so the sentinel
+  // ends one, where a lambda's arrow or a ternary's colon ends none. Without the `;`, a switch
+  // block not closed yet reads the next line into the label's body, as in
+  // `case String s -> s.SENTINEL next = 1;`, a declaration whose type is `s.SENTINEL` (CQ-0079).
+  private boolean closesSwitchLabel(final int end) {
+    int depth = 0;
+    int i = end - 1;
+    while (i >= 0) {
+      final char c = content.charAt(i);
+      if (c == ')' || c == ']') {
+        depth++;
+      } else if (c == '(' || c == '[') {
+        if (depth == 0) {
+          return false;
+        }
+
+        depth--;
+      } else if (c == '"' || c == '\'') {
+        i = openingQuote(i);
+      } else if (depth == 0 && (c == ';' || c == '{' || c == '}' || c == ':')) {
+        return false;
+      } else if (depth == 0 && Character.isJavaIdentifierPart(c)) {
+        final int start = DeclarationNames.identifierStart(content, i + 1);
+        final String word = content.substring(start, i + 1);
+        if (word.equals("case") || word.equals("default")) {
+          return true;
+        }
+
+        i = start;
+      }
+
+      i--;
+    }
+
+    return false;
+  }
+
+  // The opening quote of the literal whose closing quote is at `closing`, a quote that a backslash
+  // escapes skipped; -1 when there is none.
+  private int openingQuote(final int closing) {
+    final char quote = content.charAt(closing);
+    int i = closing - 1;
+    while (i >= 0) {
+      if (content.charAt(i) == quote && !escaped(i)) {
+        return i;
+      }
+
+      i--;
+    }
+
+    return -1;
+  }
+
+  // Whether the character at `at` follows an odd run of backslashes.
+  private boolean escaped(final int at) {
+    int backslashes = 0;
+    int i = at - 1;
+    while (i >= 0 && content.charAt(i) == '\\') {
+      backslashes++;
+      i--;
+    }
+
+    return backslashes % 2 == 1;
   }
 
   private String collectReceiver(final int from) {

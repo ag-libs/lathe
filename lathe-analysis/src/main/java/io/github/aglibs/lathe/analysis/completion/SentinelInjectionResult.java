@@ -5,6 +5,8 @@ import java.util.Optional;
 
 // memberStubAt: where injectedContent has the semicolon that ends the sentinel, which a record body
 // drops with the member it ends (see SentinelInjector); -1 where it adds none.
+// closedBraces: whether injectedContent closes, right after a switch label's statement, the blocks
+// the content leaves open while the switch is typed.
 record SentinelInjectionResult(
     String prefix,
     int tokenStart,
@@ -14,7 +16,8 @@ record SentinelInjectionResult(
     boolean hasDot,
     boolean memberReference,
     String injectedContent,
-    int memberStubAt) {
+    int memberStubAt,
+    boolean closedBraces) {
 
   SentinelInjectionResult {
     ValidCheck.check()
@@ -64,6 +67,7 @@ record SentinelInjectionResult(
             hasDot,
             memberReference,
             stubContent,
-            -1));
+            -1,
+            closedBraces));
   }
 }
