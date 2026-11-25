@@ -25,8 +25,9 @@ public final class ResourceRootIndex {
     return new ResourceRootIndex(List.of());
   }
 
+  // Each folder once: a pom may declare one twice, filtered and not.
   public List<Path> sourceDirs() {
-    return mappings.stream().map(Mapping::sourceDir).toList();
+    return mappings.stream().map(Mapping::sourceDir).distinct().toList();
   }
 
   // Each resource source dir mapped to its owning reactor module (the resource-finder origin).
