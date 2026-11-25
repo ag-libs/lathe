@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assumptions.assumeThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
@@ -37,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
@@ -555,27 +557,45 @@ class WritePassTest extends ServiceTestBase {
     writeStaleModule(1_000L, 1_000L);
     host.initialize(tmp);
     awaitStartup();
-    // Taken before the change, so no pass of the server's own can write it first.
-    final Closeable otherServer = holdWriteLock();
-    writeFoo(CHANGED_FOO, 5_000L);
-    final CompletableFuture<Void> tickPass;
-    try {
-      tickPass = reconcileNow(false);
-      assertThatThrownBy(() -> tickPass.get(300, TimeUnit.MILLISECONDS))
-          .as("waits while the other server writes")
-          .isInstanceOf(TimeoutException.class);
-    } finally {
-      otherServer.close();
+    final Thread loop =
+        host.onLoop(session -> Thread.currentThread()).get(TIMEOUT_S, TimeUnit.SECONDS);
+    try (final var scans = new ScanLog(loop)) {
+      // Taken before the change, so no pass of the server's own can write it first.
+      final Closeable otherServer = holdWriteLock();
+      writeFoo(CHANGED_FOO, 5_000L);
+      final CompletableFuture<Void> tickPass;
+      final long releasedMs;
+      // Started before the tick pass's first try at the lock, so its own retry, one scan interval
+      // after that try, comes at least one interval in.
+      final Stopwatch sinceFirstTry = scans.timeFirstScan();
+      try {
+        tickPass = reconcileNow(false);
+        assertThatThrownBy(() -> tickPass.get(300, TimeUnit.MILLISECONDS))
+            .as("waits while the other server writes")
+            .isInstanceOf(TimeoutException.class);
+      } finally {
+        releasedMs = sinceFirstTry.elapsedMs();
+        otherServer.close();
+      }
+
+      assertThat(reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
+          .isEqualTo(ReconcileOutcome.DeferReason.NONE);
+
+      // Only how promptly the retry runs is timed: up to the end of the retried pass's scan, before
+      // its compile, which takes seconds on a slow runner. The query retries it at once, tens of
+      // ms after the release; the tick's retry comes 500 ms or more after it, unless the test
+      // thread itself was so slow to release the lock that the two cannot be told apart.
+      final long scannedMs = scans.firstScanMs();
+      assertThat(scannedMs).as("a retried pass scanned").isNotNegative();
+      assumeThat(releasedMs)
+          .as("released before the tick's retry was due")
+          .isLessThan(WritePass.scanIntervalMs() - 500L);
+      assertThat(scannedMs - releasedMs)
+          .as("ms from the release to the retried pass's scan")
+          .isBetween(0L, 500L);
+      assertThat(tickPass).isDone();
+      assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
     }
-
-    final var timer = Stopwatch.start();
-    assertThat(reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
-        .isEqualTo(ReconcileOutcome.DeferReason.NONE);
-
-    // Under the 2 s tick with room for a slow CI runner, where the pass alone once took 1,008 ms.
-    assertThat(timer.elapsedMs()).as("well before the next tick").isLessThan(1_500L);
-    assertThat(tickPass).isDone();
-    assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
   }
 
   @Test
@@ -771,6 +791,8 @@ class WritePassTest extends ServiceTestBase {
   private static final class ScanLog extends LogCapture {
     private static final Logger WRITE_PASS = Logger.getLogger(WritePass.class.getName());
     private final AtomicInteger scans = new AtomicInteger();
+    private final AtomicLong firstScanMs = new AtomicLong(-1);
+    private volatile Stopwatch since;
     private final long loopThread;
 
     ScanLog(final Thread loop) {
@@ -787,11 +809,26 @@ class WritePassTest extends ServiceTestBase {
       return scans.get();
     }
 
+    Stopwatch timeFirstScan() {
+      firstScanMs.set(-1);
+      final var started = Stopwatch.start();
+      since = started;
+      return started;
+    }
+
+    long firstScanMs() {
+      return firstScanMs.get();
+    }
+
     @Override
     public void publish(final LogRecord record) {
       if (record.getLongThreadID() == loopThread
           && record.getMessage().startsWith("[stale] scanned")) {
         scans.incrementAndGet();
+        final Stopwatch started = since;
+        if (started != null) {
+          firstScanMs.compareAndSet(-1, started.elapsedMs());
+        }
       }
     }
   }
