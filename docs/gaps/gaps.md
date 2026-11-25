@@ -831,40 +831,6 @@ None yet.
 
 ---
 
-## EG-127 — Workspace symbol drops the project's own type for a short initials query
-
-**Status: accepted** (triaged 2026-11-25: medium; symbol search is used constantly, and the project's own type is lost outright, not ranked low)
-
-**Kind: bug**
-
-**Affects: workspace symbol in the editor, and MCP `search_symbols`, for a query of a type's initials.**
-
-Found by the 2026-11-25 differential run against jdtls on spring-petclinic (`0.1.0-SNAPSHOT` at `8c4e09c`, jdtls 1.63.0, petclinic at `500158f`, `dev/jdtls_diff.py` over all 50 files), and reproduced by hand; the Helidon QA round of 2026-11-24 saw the same ordering (`dev/reports/qa-2026-11-24-helidon.md`, B-3).
-
-### Observed behaviour
-
-| Query | Project type | Lathe | jdtls |
-|---|---|---|---|
-| `BE` | `BaseEntity` | absent from 98 results (`Beans`, `BeanInfo`, `Ber`, …) | `BaseEntity` |
-| `OR` | `OwnerRepository` | absent from 100 (`Order0`, `Order1`, `Or`, …) | `OwnerRepository` |
-| `NE` | `NamedEntity` | absent from 100 (`NegativeArraySizeException`, `Net`, …) | `NamedEntity` |
-| `OC` | `OwnerController` | 20th of 21, after `OctetStreamData`, `OCSP`, … | `OwnerController`, `OwnerControllerTests` |
-| `PC` | `PetController` | 17th of 19, after `PCK`, `PCMM`, … | the project's `P…C…` types |
-
-### Cause (read from the code, not fixed)
-
-`WorkspaceSymbolResolver.mergedEntries` takes every prefix match first, from the JDK, the dependencies and the project alike, and adds the CamelHumps matches (the project's types only) while the list is under `SEARCH_LIMIT` (100); two letters such as `Be` already prefix-match 100 dependency types, so a project type found by its initials never gets in, and one that does comes after the prefix matches.
-
-### Expected
-
-A project type whose initials or prefix match is listed, and before a dependency or JDK type that only shares a prefix, as jdtls lists it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-129 — CamelHumps symbol matching matches letters that start no word
 
 **Status: documented**
@@ -1139,10 +1105,43 @@ Petclinic's Thymeleaf templates use the JavaBean property, not the method: `${ow
 The application then fails at runtime, on the first page that renders an owner.
 The same holds for a property Jackson serializes or a JPQL query names: any framework that reads accessors as properties.
 
+Seen again on Petclinic (2026-11-25, `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2 and P3): the resource scan matches only qualified forms (`${owner.city}`), so Thymeleaf's selection form (`*{city}`, `th:field="*{city}"`) and a fragment argument (`'city'`) are never listed, which decides how far a property-name review can reach; [MC-109](#mc-109--find_references-and-analyze_change-say-nothing-uses-a-getter-that-templates-bind) gives the agent's references the same property-name mentions.
+
 ### Fix direction
 
 When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
 A field renamed with its accessors is the same case.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-040 — Rename's text review lists a resource match once per declared resource folder, and at column 1
+
+**Status: accepted** (triaged 2026-11-25: low, for the release; the review list is advisory, but a doubled row and a wrong column make it look unreliable; size S)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `rename_symbol`'s "Not renamed — review" list (and every caller of `TextMentions.inResources`).**
+
+Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2).
+
+### Observed behaviour
+
+Renaming the field `Owner.city` to `town` lists `src/main/resources/templates/owners/ownersList.html:25:1: <td th:text="${owner.city}" />` twice, and at column 1 (`owner.city` starts at column 23).
+Petclinic's pom declares `src/main/resources` twice, filtered and not (`workspace.json` `resourceRoots`), a common Maven pattern; `TextMentions.inResources` walks each declared folder, and `resourceMentions` reports every match at `new Position(i, 0)`.
+
+### Expected
+
+Each match once, at the column of the name.
+
+### Fix direction
+
+Walk each resource folder once (`WorkspaceManifest.resourceSourceDirs()` distinct, which `ResourceMirror` reads too), and report the qualifying word's start.
 
 ### Regression targets
 
@@ -2460,6 +2459,66 @@ Related: [EG-119](gaps-archive.md#eg-119--workspace-symbol-initials-do-not-match
 ### Expected
 
 A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-108 — A project whose only module is the workspace root shows a blank module name
+
+**Status: accepted** (triaged 2026-11-25: medium, for the release; every single-module project shows it, and "affected modules" is what an agent builds; size S)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `workspace_summary`, `analyze_change` (`affected modules:`) and `verify_change`'s module list.**
+
+Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P1).
+
+### Observed behaviour
+
+`workspace_summary` answers `1 module(s)` and then a line with no name, `  tests: captured`.
+`analyze_change` on `OwnerRepository.findByLastNameStartingWith` answers `references: 1 production, 12 test` and `affected modules: ` with nothing after it.
+The root module's path is the empty string; the run messages already print it as `.` (`SourceLayout.displayed`), and `workspace.json` names it `.`.
+
+### Expected
+
+The root module named `.` wherever MCP names modules.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind
+
+**Status: accepted** (triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M)
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: MCP `find_references` and `analyze_change`.**
+
+Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P3).
+
+### Observed behaviour
+
+`find_references` on `Owner.getCity()` answers "No uses: the symbol is declared, and nothing in the project uses it."; `analyze_change` answers `references: 0 production, 0 test`, `tests referencing it: none`.
+The templates bind its property: `ownersList.html:25` `${owner.city}`, `ownerDetails.html:28` `*{city}`; `getTelephone()` is used the same way, and by string in `OwnerControllerTests` (`hasProperty("telephone")`, `.param("telephone", …)`).
+
+### Expected
+
+No Java use is said as such, and where a getter, setter or field has none, the places its JavaBean property name is still text are listed, as rename lists an old name (`TextMentions`).
+
+### Fix direction
+
+Resolve the target at the position; for a field, its name, for a `get`/`is`/`set` accessor, its property name by JavaBeans rules; scan with `TextMentions.find` only when there is no Java use, so the cost stays rare.
+FR-036 (rename of an accessor) needs the same property name, and could reuse it.
 
 ### Regression targets
 

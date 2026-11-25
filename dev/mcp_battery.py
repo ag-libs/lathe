@@ -193,6 +193,15 @@ def preflight(ws, cfg, expected):
     return head
 
 
+def reactor_first(text):
+    """The tool's description: the reactor's types first, the JDK's and the dependencies' after them."""
+    external = ["[EXTERNAL]" in row for row in text.splitlines() if " — " in row]
+    if False not in external:
+        return False
+    last_reactor = max(i for i, outside in enumerate(external) if not outside)
+    return not any(external[:last_reactor])
+
+
 def exact_count(b, cfg, pinned, what, text):
     want = cfg["counts"][what]
     label = "%s: the pinned commit's count" % what
@@ -228,7 +237,8 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured, pinned):
     exact_count(b, cfg, pinned, "callers", incoming)
     b.call("call_hierarchy outgoing", "call_hierarchy", dict(pos, direction="outgoing"))
     b.call("analyze_change", "analyze_change", pos,
-           ok=lambda t, r: not r.get("isError") and "references:" in t and "affected modules:" in t)
+           ok=lambda t, r: not r.get("isError") and "references:" in t and "affected modules:" in t
+           and "tests referencing it:" in t)
 
     iface = ws / cfg["iface"][0]
     il, _ = locate(iface, cfg["iface"][1])
@@ -241,9 +251,8 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured, pinned):
            ok=lambda t, r: mc.count(t) >= 1 and cfg["search"] in t)
     query, expected = cfg["humps"]
     b.call("search_symbols (CamelHumps)", "search_symbols", {"query": query}, ok=lambda t, r: expected in t)
-    b.call("search_symbols: only usable types", "search_symbols", {"query": "Entry"},
-           ok=lambda t, r: mc.count(t) >= 1 and "ThreadLocalMap" not in t and "Hashtable.Entry" not in t,
-           known="search_symbols lists types the project cannot use, though its description says it excludes them")
+    b.call("search_symbols: the reactor's types first", "search_symbols", {"query": cfg["search"]},
+           ok=lambda t, r: reactor_first(t))
 
     b.call("outline", "outline", {"file": str(f)},
            ok=lambda t, r: mc.count(t) >= 1 and cfg["symbol"].rstrip("()") in t)

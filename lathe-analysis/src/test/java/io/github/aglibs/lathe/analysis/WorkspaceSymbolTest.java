@@ -106,6 +106,45 @@ class WorkspaceSymbolTest {
         .containsExactly("AbstractServerFactory");
   }
 
+  // Two letters prefix-match more dependency types than the list holds: the project's types found
+  // by their initials are ranked with them, not added after the cap (spring-petclinic's BE listed
+  // a hundred Bean… types and not BaseEntity). The ranking stands: a java.lang type still leads,
+  // and
+  // the project's types come before the other dependencies' alike.
+  @Test
+  void resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn(
+      @TempDir final Path shards) throws IOException {
+    final List<TypeIndexEntry> dependencyTypes =
+        Stream.concat(
+                Stream.of(entry("Beacon", "java.lang")),
+                IntStream.range(0, 120).mapToObj(i -> entry("Bean%03d".formatted(i), "org.dep")))
+            .toList();
+    for (final TypeIndexEntry type : dependencyTypes) {
+      createSourceFile(type.packageName(), type.simpleName());
+    }
+
+    createSourceFile("com.example", "BaseEntity");
+    createSourceFile("com.example", "Bench");
+    final WorkspaceTypeIndex index =
+        TempSourceCompiler.typeIndex(
+            shards.resolve("dep.json"),
+            dependencyTypes,
+            List.of(entry("BaseEntity", "com.example"), entry("Bench", "com.example")));
+
+    final List<String> found =
+        WorkspaceSymbolResolver.resolve("BE", index, List.of(src), entry -> true).stream()
+            .map(SymbolInformation::getName)
+            .toList();
+    assertThat(found).hasSize(100).startsWith("Beacon", "Bench", "BaseEntity");
+    assertThat(found.subList(3, found.size())).allMatch(name -> name.startsWith("Bean"));
+
+    assertThat(WorkspaceSymbolResolver.resolve("Bean00", index, List.of(src), entry -> true))
+        .extracting(SymbolInformation::getName)
+        .as("a query only dependency types match still lists them")
+        .hasSize(10)
+        .allMatch(name -> name.startsWith("Bean00"));
+  }
+
   @Test
   void resolve_prefixAndCamelCaseOverlap_deduplicatesResult() throws IOException {
     createSourceFile("com.example", "TaskManager");
