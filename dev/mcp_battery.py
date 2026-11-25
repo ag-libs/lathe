@@ -118,6 +118,7 @@ class Battery:
         self.client = mcp.McpClient(launcher, ws, echo_stderr=False)
         self.results = []
         self.last_ms = 0
+        self.left_out = ()
 
     def record(self, status, label, detail, ms=None):
         ms = self.last_ms if ms is None else ms
@@ -202,11 +203,29 @@ def reactor_first(text):
     return not any(external[:last_reactor])
 
 
+# WS-46: a server on an older JDK than the build's leaves out each module built for a newer Java,
+# and the summary names them. Their uses are then missing from every count, and a rename they may
+# see is refused: with --server-jdk on Dropwizard (built on 25), its docs/source/examples modules.
+LEFT_OUT = re.compile(r"^Java \d+ sources, which Lathe does not analyze, in: (.+)$", re.M)
+
+
+# A module line of the summary: its name, then what it depends on or its tests.
+SUMMARY_MODULE = re.compile(r"^(\S+)  (?:depends on|tests:)", re.M)
+
+
+def left_out_modules(summary):
+    """Every module a line names, one line per Java version the modules need."""
+    return tuple(module.strip() for line in LEFT_OUT.findall(summary) for module in line.split(","))
+
+
 def exact_count(b, cfg, pinned, what, text):
     want = cfg["counts"][what]
     label = "%s: the pinned commit's count" % what
     if not pinned:
         b.record("SKIP", label, "HEAD is not the pinned commit, so the count may differ", 0)
+        return
+    if b.left_out:
+        b.record("SKIP", label, "the pin counts %d module(s) this JDK leaves out (WS-46)" % len(b.left_out), 0)
         return
     b.check(label, mc.count(text) == want, "%d, want %d" % (mc.count(text), want))
 
@@ -262,8 +281,10 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured, pinned):
     f.write_bytes(original)
     summary = b.raw("workspace_summary", {})[0]
     modules = len({p.parent for p in (ws / ".lathe").rglob("lsp-params-*.json")})
-    b.check("workspace_summary: every module", mc.count(summary) >= max(1, modules), "%s; %d synced module(s)"
-            % (first(summary), modules))
+    # A module only one of whose source trees is left out is still listed: count it once.
+    unlisted = set(b.left_out) - set(SUMMARY_MODULE.findall(summary))
+    b.check("workspace_summary: every module", mc.count(summary) + len(unlisted) >= max(1, modules),
+            "%s; %d synced module(s), %d left out" % (first(summary), modules, len(unlisted)))
     if cfg.get("module_info"):
         b.call("outline module-info", "outline", {"file": str(ws / cfg["module_info"])},
                ok=lambda t, r: "requires" in t or "exports" in t)
@@ -323,6 +344,13 @@ def break_and_repair(b, f):
 
 def rename_round_trip(b, ws, cfg, f, pos):
     renamed = b.raw("rename_symbol", dict(pos, newName=cfg["newname"]))[0]
+    # Refused only where a left-out module sees the symbol's module; a rename that went through
+    # takes the round-trip back as on any JDK.
+    if b.left_out and not renamed.startswith("Renamed"):
+        b.check("rename_symbol: refused, as a left-out module may use it",
+                mcp_probe.refused_for_left_out(b.left_out, renamed), first(renamed))
+        b.record("SKIP", "rename round-trip", "nothing renamed while modules are left out (WS-46)", 0)
+        return
     edited = {mc.module_of(ws, m.group(1)) for m in map(EDIT_LINE.match, renamed.splitlines()) if m} - {None}
     b.check("rename_symbol: edits several modules", renamed.startswith("Renamed") and len(edited) >= 2,
             "%s; %d module(s)" % (first(renamed), len(edited)))
@@ -488,6 +516,10 @@ def main():
     if version != opts.expect_version:
         b.client.close()
         raise SystemExit("REFUSED: the server reports %s, not %s" % (version, opts.expect_version))
+
+    b.left_out = left_out_modules(b.raw("workspace_summary", {})[0])
+    if b.left_out:
+        print("LEFT OUT    %s: built for a newer Java than the server's JDK (WS-46)" % ", ".join(b.left_out))
 
     exited = False
     try:
