@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
+import io.github.aglibs.lathe.server.engine.LathePropertyMentions;
 import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
@@ -80,8 +81,7 @@ final class McpText {
     }
 
     if (refs.total() == 0 && refs.filteredOut() == 0) {
-      return usesResult(
-          "No uses: the symbol is declared, and nothing in the project uses it.", notes);
+      return usesResult(noJavaUses(refs.propertyMentions()), notes);
     }
 
     if (refs.total() == 0) {
@@ -101,6 +101,25 @@ final class McpText {
         refs.references().stream().map(McpText::referenceLine).toList(),
         notes,
         vouched(REFERENCES_AUTHORITY, notes));
+  }
+
+  // Javac resolves no template, framework or string-named use, so an unused field or accessor whose
+  // property name is still text lists where, as leads to check rather than uses (MC-109).
+  static String noJavaUses(final LathePropertyMentions property) {
+    if (property.mentions().isEmpty()) {
+      return "No uses: the symbol is declared, and no Java code in the project uses it.";
+    }
+
+    final String shown =
+        property.total() > property.mentions().size()
+            ? " (showing first %d)".formatted(property.mentions().size())
+            : "";
+    // %n, not a text block's line break, so the answer's lines end alike on every platform.
+    return """
+        No Java uses. Its property name `%s` is still text in %d place(s)%s, which javac does not \
+        resolve; a template, a framework or a test may bind it there:%n%s"""
+        .formatted(
+            property.property(), property.total(), shown, locationLines(property.mentions()));
   }
 
   // The access goes after the position, which the agent copies into the next call as it is.
@@ -679,6 +698,12 @@ final class McpText {
                 "affected modules: %s"
                     .formatted(joinOrNone(displayedModules(impact.affectedModules()))),
                 "tests referencing it: %s".formatted(joinOrNone(impact.relevantTests()))));
+    if (!impact.propertyMentions().mentions().isEmpty()) {
+      lines.add(
+          "property `%s` still text in: %d place(s), which find_references lists without an access filter"
+              .formatted(impact.propertyMentions().property(), impact.propertyMentions().total()));
+    }
+
     switch (impact.family()) {
       case METHOD -> {
         lines.add("overrides: %s".formatted(joinOrNone(impact.overrides())));

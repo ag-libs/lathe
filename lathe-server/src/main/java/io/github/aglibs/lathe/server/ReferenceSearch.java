@@ -92,6 +92,20 @@ final class ReferenceSearch {
     this.docs = docs;
   }
 
+  // The symbol a position names, as a reference search resolves it; empty where it names none.
+  CompletableFuture<Optional<ReferenceTarget>> targetFuture(final String uri, final Position pos) {
+    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
+    if (route.isEmpty()) {
+      return CompletableFuture.completedFuture(Optional.empty());
+    }
+
+    final var request = router.featureRequest(route.get().doc(), pos);
+    return route
+        .get()
+        .worker()
+        .submit(session -> Optional.ofNullable(session.references().resolveTarget(request)));
+  }
+
   CompletableFuture<List<ReferenceMatch>> referencesFuture(
       final String uri,
       final Position pos,

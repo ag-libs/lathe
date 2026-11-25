@@ -15542,6 +15542,47 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind — done
+
+**Status: done** (2026-11-25; triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M)
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: MCP `find_references` and `analyze_change`.**
+
+Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P3).
+
+### Observed behaviour
+
+`find_references` on `Owner.getCity()` answers "No uses: the symbol is declared, and nothing in the project uses it."; `analyze_change` answers `references: 0 production, 0 test`, `tests referencing it: none`.
+The templates bind its property: `ownersList.html:25` `${owner.city}`, `ownerDetails.html:28` `*{city}`; `getTelephone()` is used the same way, and by string in `OwnerControllerTests` (`hasProperty("telephone")`, `.param("telephone", …)`).
+
+### Expected
+
+No Java use is said as such, and where a getter, setter or field has none, the places its JavaBean property name is still text are listed, as rename lists an old name (`TextMentions`).
+
+### Fix
+
+Where a field or accessor has no Java use (no reference, and none an access filter left out), `find_references` and `analyze_change` look up the symbol (`ReferenceSearch.targetFuture`) and its JavaBeans property (`BeanProperties`: an instance field's name, or what follows `get`/`is` with no parameter or `set` with one, decapitalised as `java.beans.Introspector` does), and list where that name is still text, from the scan rename runs (`TextMentions`), in the reactor's own files, capped at 20 with the count of all.
+The answer says these are leads javac does not resolve, not uses; without any it says no Java code in the project uses the symbol; `analyze_change` adds ``property `city` still text in: N place(s)``.
+A static member is no property, and a failed lookup leaves the answer as it was.
+
+Checked on Petclinic with a server built from the branch: `getCity()` and `getTelephone()` each list 12 places (their `OwnerControllerTests` parameters and field-error checks, `toString`'s keys, the templates' `${owner.city}`), and `addPet` keeps its 15 references.
+
+Not covered: the scan's qualified forms only, so Thymeleaf's selection form (`*{city}`) and a fragment's `'city'` are not listed (FR-036); an `is` method that returns no boolean is taken for an accessor, as the target carries no return type; the editor's references, which carry locations only, are unchanged.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.references_unusedGetterNamedAsItsProperty_listsThePropertyMentions`
+- `BeanPropertiesTest.name_fieldAndAccessors_theirJavaBeansProperty`
+- `BeanPropertiesTest.name_notAnAccessor_none`
+- `McpTextTest.referencesResult_unusedAccessorWithPropertyMentions_listsThemAsLeads`
+- `McpTextTest.analyzeResult_noReferencesButPropertyMentions_countsThem`
+
+---
+
 ## MC-108 — A project whose only module is the workspace root shows a blank module name — done
 
 **Status: done** (2026-11-25; triaged 2026-11-25: medium, for the release; every single-module project shows it, and "affected modules" is what an agent builds; size S)

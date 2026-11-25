@@ -22,6 +22,7 @@ import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
+import io.github.aglibs.lathe.server.engine.LathePropertyMentions;
 import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
@@ -601,7 +602,7 @@ class McpTextTest {
                 McpText.referencesResult(
                     new LatheReferences(0, false, List.of(), 0, true), withKotlin)))
         .isEqualTo(
-            "No uses: the symbol is declared, and nothing in the project uses it.%n%n%s"
+            "No uses: the symbol is declared, and no Java code in the project uses it.%n%n%s"
                 .formatted(kotlinLine));
     assertThat(
             text(
@@ -725,7 +726,7 @@ class McpTextTest {
             text(
                 McpText.referencesResult(
                     new LatheReferences(0, false, List.of(), 0, true), McpText.NO_NOTES)))
-        .isEqualTo("No uses: the symbol is declared, and nothing in the project uses it.");
+        .isEqualTo("No uses: the symbol is declared, and no Java code in the project uses it.");
   }
 
   // MC-101: an unused symbol is told from a position that names none, where an agent could take a
@@ -742,6 +743,74 @@ class McpTextTest {
                 McpText.referencesResult(
                     new LatheReferences(0, false, List.of(), 0, false), McpText.NO_NOTES)))
         .isEqualTo("No symbol at that position.");
+  }
+
+  // MC-109: an unused field or accessor whose property name is still text (a template, a test's
+  // hasProperty) lists where, as leads javac does not resolve, not as uses.
+  @Test
+  void referencesResult_unusedAccessorWithPropertyMentions_listsThemAsLeads() {
+    final var mention =
+        location(
+            "src/main/resources/templates/owners.html", 25, "<td th:text=\"${owner.city}\" />");
+
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(
+                        0,
+                        false,
+                        List.of(),
+                        0,
+                        true,
+                        new LathePropertyMentions("city", List.of(mention), 1)),
+                    McpText.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "No Java uses. Its property name `city` is still text in 1 place(s), which javac"
+                    + " does not resolve; a template, a framework or a test may bind it there:",
+                "src/main/resources/templates/owners.html:25:1: <td th:text=\"${owner.city}\" />"));
+    // A common property name is in many places: the list is capped, the count is of all.
+    assertThat(
+            text(
+                McpText.referencesResult(
+                    new LatheReferences(
+                        0,
+                        false,
+                        List.of(),
+                        0,
+                        true,
+                        new LathePropertyMentions("name", List.of(mention), 40)),
+                    McpText.NO_NOTES)))
+        .startsWith(
+            "No Java uses. Its property name `name` is still text in 40 place(s) (showing first 1),");
+  }
+
+  @Test
+  void analyzeResult_noReferencesButPropertyMentions_countsThem() {
+    final var mention = location("src/test/java/app/OwnerTest.java", 9, "hasProperty(\"city\")");
+
+    assertThat(
+            text(
+                McpText.analyzeResult(
+                    new LatheChangeImpact(
+                        "public String getCity()",
+                        Family.METHOD,
+                        List.of(),
+                        List.of(),
+                        0,
+                        List.of(),
+                        0,
+                        0,
+                        0,
+                        List.of(),
+                        List.of(),
+                        new LathePropertyMentions("city", List.of(mention), 3)),
+                    McpText.NO_NOTES)))
+        .contains(
+            lines(
+                "tests referencing it: none",
+                "property `city` still text in: 3 place(s), which find_references lists without"
+                    + " an access filter"));
   }
 
   // MC-93: an access filter that left out every use (a method's calls are neither reads nor
