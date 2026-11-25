@@ -50,10 +50,13 @@ public final class TextMentions {
     }
   }
 
+  // A build may declare a Java source folder as a resource root (XML beside the classes), so the
+  // same literal can come from both scans: each place once.
   public static List<Location> find(final Sources sources, final String name) {
     return Stream.concat(
             inStringLiterals(sources.javaFiles(), name).stream(),
             inResources(sources.resourceDirs(), name).stream())
+        .distinct()
         .toList();
   }
 
@@ -125,16 +128,18 @@ public final class TextMentions {
 
     final String literal = source.subSequence((int) start, (int) end).toString();
     final OptionalInt at =
-        wordStarts(literal, name).filter(word -> alone || qualified(literal, word)).findFirst();
+        alone ? wordStarts(literal, name).findFirst() : firstQualified(literal, name);
     return at.isPresent() ? start + at.getAsInt() : start;
   }
 
   // A resource names a class or member qualified (com.example.OldName, bean.oldName) or, as a
-  // META-INF/services file does, by its file name.
+  // META-INF/services file does, by its file name. Each file is read once, though a build may list
+  // its folder twice (filtered and not) or a folder inside another.
   public static List<Location> inResources(final List<Path> resourceDirs, final String name) {
     return resourceDirs.stream()
         .flatMap(
             dir -> IOUtil.unchecked(() -> FileUtil.walkFiles(dir, Files::isRegularFile)).stream())
+        .distinct()
         .flatMap(file -> resourceMentions(file, name).stream())
         .toList();
   }
@@ -149,21 +154,39 @@ public final class TextMentions {
 
     final List<String> lines = readText(file).map(text -> text.lines().toList()).orElse(List.of());
     return IntStream.range(0, lines.size())
-        .filter(i -> wordStarts(lines.get(i), name).anyMatch(at -> qualified(lines.get(i), at)))
-        .mapToObj(i -> new Location(uri, new Range(new Position(i, 0), new Position(i, 0))))
+        .mapToObj(line -> mentionOnLine(uri, line, lines.get(line), name))
+        .flatMap(Optional::stream)
         .toList();
+  }
+
+  // At the first qualified occurrence on the line, the one that made it a mention.
+  private static Optional<Location> mentionOnLine(
+      final String uri, final int line, final String text, final String name) {
+    final OptionalInt at = firstQualified(text, name);
+    if (at.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final var position = new Position(line, at.getAsInt());
+    return Optional.of(new Location(uri, new Range(position, position)));
   }
 
   private static Optional<String> readText(final Path file) {
     final byte[] bytes =
         IOUtil.unchecked(
             () -> Files.size(file) > MAX_RESOURCE_BYTES ? new byte[0] : Files.readAllBytes(file));
-    final String text = new String(bytes, StandardCharsets.UTF_8);
+    // A byte order mark is no character of the first line: columns count from after it.
+    final String text = new String(bytes, StandardCharsets.UTF_8).replaceFirst("^\uFEFF", "");
     return text.indexOf('\0') >= 0 ? Optional.empty() : Optional.of(text);
   }
 
   private static boolean namesIt(final String literal, final String name) {
     return literal.equals(name) || wordStarts(literal, name).anyMatch(at -> qualified(literal, at));
+  }
+
+  // The first qualified occurrence, the one that makes text a mention.
+  private static OptionalInt firstQualified(final String text, final String name) {
+    return wordStarts(text, name).filter(at -> qualified(text, at)).findFirst();
   }
 
   // com.example.Name, bean.name, Type#name.

@@ -67,4 +67,36 @@ class TextMentionsTest {
             Path.of("resources/beans.xml"));
     assertThat(TextMentions.inResources(List.of(tmp.resolve("missing")), "Shop")).isEmpty();
   }
+
+  // A folder listed twice is read once, and a match is at its name: a review row at column 1 with
+  // a twin sends the agent hunting (FR-040).
+  @Test
+  void inResources_folderListedTwiceAndMatchMidLine_oncePerMatchAtItsColumn() throws Exception {
+    final Path resources = Files.createDirectories(tmp.resolve("templates"));
+    Files.writeString(resources.resolve("list.html"), "<td th:text=\"${owner.city}\" />\n");
+
+    assertThat(TextMentions.inResources(List.of(resources, resources), "city"))
+        .extracting(
+            location -> location.getRange().getStart().getLine(),
+            location -> location.getRange().getStart().getCharacter())
+        .containsExactly(tuple(0, 21));
+  }
+
+  // A file saved with a byte order mark counts columns from after it; a literal in a Java folder a
+  // build also declares as a resource root is listed once, not once per scan.
+  @Test
+  void find_byteOrderMarkAndJavaFolderAsResourceRoot_eachPlaceOnceAtItsColumn() throws Exception {
+    final Path folder = Files.createDirectories(tmp.resolve("java"));
+    Files.writeString(folder.resolve("beans.xml"), "\uFEFF<bean class=\"com.example.Shop\"/>\n");
+    final Path source =
+        Files.writeString(
+            folder.resolve("Shop.java"), "class Shop { String c = \"com.example.Shop\"; }\n");
+
+    assertThat(
+            TextMentions.find(new TextMentions.Sources(List.of(source), List.of(folder)), "Shop"))
+        .extracting(
+            location -> Path.of(URI.create(location.getUri())).getFileName().toString(),
+            location -> location.getRange().getStart().getCharacter())
+        .containsExactlyInAnyOrder(tuple("beans.xml", 25), tuple("Shop.java", 37));
+  }
 }

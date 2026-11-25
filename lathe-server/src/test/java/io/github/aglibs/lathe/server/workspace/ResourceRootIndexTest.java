@@ -90,4 +90,17 @@ class ResourceRootIndexTest {
         .containsExactly(
             Path.of("/ws/app/src/main/resources"), Path.of("/ws/app/src/test/resources"));
   }
+
+  // A pom that declares one folder twice, filtered and not (Spring Petclinic's), lists it once: a
+  // scan of every resource folder would read it twice (FR-040).
+  @Test
+  void sourceDirs_folderDeclaredTwice_listsItOnce() {
+    final var filtered =
+        new ResourceRootData("app/src/main/resources", "app/target/classes", "", true, "app");
+    final var unfiltered =
+        new ResourceRootData("app/src/main/resources", "app/target/classes", "", false, "app");
+
+    assertThat(index(List.of(filtered, unfiltered)).sourceDirs())
+        .containsExactly(Path.of("/ws/app/src/main/resources"));
+  }
 }

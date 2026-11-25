@@ -1118,37 +1118,6 @@ None yet.
 
 ---
 
-## FR-040 — Rename's text review lists a resource match once per declared resource folder, and at column 1
-
-**Status: accepted** (triaged 2026-11-25: low, for the release; the review list is advisory, but a doubled row and a wrong column make it look unreliable; size S)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP `rename_symbol`'s "Not renamed — review" list (and every caller of `TextMentions.inResources`).**
-
-Found by the 2026-11-25 MCP exploratory round on Spring Petclinic (`0.1.0-SNAPSHOT` at `e49718a`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2).
-
-### Observed behaviour
-
-Renaming the field `Owner.city` to `town` lists `src/main/resources/templates/owners/ownersList.html:25:1: <td th:text="${owner.city}" />` twice, and at column 1 (`owner.city` starts at column 23).
-Petclinic's pom declares `src/main/resources` twice, filtered and not (`workspace.json` `resourceRoots`), a common Maven pattern; `TextMentions.inResources` walks each declared folder, and `resourceMentions` reports every match at `new Position(i, 0)`.
-
-### Expected
-
-Each match once, at the column of the name.
-
-### Fix direction
-
-Walk each resource folder once (`WorkspaceManifest.resourceSourceDirs()` distinct, which `ResourceMirror` reads too), and report the qualifying word's start.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
