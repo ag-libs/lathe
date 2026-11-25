@@ -5,6 +5,7 @@ A check marked `known` describes a wrong answer already in the gap log: it repor
 answer stays wrong and NOW PASSES once it is right, so the mark can be dropped. Used by
 dev/mcp_battery.py, which passes its Battery (call/raw/check) in as `b`.
 """
+import re
 import time
 from pathlib import Path
 
@@ -170,6 +171,16 @@ RENAMES = [
 ]
 
 
+# The module a refused rename names, as the server words it for a module the server's JDK leaves out.
+LEFT_OUT_USER = re.compile(r"module (\S+) may use it")
+
+
+def refused_for_left_out(left_out, text):
+    """A rename refused because a module the server's JDK leaves out (WS-46) may use it."""
+    m = LEFT_OUT_USER.search(text)
+    return bool(m) and m.group(1) in left_out
+
+
 def rename_keeps_meaning(b, probe, label, target, new, watched):
     files = (probe.file, probe.caller_file)
     originals = [f.read_bytes() for f in files]
@@ -185,6 +196,9 @@ def rename_keeps_meaning(b, probe, label, target, new, watched):
             # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
             if "would then" in text:
                 b.check(label, True, "refused: %s" % first(text))
+            elif refused_for_left_out(b.left_out, text):
+                # WS-46: a module this JDK leaves out may use it, so no rename is checked here.
+                b.check(label, True, "refused, as a left-out module may use it: %s" % first(text))
             else:
                 b.check(label, False, "refused for another reason: %s" % first(text))
         else:
