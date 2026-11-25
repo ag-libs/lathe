@@ -184,4 +184,28 @@ class LatheProbe {
     static int guarded(@LatheProbeNonNull String s) {
         return s.length();
     }
+
+    // Calls outside any method of a named class: incoming calls credit the field and the block.
+    static int seed(int v) {
+        return v;
+    }
+
+    static final int SEEDED = seed(1);
+
+    static {
+        seed(2);
+    }
+}
+
+// A second top-level type, in a file named after another: search, implementations and a
+// definition from another file find it.
+interface LatheProbeSecondary {
+    int size();
+}
+
+final class LatheProbeSecondaryImpl implements LatheProbeSecondary {
+    @Override
+    public int size() {
+        return 0;
+    }
 }
