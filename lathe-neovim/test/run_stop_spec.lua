@@ -11,6 +11,10 @@
 local helper = require("spec_helper")
 local spec = helper.new()
 local commands = require("lathe.commands")
+local notes = {}
+vim.notify = function(msg)
+  table.insert(notes, msg)
+end
 
 local pending = {}
 local requests = helper.fake_client(function(_, _, params, callback)
@@ -34,6 +38,36 @@ spec.check(
   "stop after an earlier run ended: the newer run's token",
   cancel.arguments[1].token,
   requests[2].arguments[1].token
+)
+
+-- The stopped run ends with the signal's exit code: it reads as stopped, not as a failed exit.
+pending[2](nil, { launched = true, exitCode = 143 })
+vim.wait(50)
+spec.check(
+  "a stopped run: says stopped",
+  notes[#notes]:find("stopped", 1, true) ~= nil and notes[#notes]:find("exited", 1, true) == nil,
+  true
+)
+
+-- A run that ends with 143 on its own, no stop asked for, still reports its exit code.
+run.run_named("third")
+pending[3](nil, { launched = true, exitCode = 143 })
+vim.wait(50)
+spec.check(
+  "a run killed from outside: reports its exit",
+  notes[#notes]:find("exited 143", 1, true) ~= nil,
+  true
+)
+
+-- A stop that came too late: the run ended on its own with a failure, which is reported as one.
+run.run_named("fourth")
+run.stop()
+pending[4](nil, { launched = true, exitCode = 1 })
+vim.wait(50)
+spec.check(
+  "a stop that came too late: reports the failure",
+  notes[#notes]:find("exited 1", 1, true) ~= nil,
+  true
 )
 
 -- A debug start the server refuses leaves no session for the stop to take.
