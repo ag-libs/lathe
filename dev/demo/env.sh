@@ -10,5 +10,8 @@ export LATHE_NVIM_DIR="$R/lathe-neovim/runtime" LATHE_CACHE="$LATHE_DEMO_WORK/ca
 export LATHE_VERSION="0.1.0-SNAPSHOT"
 export PETCLINIC_URL="https://github.com/spring-projects/spring-petclinic.git"
 export PETCLINIC_COMMIT="500158f732419217507c7656904b8e6aa1bcc0d6"
-export PETCLINIC="$LATHE_DEMO_WORK/spring-petclinic"
+# The clone prepare.sh sets up for beats 1-6; beat 0 clones it afresh to $PETCLINIC_FRESH, the path
+# its :LatheInit prompt shows on camera.
+export PETCLINIC="$LATHE_DEMO_WORK/warm/spring-petclinic"
+export PETCLINIC_FRESH="$LATHE_DEMO_WORK/spring-petclinic"
 export PETCLINIC_MAIN="src/main/java/org/springframework/samples/petclinic/owner/Owner.java"

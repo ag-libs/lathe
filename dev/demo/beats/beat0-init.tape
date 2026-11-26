@@ -1,6 +1,6 @@
 # Beat 0 — Set up from the editor. Narration captions (burned in post-render), see beat0-init.ass:
-#   (1) "spring-petclinic — no Lathe in its build"  (2) ":LatheInit — one build, from Neovim"
-#   (3) "Lathe attached — go to definition"
+#   (1) "spring-petclinic — no Lathe in its build"  (2) ":LatheInit maven — petclinic has both builds"
+#   (3) "One build, from Neovim — the project's files are not changed"  (4) "Lathe attached — go to definition"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat0-init.tape
 #
@@ -29,8 +29,8 @@ Type 'source "$R/dev/demo/env.sh"' Enter
 # screen, not a fixed time, and the published cut is recorded on a quiet machine.
 Type 'renice -n 15 $$ >/dev/null' Enter
 Type 'test -d "$PETCLINIC/.git" || exit 1' Enter
-Type 'rm -rf "$LATHE_DEMO_WORK/fresh" && git clone -q "$PETCLINIC" "$LATHE_DEMO_WORK/fresh/spring-petclinic"' Enter
-Type 'cd "$LATHE_DEMO_WORK/fresh/spring-petclinic" || exit 1' Enter
+Type 'rm -rf "$PETCLINIC_FRESH" && git clone -q "$PETCLINIC" "$PETCLINIC_FRESH"' Enter
+Type 'cd "$PETCLINIC_FRESH" || exit 1' Enter
 Type 'clear' Enter
 Show
 
@@ -63,4 +63,4 @@ Type 'b'
 Sleep 500ms
 Type 'gd'
 Wait+Screen@20s /class Person extends BaseEntity/
-Sleep 2000ms              # dwell on Person.java
+Sleep 3500ms              # dwell on Person.java

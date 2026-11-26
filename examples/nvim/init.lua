@@ -122,8 +122,28 @@ require("lazy").setup({
     },
   },
 
+  -- Debugger: nvim-dap, with dap-view's panel (scopes, watches, REPL) opening on each session.
+  {
+    "igorlfs/nvim-dap-view",
+    dependencies = { "mfussenegger/nvim-dap" },
+    lazy = true,
+    config = function()
+      local dap, view = require("dap"), require("dap-view")
+      view.setup({})
+      dap.listeners.before.attach["dap-view"] = view.open
+      dap.listeners.before.launch["dap-view"] = view.open
+      dap.listeners.before.event_terminated["dap-view"] = view.close
+      dap.listeners.before.event_exited["dap-view"] = view.close
+      vim.keymap.set("n", "<leader>db", dap.toggle_breakpoint, { desc = "Toggle Breakpoint" })
+      vim.keymap.set("n", "<leader>dc", dap.continue, { desc = "Continue" })
+      vim.keymap.set("n", "<leader>dt", dap.terminate, { desc = "Terminate" })
+    end,
+  },
+
   -- Lathe: the Java language server (code intelligence, formatting, AST-aware indentation).
   vim.tbl_extend("force", lathe_source, {
+    -- nvim-dap loads first, so Lathe registers :LatheDebug.
+    dependencies = { "igorlfs/nvim-dap-view" },
     ft = "java",
     cmd = { "LatheStart", "LatheInit" },
     -- A pom.xml is filetype xml: load Lathe for it too, so its pom validation runs on first open.
@@ -138,6 +158,8 @@ require("lazy").setup({
       -- Run the `main` under the cursor from .lathe/ bytecode; output streams into Lathe's docked
       -- split (reopen with <leader>to). Its own <leader>r group keeps it clear of tests (<leader>t).
       vim.keymap.set("n", "<leader>rr", "<cmd>LatheRun<cr>", { desc = "Run main under cursor" })
+      -- Debug the test or `main` under the cursor (needs nvim-dap, loaded above).
+      vim.keymap.set("n", "<leader>dd", "<cmd>LatheDebug<cr>", { desc = "Debug test or main under cursor" })
       -- Lathe commands with no built-in key: grN/grh/grT sit in the references family (grr); grT is
       -- capital as grt is Neovim's go to type definition.
       vim.keymap.set("n", "grN", "<cmd>LatheInstances<cr>", { desc = "Lathe: instantiation sites of the type" })

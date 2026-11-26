@@ -31,6 +31,10 @@ Type 'clear' Enter
 Type 'nvim -n src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java +33' Enter
 Wait+Screen@60s /workspace ready/
 Type ':lua Snacks.notifier.hide()' Enter
+# Spring's log lines run past the right edge, and the output split's follow does not scroll for
+# wrapped lines: a timer, started before the run so no output streams off camera, wraps the split
+# and keeps it on its last line once it opens.
+Type ':lua local t = vim.uv.new_timer(); t:start(0, 200, vim.schedule_wrap(function() for _, w in ipairs(vim.api.nvim_list_wins()) do if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == "lathe-test-output" then vim.wo[w].wrap = true; vim.api.nvim_win_call(w, function() vim.cmd("normal! Gzb") end) end end end))' Enter
 Type ':echo ""' Enter
 Sleep 500ms
 Show
@@ -38,15 +42,6 @@ Show
 # --- run the main under the cursor; the Spring Boot startup streams into the docked output ---
 Sleep 1500ms
 Type ' rr'                # <leader>rr = :LatheRun
-# Spring's log lines run past the right edge: wrap Lathe's output split, off camera, without
-# focusing it (a focused split stops following the output).
-Wait+Screen@30s /Running org/
-Hide
-# Wrapped lines push the tail below the window, and the split's follow does not scroll for them:
-# a timer keeps it on the last line.
-Type ':lua local t = vim.uv.new_timer(); t:start(0, 200, vim.schedule_wrap(function() for _, w in ipairs(vim.api.nvim_list_wins()) do if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == "lathe-test-output" then vim.wo[w].wrap = true; vim.api.nvim_win_call(w, function() vim.cmd("normal! Gzb") end) end end end))' Enter
-Type ':echo ""' Enter
-Show
 Wait+Screen@60s /Started PetClinicApplication in/
 Sleep 5000ms              # dwell on "Tomcat started on port 8080" + "Started PetClinicApplication in"
 
