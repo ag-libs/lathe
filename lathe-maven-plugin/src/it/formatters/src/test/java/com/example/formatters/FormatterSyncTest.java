@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 // lathe:sync runs before the tests, so .lathe/ holds what it wrote for the active profile's
@@ -61,11 +62,16 @@ class FormatterSyncTest {
 
     assertThat(style).contains("\"engine\": \"spring\"");
     assertThat(style).contains("\"version\": \"%s\"".formatted(SPRING_VERSION));
-    assertThat(style).contains("spring-javaformat-formatter-%s.jar".formatted(SPRING_VERSION));
-    assertThat(style)
-        .contains("spring-javaformat-formatter-eclipse-runtime-%s.jar".formatted(SPRING_VERSION));
+    assertThat(style).containsPattern(jarPath("spring-javaformat-formatter"));
+    assertThat(style).containsPattern(jarPath("spring-javaformat-formatter-eclipse-runtime"));
     assertThat(style).contains("\"profile\": \"editorconfig\"");
     assertThat(lathe("jvm.args")).doesNotExist();
+  }
+
+  // A whole quoted classpath entry ending in the artifact's jar at SPRING_VERSION.
+  private static String jarPath(final String artifact) {
+    final String jar = "%s-%s.jar".formatted(artifact, SPRING_VERSION);
+    return "\"[^\"]+%s\"".formatted(Pattern.quote(jar));
   }
 
   private static Path lathe(final String file) {

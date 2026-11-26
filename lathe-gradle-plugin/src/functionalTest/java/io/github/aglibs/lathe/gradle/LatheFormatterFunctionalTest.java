@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,10 +18,12 @@ class LatheFormatterFunctionalTest {
       "%sinclude(\"app\")\n%s"
           .formatted(GradleFixture.latheSettings("root"), GradleFixture.latheRepositories());
   private static final String SPOTLESS_WARNING = "Spotless formats this build";
-  // The release Lathe pins, which the build puts in the Lathe repository, so the fixtures resolve
-  // it
-  // without Central; the absent fallback warning tells the plugin's release from the pinned one.
-  private static final String SPRING_RELEASE = System.getProperty("lathe.springJavaformatVersion");
+  // The release Lathe pins, which the build puts in the Lathe repository, so no fixture fetches it
+  // from Central; the absent fallback warning tells the plugin's release from the pinned one.
+  private static final String SPRING_RELEASE =
+      Objects.requireNonNull(
+          System.getProperty("lathe.springJavaformatVersion"),
+          "lathe.springJavaformatVersion is not set; run the fixtures through the Maven build");
 
   @TempDir Path dir;
 
@@ -203,7 +206,7 @@ class LatheFormatterFunctionalTest {
   }
 
   // A plugin under spring-javaformat's id whose jar records release, as the real plugin's does
-  // (none when empty); the formatter jars come from Maven Central.
+  // (none when empty); the formatter jars come from the Lathe repository the build fills.
   private static GradleFixture withStandInSpring(final GradleFixture fixture, final String release)
       throws Exception {
     final String manifest =
