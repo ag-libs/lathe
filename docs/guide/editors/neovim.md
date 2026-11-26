@@ -1,6 +1,6 @@
 # Lathe in Neovim
 
-Open a Java file in a project you’ve built with Lathe and Neovim starts the language server.
+Open a Java file in a Maven or Gradle project, run `:LatheInit`, and Neovim starts the language server.
 Use **Go to Definition** on a method call to open its declaration, even in another module.
 
 ## Install
@@ -11,20 +11,22 @@ If you use lazy.nvim, `ft = "java"` loads the plugin when you open a Java file, 
 
 ### Set up a project
 
-1. Follow the [first build](../../../README.md#first-build) for Maven, Gradle, or the OpenJDK checkout.
-   The build installs the server and records the compiler settings for each module.
-2. Open a Java source file and wait for the workspace to load.
+1. Open a Java source file in the project and run `:LatheInit`.
+   Confirm the build root and Lathe version in the prompt.
+   Lathe runs one build that installs the server and records the compiler settings for each module, without changing the project's build files.
+2. Wait for the workspace to load.
    Try **Go to Definition** or start typing a method name and invoke completion.
 3. After changing dependencies, compiler settings, or the set of modules, run `:LatheSync`.
    Ordinary Java edits are picked up automatically.
    Use `:LatheSyncOutput` to read the build output.
 
-### Set up a project from Neovim
+To set Lathe up in the build itself, so that every checkout gets it, follow the [first build](../../../README.md#first-build) instead.
+The OpenJDK checkout uses that route, or `:LatheInit openjdk` after `make jdk`.
 
-Run `:LatheInit` from a project file to start the first build.
-Confirm the build root and Lathe version in the prompt.
-Maven and Gradle projects can use this setup without changing their build files.
-For OpenJDK, build the JDK first with `make jdk`.
+### More on `:LatheInit`
+
+`:LatheInit` picks the build around the current file.
+When a project has both a Maven and a Gradle build at the same root, it picks Gradle.
 To choose the build yourself, pass it: `:LatheInit maven`, `:LatheInit gradle` or `:LatheInit openjdk`.
 On a project already set up at this Lathe version, or one whose build registers Lathe, `:LatheInit` builds nothing and points to `:LatheSync`.
 `:LatheInit!` runs the build anyway.

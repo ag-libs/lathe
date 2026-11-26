@@ -118,8 +118,8 @@ vim.pack.add({ "https://github.com/ag-libs/lathe.nvim" })
 require("lathe").setup()
 ```
 
-After the [first build](#first-build), open a Java source file in the project and Lathe attaches automatically.
-To set up a Maven or Gradle project without changing its build files, run `:LatheInit` from any file in it instead of the first build.
+To set up a Maven or Gradle project, open a Java source file in it and run `:LatheInit`: one build, and the project's build files are not changed.
+After the [first build](#first-build) instead, a project whose build registers Lathe attaches as soon as you open a file.
 Once the workspace has loaded, use **Go to Definition** on a method call to open its source, even in another module.
 For completion, type part of a name and invoke your usual completion command.
 To run a `main` method, put the cursor inside it and type `:LatheRun`.
