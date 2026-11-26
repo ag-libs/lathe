@@ -47,7 +47,7 @@ class LiveAnalysisTest extends ServiceTestBase {
                 1,
                 "package shapes; final class Square implements Shape {}")));
 
-    verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, square)));
+    verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(argThat(p -> isFor(p, square)));
     awaitWorkerIdle();
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client, atLeastOnce()).publishDiagnostics(captor.capture());
@@ -86,14 +86,14 @@ class LiveAnalysisTest extends ServiceTestBase {
         greeter,
         "package com.example; class Greeter { private static int g; static String greet(String name, int times) { return name; } }",
         2);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, greeter) && hasMessage(p, "'g'")));
     clearInvocations(client);
     change(
         user,
         "package com.example; class User { private int marker; String u() { return Greeter.greet(\"a\", 2); } }",
         2);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(
             argThat(p -> isFor(p, user) && hasMessage(p, "'marker'") && !hasError(p)));
 
@@ -103,14 +103,15 @@ class LiveAnalysisTest extends ServiceTestBase {
         greeter,
         "package com.example; class Greeter { static String greet(String name, int times) { return name; }",
         3);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, greeter) && hasError(p)));
     clearInvocations(client);
     change(
         user,
         "package com.example; class User { private int marker; String u() { return Greeter.greet(\"a\", 2);  } }",
         3);
-    verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user) && hasError(p)));
+    verify(client, timeout(TIMEOUT_MS))
+        .publishDiagnostics(argThat(p -> isFor(p, user) && hasError(p)));
   }
 
   // The diagnostics stay while the file is edited, until the next analysis replaces them: an empty
@@ -128,13 +129,13 @@ class LiveAnalysisTest extends ServiceTestBase {
     host.initialize(tmp);
     awaitStartup();
     openDoc(broken, "package com.example; class Broken { Missing m; }");
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, broken) && hasError(p)));
     awaitWorkerIdle();
 
     clearInvocations(client);
     change(broken, "package com.example; class Broken { Missing m; int x; }", 2);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, broken) && hasError(p)));
     awaitWorkerIdle();
     verify(client, never())
@@ -142,7 +143,7 @@ class LiveAnalysisTest extends ServiceTestBase {
 
     clearInvocations(client);
     change(broken, "package com.example; class Broken { int x; }", 3);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, broken) && p.getDiagnostics().isEmpty()));
   }
 
@@ -166,13 +167,14 @@ class LiveAnalysisTest extends ServiceTestBase {
     reconcileNow(true).get(10, TimeUnit.SECONDS);
     awaitWorkerIdle();
     change(file, "package com.example; class Clean { Missing m; }", 2);
-    verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, file) && hasError(p)));
+    verify(client, timeout(TIMEOUT_MS))
+        .publishDiagnostics(argThat(p -> isFor(p, file) && hasError(p)));
     awaitWorkerIdle();
 
     clearInvocations(client);
     change(file, saved, 3);
     save(file);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
   }
 

@@ -162,7 +162,7 @@ class RenameTest extends ServiceTestBase {
 
       // Each file republishes clean once the commit has compiled them together.
       for (final Path file : edited.keySet()) {
-        verify(client, timeout(10_000))
+        verify(client, timeout(TIMEOUT_MS))
             .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
       }
 
