@@ -53,6 +53,8 @@ public final class FormatEngines {
               () ->
                   new EclipseFormatEngine(
                       spec.options().getOrDefault(LatheFlags.FORMAT_FILE, ""), spec.classpath()));
+      case LatheFlags.FORMATTER_SPRING ->
+          pinned(spec, () -> new SpringFormatEngine(spec.version(), spec.classpath(), workingDir));
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
       case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;

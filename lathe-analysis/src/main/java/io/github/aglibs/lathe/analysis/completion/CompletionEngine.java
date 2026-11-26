@@ -52,20 +52,49 @@ public final class CompletionEngine {
   }
 
   public CompletionOutcome complete(final CompletionRequest req) {
-    final var initial = new SentinelInjector(req.content()).inject(req.cursorOffset());
+    final var injector = new SentinelInjector(req.content());
+    final var first = injector.inject(req.cursorOffset());
     LOG.fine(
         () ->
             "[completion] inject prefix=|%s| receiver=|%s| ctx=%s hasDot=%s"
-                .formatted(
-                    initial.prefix(), initial.receiverText(), initial.context(), initial.hasDot()));
+                .formatted(first.prefix(), first.receiverText(), first.context(), first.hasDot()));
 
-    if (initial.hasDot() && initial.receiverText() == null) {
+    if (first.hasDot() && first.receiverText() == null) {
       LOG.fine(() -> "[completion] bare dot with no receiver — returning empty");
       return CompletionOutcome.of(List.of());
     }
 
     final int version = req.cached() != null ? req.cached().version() : -1;
-    final var initialParse = sentinelParser.parse(initial, req.pos().getLine(), version, req.uri());
+    final var firstParse = sentinelParser.parse(first, req.pos().getLine(), version, req.uri());
+    // The body of a switch label, last on its line, while the content leaves a block open:
+    // injected again as a statement that closes the open blocks right after it, and parsed again,
+    // so javac reads neither the next line nor the members after the method into the switch
+    // (CQ-0079). The second parse is kept only where the switch was the open block: the top-level
+    // class still ends at the text's last brace; where it was another block, closing it here cuts
+    // the class short, and the first injection stays.
+    final boolean relabel =
+        first.openBraces() > 0
+            && firstParse.labelTopLevelEnd() >= 0
+            && injector.lastOnItsLine(req.cursorOffset());
+    final var relabeled = relabel ? injector.inject(req.cursorOffset(), true) : null;
+    final var watch = Stopwatch.start();
+    final var relabeledParse =
+        relabel ? sentinelParser.parse(relabeled, req.pos().getLine(), version, req.uri()) : null;
+    final boolean useRelabeled =
+        relabeledParse != null
+            && relabeledParse.valid()
+            && relabeledParse.labelTopLevelEnd()
+                == relabeled.injectedContent().lastIndexOf('}') + 1;
+    if (relabel) {
+      LOG.fine(
+          () ->
+              "[completion:relabel] %s switch label reinjected kept=%s %dms"
+                  .formatted(req.uri(), useRelabeled, watch.elapsedMs()));
+    }
+
+    final var initial = useRelabeled ? relabeled : first;
+    final var initialParse = useRelabeled ? relabeledParse : firstParse;
+
     final Optional<SentinelInjectionResult> typeStub =
         initialParse.valid() ? Optional.empty() : initial.asMemberStub();
     final Optional<ParsedSentinel> typeStubParse =

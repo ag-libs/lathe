@@ -1,12 +1,14 @@
 -- Verifies lathe.latheinit: the build root it finds from a folder (an OpenJDK checkout's markers,
 -- Maven's markers, the topmost of a run of pom.xml folders, Gradle's settings script, the nearer of
--- a Maven and a Gradle root, a forced kind), the root prompt (accepted, edited, cancelled), whether
+-- a Maven and a Gradle root, a forced kind), the root prompt (accepted, edited, cancelled, naming
+-- the other build at the same root), whether
 -- the build registers Lathe, and the commands :LatheInit runs: the Maven fetch then the first build
 -- (clean, tests captured, compile errors kept) with the activation, the Gradle build with the init
 -- script written for the version, the OpenJDK goal on a built JDK, the same first build for a build
 -- that registers Lathe (on Gradle with an init script that keeps compile errors), the attach after
 -- a build that wrote a launcher, and the messages for an unbuilt JDK, a development version, no
--- build, a workspace set up already, and a build that wrote no .lathe/. A root a build would leave
+-- build, a workspace set up already, a build that wrote no .lathe/, and a personal setup of a build
+-- whose nohttp check the project's own build will run over .lathe/. A root a build would leave
 -- as it is (registered and set up, personal with a sync script at this version and kind, OpenJDK
 -- at this version) runs nothing unless forced; one with a run going asks nothing. Stubs
 -- vim.system, so no build runs.
@@ -205,6 +207,33 @@ spec.check(
   "a registration in a Gradle comment does not count",
   latheinit.find_build(work .. "/commented-gradle").registered,
   false
+)
+
+-- Both builds at one root: Gradle, and the prompt names the Maven build and how to choose it. A
+-- forced kind, or a Maven build nested deeper, is not named.
+write(work .. "/both/settings.gradle")
+write(work .. "/both/pom.xml")
+spec.check("both builds at one root: Gradle", root_of("/both"), "/both gradle")
+next_answer = false
+run_from("/both")
+spec.check(
+  "and the prompt names the other build",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 for the Gradle build (a Maven build is there too: `:LatheInit maven`) in: "
+)
+next_answer = false
+run_from("/both", "gradle")
+spec.check(
+  "a forced kind names no other build",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 for the Gradle build in: "
+)
+next_answer = false
+run_from("/mixed")
+spec.check(
+  "a Maven build below the Gradle root is not named",
+  prompts[#prompts].prompt,
+  "Lathe: set up Lathe 9.9.9 for the Gradle build in: "
 )
 
 -- Maven personal: fetch, then build with the activation, then attach.
@@ -818,6 +847,73 @@ spec.check(
   false
 )
 finish_build(0)
+
+-- A personal setup of a build with a nohttp check (in the POM, the build script, or the version
+-- catalog a plugin alias names), once this build set Lathe up, warns that the project's own build,
+-- which runs without Lathe, will find `.lathe/`. A build without the check, one whose check is
+-- commented out, and a setup whose build set nothing up (only an earlier setup's `.lathe/`) say
+-- nothing of it.
+vim.env.LATHE_VERSION = "9.9.9"
+local function warned_since(count)
+  return vim.iter(vim.list_slice(notes, count + 1)):any(function(note)
+    return note:find("exclude `**/.lathe/**`", 1, true) ~= nil
+  end)
+end
+local function set_up_warns(dir, code)
+  local count = #notes
+  run_from(dir)
+  if code == 0 then
+    write(work .. dir .. "/.lathe/workspace.json", "{}")
+    executable(work .. dir .. "/.lathe/lathe-launcher.sh")
+  end
+  finish_build(code)
+  return warned_since(count)
+end
+
+write(
+  work .. "/nohttp/pom.xml",
+  "<project><build><plugins><plugin><dependencies><dependency>"
+    .. "<groupId>io.spring.nohttp</groupId></dependency></dependencies></plugin></plugins></build>"
+    .. "</project>"
+)
+spec.check("a Maven build with a nohttp check is warned", set_up_warns("/nohttp", 0), true)
+
+write(work .. "/nohttp-gradle/settings.gradle")
+write(
+  work .. "/nohttp-gradle/build.gradle",
+  'plugins {\n  id "io.spring.nohttp" version "0.0.11"\n}'
+)
+spec.check("a Gradle build with a nohttp check is warned", set_up_warns("/nohttp-gradle", 0), true)
+
+write(work .. "/nohttp-catalog/settings.gradle.kts")
+write(work .. "/nohttp-catalog/build.gradle.kts", "plugins {\n  alias(libs.plugins.nohttp)\n}")
+write(
+  work .. "/nohttp-catalog/gradle/libs.versions.toml",
+  '[plugins]\nnohttp = { id = "io.spring.nohttp", version = "0.0.11" }'
+)
+spec.check("a check named in the version catalog is warned", set_up_warns("/nohttp-catalog", 0), true)
+
+write(work .. "/no-scan/settings.gradle")
+write(work .. "/no-scan/build.gradle", "plugins { id 'java' }")
+spec.check("a build without the check is not warned", set_up_warns("/no-scan", 0), false)
+
+write(
+  work .. "/nohttp-commented/pom.xml",
+  "<project><!-- <groupId>io.spring.nohttp</groupId> --></project>"
+)
+spec.check(
+  "a check commented out is not warned",
+  set_up_warns("/nohttp-commented", 0),
+  false
+)
+
+write(work .. "/nohttp/.lathe/workspace.json", "{}")
+vim.uv.fs_utime(work .. "/nohttp/.lathe/workspace.json", 1000, 1000)
+spec.check(
+  "a failed build with only an earlier setup's .lathe/ is not warned",
+  set_up_warns("/nohttp", 1),
+  false
+)
 
 latheinit.setup()
 spec.check("registers :LatheInit", vim.fn.exists(":LatheInit"), 2)

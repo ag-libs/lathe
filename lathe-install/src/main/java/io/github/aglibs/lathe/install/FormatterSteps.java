@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -28,6 +29,8 @@ import java.util.zip.ZipFile;
 // The formatters Lathe runs in-process, completed and resolved as Spotless runs them: the version
 // and options a project leaves out are its Spotless step's own defaults, read from the step classes
 // in a classloader the front-end supplies (the build's Spotless, else the release Lathe pins).
+// spring-javaformat is no Spotless step: it runs as its own build plugin runs it, from the
+// formatter and its Eclipse runtime, and a missing version is the release Lathe pins.
 public final class FormatterSteps {
 
   public static final String SPOTLESS_GROUP = "com.diffplug.spotless";
@@ -65,8 +68,13 @@ public final class FormatterSteps {
               "org/eclipse/jdt/core/formatter/CodeFormatter.class"));
   private static final String INDENT_GOOGLE = "google";
   private static final IndentSpec EDITORCONFIG_INDENT = new IndentSpec("editorconfig", 0, 0);
-  private static final String PINNED_SPOTLESS_RESOURCE = "spotless.properties";
+  private static final String SPRING_GROUP = "io.spring.javaformat";
+  // The formatter's own POM has its Eclipse runtime in provided scope, so it is named as well.
+  private static final List<String> SPRING_ARTIFACTS =
+      List.of("spring-javaformat-formatter", "spring-javaformat-formatter-eclipse-runtime");
+  private static final String PINNED_RESOURCE = "pinned-formatters.properties";
   private static final String PINNED_SPOTLESS_KEY = "spotless-lib.version";
+  private static final String PINNED_SPRING_KEY = "spring-javaformat.version";
   // A class file's major version is its Java release plus 44 (Java 17 is 61).
   private static final int CLASS_MAJOR_OFFSET = 44;
   private static final int CLASS_HEADER_BYTES = 8;
@@ -78,10 +86,17 @@ public final class FormatterSteps {
     return LatheFlags.PINNED_FORMATTERS.contains(engine);
   }
 
+  // Whether the engine is a Spotless step, whose completion needs Spotless's classes;
+  // spring-javaformat
+  // completes without them.
+  public static boolean spotlessStep(final String engine) {
+    return STEPS.containsKey(engine);
+  }
+
   // The Spotless libraries Lathe pins, for a build without Spotless of its own: groupId:artifactId:
   // version, each resolved without its dependencies.
   public static List<String> pinnedSpotless() {
-    final String version = pinnedSpotlessVersion();
+    final String version = pinnedVersion(PINNED_SPOTLESS_KEY);
     return SPOTLESS_LIBRARIES.stream()
         .map(library -> "%s:%s:%s".formatted(SPOTLESS_GROUP, library, version))
         .toList();
@@ -109,9 +124,18 @@ public final class FormatterSteps {
 
   // Fills what the project left out with the Spotless step's own defaults (defaultVersion(),
   // defaultGroupArtifact(), default<Option>()); declared values win. An aosp engine is google's
-  // step in AOSP style.
+  // step in AOSP style. A spring engine takes only its version, the release Lathe pins, and
+  // spotless
+  // may be null.
   public static FormatterSpec withDefaults(final FormatterSpec spec, final ClassLoader spotless)
       throws ReflectiveOperationException {
+    if (spring(spec)) {
+      final String version =
+          spec.version().isBlank() ? pinnedVersion(PINNED_SPRING_KEY) : spec.version();
+      return new FormatterSpec(
+          spec.engine(), spec.command(), version, spec.options(), spec.classpath());
+    }
+
     final Step step = step(spec);
     final Class<?> type = spotless.loadClass(step.type());
     final var options = new HashMap<>(spec.options());
@@ -132,6 +156,14 @@ public final class FormatterSteps {
   // else the formatter with its runtime dependencies.
   public static Jars jars(final FormatterSpec completed, final ClassLoader spotless)
       throws IOException {
+    if (spring(completed)) {
+      return new Jars(
+          SPRING_ARTIFACTS.stream()
+              .map(artifact -> "%s:%s:%s".formatted(SPRING_GROUP, artifact, completed.version()))
+              .toList(),
+          true);
+    }
+
     final Step step = step(completed);
     if (step.lockfile().isEmpty()) {
       return new Jars(
@@ -190,15 +222,17 @@ public final class FormatterSteps {
       throws ReflectiveOperationException, IOException {
     final FormatterSpec completed = withDefaults(spec, spotless);
     final Jars jars = jars(completed, spotless);
-    final List<String> classpath =
-        jars.transitive()
-            ? resolver.resolveTransitive(jars.coordinates().get(0)).stream()
-                .map(Path::toString)
-                .toList()
-            : jars.coordinates().stream()
-                .map(coordinates -> resolver.resolve(coordinates).toString())
-                .toList();
-    return withClasspath(completed, classpath);
+    final var classpath = new LinkedHashSet<String>();
+    for (final String coordinates : jars.coordinates()) {
+      if (!jars.transitive()) {
+        classpath.add(resolver.resolve(coordinates).toString());
+        continue;
+      }
+
+      resolver.resolveTransitive(coordinates).forEach(jar -> classpath.add(jar.toString()));
+    }
+
+    return withClasspath(completed, List.copyOf(classpath));
   }
 
   public static FormatterSpec withClasspath(
@@ -255,7 +289,9 @@ public final class FormatterSteps {
   // The as-you-type indentation the formatter implies: google-java-format's and palantir's GOOGLE
   // style indents by 2, their other styles by 4; any other formatter leaves it to .editorconfig.
   public static IndentSpec indent(final FormatterSpec spec) {
-    if (!pinned(spec.engine()) || LatheFlags.FORMATTER_ECLIPSE.equals(spec.engine())) {
+    if (!pinned(spec.engine())
+        || LatheFlags.FORMATTER_ECLIPSE.equals(spec.engine())
+        || spring(spec)) {
       return EDITORCONFIG_INDENT;
     }
 
@@ -274,6 +310,10 @@ public final class FormatterSteps {
       case LatheFlags.FORMATTER_PALANTIR -> LatheFlags.FORMAT_STYLE_PALANTIR;
       default -> LatheFlags.FORMAT_STYLE_GOOGLE;
     };
+  }
+
+  private static boolean spring(final FormatterSpec spec) {
+    return LatheFlags.FORMATTER_SPRING.equals(spec.engine());
   }
 
   private static Step step(final FormatterSpec spec) {
@@ -303,19 +343,19 @@ public final class FormatterSteps {
     return String.valueOf(step.getMethod(method).invoke(null));
   }
 
-  private static String pinnedSpotlessVersion() {
+  private static String pinnedVersion(final String key) {
     final var props = new Properties();
-    try (InputStream in = FormatterSteps.class.getResourceAsStream(PINNED_SPOTLESS_RESOURCE)) {
+    try (InputStream in = FormatterSteps.class.getResourceAsStream(PINNED_RESOURCE)) {
       if (in == null) {
-        throw new IllegalStateException("%s is missing".formatted(PINNED_SPOTLESS_RESOURCE));
+        throw new IllegalStateException("%s is missing".formatted(PINNED_RESOURCE));
       }
 
       props.load(in);
     } catch (final IOException e) {
-      throw new IllegalStateException("%s is unreadable".formatted(PINNED_SPOTLESS_RESOURCE), e);
+      throw new IllegalStateException("%s is unreadable".formatted(PINNED_RESOURCE), e);
     }
 
-    return props.getProperty(PINNED_SPOTLESS_KEY);
+    return props.getProperty(key);
   }
 
   // The coordinates a formatter runs from, and whether each brings its runtime dependencies.

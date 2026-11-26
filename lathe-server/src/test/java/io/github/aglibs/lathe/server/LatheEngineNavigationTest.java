@@ -651,9 +651,13 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .extracting(reference -> reference.location().origin())
         .containsOnly(LatheLocation.Origin.REACTOR);
     assertThat(callers.calls()).extracting(call -> call.name()).containsExactly("run", "help");
-    assertThat(engine.searchSymbols("Call", SymbolScope.REACTOR, 50).value())
+    assertThat(engine.searchSymbols("Cal", SymbolScope.REACTOR, 50).value())
         .extracting(LatheSymbol::name)
         .containsExactly("Callee", "Caller", "Call");
+    assertThat(engine.searchSymbols("Call", SymbolScope.REACTOR, 50).value())
+        .as("the type the query names comes first, generated or not (MC-110)")
+        .extracting(LatheSymbol::name)
+        .containsExactly("Call", "Callee", "Caller");
   }
 
   @Test
@@ -1021,6 +1025,168 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .as("not the reactor's")
         .extracting(LatheSymbol::name)
         .doesNotContain("Lib");
+  }
+
+  // MC-110: a generated type the query names comes before hand-written ones that only start with
+  // it, as Helidon's generated ListenerConfig before its blueprint; the origin order ranks the
+  // rest.
+  @Test
+  void searchSymbols_generatedExactMatch_listedBeforeHandWrittenPartialMatches() throws Exception {
+    final Path blueprint =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/ConfigBlueprint.java",
+            "package com.example; interface ConfigBlueprint {}");
+    final Path test =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/ConfigTest.java", "package com.example; class ConfigTest {}");
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/Config.java"),
+            """
+            package com.example;
+            public interface Config extends ConfigBlueprint {
+              class Builder {}
+            }
+            """,
+            1_000L);
+    compileIntoMirror(blueprint, test, generated);
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.searchSymbols("Config", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .startsWith("Config")
+        .contains("ConfigBlueprint", "ConfigTest");
+    assertThat(engine.searchSymbols("com.example.Config", SymbolScope.REACTOR, 50).value())
+        .as("a qualified name")
+        .extracting(LatheSymbol::name)
+        .startsWith("Config");
+    assertThat(engine.searchSymbols("Config.Builder", SymbolScope.REACTOR, 50).value())
+        .as("a nested type by its enclosing type")
+        .extracting(LatheSymbol::name)
+        .startsWith("Builder");
+    assertThat(engine.searchSymbols("Conf", SymbolScope.REACTOR, 50).value())
+        .as("no exact match: hand-written first")
+        .extracting(LatheSymbol::name)
+        .containsExactlyInAnyOrder("ConfigBlueprint", "ConfigTest", "Config")
+        .endsWith("Config");
+  }
+
+  // MC-100: a capped list lists main sources before tests, the declaring module first in each,
+  // where a sibling module's name sorts before it (`app-26` before `app-core`).
+  @Test
+  void findImplementations_siblingModuleSortsFirst_listsMainBeforeTestsDeclaringModuleFirst()
+      throws Exception {
+    final String apiSource = "package com.example; public interface Api { void run(); }";
+    final List<Path> core =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "app-core",
+            Map.of(
+                "com/example/Api.java",
+                apiSource,
+                "com/example/CoreImpl.java",
+                "package com.example; public class CoreImpl implements Api { public void run() {} }"),
+            List.of(),
+            1_000L);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "app-26",
+        Map.of(
+            "com/example/other/Impl26.java",
+            "package com.example.other; public class Impl26 implements com.example.Api {"
+                + " public void run() {} }"),
+        List.of("app-core"),
+        1_000L);
+    final Path testSource =
+        TestCompiler.writeAt(
+            tmp.resolve("app-core/src/test/java/com/example/CoreTestImpl.java"),
+            "package com.example; class CoreTestImpl implements Api { public void run() {} }",
+            1_000L);
+    TestCompiler.writeTestTreeParams(tmp, "app-core", tmp.resolve("app-core/src/test/java"), null);
+    TestJavac.compileToDir(
+        tmp.resolve(LatheLayout.LATHE_DIR)
+            .resolve("app-core")
+            .resolve(LatheLayout.TEST_CLASSES_DIR),
+        List.of(tmp.resolve(LatheLayout.LATHE_DIR).resolve("app-core/classes")),
+        testSource);
+    engine = new LatheEngine(tmp);
+    final Path api =
+        core.stream().filter(path -> path.endsWith("Api.java")).findFirst().orElseThrow();
+    final var pos = positionOf(apiSource, "Api {");
+
+    assertThat(
+            engine
+                .findImplementations(api, pos.getLine(), pos.getCharacter(), 50)
+                .value()
+                .implementations())
+        .extracting(
+            location -> Path.of(java.net.URI.create(location.uri())).getFileName().toString())
+        .containsExactly("CoreImpl.java", "Impl26.java", "CoreTestImpl.java");
+  }
+
+  // Asked from a use in the sibling module, a capped list still starts with the declaring module:
+  // references and incoming calls of `Api.run`, called from both modules.
+  @Test
+  void referencesAndCallers_askedFromASiblingModulesUse_listTheDeclaringModuleFirst()
+      throws Exception {
+    final List<Path> core =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "app-core",
+            Map.of(
+                "com/example/Api.java",
+                "package com.example; public interface Api { void run(); }",
+                "com/example/CoreUse.java",
+                "package com.example; public class CoreUse { void go(Api api) { api.run(); } }"),
+            List.of(),
+            1_000L);
+    final String siblingSource =
+        "package com.example.other; public class Use26 { void go(com.example.Api api) {"
+            + " api.run(); } }";
+    final Path sibling =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app-26",
+                Map.of("com/example/other/Use26.java", siblingSource),
+                List.of("app-core"),
+                1_000L)
+            .get(0);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(siblingSource, "run()");
+
+    assertThat(
+            engine
+                .references(sibling, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .references())
+        .extracting(reference -> fileName(reference.location()))
+        .containsExactly("CoreUse.java", "Use26.java");
+    assertThat(
+            engine
+                .callHierarchy(
+                    sibling,
+                    pos.getLine(),
+                    pos.getCharacter(),
+                    CallDirection.INCOMING,
+                    SymbolScope.ALL,
+                    50)
+                .value()
+                .calls())
+        .extracting(call -> fileName(call.location()))
+        .containsExactly("CoreUse.java", "Use26.java");
+    assertThat(core).hasSize(2);
+  }
+
+  private static String fileName(final LatheLocation location) {
+    return Path.of(java.net.URI.create(location.uri())).getFileName().toString();
   }
 
   // No project code can use a type in a JDK package its module does not export to everyone.

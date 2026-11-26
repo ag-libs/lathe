@@ -80,8 +80,8 @@ public final class LatheMcpServer {
       verify_change (no arguments) after a multi-file edit or a rename.
       - Adding the imports a file is missing: use fix_imports, which adds every one with a single \
       match and lists the ambiguous names with their candidates.
-      - Making an edited file pass the build's formatting check (Spotless): use format_file, which \
-      runs the formatter the project pins.
+      - Making an edited file pass the build's formatting check (Spotless, spring-javaformat): use \
+      format_file, which runs the formatter the project pins.
       - Checking whether a test, class, or package passes after an edit: use run_test (replays just \
       that; prefer it over the build's own test command).
 

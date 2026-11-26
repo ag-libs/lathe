@@ -514,7 +514,7 @@ final class RunCoordinator {
           List.of(
               "the selected tests are in more than one source set of %s (%s): run each on its own"
                   .formatted(
-                      moduleRel,
+                      LatheLayout.displayedModule(moduleRel),
                       trees.stream()
                           .map(RunCoordinator::sourceSetLabel)
                           .collect(Collectors.joining(", ")))));

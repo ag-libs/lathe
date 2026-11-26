@@ -68,15 +68,19 @@ final class MemberAccessCompleter {
     final boolean staleBeforeToken = staleBeforeCompletionToken(req, injected);
     final boolean shouldReattribute =
         compiler != null
-            && (methodChainReceiver || !req.noDiff())
+            && (methodChainReceiver || injected.closedBraces() || !req.noDiff())
             && (initialResolved == null || initialUnusable || staleBeforeToken);
+    // A switch typed line by line leaves its block open, and javac's recovery drops the case's
+    // pattern variable; the injected content closes the block (CQ-0079). Neither it nor a method
+    // chain's content is the file's, so its analysis is not cached.
+    final boolean injectedText = methodChainReceiver || injected.closedBraces();
     final AttributedFileAnalysis reattributedAnalysis;
     final AttributedFileAnalysis cacheableAnalysis;
     if (shouldReattribute) {
       reattributedAnalysis =
           compiler.reattribute(
-              req.uri(), methodChainReceiver ? injected.injectedContent() : req.content());
-      cacheableAnalysis = methodChainReceiver ? null : reattributedAnalysis;
+              req.uri(), injectedText ? injected.injectedContent() : req.content());
+      cacheableAnalysis = injectedText ? null : reattributedAnalysis;
     } else {
       reattributedAnalysis = null;
       cacheableAnalysis = null;
@@ -89,7 +93,9 @@ final class MemberAccessCompleter {
     final var resolved = hasMembers(reattributedResolved) ? reattributedResolved : initialResolved;
     final var snapshot =
         (reattributedResolved != null && resolved == reattributedResolved)
-                || (resolved == null && cacheableAnalysis != null)
+                || (resolved == null
+                    && (cacheableAnalysis != null
+                        || injected.closedBraces() && reattributedAnalysis != null))
             ? reattributedAnalysis
             : initialSnapshot;
 
@@ -174,10 +180,15 @@ final class MemberAccessCompleter {
             ? generator.proposeNestedTypes(te, injected.prefix(), scope).stream()
             : Stream.empty();
 
+    // A static import names a static member or a member type, never `class` (CQ-0080).
+    final boolean classLiteral =
+        !memberReference
+            && isStaticAccess
+            && parsed.sentinelContext() != SentinelContext.STATIC_IMPORT;
     final List<CompletionCandidate> candidates =
         Stream.concat(
                 Stream.concat(members.stream(), nestedTypes),
-                !memberReference && isStaticAccess
+                classLiteral
                     ? TypeReferenceCompleter.classLiteralCandidates(injected.prefix()).stream()
                     : Stream.of())
             .toList();

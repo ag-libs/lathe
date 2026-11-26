@@ -677,32 +677,6 @@ None yet.
 
 ---
 
-## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
-
-**Status: deferred** (triaged 2026-11-18: a feature, and the feature freeze holds)
-
-**Kind: feature**
-
-**Affects: `format_file`, `:LatheFormat` and the editor's formatting on Maven builds.**
-
-Found by the exploratory round on Spring Petclinic and Quarkus (2026-11-17).
-
-### Observed behaviour
-
-Petclinic formats with `spring-javaformat-maven-plugin`, Quarkus with `formatter-maven-plugin` (net.revelc) and `impsort-maven-plugin`.
-On both, `format_file` answers "No formatter for this workspace: the project pins none (no Spotless Java step)": `MavenStyle` reads only `spotless-maven-plugin`.
-Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
-
-### Fix direction
-
-Read those plugins' configuration as a Spotless step is read: spring-javaformat as its own engine, formatter-maven-plugin's Eclipse configuration through the existing Eclipse engine.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-114 — Code generation and refactorings jdtls offers that Lathe does not
 
 **Status: deferred** (triaged 2026-11-21: features, and the feature freeze holds; the jdtls comparison reports each as a row Lathe lacks)
@@ -746,7 +720,7 @@ Extract interface was not offered by jdtls 1.51 at a class name; the comparison'
 
 What both offered at the same positions: extract a variable, a constant, a field and a method (jdtls through a refactoring command, Lathe as an edit or, for a method, after a resolve), and conversion to `var`.
 
-Covered by gaps of their own, and so not here: selection range (EG-018), code lens (EG-064), inlay hints (EG-091), member symbol search (EG-092), formatting with spring-javaformat or formatter-maven-plugin (EG-113).
+Covered by gaps of their own, and so not here: selection range (EG-018), code lens (EG-064), inlay hints (EG-091), member symbol search (EG-092).
 
 ### Fix direction
 
@@ -2309,31 +2283,6 @@ None yet.
 
 ---
 
-## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results
-
-**Status: deferred** (triaged 2026-11-18: low; the count is right, only the first lines are)
-
-**Kind: bug**
-
-**Affects: MCP `find_implementations` and the other capped lists.**
-
-Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
-
-### Observed behaviour
-
-`find_implementations` of `GenericVisitor` with `maxResults: 5` answers "33 implementations (showing first 5)", all anonymous classes in tests of `javaparser-core-testing` and `javaparser-core-testing-bdd`; `GenericVisitorAdapter` itself is not among them.
-The list is in path order, and `javaparser-core-testing/…` sorts before `javaparser-core/…` because `-` sorts before `/`.
-
-### Fix direction
-
-Order a capped list by module and source tree (main before test, the declaring module first), then by path.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-104 — `call_hierarchy` reads a snippet for every call site, then keeps only `maxResults` of them
 
 **Status: deferred** (2026-11-23: the answer is right, only the work is wasted, and no timing shows it matters; not worth changing `LatheEngine` just before the release)
@@ -2389,26 +2338,3 @@ None yet.
 
 ---
 
-## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing
-
-**Status: deferred** (triaged 2026-11-24: low; ranking and case, the type is still listed)
-
-**Kind: bug**
-
-**Affects: MCP `search_symbols` and editor workspace symbol.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N10).
-
-### Observed behaviour
-
-The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
-`asf` matches nothing; since EG-129 it matches, as a lowercase query spans words, so the ranking is what remains.
-Related: [EG-119](gaps-archive.md#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
-
-### Expected
-
-A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
-
-### Regression targets
-
-None yet.

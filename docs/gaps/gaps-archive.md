@@ -45,6 +45,55 @@ Not covered: a line holding the name qualified twice is one row, at the first; t
 
 ---
 
+## EG-113 — Formatting recognizes only Spotless, not spring-javaformat — done
+
+**Status: done** (2026-11-26; triaged 2026-11-26: the feature freeze lifted for the spring-javaformat part, so Petclinic, the demo project, formats)
+
+**Kind: feature**
+
+**Value: medium — Size: M**
+
+Signal: Petclinic is the demo project, and jdtls formats it in the wrong style (spaces for tabs, Javadoc wrapped at 80 columns).
+
+**Affects: `format_file`, `:LatheFormat` and the editor's formatting on Spring builds.**
+
+Found by the exploratory round on Spring Petclinic and Quarkus (2026-11-17).
+
+### Observed behaviour
+
+Petclinic formats with `spring-javaformat-maven-plugin`.
+`format_file` answered "No formatter for this workspace: the project pins none (no Spotless Java step)": `MavenStyle` read only `spotless-maven-plugin`.
+Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
+
+### Resolution
+
+A `spring` engine runs spring-javaformat as its build plugin does.
+The sync resolves the formatter and its Eclipse runtime (provided scope in the formatter's POM, so named too) at the plugin's release, else the release Lathe pins (0.0.47 when it landed, bumped with the build's dependencies).
+The server loads them in an isolated classloader, reads `.springjavaformatconfig` upwards from the module's directory as the plugin reads it from the project's, and formats in one pass, whole files and ranges.
+Maven detects `spring-javaformat-maven-plugin` (its version a resolved property), with the rule Spotless uses for the project whose plugin applies; Gradle detects a root project's `io.spring.javaformat` plugin, its release read from the plugin jar's manifest.
+Spotless wins in a Maven build that runs both, including a Spotless setup sync refuses; a Gradle build that applies both formats nothing until `lathe-style.json` declares the formatter, as for Spotless alone.
+A `spring` declaration in `lathe-style.json` works on any build and takes the build plugin's release when it names none.
+On Petclinic, all 50 sources format unchanged on JDK 17 and 27, a damaged `Owner.java` comes back byte for byte through `format_file`, and `./mvnw spring-javaformat:validate` passes after it.
+
+Not covered: formatter-maven-plugin (net.revelc, as Quarkus uses, with `impsort-maven-plugin`), whose Eclipse configuration the Eclipse engine could run; on Gradle, spring-javaformat applied only in subprojects, which declares `spring` in `lathe-style.json`.
+
+### Regression targets
+
+- `SpringFormatEngineTest` (default tabs in one pass, CRLF, a module's spaces configuration, a configuration below the module ignored, ranges, unparsable source, a missing Eclipse runtime)
+- `FormatterStepsTest.withDefaults_springWithAndWithoutVersion_pinnedReleaseFillsOnlyAMissingOne`
+- `FormatterStepsTest.resolve_spring_formatterAndEclipseRuntimeEachResolvedTransitively`
+- `LatheTextDocumentServiceTest.formatting_springSpec_formatsWithSpringJavaFormat`
+- `MavenStyleTest.write_spotlessAndSpringJavaFormat_spotlessWins`
+- `MavenStyleTest.write_refusedSpotlessAndSpringJavaFormat_writesNoStyle`
+- `MavenStyleTest.withBuildSpringVersion_declaredSpring_takesTheBuildPluginVersionOnlyWhenUnset`
+- invoker fixture `formatters`, profile `spring-javaformat` (`FormatterSyncTest.sync_springJavaFormat_resolvesFormatterAndRuntimeAtThePluginVersion`)
+- `LatheFormatterFunctionalTest.sync_rootAppliesSpringJavaFormat_springEngineAtThePluginRelease`
+- `LatheFormatterFunctionalTest.sync_springJavaFormatBesideSpotless_formatsNothingAndWarns`
+- `LatheFormatterFunctionalTest.sync_springJavaFormatOnlyInASubproject_notDetected`
+- `LatheFormatterFunctionalTest.sync_springJavaFormatWithoutRecordedRelease_pinnedReleaseWithAWarning`
+
+---
+
 ## EG-129 — CamelHumps symbol matching matches letters that start no word — done
 
 **Status: done** (2026-11-25)
@@ -4974,6 +5023,101 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 ---
 
 # Completion (CQ) — resolved
+
+## CQ-0079 — Member completion after `case X x -> x.` answers nothing while the switch block is not closed — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: editor completion in a `switch` with arrow cases, typed line by line (Neovim without auto-pairs leaves the block open).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+In a method of `ServerListener`, with `Object o = null;` before it:
+
+```java
+switch (o) {
+    case ListenerConfig lc -> lc.§
+```
+
+with no `}` yet, completion answers 0 items; `case String str -> str.§` does too.
+The same with the block closed (`}` on the next line, or `; default -> { } }`) answers 43 items, `port` among them.
+An unclosed classic `case String str:` then `str.§`, an `instanceof` pattern, a switch expression's arrow case and a lambda body all complete.
+
+### Expected
+
+Members of the pattern variable's type, as with the block closed: the recovery that closes an unfinished classic case closes an unfinished arrow case too.
+
+### Cause
+
+Completion injects a sentinel where the cursor is, closes what the content leaves open, and reparses; a member access resolves its receiver on an attribution of the text.
+Three things lost the receiver of an arrow or colon case in a switch block not closed yet:
+
+- The backward scan stopped at the label's `->` or `:` and took it for an expression, as a lambda's arrow or a ternary's colon is, so no `;` ended the sentinel: javac read the next statement into the label's body (`case String str -> str.SENTINEL next = 1;`, a declaration whose type is `str.SENTINEL`).
+- The braces the content left open were closed at the end of the file, so the switch took in every member after the method, and javac's recovery lost the enclosing class's own types (a nested type, a type of the same package).
+- The receiver was resolved on a reattribution of the raw content, whose block is still open, where javac's recovery drops the case's pattern variable.
+
+The analysis fixture compiles the injected text, so its tests completed; the editor's module compiler, with the analysis from before the edit, did not.
+
+### Resolution
+
+- `SentinelParser` reports, through javac's tree, when the sentinel is the body of a switch label: a `case` reached through its body, not its labels or guard, before any lambda, call, parenthesis, conditional, array, block, method or class; a block javac's recovery made under an erroneous tree does not stop it.
+- When that body is the last thing on its line and the content leaves a block open, `CompletionEngine` injects the sentinel again as a statement that ends with `;` and closes the open blocks right after it, and parses again. It keeps that parse only where the top-level class still ends at the text's last brace, that is, where the switch was the open block; where another block was open, closing it at the label cuts the class short, and the first injection stays, its braces closed at the end of the file. A closed switch, text after the cursor on its line, or a guard keep the usual injection.
+- `MemberAccessCompleter` resolves such a receiver on the injected content (`SentinelInjectionResult.closedBraces`), as it does for a method chain, even once the module's analysis has caught up with the text; that analysis is not cached, and a receiver that does not resolve (a package) falls back on it.
+
+Checked end to end on Helidon with a server built from the change, in `ServerListener`'s constructor with `switch (o) {` open: arrow cases on `String` (73 items), `ListenerConfig` (45, `port` among them; none before), the enclosing class and a guarded case; a colon case, `default ->`, a `char` label, a package receiver (`java.util.`), a typed prefix; an open `if` block, a closed switch and a brace left open in a later method answer as before.
+The round's other completion, diagnostics, rename and signature probes answer as before.
+Completion in an open switch parses twice and reattributes the injected text on each request (about 80–210 ms on Helidon).
+
+Not covered: a lambda block whose `};` is not typed yet (`Runnable r = () -> {` then `x.`), which answers nothing on Helidon before and after this change, though the server test's smaller class completes.
+
+### Regression targets
+
+- `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedBlockAfterAnEdit_offersTheReceiversMembers` (through the module compiler, with the analysis from before the edit: a switch on a JDK type and on the class's own type, a colon case, one after an earlier statement; an `if` block and a lambda block)
+- `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedSwitchOnceTheAnalysisCaughtUp_offersTheMembers` and `completion_braceLeftOpenInALaterMethod_offersTheReceiversMembers`
+- `CompletionCaseTest.completion_memberAccessInUnclosedSwitchLabel_offersTheReceiversMembers` (arrow, `default ->`, colon, string, `char` and escaped-quote labels) and, on JDK 21+, `completion_memberAccessInUnclosedJava21SwitchLabel_offersTheReceiversMembers` (a guard, a record pattern)
+- `CompletionCaseTest.completion_memberAccessInASwitchLabelsExpression_offersTheReceiversMembers` (text after the cursor, a chain, an array index, a closed switch with a brace open later) and, on JDK 21+, `completion_memberAccessInASwitchGuard_offersTheReceiversMembers`
+- `CompletionCaseTest.completion_memberAccessInLambdaBodyBeforeAStatement_offersTheReceiversMembers` and `completion_memberAccessAfterTernaryColon_offersTheReceiversMembers`
+
+---
+
+## CQ-0080 — `import static Type.` offers `class` — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: editor completion in a static import.**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`import static io.helidon.webserver.WebServer.§` lists `DEFAULT_SOCKET_NAME`, `builder`, `create` and `class`; `import static java.util.List.§` lists `class` among `of` and `copyOf`.
+`import static java.util.List.class;` does not compile: a static import names a static member.
+
+### Expected
+
+Static members and member types only, no `class`.
+
+### Resolution
+
+A static import is static access, so `MemberAccessCompleter` offered the class literal it offers a type receiver in code; it now leaves `class` out where the sentinel is a static import's.
+Static members and member types (`Map.Entry`) are still offered, and `java.util.Map.` in code still offers `class`.
+
+### Regression targets
+
+- `CompletionStaticImportTest.completion_staticImportOfAType_offersNoClassLiteral`
+
+---
+
 
 ## CQ-0078 — Completion offers package-private `java.lang` types — done
 
@@ -11773,6 +11917,40 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-51 — After a personal setup, the project's own build fails a check that scans the whole project — done
+
+**Status: done** (2026-11-25: `:LatheInit` warns; the mirror moving out of the project stays the [External Content Directory](../potential/lathe-external-content-dir.md) design)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: Maven and Gradle projects set up in personal mode (`:LatheInit` on a build that does not register Lathe) whose build runs a check over the project directory (nohttp, license headers, a Docker context).**
+
+Found testing `:LatheInit` on spring-petclinic (2026-11-25, `main` at `bfba80c`, the working-tree Neovim client, a fresh clone with no Lathe registration).
+
+### Observed behaviour
+
+`:LatheInit maven` sets the project up (download 1.7 s, first build 9.2 s, the server attached) and `git status` stays clean, as its message promises ("your project files are not changed").
+`:LatheSync` then passes too, as WS-40 (below) excludes `.lathe/` from the nohttp check in every build Lathe runs.
+The project's own build does not: `./mvnw verify`, or its nohttp execution alone (`./mvnw checkstyle:check@nohttp-checkstyle-validation`), fails on `.lathe/classes/META-INF/sbom/application.cdx.json`, Spring Boot's SBOM, which the class mirror copies and which holds `http://` URLs.
+In personal mode no build the user runs without Lathe is wired, so WS-40's exclusion never reaches it, and nothing said so: the user met it as a broken build after the setup.
+
+### Resolution
+
+A personal setup whose root build file names nohttp (`io.spring.nohttp`, outside comments, in `pom.xml`, `build.gradle`, `build.gradle.kts` or the version catalog `gradle/libs.versions.toml`) ends, once this build set Lathe up (it wrote the workspace manifest), with a warning: the project's own builds will find the classes Lathe copies into `.lathe/`, so exclude `**/.lathe/**` from the check, with a link to the troubleshooting guide's exclusions.
+The exclusion is the one change to the project that personal mode then needs; a build that registers Lathe is wired on every run and is not warned.
+The help text and the troubleshooting guide say the same.
+
+Not covered: a check named only in a parent POM or a subproject's build file, and scanners other than nohttp (license headers, a Docker context), which the guide's exclusion advice covers.
+A project with no change at all needs the mirror outside the project, the External Content Directory design.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "a Maven build with a nohttp check is warned", "a Gradle build with a nohttp check is warned", "a check named in the version catalog is warned", "a build without the check is not warned", "a check commented out is not warned", "a failed build with only an earlier setup's .lathe/ is not warned".
+
+---
+
 ## WS-50 — jdtls answers nothing on a Maven project that registers Lathe — done
 
 **Status: done** (2026-11-24)
@@ -15051,6 +15229,40 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-14 — On a project with both a Maven and a Gradle build, `:LatheInit` picks Gradle without saying Maven is there — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheInit` without a kind on a folder whose root holds both `pom.xml` and a Gradle settings script; the Neovim client.**
+
+Found testing `:LatheInit` on spring-petclinic (2026-11-25), which ships both builds.
+
+### Observed behaviour
+
+`M.find_build` prefers the Gradle root when both roots are the same folder, and the prompt says only "set up Lathe 0.1.0-SNAPSHOT for the Gradle build in: <root>".
+Nothing tells the user the project also has a Maven build, or that `:LatheInit maven` would choose it; a Maven user accepts the prompt and gets a Gradle setup, here one that fails on the Gradle build's Java 17 toolchain.
+
+### Expected
+
+With both builds at the same root, the prompt names both and how to choose the other (`:LatheInit maven`), or asks which to set up.
+
+### Resolution
+
+At one root with both builds, Gradle still wins, as a project that ships both usually keeps both working, but the prompt now names the other: "set up Lathe 9.9.9 for the Gradle build (a Maven build is there too: `:LatheInit maven`) in: ".
+`find_build` marks the Gradle build it returns with `also = "maven"`; a forced kind, and a Maven build nested below the Gradle root, name nothing.
+
+Not covered: a root the user types into the prompt, which `build_at` takes by the first kind found there.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "both builds at one root: Gradle", "and the prompt names the other build", "a forced kind names no other build", "a Maven build below the Gradle root is not named".
+
+---
+
 ## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first — done
 
 **Status: done** (2026-11-19)
@@ -15583,6 +15795,157 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Affects: MCP `find_implementations` and the other capped lists.**
+
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
+
+### Observed behaviour
+
+`find_implementations` of `GenericVisitor` with `maxResults: 5` answers "33 implementations (showing first 5)", all anonymous classes in tests of `javaparser-core-testing` and `javaparser-core-testing-bdd`; `GenericVisitorAdapter` itself is not among them.
+The list is in path order, and `javaparser-core-testing/…` sorts before `javaparser-core/…` because `-` sorts before `/`.
+
+### Fix direction
+
+Order a capped list by module and source tree (main before test, the declaring module first), then by path.
+
+### Resolution
+
+`LatheEngine` orders every capped list (`find_references`, `find_implementations`, `analyze_change`'s implementations and redeclarations, incoming `call_hierarchy`) by origin as MC-70 does; then the files of a module before those of none; main sources before tests, so other modules' production code, which a change breaks, comes before the declaring module's own tests; within each, the module declaring the symbol first (as definition finds it from the asked position, or the call hierarchy's declaration), so asking from a use in a sibling module lists the declaring module first too; then by module, file and position.
+A file's module and tree come from the workspace's source layout (`SourceLayout.placementOf`: the config whose source root holds it most closely, as a test root may lie inside a main one), read with the declaration in one event-loop request, only for a list of two or more, once per file.
+On EqualsVerifier (2026-11-26), `find_implementations` of `ValueProvider` capped at 5 lists core's own implementations, where `equalsverifier-26`'s test class came first, and incoming calls to `forClass` start with core's production caller instead of the `-21`, `-25` and `-26` tests. On Helidon, the two uses of `WebServer.builder()` in other modules' production code come before webserver's 96 test uses, where they came 97th and 98th.
+
+Not covered: a generated or external location keeps MC-70's place after the project's own, whatever its module.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.findImplementations_siblingModuleSortsFirst_listsMainBeforeTestsDeclaringModuleFirst`
+- `LatheEngineNavigationTest.referencesAndCallers_askedFromASiblingModulesUse_listTheDeclaringModuleFirst`
+- `SourceLayoutTest.placementOf_testRootInsideMainRoot_closestRootWins`
+- `LatheEngineNavigationTest.referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten` (MC-70's origin order, kept)
+
+---
+
+## MC-111 — A file tool given `path:line` says only that it is not a `.java` file — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP file tools (`get_diagnostics`, `outline`, and the position tools' `file`).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`get_diagnostics {file: "webserver/webserver/src/main/java/io/helidon/webserver/ServerListener.java:134"}` answers "…ServerListener.java:134 is not a .java file".
+Agents often copy a location as `path:line` (or `path:line:column`, the form Lathe's own answers print), and the answer does not say what to change.
+
+### Expected
+
+A `.java` path followed by `:line` or `:line:column` gets a note to pass the path alone, with the line and column apart; or the tools that take a position read them from it.
+
+### Resolution
+
+A file argument that ends in `.java` and then `:line` or `:line:column` is read as a location before it becomes a path, in the file tools, the position tools and `verify_change`'s `files`: the answer says it "is a location, not a file", names the path to pass as the file, and the line and column to pass as `line` and `column` where the tool takes them.
+It is read before the path, as on Windows a colon in a file name would fail the path itself.
+
+Not covered: reading the line and column out of such a location, so a position tool answers it, which the tools leave to the agent's next call.
+
+### Regression targets
+
+- `LatheMcpToolsTest.fileTools_fileGivenAsALocation_returnErrorNamingThePath`
+
+---
+
+## MC-110 — `search_symbols` lists an exact match below partial ones when the match is generated — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `search_symbols` on a reactor whose public types are processor output (Helidon's builders).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`search_symbols {query: "ListenerConfig", maxResults: 6}` lists `ListenerConfigBlueprint`, `ListenerConfigTest`, `ListenerConfigDecorator`, `ListenerConfigurationParamHandler`, then `ListenerConfig` [GENERATED], fifth.
+The exact qualified name `io.helidon.webserver.ListenerConfig` lists it last of three, and `LiCo` leaves it out of the first six.
+MC-39's rule ranks the reactor's generated types after its hand-written ones; it outranks the match itself.
+In Helidon the generated types are the public API and the blueprints are package-private, so an agent is handed first the type it cannot use.
+The editor's `workspace/symbol` lists `ListenerConfig` first for all three queries ([EG-127](gaps-archive.md)).
+
+### Expected
+
+An exact match of the simple or qualified name comes first, generated or not; MC-39's hand-written-before-generated order applies among the rest, as the editor's search orders exact names first.
+Related: [MC-106](#mc-106--search_symbols-ranks-the-tool-descriptions-own-camelhumps-example-second-and-lowercase-humps-match-nothing) (initials ranked below a looser match).
+
+### Resolution
+
+`LatheEngine.ranked` sorts the hits the query names first: a simple name equal to the query, or a qualified name equal to it or ending in `.` and the query (`ListenerConfig.Builder`, `io.helidon.webserver.ListenerConfig`).
+MC-39's order (hand-written, generated, the JDK's and dependencies', JDK internals) ranks the rest, and an exact JDK-internal match stays among the internals.
+On Helidon, `ListenerConfig`, `io.helidon.webserver.ListenerConfig` and `WebServerConfig` now list the generated type first.
+
+Not covered: an exact match in a dependency without sources, which still follows the located hits; ranking among partial matches, MC-106's.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.searchSymbols_generatedExactMatch_listedBeforeHandWrittenPartialMatches`
+- `LatheEngineNavigationTest.referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten` (its search half: generated last without an exact match, first with one)
+
+---
+
+## MC-106 — `search_symbols` ranks the tool description's own CamelHumps example second, and lowercase humps match nothing — done
+
+**Status: done** (2026-11-25; triaged 2026-11-24: low, deferred; re-triaged 2026-11-25: for the release, as EG-129's IntelliJ matching put the example fourth on Dropwizard)
+
+**Kind: bug**
+
+**Affects: MCP `search_symbols` and editor workspace symbol.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N10).
+
+### Observed behaviour
+
+The `query` description says "ASF finds AbstractServerFactory"; `search_symbols {query: "ASF", scope: "reactor"}` lists `AbstractOutputStreamAppenderFactory` first and `AbstractServerFactory` second.
+`asf` matches nothing; since EG-129 it matches, as a lowercase query spans words, so the ranking is what remains.
+Related: [EG-119](#eg-119--workspace-symbol-initials-do-not-match-a-nested-type--done) (initials of nested types), [EG-057](gaps.md#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
+
+### Expected
+
+A type whose initials are exactly the query ranks above one that only contains them in order; humps match case-insensitively, as jdtls and IntelliJ do for an all-lowercase query.
+
+### Fix
+
+The lowercase half was fixed by EG-129, which made the matcher IntelliJ's: `asf` reaches `AbstractServerFactory`.
+That matching also let `ASF` reach `AsyncAppenderFactory` and `AsyncLoggingEventAppenderFactory` (`S` continuing `As`), and the 2026-11-25 release check found the example fourth.
+`CamelCaseMatcher.degree` now scores a match as IntelliJ's `matchingDegree` does (its terms measured, not copied: a capital on a capital counts most, a skipped word and a lowercase letter starting a word cost less), and `WorkspaceSymbolResolver` orders the prefix and CamelHumps hits by the exact name, then the degree, then top-level, then use.
+A query capital a run would take onto a lowercase letter is tried at a later word first, as in IntelliJ, so `SSH`'s `H` lands on `Handler`.
+
+Checked against IntelliJ 2025.3's own scores on 570 queries over 4,000 type names: the same order for 84 % of 7.1 million pairs, a tie IntelliJ splits by a point for 14 %, opposite for 1.2 % (nearly all IntelliJ's middle matching scoring a mid-word occurrence); the top result has IntelliJ's top score for 497 of 570 queries.
+With a server built from the branch: on Dropwizard `ASF` lists `AbstractServerFactory` first, then its test, then `AbstractOutputStreamAppenderFactory`; `DSF` lists `DataSourceFactory`, `DefaultServerFactory` and `DualSessionFactory` first; on Helidon `SSH` lists `ServerShutdownHandler` with the two other exact-initials types IntelliJ ties it with, before the JMH types.
+
+Not covered: IntelliJ's ±1 terms (ties broken here by top-level and use instead), and its matching from inside a word. Kept as IntelliJ has them: a name scores on the match found, not its best one (`TM` ranks `TestTaskManager` below `TaskManager`), and a word right after a one-letter word or a digit gets no word-start credit, so `Service` lists `IService` and `Encoder` lists `Base64Encoder` below names that only contain the word, in IntelliJ too.
+
+### Regression targets
+
+- `WorkspaceSymbolTest.resolve_initialsQuery_ranksTheBestMatchFirst`
+- `WorkspaceSymbolTest.resolve_initialsQueryWithManyDependencyPrefixMatches_ranksTheProjectsTypesIn`
+- `CamelCaseMatcherTest.degree_betterMatch_ranksHigher`
+- `CamelCaseMatcherTest.degree_sameShapeOfMatch_ties`
+
+---
 
 ## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind — done
 

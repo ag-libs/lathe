@@ -145,8 +145,9 @@ Keep jdtls from indexing `.lathe/`, as [Installing Lathe](installation.md#coexis
   A run, test or debug uses the shaded jar alone, as its classes call the relocated ones, so it runs that project's own code as the last build left it.
 - **Gradle 8.x with Isolated Projects on:** only a build of the root's `build`, `check`, or `test` refreshes the workspace files; a build of one project refreshes that project's part, and the rest waits for the next root build or sync.
   Gradle 9 has no such limit.
-- **The formatter is declared, not detected.**
+- **The formatter is declared, not detected, except spring-javaformat.**
   Lathe cannot read Spotless's settings on Gradle, so the project declares its formatter in a `lathe-style.json`, and `latheSync` resolves it through the build's repositories; a build that applies Spotless gets a warning until it does.
+  A root project that applies the `io.spring.javaformat` plugin gets it at the plugin's release, unless Spotless is applied too ([spring-javaformat](installation.md#spring-javaformat)).
   Without a version there, the formatter is the default of the root project's Spotless, or of the Spotless release Lathe pins, chosen for the daemon's JDK; when only subprojects apply Spotless, or a toolchain compiles on an older JDK than the daemon runs, declare the version (the sync warns when the server's JDK cannot run the formatter).
   See [The formatter version](installation.md#the-formatter-version).
 - **Composite builds:** only the main build's projects are covered; an included build of Java projects the editor should see is not yet.

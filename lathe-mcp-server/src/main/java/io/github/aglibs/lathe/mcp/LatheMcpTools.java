@@ -35,6 +35,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +48,9 @@ final class LatheMcpTools {
   private static final Logger LOG = Logger.getLogger(LatheMcpTools.class.getName());
   private static final int DEFAULT_MAX_RESULTS = 50;
   private static final int MAX_ARG_VALUE_CHARS = 200;
+  // A location as Lathe's answers print it (`path:line` or `path:line:column`), which agents copy
+  // into a file argument; on Windows a colon is no file name's, so it is read before the path.
+  private static final Pattern LOCATION = Pattern.compile("(.+\\.java)(?::\\d+){1,2}");
 
   // An unset destructiveHint reads as true, so a writing tool that destroys nothing says so.
   private static final ToolAnnotations READ_ONLY =
@@ -323,9 +328,9 @@ final class LatheMcpTools {
             EDITS_IN_PLACE,
             """
                 Format a Java file in place with the formatter the project pins (its Spotless \
-                step: google-java-format, palantir, Eclipse), so your edits pass the build's \
-                formatting check. Returns the lines it rewrote, or says the file was already \
-                formatted. Call after editing a file, before verify_change.\
+                step: google-java-format, palantir, Eclipse; or spring-javaformat), so your edits \
+                pass the build's formatting check. Returns the lines it rewrote, or says the file \
+                was already formatted. Call after editing a file, before verify_change.\
                 """,
             LatheMcpTools::handleFormatFile),
         tool(
@@ -594,6 +599,15 @@ final class LatheMcpTools {
 
   private static CallToolResult handleVerifyChange(
       final LatheEngine engine, final CallToolRequest request, final String tool) {
+    final Optional<String> location =
+        fileListStrings(request).stream()
+            .map(LatheMcpTools::location)
+            .flatMap(Optional::stream)
+            .findFirst();
+    if (location.isPresent()) {
+      return McpText.error(location.get());
+    }
+
     final List<Path> files = fileListArg(request);
     final Optional<Path> notJava =
         files.stream().filter(file -> !FileUtil.isJavaFile(file)).findFirst();
@@ -738,6 +752,11 @@ final class LatheMcpTools {
       final String tool,
       final CallToolRequest request,
       final Function<Path, CallToolResult> handler) {
+    final Optional<String> location = location(stringArg(request, "file"));
+    if (location.isPresent()) {
+      return McpText.error(location.get());
+    }
+
     final Path file = filePath(request);
     if (file == null) {
       return McpText.error("%s requires a 'file' argument".formatted(tool));
@@ -761,6 +780,11 @@ final class LatheMcpTools {
       final String tool,
       final CallToolRequest request,
       final PositionHandler handler) {
+    final Optional<String> location = location(stringArg(request, "file"));
+    if (location.isPresent()) {
+      return McpText.error(location.get());
+    }
+
     final Path file = filePath(request);
     final Integer line = intArg(request, "line");
     final Integer column = intArg(request, "column");
@@ -892,6 +916,23 @@ final class LatheMcpTools {
         : "%s is not a .java file".formatted(file);
   }
 
+  // A file argument written as a location: the agent is told to pass the path alone (MC-111).
+  private static Optional<String> location(final String file) {
+    if (file == null) {
+      return Optional.empty();
+    }
+
+    final Matcher location = LOCATION.matcher(file);
+    if (!location.matches()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        ("%s is a location, not a file: pass %s as the file, and the line and column, where the"
+                + " tool takes them, as 'line' and 'column'")
+            .formatted(file, location.group(1)));
+  }
+
   private static String outsideTheWorkspace(final Path file) {
     return "%s is outside the workspace and its dependency and JDK sources".formatted(file);
   }
@@ -943,10 +984,14 @@ final class LatheMcpTools {
 
   // Optional "files" array; absent or malformed means "detect the change set".
   private static List<Path> fileListArg(final CallToolRequest request) {
+    return fileListStrings(request).stream().map(LatheMcpTools::toPath).toList();
+  }
+
+  private static List<String> fileListStrings(final CallToolRequest request) {
     if (!(args(request).get("files") instanceof List<?> files)) {
       return List.of();
     }
 
-    return files.stream().map(String::valueOf).map(LatheMcpTools::toPath).toList();
+    return files.stream().map(String::valueOf).toList();
   }
 }

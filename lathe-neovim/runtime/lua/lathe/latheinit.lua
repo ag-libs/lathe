@@ -38,6 +38,18 @@ local MAVEN_FIRST_BUILD = {
   "test",
 }
 local GRADLE_FIRST_BUILD = { "-Plathe.capture.only=true", "--continue", "latheSync" }
+-- A check over the whole project directory, named in the root build file. Lathe excludes `.lathe/`
+-- from it only in the builds it runs, so after a personal setup the project's own build finds the
+-- class mirror there.
+local PROJECT_SCAN = "io.spring.nohttp"
+local GRADLE_SCAN_FILES = { "build.gradle", "build.gradle.kts", "gradle/libs.versions.toml" }
+local SCAN_WARNING = (
+  "the project's build checks every file for http:// URLs (nohttp), and your own builds, which run "
+  .. "without Lathe, will find the classes Lathe copies into `.lathe/`: exclude `**/.lathe/**` from "
+  .. "that check, as you would `target/` (%s)."
+):format(
+  "https://github.com/ag-libs/lathe/blob/main/docs/guide/troubleshooting.md#build-checks-and-compiler-settings"
+)
 
 local function exists(path)
   return vim.uv.fs_stat(path) ~= nil
@@ -136,14 +148,22 @@ local AT = {
   maven = has_pom,
 }
 
+-- A build file's text without its comments: a Gradle script's line and block comments, a POM's XML
+-- comments.
+local function without_comments(text, kind)
+  if kind == "gradle" then
+    return (("\n" .. text):gsub("/%*.-%*/", ""):gsub("\n%s*//[^\n]*", ""))
+  end
+
+  return (text:gsub("<!%-%-.-%-%->", ""))
+end
+
 -- Lathe named in the build's own files, comments left out: a registration commented out loads
 -- nothing. A text check: a parent POM that registers Lathe is not seen, and the build's own Lathe
 -- then wins over the one :LatheInit brings in.
 local function registers_lathe(root, kind)
   if kind == "gradle" then
-    local script = ("\n" .. read(gradle_settings(root)))
-      :gsub("/%*.-%*/", "")
-      :gsub("\n%s*//[^\n]*", "")
+    local script = without_comments(read(gradle_settings(root)), kind)
     return script:find(('"%s"'):format(GRADLE_PLUGIN_ID), 1, true) ~= nil
       or script:find(("'%s'"):format(GRADLE_PLUGIN_ID), 1, true) ~= nil
   end
@@ -151,13 +171,23 @@ local function registers_lathe(root, kind)
   if kind == "maven" then
     local files = read(vim.fs.joinpath(root, POM))
       .. read(vim.fs.joinpath(root, ".mvn", "extensions.xml"))
-    local uncommented = files:gsub("<!%-%-.-%-%->", "")
+    local uncommented = without_comments(files, kind)
     return vim.iter(MAVEN_REGISTRATIONS):any(function(registration)
       return uncommented:find(registration) ~= nil
     end)
   end
 
   return false
+end
+
+-- The root build file, or a Gradle version catalog a plugin alias names, comments left out. A text
+-- check: a check declared in a parent POM or a subproject is not seen.
+local function scans_project(root, kind)
+  local files = kind == "maven" and { POM } or GRADLE_SCAN_FILES
+  return vim.iter(files):any(function(name)
+    local text = without_comments(read(vim.fs.joinpath(root, name)), kind)
+    return text:find(PROJECT_SCAN, 1, true) ~= nil
+  end)
 end
 
 local function describe(root, kind)
@@ -167,7 +197,7 @@ end
 --- The build around `start` (a folder): `{ root, kind = "maven"|"gradle"|"openjdk", registered }`,
 --- or nil. With `kind`, only that kind's root. Otherwise an OpenJDK checkout first, then the nearer
 --- of a Maven and a Gradle root; at the same folder, Gradle, whose settings script is the more
---- explicit marker.
+--- explicit marker, with `also = "maven"` so the prompt can name the other.
 function M.find_build(start, kind)
   local dirs = upward(start)
   if kind then
@@ -182,7 +212,9 @@ function M.find_build(start, kind)
 
   local gradle, maven = gradle_root(dirs), maven_root(dirs)
   if gradle and (not maven or #gradle >= #maven) then
-    return describe(gradle, "gradle")
+    local found = describe(gradle, "gradle")
+    found.also = maven == gradle and "maven" or nil
+    return found
   end
 
   return maven and describe(maven, "maven") or nil
@@ -419,7 +451,7 @@ local function set_up_but_failed(root, result, started)
 end
 
 -- `version` is the Lathe brought in from outside, nil for a build that registers its own.
-local function build(root, cmd, label, version)
+local function build(root, cmd, label, version, warning)
   local before = server_version(root)
   local started = os.time()
   require("lathe.sync").run(root, false, nil, {
@@ -434,11 +466,16 @@ local function build(root, cmd, label, version)
     end,
     on_done = function(result)
       attach(root, result, version, before)
+      -- Only when this build set Lathe up: `.lathe/` an earlier setup left says nothing about it.
+      local manifest = vim.uv.fs_stat(workspace.manifest_path(root))
+      if warning and manifest and manifest.mtime.sec >= started then
+        notify(warning, vim.log.levels.WARN)
+      end
     end,
   })
 end
 
-local function maven_personal(build_, tool, version)
+local function maven_personal(build_, tool, version, warning)
   local dir = bootstrap_dir(version)
   local lib = vim.fs.joinpath(dir, "lib")
   local run_build = function()
@@ -451,7 +488,8 @@ local function maven_personal(build_, tool, version)
         MAVEN_FIRST_BUILD
       ),
       ("%s clean test (capture only, Lathe %s)"):format(vim.fs.basename(tool), version),
-      version
+      version,
+      warning
     )
   end
   -- lib/ appears only whole: the fetch fills a temporary folder renamed into place when it ends, so
@@ -587,8 +625,9 @@ local function set_up(found)
       version
     )
   )
+  local warning = scans_project(found.root, found.kind) and SCAN_WARNING or nil
   if found.kind == "maven" then
-    maven_personal(found, tool, version)
+    maven_personal(found, tool, version, warning)
     return
   end
 
@@ -601,7 +640,8 @@ local function set_up(found)
     found.root,
     vim.list_extend({ tool, "--init-script", script }, GRADLE_FIRST_BUILD),
     ("%s latheSync (Lathe %s)"):format(vim.fs.basename(tool), version),
-    version
+    version,
+    warning
   )
 end
 
@@ -700,7 +740,11 @@ end
 -- What :LatheInit is about to do at the root it found, the version it moves from, and whether the
 -- root came from the current file rather than :pwd.
 local function prompt_for(found, from_file, again)
-  local origin = from_file and " (found from the current file)" or ""
+  -- The other build at the same root, which the user may have meant.
+  local also = found.also
+      and (" (a %s build is there too: `:LatheInit %s`)"):format(KINDS[found.also], found.also)
+    or ""
+  local origin = (from_file and " (found from the current file)" or "") .. also
   local repeated = again and " again" or ""
   if found.registered then
     return ("Lathe: build the %s project%s%s, which registers Lathe, in: "):format(
