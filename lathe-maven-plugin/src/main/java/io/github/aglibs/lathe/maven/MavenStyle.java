@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
+import io.github.aglibs.lathe.core.schema.IndentSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.FormatterSteps;
 import io.github.aglibs.lathe.install.StyleWriter;
@@ -60,16 +61,22 @@ final class MavenStyle {
     }
 
     if (styleSource.isEmpty()) {
-      return writeSpring(workspaceRoot, declared, rootProject, projects);
+      final Optional<MavenProject> springSource = springSource(rootProject, projects);
+      if (springSource.isEmpty()) {
+        StyleWriter.delete(workspaceRoot);
+        return null;
+      }
+
+      final FormatterSpec spring = springFormatter(springSource.get());
+      return declared.isPresent()
+          ? writeReplaced(workspaceRoot, declared.get(), FormatterSteps.indent(spring))
+          : writeSpring(workspaceRoot, spring);
     }
 
     final Plugin spotless = spotlessPlugin(styleSource.get());
     final WorkspaceStyleData detected = detect(spotless);
-    // Another declaration (none, a command) replaces the detected formatter: keep the indent
-    // Spotless implies with the declared formatter, and resolve and grant nothing it never runs.
     if (declared.isPresent()) {
-      StyleWriter.write(workspaceRoot, new WorkspaceStyleData(declared.get(), detected.indent()));
-      return null;
+      return writeReplaced(workspaceRoot, declared.get(), detected.indent());
     }
 
     if (LatheFlags.FORMATTER_NONE.equals(detected.formatter().engine())) {
@@ -87,34 +94,27 @@ final class MavenStyle {
     return style;
   }
 
+  // Another declaration (none, a command) replaces the detected formatter: keep the indent the
+  // detected one implies with the declared formatter, and resolve and grant nothing it never runs.
+  private static WorkspaceStyleData writeReplaced(
+      final Path workspaceRoot, final FormatterSpec declared, final IndentSpec detectedIndent) {
+    StyleWriter.write(workspaceRoot, new WorkspaceStyleData(declared, detectedIndent));
+    return null;
+  }
+
   // spring-javaformat-maven-plugin's formatter, at the plugin's version, for a build that runs no
-  // Spotless Java formatter; Spotless wins in a build that runs both. A declaration without jars
-  // (none, a command) replaces it, as it replaces Spotless's.
-  private WorkspaceStyleData writeSpring(
-      final Path workspaceRoot,
-      final Optional<FormatterSpec> declared,
-      final MavenProject rootProject,
-      final List<MavenProject> projects) {
-    final Optional<MavenProject> springSource = springSource(rootProject, projects);
-    if (springSource.isEmpty()) {
-      StyleWriter.delete(workspaceRoot);
-      return null;
-    }
+  // Spotless Java formatter; Spotless wins in a build that runs both.
+  private static FormatterSpec springFormatter(final MavenProject springSource) {
+    return new FormatterSpec(
+        LatheFlags.FORMATTER_SPRING,
+        List.of(),
+        versionOf(plugin(springSource, SPRING_PLUGIN_KEY)),
+        Map.of(),
+        List.of());
+  }
 
-    final var detected =
-        new FormatterSpec(
-            LatheFlags.FORMATTER_SPRING,
-            List.of(),
-            versionOf(plugin(springSource.get(), SPRING_PLUGIN_KEY)),
-            Map.of(),
-            List.of());
-    if (declared.isPresent()) {
-      StyleWriter.write(
-          workspaceRoot, new WorkspaceStyleData(declared.get(), FormatterSteps.indent(detected)));
-      return null;
-    }
-
-    final FormatterSpec formatter = resolver.resolve(detected, "");
+  private WorkspaceStyleData writeSpring(final Path workspaceRoot, final FormatterSpec spring) {
+    final FormatterSpec formatter = resolver.resolve(spring, "");
     final var style = new WorkspaceStyleData(formatter, FormatterSteps.indent(formatter));
     StyleWriter.write(workspaceRoot, style);
     return style;
