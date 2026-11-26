@@ -30,6 +30,31 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     configs = List.copyOf(configs);
   }
 
+  // A file's module and whether its tree is test code: the config whose source root holds it most
+  // closely, as a test root may lie inside a main one (`src`, `src/test`). A file in no tree (a
+  // dependency's, a build's own output) has none.
+  Optional<Placement> placementOf(final Path file) {
+    ModuleSourceConfig closest = null;
+    int closestDepth = -1;
+    for (final ModuleSourceConfig config : configs) {
+      for (final Path root : config.sourceRoots()) {
+        if (file.startsWith(root) && root.getNameCount() > closestDepth) {
+          closest = config;
+          closestDepth = root.getNameCount();
+        }
+      }
+    }
+
+    return Optional.ofNullable(closest)
+        .map(config -> new Placement(moduleRel(config), config.isTestTree()));
+  }
+
+  record Placement(String moduleRel, boolean test) {
+    Placement {
+      ValidCheck.check().notNull(moduleRel, "moduleRel").validate();
+    }
+  }
+
   // A module's .lathe directory as the reactor-relative module path the tools and the sync use.
   static String moduleRel(final Path workspaceRoot, final Path moduleDir) {
     return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));

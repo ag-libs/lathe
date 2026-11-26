@@ -1079,6 +1079,115 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .endsWith("Config");
   }
 
+  // MC-100: a capped list starts with the asked file's module, its main sources before its tests,
+  // where a sibling module's name sorts before it (`app-26` before `app-core`).
+  @Test
+  void findImplementations_siblingModuleSortsFirst_listsTheHomeModulesMainFirst() throws Exception {
+    final String apiSource = "package com.example; public interface Api { void run(); }";
+    final List<Path> core =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "app-core",
+            Map.of(
+                "com/example/Api.java",
+                apiSource,
+                "com/example/CoreImpl.java",
+                "package com.example; public class CoreImpl implements Api { public void run() {} }"),
+            List.of(),
+            1_000L);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "app-26",
+        Map.of(
+            "com/example/other/Impl26.java",
+            "package com.example.other; public class Impl26 implements com.example.Api {"
+                + " public void run() {} }"),
+        List.of("app-core"),
+        1_000L);
+    final Path testSource =
+        TestCompiler.writeAt(
+            tmp.resolve("app-core/src/test/java/com/example/CoreTestImpl.java"),
+            "package com.example; class CoreTestImpl implements Api { public void run() {} }",
+            1_000L);
+    TestCompiler.writeTestTreeParams(tmp, "app-core", tmp.resolve("app-core/src/test/java"), null);
+    TestJavac.compileToDir(
+        tmp.resolve(LatheLayout.LATHE_DIR)
+            .resolve("app-core")
+            .resolve(LatheLayout.TEST_CLASSES_DIR),
+        List.of(tmp.resolve(LatheLayout.LATHE_DIR).resolve("app-core/classes")),
+        testSource);
+    engine = new LatheEngine(tmp);
+    final Path api =
+        core.stream().filter(path -> path.endsWith("Api.java")).findFirst().orElseThrow();
+    final var pos = positionOf(apiSource, "Api {");
+
+    assertThat(
+            engine
+                .findImplementations(api, pos.getLine(), pos.getCharacter(), 50)
+                .value()
+                .implementations())
+        .extracting(
+            location -> Path.of(java.net.URI.create(location.uri())).getFileName().toString())
+        .containsExactly("CoreImpl.java", "CoreTestImpl.java", "Impl26.java");
+  }
+
+  // Asked from a use in the sibling module, a capped list still starts with the declaring module:
+  // references and incoming calls of `Api.run`, called from both modules.
+  @Test
+  void referencesAndCallers_askedFromASiblingModulesUse_listTheDeclaringModuleFirst()
+      throws Exception {
+    final List<Path> core =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "app-core",
+            Map.of(
+                "com/example/Api.java",
+                "package com.example; public interface Api { void run(); }",
+                "com/example/CoreUse.java",
+                "package com.example; public class CoreUse { void go(Api api) { api.run(); } }"),
+            List.of(),
+            1_000L);
+    final String siblingSource =
+        "package com.example.other; public class Use26 { void go(com.example.Api api) {"
+            + " api.run(); } }";
+    final Path sibling =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app-26",
+                Map.of("com/example/other/Use26.java", siblingSource),
+                List.of("app-core"),
+                1_000L)
+            .get(0);
+    engine = new LatheEngine(tmp);
+    final var pos = positionOf(siblingSource, "run()");
+
+    assertThat(
+            engine
+                .references(sibling, pos.getLine(), pos.getCharacter(), 50, ANY_ACCESS)
+                .value()
+                .references())
+        .extracting(reference -> fileName(reference.location()))
+        .containsExactly("CoreUse.java", "Use26.java");
+    assertThat(
+            engine
+                .callHierarchy(
+                    sibling,
+                    pos.getLine(),
+                    pos.getCharacter(),
+                    CallDirection.INCOMING,
+                    SymbolScope.ALL,
+                    50)
+                .value()
+                .calls())
+        .extracting(call -> fileName(call.location()))
+        .containsExactly("CoreUse.java", "Use26.java");
+    assertThat(core).hasSize(2);
+  }
+
+  private static String fileName(final LatheLocation location) {
+    return Path.of(java.net.URI.create(location.uri())).getFileName().toString();
+  }
+
   // No project code can use a type in a JDK package its module does not export to everyone.
   @Test
   void jdkInternal_containers_onlyTheJdksUnexportedPackages() {
