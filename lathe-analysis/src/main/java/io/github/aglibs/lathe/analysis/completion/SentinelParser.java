@@ -278,12 +278,71 @@ final class SentinelParser {
             cls.inExpression(),
             catchParameter,
             constantField,
+            labelTopLevelEnd(sentinelPath, cu, sourcePositions),
             typeVariables,
             null,
             version);
 
     logValid(parsed);
     return parsed;
+  }
+
+  // Where the top-level class ends when the sentinel is the body of a switch label, -1 otherwise:
+  // a `case` or `default` reached through its body, not its labels or guard, before
+  // any lambda, call, parenthesis, conditional, array, block, method or class. A block javac's
+  // recovery made under an erroneous tree does not stop it: with the switch block not closed,
+  // `case S s -> s.SENTINEL` and the next line read as a declaration in such a block (CQ-0079).
+  private static int labelTopLevelEnd(
+      final TreePath sentinelPath,
+      final CompilationUnitTree cu,
+      final SourcePositions sourcePositions) {
+    Tree child = sentinelPath.getLeaf();
+    for (TreePath path = sentinelPath.getParentPath(); path != null; path = path.getParentPath()) {
+      final Tree node = path.getLeaf();
+      if (node instanceof final CaseTree caseTree) {
+        final boolean body =
+            child == caseTree.getBody()
+                || caseTree.getStatements() != null && caseTree.getStatements().contains(child);
+        return body ? topLevelEnd(path, cu, sourcePositions) : -1;
+      }
+
+      final boolean recoveryBlock =
+          node instanceof BlockTree
+              && path.getParentPath() != null
+              && path.getParentPath().getLeaf() instanceof ErroneousTree;
+      if (!recoveryBlock && stopsSwitchLabelBody(node)) {
+        return -1;
+      }
+
+      child = node;
+    }
+
+    return -1;
+  }
+
+  private static int topLevelEnd(
+      final TreePath path, final CompilationUnitTree cu, final SourcePositions sourcePositions) {
+    Tree outermost = null;
+    for (TreePath up = path; up != null; up = up.getParentPath()) {
+      if (up.getLeaf() instanceof ClassTree) {
+        outermost = up.getLeaf();
+      }
+    }
+
+    return outermost == null ? -1 : (int) sourcePositions.getEndPosition(cu, outermost);
+  }
+
+  private static boolean stopsSwitchLabelBody(final Tree node) {
+    return node instanceof LambdaExpressionTree
+        || node instanceof MethodInvocationTree
+        || node instanceof NewClassTree
+        || node instanceof ParenthesizedTree
+        || node instanceof ConditionalExpressionTree
+        || node instanceof ArrayAccessTree
+        || node instanceof NewArrayTree
+        || node instanceof BlockTree
+        || node instanceof MethodTree
+        || node instanceof ClassTree;
   }
 
   // A type variable is a type, never a value: it may stand where a type is written, or start a
