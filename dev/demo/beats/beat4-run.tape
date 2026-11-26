@@ -1,6 +1,7 @@
 # Beat 4 — Run. Narration captions (burned in post-render), see beat4-run.ass:
-#   (1) "Run the Spring Boot app — from the captured classpath"
-#   (2) "Live output — Tomcat up on :8080"
+#   (1) "Run the Spring Boot app — no Maven, from the captured classpath"
+#   (2) "Live output, until Started PetClinicApplication"
+#   (3) ":LatheRunStop — stopped"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat4-run.tape
 #

@@ -1,7 +1,7 @@
 # Beat 1 — Everyday editing. Narration captions (burned in post-render), timed to the on-screen state:
-#   (1) "Code completion — from your build"  (2) "Type mismatch — flagged live"
-#   (3) "Fixed and saved — no diagnostics"  (3 only appears AFTER the save, when the buffer is truly
-#   clean).
+#   (1) "Code completion — from the build's classpath"
+#   (2) "Type mismatch — flagged as you type"
+#   (3) "Saved — no diagnostics"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat1-edit.tape
 #

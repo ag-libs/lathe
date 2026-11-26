@@ -1,7 +1,8 @@
 # Beat 6 — Test (fail -> fix -> green). Narration captions (burned in post-render), see beat6-test.ass:
-#   (1) "Run the tests — replayed from your capture"
-#   (2) "Red — the assertion fails, with the stack trace"
-#   (3) "Fix it, run again — green"
+#   (1) "Run the tests — one fails"
+#   (2) "The assertion, with its stack trace"
+#   (3) "Fix it and save"
+#   (4) "Run again — green"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat6-test.tape
 #

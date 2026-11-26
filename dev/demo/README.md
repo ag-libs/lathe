@@ -1,37 +1,28 @@
 # Lathe demo GIF
 
-> **Status: work in progress (first draft).** The tooling and pipeline work end-to-end, but the
-> `demo.tape` scenario is a first draft that does **not** yet showcase Lathe's features well — it
-> needs a substantial rework before it becomes the published demo. `docs/demo.gif` is not committed
-> and not yet embedded in the project README.
-
 A reproducible, scripted terminal demo built with [vhs](https://github.com/charmbracelet/vhs).
-The `.tape` is the source of truth; the GIF is regenerated from it, not hand-recorded.
+The tapes under `beats/` are the source of truth: the GIF is regenerated from them, never hand-recorded.
+`record.sh` publishes it as `docs/demo-<hash>.gif` and points the project README (and the lathe.nvim mirror's) at it.
+The plan behind each beat, and how the tapes are written, is in [demo-script.md](demo-script.md).
 
-Output: `docs/demo.gif` (once the scenario is finalized, it will be embedded at the top of the
-project README).
+## What it shows (≈60 s)
 
-## What it shows (short hero, ~15–20s, looping)
+Every beat runs on [spring-petclinic](https://github.com/spring-projects/spring-petclinic), a public project with no Lathe in its build, at a commit pinned in `env.sh`.
 
-Recorded against the **public** `multi-module` invoker fixture (`com.example`, no private identifiers):
-
-1. **Completion** — open `app/.../FormalGreeter.java`, type `name.` → member completion on `String`.
-2. **Cross-module go-to-definition** — `gd` on `Greeter` (in `implements Greeter`) jumps from the `app`
-   module into `core/.../Greeter.java`, straight from the Maven model.
-3. **Run a test** — open `jpms/.../HelloTest.java`, run the file (`<leader>tf`) → the neotest gutters
-   turn green, the docked console streams output (`greet_prints_writesToBothStreams` prints to both
-   streams), and the completion toast fires.
+1. **`:LatheInit`**: open `Owner.java` with nothing set up, run `:LatheInit maven`, and go to definition once the server attaches.
+2. **Editing**: completion from the build's classpath, a type mismatch flagged as you type, a clean save.
+3. **Run**: `PetClinicApplication` runs from `.lathe/`, its Spring Boot start-up streaming until it has started, then stops.
+4. **Debug**: a breakpoint in `OwnerTests`, two watches on the paused frame, then the test passes.
+5. **Test**: `OwnerTests` runs red, shows the failure and its stack trace, and runs green once fixed.
 
 ## Prerequisites (Linux laptop)
 
-`vhs` renders **fully headless**: it drives a `ttyd` terminal and captures frames with an *off-screen*
-Chromium (via `go-rod`), then encodes with `ffmpeg`. It does **not** use your Wayland/Sway session and
-needs no `$DISPLAY` — it runs the same under Sway or over SSH. The one Sway/Wayland gotcha is that the
-headless Chromium still links the usual X client shared libraries (nothing is shown, but they must be
-present); the easy way to get them all is to install the `chromium` package.
+`vhs` renders fully headless: it drives a `ttyd` terminal and captures frames with an off-screen Chromium (via `go-rod`), then encodes with `ffmpeg`.
+It does not use your Wayland or X session and needs no `$DISPLAY`, so it runs the same under Sway or over SSH.
+The headless Chromium still links the usual X client libraries; nothing is shown, but they must be present.
 
-`nvim` (0.12+, matching the demo config) is assumed. First run needs network: `prepare.sh` fetches your
-plugins into the config copy, and vhs downloads its headless Chromium.
+`nvim` 0.12 or later is assumed.
+The first run needs the network: `prepare.sh` clones petclinic and installs the sample config's plugins, and vhs downloads its headless Chromium.
 
 **Debian/Ubuntu** (installs `vhs` from Charm's apt repo, so no Go toolchain is needed):
 ```bash
@@ -44,13 +35,10 @@ sudo apt update
 sudo apt install -y vhs ttyd ffmpeg fonts-jetbrains-mono \
   libxcomposite1 libxdamage1 libxrandr2 libxfixes3 libxkbcommon0 libgbm1 libnss3 libasound2t64
 ```
-vhs downloads its own headless Chromium on first run, so these X libraries (not a browser package)
-are what it actually needs.
 
-**Arch (Sway is common here):**
+**Arch:**
 ```bash
 sudo pacman -S --needed vhs ttyd ffmpeg chromium ttf-jetbrains-mono
-# vhs and ttyd are in the extra repo; chromium provides the headless-browser libraries.
 ```
 
 Verify the toolchain before recording:
@@ -61,46 +49,35 @@ vhs --version && ttyd --version && ffmpeg -version | head -1
 ## Generate
 
 ```bash
-./dev/demo/prepare.sh        # installs Lathe, runs the multi-module invoker fixture, pre-installs plugins
-vhs dev/demo/demo.tape       # writes docs/demo.gif
+./dev/demo/prepare.sh        # build + install Lathe, clone petclinic, set it up with :LatheInit
+./dev/demo/record.sh         # render, caption and stitch the beats -> docs/demo-<hash>.gif
 ```
 
-`prepare.sh` builds the invoker fixture (a synced copy at `lathe-maven-plugin/target/it/multi-module`
-with `.lathe/`, plus an isolated server cache at `target/it home/.cache/lathe`) and takes an **isolated
-copy of your real Neovim config** under `dev/demo/.nvim`, so the demo looks like your editor
-(colorscheme, treesitter, cmp, neotest, the Lathe integration) without touching your live `~/.config`
-or `~/.local/share`. The tape runs that copy with two env vars:
+`prepare.sh` clones petclinic into `~/lathe-demo/warm/spring-petclinic` (`LATHE_DEMO_WORK` moves it) and runs `:LatheInit` there once, headless.
+That warms everything the on-camera `:LatheInit` would otherwise wait for (the Maven wrapper, petclinic's dependencies, Lathe's bootstrap jars) and leaves the clone set up for beats 1–6.
+Beat 0 clones it again to `~/lathe-demo/spring-petclinic`, so its `:LatheInit` starts from nothing.
+The clones live outside this repo on purpose: the repo has its own `.lathe/`, which would claim a clone inside it.
 
-- `LATHE_NVIM_DIR` → the Lathe **client** from this checkout;
-- `LATHE_CACHE` → the Lathe **server** from the invoker cache.
+The demo runs an isolated copy of the sample config [examples/nvim](../../examples/nvim/init.lua) under `dev/demo/.nvim`, with the Lathe client from this checkout.
+Nothing touches your `~/.config`, `~/.local/share` or `~/.cache/lathe`.
+Re-run `prepare.sh` after changing the server, the client or the sample config.
+`LATHE_DEMO_NVIM_CONFIG=/path/to/nvim` records with another config, and `LATHE_DEMO_CLIENT=/path/to/lathe-neovim/runtime` with another checkout's client.
 
-Both are knobs your config already honors (`lua/lathe_paths.lua`). Nothing touches `~/.cache/lathe`.
-Re-run `prepare.sh` after changing the server or client.
+## Recording well
 
-> Point it at a different config with `LATHE_DEMO_NVIM_CONFIG=/path/to/nvim ./dev/demo/prepare.sh`.
-> Kanagawa is transparent in your config, so the terminal background shows through; set
-> `transparent = false` in the copy's `colorscheme.lua` if you want a solid editor background.
-
-## Tuning (the part that needs a human)
-
-Lathe is async — server start + workspace indexing is ~3s, and completion/diagnostics have latency.
-The tape uses `Sleep`s to wait for each step to land on screen. After the first render, watch the GIF
-and adjust:
-
-- If completion/diagnostics/gutter haven't appeared before the next keystroke, **increase the
-  preceding `Sleep`**.
-- Keep the total under ~20s so the loop stays punchy; trim dead air rather than beats.
-- `Set Width/Height/FontSize` control the frame size; `Set PlaybackSpeed` and the output file size
-  trade off duration vs. weight (vhs encodes the GIF with ffmpeg).
+- **Record on a quiet machine.** VHS captures fewer frames while the machine is busy, so a busy machine speeds up the heavy stretches (the setup build, the Spring Boot start-up) by an amount you do not control.
+- **Re-time the captions after the final render.** The `.ass` captions use fixed timestamps, and the clips' lengths move a little from render to render.
+  `ffmpeg -i docs/videos/<beat>.mp4 -vf "fps=2,drawtext=text='%{pts\:hms}':…,tile=6x4"` makes a timestamped contact sheet to read them from.
+- **Render one beat** with `vhs dev/demo/beats/<beat>.tape`: it writes `docs/videos/<beat>.mp4`, uncaptioned.
 
 ## Files
 
-- `demo.tape` — the vhs script (beats + waits + output).
-- `prepare.sh` — builds Lathe + the invoker fixture and stages an isolated copy of your Neovim config.
-- The demo runs **your** config (copied to `dev/demo/.nvim`), so the keys are your own —
-  `gd` (definition), `<leader>tf` (run file tests), `<leader>to` (docked output), `<leader>ts`
-  (summary). There is no bundled `init.lua`.
+- `beats/*.tape`: one VHS tape per beat; `beats/*.ass`: its captions, and the title and end cards.
+- `env.sh`: the environment every tape and `prepare.sh` share (the pinned petclinic commit, the clones, the isolated config).
+- `prepare.sh` and `init-headless.lua`: the one-off setup, including the headless `:LatheInit`.
+- `record.sh`: renders, captions, stitches and publishes the GIF.
 
 ## Privacy
 
-Record only against the `com.example` fixture — never the private validation workspaces (repo policy).
+Record only public projects (spring-petclinic, the repo's own fixtures), never a private validation workspace.
+The recording shows the clone's absolute path in `:LatheInit`'s prompt and the run's command line.

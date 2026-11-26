@@ -1,7 +1,8 @@
 # Beat 5 — Debug. Narration captions (burned in post-render), see beat5-debug.ass:
-#   (1) "Set a breakpoint, debug the test"
+#   (1) "Set a breakpoint and debug the test"
 #   (2) "Inspect the paused frame"
-#   (3) "Live eval: pet.getName().toUpperCase() → BUDDY"
+#   (3) "Evaluate a call: pet.getName().toUpperCase() → BUDDY"
+#   (4) "Continue — the test passes"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat5-debug.tape
 #

@@ -23,7 +23,7 @@ Require nvim
 
 Set Shell "bash"
 # Monaco for the code, Nerd-Font fallback for gutter/statusline glyphs. 1.5x scale keeps Monaco crisp
-# after GIF palette quantization. Matches the Maven hero demo (dev/demo/demo.tape).
+# after GIF palette quantization. Matches the main demo (dev/demo/beats/*.tape).
 Set FontFamily "Monaco, Cascadia Mono NF"
 Set FontSize 24
 Set Width 1800

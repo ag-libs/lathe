@@ -1,387 +1,84 @@
 # Lathe Demo Script
 
-The source-of-truth plan for the Lathe demo.
-We agree this document first, then build the fixture, then record one beat at a time, then stitch
-the beats into a single video.
-
-## Current published cut (≈64 s)
-
-The published `docs/demo.gif` is a tightened **highlight** — a title card, the five universal beats,
-and an end card:
-
-```
-title-card → 0 capture → 1 everyday editing → 4 run → 5 debug → 6 test → end-card
-```
-
-**Beats 2 (annotation processing) and 3 (JPMS module graph) are retained below and under
-`dev/demo/beats/` but are deliberately dropped from this cut** — they are the longest, most niche
-beats and they trip VHS's non-initial-buffer 2× zoom. `dev/demo/record.sh` builds only the cut above
-(add them back to its `beats=(…)` list to rebuild the full tour). Everything below documents the full
-beat set and the rationale behind each beat; the length/beat-count figures elsewhere in this doc
-describe that original ~72 s full tour, not the shipped highlight.
+The plan behind the Lathe demo: what each beat shows, why, and how its tape is written.
+How to generate it is in [README.md](README.md).
 
 ## Goal and format
 
-- **One story:** *capture your real Maven build once, then get a full reactor-aware IDE — edit,
-  navigate, run, debug, and test — all from your build.*
-- **Length:** ~72 s total, 75 s hard ceiling. Seven beats, chaptered.
-- **Production:** each beat is its own short clip (its own VHS tape), recorded independently, then
-  concatenated with `ffmpeg` into the full video. Per-beat clips are reliable (own warm-up, no
-  cross-beat line shifts) and cheap to re-render in isolation.
-- **Narration:** one short caption per beat, burned into the clip (bottom of frame) as an **ASS
-  subtitle** (`ffmpeg -vf subtitles=<beat>.ass`), shown for the whole beat. The caption doubles as a
-  chapter marker at the seam.
-- **Quality:** 1800×1080, FontSize 24 (settled — sharp for terminal text).
-- **Output:** GIF-first. Per-beat clips render to `docs/videos/<n>-<name>.mp4`, captioned in place, then
-  concatenated into `docs/demo.mp4`, from which `docs/demo.gif` is derived. **Only `docs/demo.gif` is
-  committed** (the README embeds it); the mp4s are regenerable intermediates and are gitignored.
-  Captions are **outlined text, no box** — see the overlay recipe below — so they never cover a
-  rectangle of content.
+- **One story:** *open a project that has never heard of Lathe, run `:LatheInit`, and get a full IDE — edit, run, debug, test — with the project's build files unchanged.*
+- **Length:** about 60 s, in five beats between a title card and an end card.
+- **Production:** each beat is its own VHS tape, rendered on its own, then concatenated with `ffmpeg`.
+  A beat can be re-rendered in isolation, and no beat depends on the one before it.
+- **Captions:** each beat's `.ass` subtitle file, burned in by `record.sh`, in a 110 px caption bar below the terminal, so a caption never covers the code or the output it describes.
+  Outlined text with a soft fade (`\fad`); libass renders it crisply where `drawtext` cannot.
+- **Size:** 1800×1080 terminal at FontSize 24, plus the caption bar.
+- **Output:** GIF-first.
+  The per-beat clips (`docs/videos/*.mp4`) and the stitched `docs/demo.mp4` are gitignored intermediates; only the content-hashed `docs/demo-<hash>.gif` is committed.
 
-## Fixture (crafted so every beat is natural)
-
-> **Spec, not yet applied.** The source below is the target fixture to write *when we record* —
-> it is not applied yet (another session owns fixture fixes). Treat this section as the checklist.
-
-The demo runs on the public `multi-module` invoker fixture only (repo policy — never a private
-workspace). We craft one class so each beat has an obvious, coherent target.
-
-`app/src/main/java/com/example/app/Main.java`:
-
-```java
-package com.example.app;
-
-import com.example.core.StringUtils;
-
-public final class Main {
-  public static void main(final String[] args) {
-    final User user = UserBuilder.builder().name("Alice").age(30).build();  // explicit User: beat 2 `gd`s straight in
-    System.out.println(StringUtils.upper(user.name()));                     // beat 1 edits above here; beat 5 breakpoint
-  }
-}
-```
-
-`app/Main` is the home for **everyday editing (beat 1)**, **annotation processing (beat 2)**, and
-**debug (beat 5)**. At the beat-5 breakpoint `args` and the `user` record are in scope (expand `user`
--> `name`/`age`), so `Main` needs no extra flat locals. Running/streaming lives in the `jpms` module
-(below), so `Main` needs no `Thread.sleep`.
-
-**Beat 1 works entirely in `Main`:** it adds one statement with completion, mis-types its declared
-type to trigger a live diagnostic, fixes it, and saves — ending on a valid `Main`. It mutates `Main`,
-so reset after (like beat 2).
-
-`jpms/HelloMain.java` is the home for the **JPMS/logger beat (3)** and the **run beat (4)**. After
-beat 3 adds the logger and `requires java.logging`, its `main` streams JUL output (INFO -> stderr):
-
-```java
-// jpms module (com.example.jpms) — the state beat 4 runs, produced by beat 3
-private static final Logger logger = Logger.getLogger(HelloMain.class.getName());
-
-public static void main(final String[] args) throws InterruptedException {
-  logger.info("starting");
-  Thread.sleep(1000);      // second INFO line appears after a beat -> visibly live
-  logger.info("done");
-}
-```
-
-`User` (already in the fixture) is the annotation-processed record beat 2 edits:
-
-```java
-/**
- * Domain record. The {@link Builder} annotation is read at compile time by the record-companion
- * annotation processor, which generates a fluent {@code UserBuilder} companion — one setter per
- * component, regenerated on every build.
- */
-@Builder
-public record User(String name, int age) {}   // beat 2 `gd`s here; the Javadoc explains the processor
-```
-
-Beat 2 adds a component — **`Instant createdAt`**. Typing `Instant` shows type completion and
-auto-imports `java.time.Instant`; on `:w` the processor regenerates `UserBuilder` with
-`createdAt(Instant)`, so back in `Main` the builder completes `.createdAt(...)`. Two completion
-moments in one beat (component type + regenerated setter).
-
-`app/src/test/java/com/example/app/AppTest.java` — a tiny JUnit 5 test for beat 6:
-
-```java
-package com.example.app;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import org.junit.jupiter.api.Test;
-
-class AppTest {
-  @Test
-  void upper_lowercaseInput_uppercases() {
-    assertEquals("ALICE!", StringUtils.upper("alice"));   // fails on purpose for beat 6: ALICE! vs ALICE
-  }
-}
-```
-
-Already present and reused: `core` (`StringUtils`, `DbClient`, `DbClientBase`), `health`
-(`DbClientHealthCheck`), the generated `UserBuilder`, and the `jpms` JPMS module (`module-info.java`
-for `com.example.jpms`, which must NOT already `requires java.logging`) — beat 3's target.
-
-## Shared preamble (identical hidden block in every beat tape)
+The cut, by the original tour's beat numbers (beats 2 and 3, annotation processing and the JPMS module graph, were dropped):
 
 ```
-Hide
-  R="$PWD"
-  export XDG_* -> dev/demo/.nvim/*        # isolated copy of the user's nvim config (prepare.sh)
-  export LATHE_NVIM_DIR / LATHE_CACHE     # client from checkout, server from invoker cache
-  cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1   # GUARD: never run mvn at repo root
-  <beat-specific warm, if any>
-Show
+title-card → 0 :LatheInit → 1 everyday editing → 4 run → 5 debug → 6 test → end-card
 ```
 
-The `|| exit 1` guard is mandatory: a missing fixture must yield a harmless empty clip, never a
-repo-root `mvn clean` that wipes `target/`.
+## The project
+
+[spring-petclinic](https://github.com/spring-projects/spring-petclinic) at the commit `env.sh` pins: public (repo policy: never a private workspace), widely known, a real Spring Boot application, and no Lathe anywhere in its build.
+That last point is the demo's subject, so beat 0 shows `:LatheInit` setting it up from nothing.
+petclinic has both a Maven and a Gradle build at its root, where `:LatheInit` would pick Gradle; the demo passes `maven`, and beat 0's caption says why.
+
+`prepare.sh` sets up a warmed clone for beats 1–6; each beat's hidden setup resets its sources (`git checkout -- src`).
+No petclinic code is copied into this repo: beat 6 makes its failing assertion with a `sed` in its hidden setup.
 
 ## The beats
 
-Beats 0/1/2/5 open `app/Main.java` (imports auto-folded, cursor at top, "workspace ready"); beat 6
-opens `AppTest.java` in the same `app` module. **Beats 3 and 4 open the `jpms` module instead**
-(`jpms/HelloMain.java` + its `module-info.java`) — a deliberate context switch that shows the reactor
-is *mixed* (classpath `app` + modular `jpms`, both working), the exact scenario Lathe targets. Their
-chapter captions make the switch read as intentional. Durations are targets; captions overlay during
-the action (no extra time).
+### 0 — `:LatheInit`
+Open `owner/Owner.java` in a fresh clone: no server, and a toast says the project is not set up and to run `:LatheInit`.
+Run `:LatheInit maven`, accept the root the prompt offers, and one toast follows the download, the build (`mvnw clean test`, capture only) and the server set up.
+`gd` on `Person` (`Owner extends Person`) proves the server is attached.
+Captions: *spring-petclinic — no Lathe in its build* · *:LatheInit maven — petclinic has both builds* · *One build, from Neovim — the project's files are not changed* · *Lathe attached — go to definition*.
+petclinic's build checks every file for `http://` URLs (nohttp), so the setup ends with Lathe's warning to exclude `.lathe/` from that check: real advice for this project, kept in the cut.
 
-| # | Beat | Actions | Caption | ~s |
-|---|------|---------|---------|----|
-| 0 | Capture | `mvn clean test -Dlathe.capture.only=true` -> BUILD SUCCESS -> open `Main.java` -> workspace ready | (1) `Capture your build` (2) `Open a file — Lathe attaches, no setup` | 11 |
-| 1 | Everyday editing | above the `println` add `final var greeting = StringUtils.` (completion: cross-module `upper(String)`) `upper(user.` (completion: record `name()`); change `var`->`int` -> live "incompatible types"; fix `int`->`var` -> clears; use `greeting` in the `println`, `:w` -> clean | `Complete, catch the mistake, fix — as you type` | 8 |
-| 2 | Annotation processing, live | `gd` on `User` into `User.java` (baseline already declares `final User user`), add `Instant createdAt` (type `Instant` -> completion + auto-import), `:w` (processor regenerates), back in `Main` `.createdAt(` completes on the builder | `Edit a record — the processor regenerates on save` | 13 |
-| 3 | JPMS module graph | in a `jpms` source add a static `Logger` (java.util.logging) + a log line -> module-access error; open `module-info.java`, add `requires java.logging;` (module-name completion), `:w` -> resolves | `Edit module-info — resolution follows` | 9 |
-| 4 | Run (modular, `jpms`) | in `jpms/HelloMain` `\rr` -> docked split streams `INFO … starting`, pause, `INFO … done` (JUL to stderr) | `A modular main — live log output` | 8 |
-| 5 | Debug | breakpoint on the `println`, `\db`, `\dd` -> `C-w b`, `S` (Scopes: `args`/`user`, expand `user` -> `name`/`age`) -> REPL: evaluate `user.name().toLowerCase()` -> `alice` -> `\dc` | `Breakpoints, variables, live expression eval` | 11 |
-| 6 | Test (fail -> fix -> green) | `:e AppTest.java` -> `\tf` (red + inline failure + navigable stack trace) -> delete `!` -> `\tf` (green) | `Fail, fix, green — replayed from the capture` | 12 |
+### 1 — Everyday editing
+In `Owner.getPet`, retype `pet.getName()`: completion offers `getName()`, which `Pet` inherits from `NamedEntity`, through the classpath the build recorded.
+Make the local an `int`: the type mismatch is flagged as you type; put `String` back and save clean.
+Captions: *Code completion — from the build's classpath* · *Type mismatch — flagged as you type* · *Saved — no diagnostics*.
 
-**Total ≈ 72 s** (within the ≤75 s ceiling — keep the new beat tight).
+### 4 — Run
+`<leader>rr` on `PetClinicApplication.main` runs it from `.lathe/` bytecode, with no Maven: the Spring banner and the start-up log stream into Lathe's output split until *Started PetClinicApplication*, and `:LatheRunStop` stops it.
+The output split is wrapped (off camera) so the long log lines can be read.
+Captions: *Run the Spring Boot app — no Maven, from the captured classpath* · *Live output, until Started PetClinicApplication* · *:LatheRunStop — stopped*.
 
-### Recording conventions (apply to every beat)
+### 5 — Debug
+A breakpoint on the assertion in `OwnerTests.addPetAddsPersistedPet`, then `<leader>dd` (`:LatheDebug`).
+At the paused frame, dap-view watches `owner.getPets()` (`size=1`) and evaluates `pet.getName().toUpperCase()` (`"BUDDY"`) in the debuggee; continuing runs the test to green.
+Captions: *Set a breakpoint and debug the test* · *Inspect the paused frame* · *Evaluate a call: pet.getName().toUpperCase() → BUDDY* · *Continue — the test passes*.
 
-- **Navigate by line numbers and motions, never `/search`.** Position with `NN`+`gg`/`G`, `f`/`t`, and
-  `:e <file>` + a line jump when moving between files; reserve `gd`/`K`/completion for the actual
-  feature moments. `/`-search leaves `hlsearch` highlights that bleed across the concatenated seams and
-  make cursor positions non-deterministic — **the beats are stitched into one movie**, so every clip
-  must render identically run to run. (`:set nohlsearch` in the hidden preamble is a safety net, not a
-  substitute.)
-- **Hover floats:** dismiss with a cursor move (`0`), not `Esc` (Esc won't close an unfocused float).
+### 6 — Test
+`OwnerTests` expects two pets where there is one (set off camera).
+`<leader>tf` runs the file red, `<leader>to` docks the assertion and its stack trace, the fix is one character, and saving recompiles `.lathe/`; `<leader>tf` again runs green.
+Captions: *Run the tests — one fails* · *The assertion, with its stack trace* · *Fix it and save* · *Run again — green*.
 
-### Per-beat notes / gotchas (learned the hard way)
+### Cards
+Title: **Lathe** · *A zero-config Java language server* · *Open a Maven or Gradle project, run :LatheInit — no build changes*.
+End: **Lathe** · *github.com/ag-libs/lathe* · *Java language server — zero config, no project import*.
+Wording is deliberate: Lathe does not run Maven to serve the editor (it records the build's settings once), so no card says it "runs from your build".
 
-- **Beat 0 mvnd warm:** hidden `mvn -q clean test … >/dev/null 2>&1` before the visible capture so
-  the recorded build is fast and deterministic (mvnd cold-start otherwise overruns the sleep).
-- **Build cache must be off for capture:** the box's `mvnd` carries `maven-build-cache-extension`; a
-  cache hit skips compilation so Lathe captures nothing (README setup note). Pass
-  `-Dmaven.build.cache.enabled=false` on the capture *and* the warm. (Likely a cause of earlier
-  fixture flakiness.)
-- **Beat 1 (everyday editing):** the "normal Java IDE" grounding before the differentiators. Two
-  completion moments (cross-module `StringUtils.upper(String)` + record accessor `name()`), then a
-  deliberate type mismatch: change the inferred `var` to `int` so the `String` return is flagged
-  ("incompatible types: String cannot be converted to int") — a live, semantic diagnostic. Fix
-  `int`->`var` to clear it, then reference `greeting` in the `println` so Lathe's own
-  unused-declaration diagnostic doesn't fire, and `:w` for a clean compile. **The `var`->`int` flip is
-  a mild contrivance** (accepted); a less-hacky variant is to complete the *wrong* JDK method
-  (`name.toUpperCase()` into an `int`) and fix by completing `length()`. **Mutates `Main`** — reset
-  after, like beat 2.
-- **Beat 2 (annotation):** VERIFIED — a FULL compile on `:w` runs the processor and rewrites
-  `.lathe/<module>/generated-sources/UserBuilder.java`; completion on `UserBuilder.builder().` then
-  offers the new setter (probed: added `String email` -> builder gained `email(String)` and
-  `build()` -> `new User(name, age, email)`). `gd` needs the index warm (~7-8 s after open).
-  **This beat mutates the fixture** (`User.java` + regenerated `.lathe`) — render it isolated and reset
-  the fixture afterward.
-- **Beat 3 (JPMS module graph):** see the dedicated section below. **Mutates the fixture** (a `jpms`
-  source + `module-info.java`) — reset after. **Verify on a build first** (couldn't probe now).
-- **Beat 4 (run, `jpms`):** runs `jpms/HelloMain` at beat 3's end state (logger + `requires`); the JUL
-  INFO lines stream to the docked split. Modular run replayed from `.lathe` (supported per status.md).
-  Do not reset the fixture between beats 3 and 4.
-- **Beat 5 (debug):** the first debug attach is slow (~18 s). Warm it in a mid-tape `Hide/Show`
-  block after the file opens, so the recorded attach is fast. Focus the dap panel with `C-w b` then
-  `S` (a cursor move, not `Esc`, dismisses floats). Breakpoint on the `println`. Then evaluate
-  an expression at the paused frame — via `\dr` (dap REPL) or the dap-view REPL section — e.g.
-  `user.name().toLowerCase()` -> `alice` (live method invocation; supported per status.md — confirm the
-  exact keys and that eval returns on the first render).
+## Writing a tape
 
-## Beat 3 detail — JPMS module graph (variant A)
+- **Wait on the screen, not the clock.** Each step waits for what it needs (`Wait+Screen /…/`: the completion item, the diagnostic, `Started PetClinicApplication`, `"BUDDY"`, `2 passed`), then a short `Sleep` gives the viewer time to read.
+  A fixed sleep breaks as soon as the machine is busy, and other work on the machine is the normal case.
+- **Match text that stays on one line.** A toast or a diagnostic that wraps or runs off the edge splits its words: `1 passed, 1⏎failed` matches `/1 passed, 1/`, not `/1 failed/`.
+- **Never `Hide` while something streams.** VHS records no frames while hidden but the process keeps running, so the output appears already written when the clip shows again.
+  Set up anything a beat needs (the output split's wrap, a `:Watch` command) before `Show`.
+- **Warm the slow first times off camera:** the workspace (wait for *workspace ready*), the first debug attach (beat 5), the save that puts `.lathe/` in the failing state (beat 6).
+  Dismiss leftover toasts before `Show` with `Snacks.notifier.hide()`.
+- **`renice` the shell in the hidden setup.** nvim, Maven and the server inherit it, which leaves VHS's headless browser more CPU; a busy machine still drops frames, which plays the heavy stretches fast.
+- **Navigate by line numbers and motions, never `/search`:** `/` leaves highlights that bleed across the concatenated clips.
+  After `NG`, re-anchor with `_`: the cursor keeps its column.
+- **Press Escape twice after any insert that may show completion:** blink.cmp's first `<Esc>` only closes the menu.
 
-JPMS is Lathe's headline differentiator (README: the module graph, exported-package visibility, and
-module-aware completion follow the build). Uses the **existing** `jpms` module (`jpms/HelloMain.java` +
-`module-info.java`) — **no fixture restructure**; `app` stays classpath, preserving the invoker
-preconditions and the deliberate mixed reactor (a JPMS module surrounded by classpath ones, which the
-demo is happy to show off). Target module `java.logging` (`java.util.logging.Logger`) — one the `jpms`
-module does not require by default, and a genuinely *usable* type (a static logger + a log line is
-natural code, unlike a declared-but-unused `HttpClient`). `java.net.http`/`HttpClient` is the alternative.
+## Publishing
 
-Flow (the fixture must still compile, so the usage is added live) — packs two features:
-
-1. **Declaration-name completion.** In `jpms/HelloMain.java` type `private static final Logger ` then
-   `<C-Space>` -> Lathe suggests the variable name **`logger`**; accept. Add
-   `= Logger.getLogger(HelloMain.class.getName());` and `logger.info("starting")` / `logger.info("done")`
-   (with a `Thread.sleep(1000)` between, for a streamed run) -> **module-access diagnostic** ("package
-   `java.util.logging` is not visible").
-2. **Module-aware completion + the unlock.** Open `module-info.java`, type `requires java.` -> let
-   completion offer `logging` -> add `requires java.logging;`.
-3. `:w` -> the diagnostic clears and `Logger` resolves. **This end state (logger + `requires`) is what
-   beat 4 runs** — no reset between beats 3 and 4.
-
-Notes:
-- **`static` / declaration-name caveat:** the logger must be `static` so `main` (beat 4) can use it.
-  SCREAMING_SNAKE (`LOG`) is a documented non-goal, so completion won't suggest `LOG`; it may still
-  offer the plain `logger` for a `static final` field — verify. If it doesn't fire on `static final`,
-  type the name and let the **module-aware `requires` completion** carry the beat's completion moment.
-- Module-aware completion likely *hides* `Logger` until `java.logging` is required — which is itself
-  the point (unavailable until required, then it appears once the graph allows it).
-- `java.util.logging` prints INFO+ to stderr by default, so beat 4's run shows the log lines as real
-  output — the reason run lives in `jpms` (running the class we just wired up).
-
-**Verify on a build before recording** (couldn't probe now; another session owns builds): the
-module-access diagnostic, module-name completion in `requires`, and the requires->resolution
-round-trip. Fallbacks if any piece doesn't hold: variant **B** (just show `requires` completion) or
-**C** (`:LatheNew module-info` scaffold).
-
-## Fixture reset between beats
-
-Beats mutate the fixture: beat 1 edits `app` (`Main.java`); beat 2 edits `app` (`User.java` + `Main.java`);
-beats 3-4 edit the `jpms` module (`HelloMain.java` + `module-info.java`). **Beats 3 and 4 share `jpms`
-state** — beat 3 adds the logger and `requires`, beat 4 runs that end state, so do NOT reset between
-them. Reset to a clean fixture before beats 1, 2, and 5/6 (re-copy the touched files from `src/it`, or
-re-run the invoker). The stitched video is unaffected (each clip is an independent session).
-
-## Narration (captions + title / outro cards)
-
-Burned into each clip as an **ASS subtitle** (`ffmpeg -i clip.mp4 -vf subtitles=<beat>.ass`):
-bottom-centred **outlined text, no box** (so it never covers a rectangle of content), with a soft
-fade in/out, shown for the whole beat. Two standalone cards bookend the video.
-
-**Why ASS subtitles (not `drawtext`):** `drawtext`'s `box` ignores its alpha and renders opaque, so a
-translucent background was impossible. ASS libass renders a crisp outline, supports fades (`\fad`), and
-— if we ever want a background — a *genuinely* semi-transparent box (`BorderStyle=3` + `BackColour`
-alpha). We chose outline-only (no box); the mechanism is documented below.
-
-**Title card** (2.8 s, dark `0x16181d`) — see `dev/demo/beats/title-card.ass`:
-
-- **Lathe**
-- A zero-config Java language server
-- *It captures your Maven build's classpath — no LSP setup, no project import*
-
-Wording is deliberate: no "runs from your Maven build" (Lathe does not invoke Maven — it captures the
-build's classpath once) and no "no recompile" (Lathe is a real compiler; it recompiles your edits
-itself). The one thing borrowed from Maven is the build environment, hence *zero-config*.
-
-**Per-beat overlay** — a short chapter title (bold) above the caption line:
-
-| # | Chapter title | Caption |
-|---|---------------|---------|
-| 0 | Capture | (1) Capture your build (2) Open a file — Lathe attaches, no setup |
-| 1 | Everyday editing | Complete, catch the mistake, fix — as you type |
-| 2 | Live annotation processing | Edit a record — the processor regenerates on save |
-| 3 | Modules just work | Edit module-info — resolution follows |
-| 4 | Run | A modular main — live log output |
-| 5 | Debug | Breakpoints, variables, live expression eval |
-| 6 | Test: fail → fix → green | Replayed from the capture |
-
-**End card** (3.0 s, dark `0x16181d`) — see `dev/demo/beats/end-card.ass`:
-
-- **Lathe**
-- github.com/ag-libs/lathe
-- *Java LSP — zero config — runs from your build*
-
-Overlay recipe (beat 0, settled) — an ASS style, `PlayResX/Y = 1800/1080`. A beat may carry **more than
-one** caption, each on its own bounded window (beat 0 has two: build, then attach):
-
-```
-Style: Cap,DejaVu Sans,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,40,40,110,1
-Dialogue: 0,0:00:00.50,0:00:05.00,Cap,,0,0,0,,{\fad(400,500)}Capture your build
-Dialogue: 0,0:00:05.40,0:00:10.40,Cap,,0,0,0,,{\fad(400,500)}Open a file — Lathe attaches, no setup
-```
-
-`BorderStyle=1` (outline + shadow, **no box**), `Outline=3`, `Shadow=2`, `Alignment=2` (bottom-centre),
-`MarginV=110` (clears the statusline), white text, black outline, DejaVu Sans Bold (has the em-dash).
-Each caption shows for a **bounded window** — fade in, hold a few seconds, fade out — not the whole
-clip: set `Start`/`End` to the relevant moment (beat 0: caption 1 during the capture, caption 2 from the
-`nvim` command through workspace-ready) and `{\fad(in,out)}` for the fades. Each beat's clip carries its
-own caption track.
-
-## Assembly & regeneration
-
-Sources are committed (`dev/demo/beats/<beat>.tape` + `<beat>.ass`); the clips are regenerated from
-them against the current Lathe build, so they can be retaken any time. **`dev/demo/record.sh`** does it
-end to end:
-
-- render the two bookend cards from a dark background + their `.ass` (`title-card`, `end-card`);
-- for each beat tape in the cut: render the raw clip (VHS, retried if VHS drops) -> burn the caption in
-  place (`ffmpeg -vf subtitles=<beat>.ass`) -> `docs/videos/<beat>.mp4` (a gitignored intermediate);
-- concatenate cards + beats in the fixed order (`title-card → 0 → 1 → 4 → 5 → 6 → end-card`) with a
-  **re-encode**, not stream-copy: the cards come from a different encoder than VHS, so their stream
-  params differ and `-c copy` would fail -> `docs/demo.mp4` (also gitignored);
-- derive the GIF from the stitched mp4 (`palettegen`/`paletteuse`, 1200px, `dither=none`), publish it
-  under a **content-hashed name** `docs/demo-<hash>.gif`, delete the previous published GIF, and
-  rewrite the README image link to match — **the only committed, published artifact.** The content
-  hash in the filename means browsers/CDNs never serve a stale cached copy: identical bytes keep the
-  same URL, any re-render gets a fresh one.
-
-Seams read as chapter transitions (beats 0/1/2/5 open the same `Main.java`, beat 6 `AppTest.java` in the
-same module, beats 3/4 the `jpms` module), and each caption fades in/out within its own beat.
-
-**Retake after a feature change:**
-
-```
-./dev/demo/prepare.sh    # rebuild+install Lathe, rebuild the invoker fixture, copy the nvim config
-./dev/demo/record.sh     # render + caption + stitch + derive -> docs/demo-<hash>.gif, README repointed
-git add -A docs README.md && git commit   # picks up the new/removed hashed gif and the README link
-```
-
-Each tape's hidden warm re-runs `mvn clean test -Dlathe.capture.only=true` (build cache off), so
-`.lathe` is captured fresh with the current Lathe on every render. Changing one beat = re-render just
-that clip and re-run the concat.
-
-## README alignment (checked)
-
-- Every beat maps to an advertised feature: capture (`Setup`), completion + **live diagnostics**
-  (`Completion` / `Diagnostics`), annotation processing + auto-import (`Completion`), JPMS module graph +
-  module-aware completion (README lead), run a `main` with live output (`Run, test & debug`), debug with
-  variable inspection + **REPL expression evaluation** (same), tests with live output + **a diagnostic on
-  the failing assertion** (same).
-- **Update the README `Demo` section** once recorded: it currently holds a placeholder ("_coming
-  soon_") and a ~40 s run+debug sketch; our clip is ~72 s and broader — replace the TODO with the
-  final MP4 link and refresh the blurb.
-- Claims to confirm on a build (beyond the README's guarantees): beat 6's *navigable stack trace* (the
-  README only promises the inline diagnostic) and beat 3's module-name completion in `requires`.
-
-## Workflow
-
-1. Agree this script.
-2. Update the fixture (`Main.java` baseline, `AppTest` with the failing assertion, `jpms/HelloMain` with
-   the `Thread.sleep` for the streamed run), rebuild the invoker fixture once.
-3. Author + record beats one at a time, source-first: agree the tape, render once, you eyeball the
-   clip; reset the fixture between beats.
-4. Caption each clip, concatenate into the full video.
-
-## Settled decisions
-
-1. **Live run output:** `jpms/HelloMain` uses `Thread.sleep(1000)` between two log lines so beat 4
-   visibly streams.
-2. **Test fails then is fixed:** beat 6 is red -> fix -> green (the fast inner loop); the red run
-   surfaces an inline failure diagnostic plus a navigable stack trace (jump from the trace to source).
-3. **Annotation beat replaces the old generated-code beat** — it navigates into generated code *and*
-   shows it regenerate on save (VERIFIED). It also carries an in-project `gd`.
-4. **Beat 3 is the JPMS module-graph beat (variant A):** add a `java.util.logging` `Logger` -> add
-   `requires java.logging` -> resolves. JPMS is Lathe's headline differentiator (README), so it earns
-   the slot over a generic navigation beat. Pending build-time verification.
-5. **Dropped:** symbol search (module distinction too subtle on screen), JDK go-to-def (generic —
-   superseded by the JPMS beat), standalone cross-module go-to-definition (covered by beat 2's
-   in-project `gd`), and rename (cross-module rename risk — verify and re-add later). Cross-module
-   reach stays implicit in the capture/reactor premise and the run/debug/test replay.
-6. **`app` stays classpath; beat 3 uses the existing `jpms` module** (no fixture restructure). Making
-   `app` modular was rejected: it would break the invoker preconditions and destroy the deliberate
-   mixed reactor. The context switch to `jpms` for beat 3 is framed as a strength — a mixed
-   classpath+JPMS reactor, both working.
-7. **Module split:** `app`/`Main` hosts everyday editing (beat 1), annotation processing (beat 2), and
-   debug (beat 5), plus the test (beat 6, in `AppTest`); the `jpms` module hosts the logger/JPMS beat (3)
-   and the run (beat 4, which runs the logger for live output). Beats 3->4 share `jpms` state (no reset
-   between them).
-8. **Everyday-editing beat added between capture and annotation** (beat 1): completion + a live
-   diagnostic — the "normal Java IDE" grounding before the differentiators, and a lead-in to the
-   save-triggered checks in beat 2. The `var`->`int` type flip is an accepted minor contrivance;
-   completing the *wrong* JDK method (fixed by completing the right one) is a less-hacky fallback.
+Record on a quiet machine, with the Lathe release that ships `:LatheInit`, so the prompt shows a released version.
+Then re-time each `.ass` to its clip (the README shows how) and run `record.sh`, which writes `docs/demo-<hash>.gif` and updates the README's and the lathe.nvim mirror's links to it.

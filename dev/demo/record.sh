@@ -1,20 +1,15 @@
 #!/usr/bin/env bash
-# Re-record the Lathe demo (the published highlight cut) from committed sources
-# (dev/demo/beats/*.tape + *.ass). Run AFTER ./dev/demo/prepare.sh, which rebuilds+installs Lathe
-# (incl. the debug-wired server the debug beat needs), rebuilds the multi-module invoker fixture, and
-# copies the sample config examples/nvim into dev/demo/.nvim. This script only renders + captions + stitches; it
-# does not rebuild Lathe.
+# Re-record the Lathe demo from committed sources (dev/demo/beats/*.tape + *.ass). Run AFTER
+# ./dev/demo/prepare.sh, which builds and installs Lathe, clones spring-petclinic and sets it up with
+# :LatheInit, and copies the sample config examples/nvim into dev/demo/.nvim. This script only renders,
+# captions and stitches; it does not rebuild Lathe. See dev/demo/demo-script.md.
 #
 #   ./dev/demo/prepare.sh
 #   ./dev/demo/record.sh          ->  docs/demo-<hash>.gif (the published, committed artifact)
 #
-# The cut (≈64 s): a title card, then the five universal beats, then an end card.
+# The cut (≈60 s): a title card, five beats, an end card. The beat numbers are the original tour's.
 #
 #   title-card → 0 :LatheInit → 1 everyday editing → 4 run → 5 debug → 6 test → end-card
-#
-# Beats 2 (annotation processing) and 3 (JPMS module graph) are retained under dev/demo/beats/ as an
-# optional deep-dive but are deliberately NOT in this cut — they are the longest, most niche beats and
-# they trip VHS's non-initial-buffer 2x zoom. Add them back to BEATS below to rebuild the full tour.
 #
 # GIF-first: the per-clip docs/videos/*.mp4 and the stitched docs/demo.mp4 are regenerable
 # intermediates (gitignored); only the content-hashed docs/demo-<hash>.gif is committed and embedded
@@ -33,6 +28,9 @@ work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 # The bookend cards are flat text over a dark background (matching the terminal), rendered from an ASS
 # with no tape. The beats are VHS tapes, captioned in place. Cards first/last; beats in the middle.
 card_bg="0x16181d"
+# A caption bar below the terminal, in the cards' colour: captions sit in it, never over the code or
+# the output a beat shows. The .ass files lay out on the padded height (PlayResY 1190).
+caption_bar=110
 title_dur="2.8"
 end_dur="3.0"
 beats=(beat0-init beat1-edit beat4-run beat5-debug beat6-test)
@@ -42,7 +40,7 @@ min_clip_s=6            # a good render is always longer than this; shorter => V
 render_card() {
   local name="$1" dur="$2"
   echo "[demo] rendering card $name (${dur}s)"
-  ffmpeg -y -f lavfi -i "color=c=$card_bg:s=1800x1080:r=25:d=$dur" \
+  ffmpeg -y -f lavfi -i "color=c=$card_bg:s=1800x$((1080 + caption_bar)):r=25:d=$dur" \
     -vf "subtitles=dev/demo/beats/$name.ass" \
     -c:v libx264 -pix_fmt yuv420p -crf 20 "docs/videos/$name.mp4" >/dev/null 2>&1
 }
@@ -62,7 +60,7 @@ render_beat() {
       dur="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$out" 2>/dev/null || echo 0)"
       if awk "BEGIN{exit !(${dur:-0} > $min_clip_s)}"; then
         echo "[demo] captioning $base (${dur}s)"
-        ffmpeg -y -i "$out" -vf "subtitles=$ass" -c:a copy "$work/$base.mp4" >/dev/null 2>&1
+        ffmpeg -y -i "$out" -vf "pad=iw:ih+$caption_bar:0:0:color=$card_bg,subtitles=$ass" -c:a copy "$work/$base.mp4" >/dev/null 2>&1
         mv "$work/$base.mp4" "$out"
         return 0
       fi
