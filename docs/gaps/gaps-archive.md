@@ -15685,6 +15685,40 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-111 — A file tool given `path:line` says only that it is not a `.java` file — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP file tools (`get_diagnostics`, `outline`, and the position tools' `file`).**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`get_diagnostics {file: "webserver/webserver/src/main/java/io/helidon/webserver/ServerListener.java:134"}` answers "…ServerListener.java:134 is not a .java file".
+Agents often copy a location as `path:line` (or `path:line:column`, the form Lathe's own answers print), and the answer does not say what to change.
+
+### Expected
+
+A `.java` path followed by `:line` or `:line:column` gets a note to pass the path alone, with the line and column apart; or the tools that take a position read them from it.
+
+### Resolution
+
+A file argument that ends in `.java` and then `:line` or `:line:column` is read as a location before it becomes a path, in the file tools, the position tools and `verify_change`'s `files`: the answer says it "is a location, not a file", names the path to pass as the file, and the line and column to pass as `line` and `column` where the tool takes them.
+It is read before the path, as on Windows a colon in a file name would fail the path itself.
+
+Not covered: reading the line and column out of such a location, so a position tool answers it, which the tools leave to the agent's next call.
+
+### Regression targets
+
+- `LatheMcpToolsTest.fileTools_fileGivenAsALocation_returnErrorNamingThePath`
+
+---
+
 ## MC-110 — `search_symbols` lists an exact match below partial ones when the match is generated — done
 
 **Status: done** (2026-11-25)
