@@ -5031,7 +5031,7 @@ Not covered: a lambda block whose `};` is not typed yet (`Runnable r = () -> {` 
 
 - `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedBlockAfterAnEdit_offersTheReceiversMembers` (through the module compiler, with the analysis from before the edit: a switch on a JDK type and on the class's own type, a colon case; an `if` block and a lambda block)
 - `CompletionUnclosedBlockTest.completion_braceLeftOpenInALaterMethod_offersTheReceiversMembers`
-- `CompletionCaseTest.completion_memberAccessInUnclosedSwitchLabel_offersTheReceiversMembers` (arrow, guarded arrow, `default ->`, colon, string, `char` and escaped-quote labels, record pattern)
+- `CompletionCaseTest.completion_memberAccessInUnclosedSwitchLabel_offersTheReceiversMembers` (arrow, `default ->`, colon, string, `char` and escaped-quote labels) and, on JDK 21+, `completion_memberAccessInUnclosedJava21SwitchLabel_offersTheReceiversMembers` (a guard, a record pattern)
 - `CompletionCaseTest.completion_memberAccessInLambdaBodyBeforeAStatement_offersTheReceiversMembers` and `completion_memberAccessAfterTernaryColon_offersTheReceiversMembers`
 
 ---

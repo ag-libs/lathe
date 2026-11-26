@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -64,14 +66,27 @@ class CompletionCaseTest extends CompletionTestSupport {
   static Stream<Arguments> unclosedSwitchLabels() {
     return Stream.of(
         unclosedSwitch("arrowCase", "case String str -> str.§"),
-        unclosedSwitch("guardedArrowCase", "case String str when str.length() > 2 -> str.§"),
         unclosedSwitch("defaultArrow", "default -> text.§"),
         unclosedSwitch("colonCase", "case String str:\n        str.§"),
         unclosedSwitch("stringLabel", "case \"a;b\" -> text.§"),
         unclosedSwitch("escapedQuoteInStringLabel", "case \"x\\\";y\" -> text.§"),
         unclosedSwitch("charLabel", "case ';' -> text.§"),
         unclosedSwitch("braceCharLabel", "case '}' -> text.§"),
-        unclosedSwitch("escapedQuoteCharLabel", "case '\\'' -> text.§"),
+        unclosedSwitch("escapedQuoteCharLabel", "case '\\'' -> text.§"));
+  }
+
+  // A guard and a record pattern are Java 21's; the fixture compiles at the test JDK's level.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unclosedJava21SwitchLabels")
+  @EnabledForJreRange(min = JRE.JAVA_21)
+  void completion_memberAccessInUnclosedJava21SwitchLabel_offersTheReceiversMembers(
+      final String label, final String source) {
+    assertThat(labels(fixture.complete(source))).as(label).contains("isEmpty");
+  }
+
+  static Stream<Arguments> unclosedJava21SwitchLabels() {
+    return Stream.of(
+        unclosedSwitch("guardedArrowCase", "case String str when str.length() > 2 -> str.§"),
         unclosedSwitch("recordPattern", "case Box(String inner) -> inner.§"));
   }
 
