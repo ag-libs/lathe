@@ -1331,31 +1331,6 @@ Members of the pattern variable's type, as with the block closed: the recovery t
 
 None yet.
 
-## CQ-0080 — `import static Type.` offers `class`
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: editor completion in a static import.**
-
-Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
-
-### Observed behaviour
-
-`import static io.helidon.webserver.WebServer.§` lists `DEFAULT_SOCKET_NAME`, `builder`, `create` and `class`; `import static java.util.List.§` lists `class` among `of` and `copyOf`.
-`import static java.util.List.class;` does not compile: a static import names a static member.
-
-### Expected
-
-Static members and member types only, no `class`.
-
-### Regression targets
-
-None yet.
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync

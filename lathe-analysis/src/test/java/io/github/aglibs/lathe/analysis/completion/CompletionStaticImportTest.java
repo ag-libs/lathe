@@ -60,4 +60,19 @@ class CompletionStaticImportTest extends CompletionTestSupport {
         .filteredOn(item -> item.getLabel().equals("requireNonNull"))
         .allMatch(item -> item.getAdditionalTextEdits() == null);
   }
+
+  // CQ-0080: a static import names a static member or a member type, never `class`; the same type
+  // as a receiver in code still offers its class literal.
+  @Test
+  void completion_staticImportOfAType_offersNoClassLiteral() {
+    final List<CompletionItem> imported =
+        fixture.complete(
+            """
+            import static java.util.Map.§
+            class Test {}""");
+
+    assertThat(labels(imported)).contains("of", "entry", "Entry").doesNotContain("class");
+    assertThat(labels(fixture.complete("class Test { Object o = java.util.Map.§ }")))
+        .contains("class");
+  }
 }

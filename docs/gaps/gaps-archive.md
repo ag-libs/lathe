@@ -4975,6 +4975,39 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0080 — `import static Type.` offers `class` — done
+
+**Status: done** (2026-11-25)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: editor completion in a static import.**
+
+Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
+
+### Observed behaviour
+
+`import static io.helidon.webserver.WebServer.§` lists `DEFAULT_SOCKET_NAME`, `builder`, `create` and `class`; `import static java.util.List.§` lists `class` among `of` and `copyOf`.
+`import static java.util.List.class;` does not compile: a static import names a static member.
+
+### Expected
+
+Static members and member types only, no `class`.
+
+### Resolution
+
+A static import is static access, so `MemberAccessCompleter` offered the class literal it offers a type receiver in code; it now leaves `class` out where the sentinel is a static import's.
+Static members and member types (`Map.Entry`) are still offered, and `java.util.Map.` in code still offers `class`.
+
+### Regression targets
+
+- `CompletionStaticImportTest.completion_staticImportOfAType_offersNoClassLiteral`
+
+---
+
+
 ## CQ-0078 — Completion offers package-private `java.lang` types — done
 
 **Status: done** (2026-11-24)
