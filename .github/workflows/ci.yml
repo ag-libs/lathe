@@ -120,6 +120,18 @@ jobs:
         if: always()
         run: grep -H "\[sync\] jdk" lathe-maven-plugin/target/it/*/build.log || true
 
+      - name: Verify javadoc and sources generate
+        # Catch javadoc/source-jar breakage here rather than mid-release, since
+        # the release profile requires both for Maven Central. They don't depend on the OS or the
+        # test JDK, so the release baseline row checks them. Before the Maven repository is saved,
+        # so the plugins this alone resolves reach the cache, and named in full, so Maven looks up
+        # no plugin prefix on Central (the versions come from the root POM's pluginManagement).
+        if: matrix.java == '21' && runner.os == 'Linux'
+        run: >-
+          mvn -B --no-transfer-progress -DskipTests
+          org.apache.maven.plugins:maven-javadoc-plugin:jar
+          org.apache.maven.plugins:maven-source-plugin:jar-no-fork
+
       - name: Keep the invoker fixtures' downloads
         # The fixtures resolve into lathe-maven-plugin/target/local-repo, which the cache never
         # sees, so every run downloaded what only they use (formatters, Lombok, JUnit 5). Copied
@@ -152,13 +164,6 @@ jobs:
             ~/.m2/repository
             !~/.m2/repository/io/github/ag-libs
           key: maven-${{ runner.os }}-2-${{ hashFiles('**/pom.xml', '!**/target/**') }}
-
-      - name: Verify javadoc and sources generate
-        # Catch javadoc/source-jar breakage here rather than mid-release, since
-        # the release profile requires both for Maven Central. They don't depend on the OS or the
-        # test JDK, so the release baseline row checks them.
-        if: matrix.java == '21' && runner.os == 'Linux'
-        run: mvn -B --no-transfer-progress -DskipTests javadoc:jar source:jar-no-fork
 
       - name: Runner info at the end
         if: always()

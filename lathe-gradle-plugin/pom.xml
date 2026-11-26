@@ -16,8 +16,8 @@
     Lathe jars and runs the Gradle build against it.</description>
 
   <properties>
-    <!-- -Dlathe.gradle.skip=true skips the Gradle build; -Dlathe.gradle.home=<dir> runs <dir>/bin/gradle
-         instead of the gradle on the PATH. -->
+    <!-- -Dlathe.gradle.skip=true skips the Gradle build (not fill-lathe-repo); -Dlathe.gradle.home=<dir>
+         runs <dir>/bin/gradle instead of the gradle on the PATH. -->
     <lathe.gradle.skip>false</lathe.gradle.skip>
     <lathe.gradle.bin/>
     <lathe.gradle.script>gradle</lathe.gradle.script>
@@ -100,7 +100,9 @@
                    resolve come with their dependencies, from ~/.m2 (CI's cache), so the fixtures
                    find them here rather than on Central: the Spotless and spring-javaformat
                    releases Lathe pins, google-java-format 1.28.0 (what the fixtures declare, and the
-                   pinned Spotless's default on JDK 17) and that default on JDK 21+. -->
+                   pinned Spotless's default on JDK 17) and that default on JDK 21+. It runs when the
+                   Gradle build is skipped too: CI's build rows skip it, and they save the cache the
+                   Gradle jobs restore, so what this resolves must reach the cache from them. -->
               <extraArtifacts>
                 <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
                 <extraArtifact>com.diffplug.spotless:spotless-lib:${spotless-lib.version}:jar</extraArtifact>
@@ -110,7 +112,6 @@
                 <extraArtifact>io.spring.javaformat:spring-javaformat-formatter:${spring-javaformat.version}:jar</extraArtifact>
                 <extraArtifact>io.spring.javaformat:spring-javaformat-formatter-eclipse-runtime:${spring-javaformat.version}:jar</extraArtifact>
               </extraArtifacts>
-              <skipInstallation>${lathe.gradle.skip}</skipInstallation>
             </configuration>
           </execution>
         </executions>
