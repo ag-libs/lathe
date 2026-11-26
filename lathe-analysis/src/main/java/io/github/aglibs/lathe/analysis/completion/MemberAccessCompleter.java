@@ -174,10 +174,15 @@ final class MemberAccessCompleter {
             ? generator.proposeNestedTypes(te, injected.prefix(), scope).stream()
             : Stream.empty();
 
+    // A static import names a static member or a member type, never `class` (CQ-0080).
+    final boolean classLiteral =
+        !memberReference
+            && isStaticAccess
+            && parsed.sentinelContext() != SentinelContext.STATIC_IMPORT;
     final List<CompletionCandidate> candidates =
         Stream.concat(
                 Stream.concat(members.stream(), nestedTypes),
-                !memberReference && isStaticAccess
+                classLiteral
                     ? TypeReferenceCompleter.classLiteralCandidates(injected.prefix()).stream()
                     : Stream.of())
             .toList();
