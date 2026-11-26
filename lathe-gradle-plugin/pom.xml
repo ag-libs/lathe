@@ -19,6 +19,9 @@
     <!-- -Dlathe.gradle.skip=true skips the Gradle build; -Dlathe.gradle.home=<dir> runs <dir>/bin/gradle
          instead of the gradle on the PATH. -->
     <lathe.gradle.skip>false</lathe.gradle.skip>
+    <!-- Whether fill-lathe-repo is skipped too; CI's cache-saving build rows skip the Gradle build but
+         set this to false, so the cache holds what the fill resolves for the Gradle jobs. -->
+    <lathe.gradle.skipRepo>${lathe.gradle.skip}</lathe.gradle.skipRepo>
     <lathe.gradle.bin/>
     <lathe.gradle.script>gradle</lathe.gradle.script>
     <!-- The Gradle task the build runs; the release runs publishPlugins once the deploy succeeded. -->
@@ -110,7 +113,7 @@
                 <extraArtifact>io.spring.javaformat:spring-javaformat-formatter:${spring-javaformat.version}:jar</extraArtifact>
                 <extraArtifact>io.spring.javaformat:spring-javaformat-formatter-eclipse-runtime:${spring-javaformat.version}:jar</extraArtifact>
               </extraArtifacts>
-              <skipInstallation>${lathe.gradle.skip}</skipInstallation>
+              <skipInstallation>${lathe.gradle.skipRepo}</skipInstallation>
             </configuration>
           </execution>
         </executions>
