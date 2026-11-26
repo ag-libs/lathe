@@ -191,14 +191,17 @@ final class LatheFormatter {
       return null;
     }
 
+    // An engine that is no Spotless step (spring) completes without Spotless, and its version
+    // owes nothing to the Spotless Lathe pins.
+    final boolean spotlessStep = FormatterSteps.spotlessStep(declared.engine());
     final Object applied = project.getPlugins().findPlugin(SPOTLESS_PLUGIN);
-    try (var pinned = applied == null ? pinnedSpotlessLoader() : null) {
+    try (var pinned = applied == null && spotlessStep ? pinnedSpotlessLoader() : null) {
       final ClassLoader spotless = applied != null ? applied.getClass().getClassLoader() : pinned;
       final FormatterSpec spec = FormatterSteps.withDefaults(local.get(), spotless);
       return new Completion(
           spec,
           FormatterSteps.jars(spec, spotless),
-          applied == null && declared.version().isBlank());
+          spotlessStep && applied == null && declared.version().isBlank());
     } catch (final ReflectiveOperationException | IOException | RuntimeException e) {
       project
           .getLogger()

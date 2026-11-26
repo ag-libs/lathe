@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
@@ -222,6 +223,31 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .showMessage(
             argThat(
                 m -> m.getType() == MessageType.Info && m.getMessage().contains("formatted in")));
+  }
+
+  @Test
+  void formatting_springSpec_formatsWithSpringJavaFormat() throws Exception {
+    final var spec =
+        new FormatterSpec(
+            LatheFlags.FORMATTER_SPRING,
+            List.of(),
+            "0.0.47",
+            Map.of(),
+            FormatterFixtures.springJavaFormatClasspath());
+    host.initialize(tmp);
+    host.execute(session -> session.formats().use(FormatEngines.forSpec(spec, tmp), spec));
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
+
+    final List<? extends TextEdit> edits =
+        service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(edits)
+        .singleElement()
+        .extracting(TextEdit::getNewText)
+        .asString()
+        .contains("\tint x;");
   }
 
   @Test
