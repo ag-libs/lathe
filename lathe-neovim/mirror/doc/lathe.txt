@@ -49,12 +49,13 @@ For setup options, editing commands, test and debugger setup, and the example ke
 FORMATTING                                              *lathe-formatter*
 
 The formatter is the project's own, not an editor setting. On Maven, Lathe
-runs the formatter the project's Spotless configuration names. Otherwise,
-declare it in `lathe-style.json` at the project root: >json
+runs the formatter the project's Spotless configuration names, or its
+spring-javaformat plugin; on Gradle, a root project's spring-javaformat
+plugin. Otherwise, declare it in `lathe-style.json` at the project root: >json
     { "formatter": { "engine": "google", "version": "1.28.0" } }
 <
 The next build or `:LatheSync` resolves its jars; restart the server to use
-it. Engines: `google`, `aosp`, `palantir`, `eclipse`, `command`,
+it. Engines: `google`, `aosp`, `palantir`, `eclipse`, `spring`, `command`,
 `command-file`, `none`. See the installation guide:
   https://github.com/ag-libs/lathe/blob/main/docs/guide/installation.md
 

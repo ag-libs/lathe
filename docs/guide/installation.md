@@ -88,8 +88,9 @@ The server uses the captured compile options for modules targeting older release
 ### What runs automatically
 
 The formatter is the project's own; there is no editor-wide formatter setting.
-On Maven, the sync derives it from your `spotless-maven-plugin` `<java>` config.
-Elsewhere — a Gradle build, or Maven without Spotless — you declare it in a `lathe-style.json`, as described under [Declaring it](#declaring-it), and the sync resolves it the same way.
+On Maven, the sync derives it from your `spotless-maven-plugin` `<java>` config, or else from `spring-javaformat-maven-plugin` (see [spring-javaformat](#spring-javaformat)).
+On Gradle, it detects a root project that applies the `io.spring.javaformat` plugin.
+Elsewhere — Spotless on Gradle, or a build with neither — you declare it in a `lathe-style.json`, as described under [Declaring it](#declaring-it), and the sync resolves it the same way.
 
 | Spotless step | Lathe engine | Range formatting | Notes |
 |---|---|---|---|
@@ -117,6 +118,20 @@ Other limits:
 - After editing an Eclipse profile, restart the language server.
 - If the formatter cannot run (a missing jar, an unsupported JDK), the first failure shows a message with the reason; later ones are only logged.
 
+### spring-javaformat
+
+A project that formats with spring-javaformat (`spring-javaformat-maven-plugin`, or the `io.spring.javaformat` Gradle plugin) gets the `spring` engine, at the plugin's release.
+The sync resolves the formatter and its Eclipse runtime, and the server runs them in-process, whole files and ranges.
+It formats as the plugin's `apply` goal does:
+
+- the settings come from `.springjavaformatconfig` (the Java baseline, tabs or spaces), read from the module's directory upwards, as the plugin reads them from the project's; without one, the defaults (tabs);
+- one pass over the file; source that does not parse is left as it is;
+- indentation as you type follows `.editorconfig`, as for Eclipse.
+
+When a build runs both Spotless and spring-javaformat, Spotless wins.
+On Maven, one release serves the workspace: the root's plugin, or the one every Java module runs.
+On Gradle, only a root project that applies the plugin is detected; a build that applies it only in subprojects declares `{ "formatter": { "engine": "spring" } }`, which then takes the release Lathe pins (0.0.47) unless it names a `version`.
+
 ### Declaring it
 
 A `lathe-style.json` at the repo root names the formatter, for any build tool:
@@ -125,19 +140,21 @@ A `lathe-style.json` at the repo root names the formatter, for any build tool:
 { "formatter": { "engine": "google", "version": "1.28.0", "options": { "style": "AOSP" } } }
 ```
 
-- `engine`: `google`, `aosp`, `palantir`, `eclipse`, or one of the engines below that need no jars.
+- `engine`: `google`, `aosp`, `palantir`, `eclipse`, `spring`, or one of the engines below that need no jars.
 - `version` (optional): the formatter's release, not Spotless's — see [The formatter version](#the-formatter-version).
 - `options` (optional): the Spotless step's options from the table above (`reorderImports`, `reflowLongStrings`, `formatJavadoc`, `style`, `groupArtifact`); for `eclipse`, `file` names the profile, relative to the repo root.
 
 #### The formatter version
 
-`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for palantir-java-format, `4.41` for Eclipse.
+`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for palantir-java-format, `4.41` for Eclipse, `0.0.47` for spring-javaformat.
 It is what the jars are resolved at, so pin it when the editor must format exactly as your CI does.
 
 Left out, it is the default Spotless picks:
 
 - the default of the build's Spotless when the build has one (on Gradle, only a Spotless applied in the root project is seen; when only subprojects apply it, declare the version, and the sync warns until you do);
 - otherwise the default of the Spotless release Lathe pins.
+
+For `spring`, it is the release of the build's spring-javaformat plugin (on Gradle, the root's), else the release Lathe pins.
 
 Spotless picks the newest release that runs on the JVM it runs on: the JVM that runs the build (on Gradle, the daemon's JDK, not a toolchain's).
 The language server runs the formatter on the build's compiling JDK instead (`.lathe/java-home`), which a Gradle toolchain can make older.

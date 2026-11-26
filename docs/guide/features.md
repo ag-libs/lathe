@@ -34,8 +34,9 @@ In a Lombok project, navigating to a generated accessor takes you back to its fi
 - **Rename a symbol.** Use **Rename** on a declaration or reference.
   Lathe follows uses and overrides across modules and reports a conflict if the new name would change what a use refers to.
 - **Format a file or selection.** Lathe uses the project’s formatter.
-  On Maven, sync reads the supported Java formatter from Spotless.
-  On Gradle or Maven without Spotless, declare it in `lathe-style.json`.
+  On Maven, sync reads the supported Java formatter from Spotless, or spring-javaformat's plugin.
+  On Gradle, sync detects spring-javaformat applied in the root project.
+  Otherwise, declare it in `lathe-style.json`.
   External formatter commands support whole files.
   [Formatter setup](installation.md#choosing-overriding-or-opting-out-of-the-formatter)
 
