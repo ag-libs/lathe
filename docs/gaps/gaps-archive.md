@@ -71,7 +71,8 @@ A `spring` engine runs spring-javaformat as its build plugin does.
 The sync resolves the formatter and its Eclipse runtime (provided scope in the formatter's POM, so named too) at the plugin's release, else 0.0.47, the release Lathe pins.
 The server loads them in an isolated classloader, reads `.springjavaformatconfig` upwards from the module's directory as the plugin reads it from the project's, and formats in one pass, whole files and ranges.
 Maven detects `spring-javaformat-maven-plugin` (its version a resolved property), with the rule Spotless uses for the project whose plugin applies; Gradle detects a root project's `io.spring.javaformat` plugin, its release read from the plugin jar's manifest.
-Spotless wins in a build that runs both, including a Spotless setup sync refuses; a `spring` declaration in `lathe-style.json` works on any build and takes the build plugin's release when it names none.
+Spotless wins in a Maven build that runs both, including a Spotless setup sync refuses; a Gradle build that applies both formats nothing until `lathe-style.json` declares the formatter, as for Spotless alone.
+A `spring` declaration in `lathe-style.json` works on any build and takes the build plugin's release when it names none.
 On Petclinic, all 50 sources format unchanged on JDK 17 and 27, a damaged `Owner.java` comes back byte for byte through `format_file`, and `./mvnw spring-javaformat:validate` passes after it.
 
 Not covered: formatter-maven-plugin (net.revelc, as Quarkus uses, with `impsort-maven-plugin`), whose Eclipse configuration the Eclipse engine could run; on Gradle, spring-javaformat applied only in subprojects, which declares `spring` in `lathe-style.json`.
@@ -88,6 +89,8 @@ Not covered: formatter-maven-plugin (net.revelc, as Quarkus uses, with `impsort-
 - invoker fixture `formatters`, profile `spring-javaformat` (`FormatterSyncTest.sync_springJavaFormat_resolvesFormatterAndRuntimeAtThePluginVersion`)
 - `LatheFormatterFunctionalTest.sync_rootAppliesSpringJavaFormat_springEngineAtThePluginRelease`
 - `LatheFormatterFunctionalTest.sync_springJavaFormatBesideSpotless_formatsNothingAndWarns`
+- `LatheFormatterFunctionalTest.sync_springJavaFormatOnlyInASubproject_notDetected`
+- `LatheFormatterFunctionalTest.sync_springJavaFormatWithoutRecordedRelease_pinnedReleaseWithAWarning`
 
 ---
 

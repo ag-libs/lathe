@@ -128,7 +128,8 @@ It formats as the plugin's `apply` goal does:
 - one pass over the file; source that does not parse is left as it is;
 - indentation as you type follows `.editorconfig`, as for Eclipse.
 
-When a build runs both Spotless and spring-javaformat, Spotless wins.
+When a Maven build runs both Spotless and spring-javaformat, Spotless wins.
+A Gradle build that applies both formats nothing, and the sync warns, until `lathe-style.json` declares the formatter: Lathe cannot read Spotless's settings on Gradle.
 On Maven, one release serves the workspace: the root's plugin, or the one every Java module runs.
 On Gradle, only a root project that applies the plugin is detected; a build that applies it only in subprojects declares `{ "formatter": { "engine": "spring" } }`, which then takes the release Lathe pins (0.0.47) unless it names a `version`.
 
