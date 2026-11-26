@@ -60,8 +60,8 @@ Captions: *Set a breakpoint and debug the test* · *Inspect the paused frame* ·
 Captions: *Run the tests — one fails* · *The assertion, with its stack trace* · *Fix it and save* · *Run again — green*.
 
 ### Cards
-Title: **Lathe** · *A zero-config Java language server* · *Open a Maven or Gradle project, run :LatheInit — no build changes*.
-End: **Lathe** · *github.com/ag-libs/lathe* · *Java language server — zero config, no project import*.
+Title: **Lathe** · *A zero-config Java language server* · *Open any Maven or Gradle project — no build changes, no project import*.
+End: **Lathe** · *github.com/ag-libs/lathe* · *Neovim · VS Code · Emacs · Zed*.
 Wording is deliberate: Lathe does not run Maven to serve the editor (it records the build's settings once), so no card says it "runs from your build".
 
 ## Writing a tape
