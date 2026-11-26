@@ -15229,6 +15229,37 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-15 — `:LatheResourceFind <name>` ignores the name without Telescope — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheResourceFind [name]` in a Neovim without Telescope, where the built-in `lathe.pick` picker answers.**
+
+Found by the exploratory round on the Neovim client (2026-11-26, `main` at `568c461`, Helidon at `27a692eb0d`).
+
+### Observed behaviour
+
+`:LatheResourceFind application.yml` in Helidon opened the built-in picker with an empty prompt over all 2,370 resources, as `:LatheResourceFind` with no name does.
+`util.pick` handed the name, `default_text`, to Telescope alone: with Telescope the prompt starts with it and lists 250 results; the fallback never received it.
+`:LatheResourceFind` is the one command that passes a default text, and the Neovim guide documents it as `:LatheResourceFind [name]`.
+
+### Resolution
+
+`util.pick` passes `default_text` to `lathe.pick` too; the picker starts its prompt with it, filters the list by it before the first keystroke, and leaves the cursor after it.
+Its match highlights, now drawn as it opens, turn `matchfuzzypos`'s character positions into byte columns, so a resource row's leading icon no longer shifts them.
+On Helidon without Telescope, `:LatheResourceFind application.yml` opens with the name in the prompt and 31 matching resources.
+
+### Regression targets
+
+- `lathe-neovim/test/pick_spec.lua`: "a default text fills the prompt", "and filters the list from the start", "highlights fall on the matched characters", "no default text: an empty prompt"
+- `lathe-neovim/test/resources_spec.lua`: "the name reaches the picker as its default text"
+
+---
+
 ## NV-14 — On a project with both a Maven and a Gradle build, `:LatheInit` picks Gradle without saying Maven is there — done
 
 **Status: done** (2026-11-25)
