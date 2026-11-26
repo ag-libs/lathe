@@ -677,35 +677,6 @@ None yet.
 
 ---
 
-## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
-
-**Status: accepted** (triaged 2026-11-26: the feature freeze is lifted for the spring-javaformat part, so Petclinic, the demo project, formats; formatter-maven-plugin stays deferred)
-**Value: medium — Size: M**
-
-**Kind: feature**
-
-Signal: Petclinic is the demo project, and jdtls formats it in the wrong style (spaces for tabs, Javadoc wrapped at 80 columns).
-
-**Affects: `format_file`, `:LatheFormat` and the editor's formatting on Maven builds.**
-
-Found by the exploratory round on Spring Petclinic and Quarkus (2026-11-17).
-
-### Observed behaviour
-
-Petclinic formats with `spring-javaformat-maven-plugin`, Quarkus with `formatter-maven-plugin` (net.revelc) and `impsort-maven-plugin`.
-On both, `format_file` answers "No formatter for this workspace: the project pins none (no Spotless Java step)": `MavenStyle` reads only `spotless-maven-plugin`.
-Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
-
-### Fix direction
-
-Read those plugins' configuration as a Spotless step is read: spring-javaformat as its own engine, formatter-maven-plugin's Eclipse configuration through the existing Eclipse engine.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-114 — Code generation and refactorings jdtls offers that Lathe does not
 
 **Status: deferred** (triaged 2026-11-21: features, and the feature freeze holds; the jdtls comparison reports each as a row Lathe lacks)
@@ -749,7 +720,7 @@ Extract interface was not offered by jdtls 1.51 at a class name; the comparison'
 
 What both offered at the same positions: extract a variable, a constant, a field and a method (jdtls through a refactoring command, Lathe as an edit or, for a method, after a resolve), and conversion to `var`.
 
-Covered by gaps of their own, and so not here: selection range (EG-018), code lens (EG-064), inlay hints (EG-091), member symbol search (EG-092), formatting with spring-javaformat or formatter-maven-plugin (EG-113).
+Covered by gaps of their own, and so not here: selection range (EG-018), code lens (EG-064), inlay hints (EG-091), member symbol search (EG-092).
 
 ### Fix direction
 

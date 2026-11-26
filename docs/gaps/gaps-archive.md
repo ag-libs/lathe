@@ -45,6 +45,52 @@ Not covered: a line holding the name qualified twice is one row, at the first; t
 
 ---
 
+## EG-113 — Formatting recognizes only Spotless, not spring-javaformat — done
+
+**Status: done** (2026-11-26; triaged 2026-11-26: the feature freeze lifted for the spring-javaformat part, so Petclinic, the demo project, formats)
+
+**Kind: feature**
+
+**Value: medium — Size: M**
+
+Signal: Petclinic is the demo project, and jdtls formats it in the wrong style (spaces for tabs, Javadoc wrapped at 80 columns).
+
+**Affects: `format_file`, `:LatheFormat` and the editor's formatting on Spring builds.**
+
+Found by the exploratory round on Spring Petclinic and Quarkus (2026-11-17).
+
+### Observed behaviour
+
+Petclinic formats with `spring-javaformat-maven-plugin`.
+`format_file` answered "No formatter for this workspace: the project pins none (no Spotless Java step)": `MavenStyle` read only `spotless-maven-plugin`.
+Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
+
+### Resolution
+
+A `spring` engine runs spring-javaformat as its build plugin does.
+The sync resolves the formatter and its Eclipse runtime (provided scope in the formatter's POM, so named too) at the plugin's release, else 0.0.47, the release Lathe pins.
+The server loads them in an isolated classloader, reads `.springjavaformatconfig` upwards from the module's directory as the plugin reads it from the project's, and formats in one pass, whole files and ranges.
+Maven detects `spring-javaformat-maven-plugin` (its version a resolved property), with the rule Spotless uses for the project whose plugin applies; Gradle detects a root project's `io.spring.javaformat` plugin, its release read from the plugin jar's manifest.
+Spotless wins in a build that runs both, including a Spotless setup sync refuses; a `spring` declaration in `lathe-style.json` works on any build and takes the build plugin's release when it names none.
+On Petclinic, all 50 sources format unchanged on JDK 17 and 27, a damaged `Owner.java` comes back byte for byte through `format_file`, and `./mvnw spring-javaformat:validate` passes after it.
+
+Not covered: formatter-maven-plugin (net.revelc, as Quarkus uses, with `impsort-maven-plugin`), whose Eclipse configuration the Eclipse engine could run; on Gradle, spring-javaformat applied only in subprojects, which declares `spring` in `lathe-style.json`.
+
+### Regression targets
+
+- `SpringFormatEngineTest` (default tabs in one pass, CRLF, a module's spaces configuration, a configuration below the module ignored, ranges, unparsable source, a missing Eclipse runtime)
+- `FormatterStepsTest.withDefaults_springWithAndWithoutVersion_pinnedReleaseFillsOnlyAMissingOne`
+- `FormatterStepsTest.resolve_spring_formatterAndEclipseRuntimeEachResolvedTransitively`
+- `LatheTextDocumentServiceTest.formatting_springSpec_formatsWithSpringJavaFormat`
+- `MavenStyleTest.write_spotlessAndSpringJavaFormat_spotlessWins`
+- `MavenStyleTest.write_refusedSpotlessAndSpringJavaFormat_writesNoStyle`
+- `MavenStyleTest.withBuildSpringVersion_declaredSpring_takesTheBuildPluginVersionOnlyWhenUnset`
+- invoker fixture `formatters`, profile `spring-javaformat` (`FormatterSyncTest.sync_springJavaFormat_resolvesFormatterAndRuntimeAtThePluginVersion`)
+- `LatheFormatterFunctionalTest.sync_rootAppliesSpringJavaFormat_springEngineAtThePluginRelease`
+- `LatheFormatterFunctionalTest.sync_springJavaFormatBesideSpotless_formatsNothingAndWarns`
+
+---
+
 ## EG-129 — CamelHumps symbol matching matches letters that start no word — done
 
 **Status: done** (2026-11-25)
