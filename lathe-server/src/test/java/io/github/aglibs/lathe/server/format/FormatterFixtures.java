@@ -48,6 +48,15 @@ public final class FormatterFixtures {
     return new EclipseFormatEngine(profile, classpath("eclipse-jdt"));
   }
 
+  public static List<String> springJavaFormatClasspath() {
+    return classpath("spring-javaformat");
+  }
+
+  // root is the workspace root the target's module is relative to.
+  static FormatEngine springJavaFormat(final Path root) {
+    return new SpringFormatEngine("0.0.47", springJavaFormatClasspath(), root);
+  }
+
   private static List<String> classpath(final String formatter) {
     return IOUtil.unchecked(
             () ->

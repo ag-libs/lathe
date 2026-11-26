@@ -164,6 +164,36 @@ class FormatterStepsTest {
         .containsExactly("com.google.googlejavaformat:google-java-format:1.28.0");
   }
 
+  // spring-javaformat is no Spotless step: it completes without a Spotless classloader.
+  @Test
+  void withDefaults_springWithAndWithoutVersion_pinnedReleaseFillsOnlyAMissingOne()
+      throws Exception {
+    final FormatterSpec bare = FormatterSteps.withDefaults(spring(""), null);
+    final FormatterSpec declared = FormatterSteps.withDefaults(spring("0.0.43"), null);
+
+    assertThat(bare.version()).matches("0\\.0\\.\\d+");
+    assertThat(bare.options()).isEmpty();
+    assertThat(declared.version()).isEqualTo("0.0.43");
+    assertThat(FormatterSteps.spotlessStep(LatheFlags.FORMATTER_SPRING)).isFalse();
+    assertThat(FormatterSteps.spotlessStep(LatheFlags.FORMATTER_ECLIPSE)).isTrue();
+  }
+
+  // The formatter's POM has its Eclipse runtime in provided scope, so both are resolved.
+  @Test
+  void resolve_spring_formatterAndEclipseRuntimeEachResolvedTransitively() throws Exception {
+    final var resolver = new RecordingResolver();
+
+    final FormatterSpec spring = FormatterSteps.resolve(spring("0.0.47"), null, resolver);
+
+    assertThat(resolver.transitive)
+        .containsExactly(
+            "io.spring.javaformat:spring-javaformat-formatter:0.0.47",
+            "io.spring.javaformat:spring-javaformat-formatter-eclipse-runtime:0.0.47");
+    assertThat(resolver.alone).isEmpty();
+    assertThat(spring.classpath()).hasSize(2);
+    assertThat(FormatterSteps.requiredJava(spring)).isEmpty();
+  }
+
   @Test
   void javacGrants_engines_onlyJavacFormattersNeedGrants() {
     assertThat(FormatterSteps.javacGrants(google("", Map.of())))
@@ -174,6 +204,7 @@ class FormatterStepsTest {
     assertThat(
             FormatterSteps.javacGrants(new FormatterSpec(LatheFlags.FORMATTER_ECLIPSE, List.of())))
         .isEmpty();
+    assertThat(FormatterSteps.javacGrants(spring(""))).isEmpty();
     assertThat(
             FormatterSteps.javacGrants(
                 new FormatterSpec(LatheFlags.FORMATTER_COMMAND, List.of("cat"))))
@@ -201,6 +232,7 @@ class FormatterStepsTest {
         .isEqualTo(new IndentSpec("google", 2, 4));
     assertThat(FormatterSteps.indent(new FormatterSpec(LatheFlags.FORMATTER_ECLIPSE, List.of())))
         .isEqualTo(editorconfig);
+    assertThat(FormatterSteps.indent(spring(""))).isEqualTo(editorconfig);
     assertThat(
             FormatterSteps.indent(new FormatterSpec(LatheFlags.FORMATTER_COMMAND, List.of("cat"))))
         .isEqualTo(editorconfig);
@@ -226,6 +258,10 @@ class FormatterStepsTest {
             coordinates ->
                 coordinates.matches(
                     "com\\.diffplug\\.spotless:spotless-lib(-extra)?:\\d+\\.\\d+\\.\\d+"));
+  }
+
+  private static FormatterSpec spring(final String version) {
+    return new FormatterSpec(LatheFlags.FORMATTER_SPRING, List.of(), version, Map.of(), List.of());
   }
 
   private static FormatterSpec google(final String version, final Map<String, String> options) {

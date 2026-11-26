@@ -32,6 +32,23 @@ class FormatterLoaderTest {
         .hasCauseInstanceOf(NoSuchFieldError.class);
   }
 
+  @Test
+  void construct_formatterFailures_surfaceAsExceptionsNotReflectionWrappers() {
+    assertThatThrownBy(
+            () ->
+                FormatterLoader.construct(
+                    Failing.class.getDeclaredConstructor(boolean.class), false))
+        .isInstanceOf(IOException.class)
+        .hasMessage("syntax error");
+    assertThatThrownBy(
+            () ->
+                FormatterLoader.construct(
+                    Failing.class.getDeclaredConstructor(boolean.class), true))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("does not support Java %d".formatted(Runtime.version().feature()))
+        .hasCauseInstanceOf(NoSuchFieldError.class);
+  }
+
   static void failsToParse() throws IOException {
     throw new IOException("syntax error");
   }
@@ -42,5 +59,18 @@ class FormatterLoaderTest {
 
   static void lacksJavacGrants() {
     throw new IllegalAccessError("jdk.compiler does not export com.sun.tools.javac.util");
+  }
+
+  // A formatter class whose constructor fails to parse, or links against a javac field this JDK
+  // lacks.
+  static final class Failing {
+
+    Failing(final boolean linkage) throws IOException {
+      if (linkage) {
+        throw new NoSuchFieldError("JCCompilationUnit.endPositions");
+      }
+
+      throw new IOException("syntax error");
+    }
   }
 }

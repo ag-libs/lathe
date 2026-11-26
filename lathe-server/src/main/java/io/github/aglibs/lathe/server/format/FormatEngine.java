@@ -3,12 +3,13 @@ package io.github.aglibs.lathe.server.format;
 import java.util.List;
 
 // A Java source-to-source formatter: the project's pinned formatter run in-process
-// (GjfFormatEngine, EclipseFormatEngine), or an external command. `file` is the document's path,
-// used by engines that format in place (FileCommandFormatEngine) or by file kind; the others ignore
-// it. Throws its native failure type; JavaFormatter catches late.
+// (GjfFormatEngine, EclipseFormatEngine, SpringFormatEngine), or an external command. `file` is the
+// document's path, used by engines that format in place (FileCommandFormatEngine) or by file kind;
+// the others ignore it. Throws its native failure type; JavaFormatter catches late.
 public sealed interface FormatEngine
     permits GjfFormatEngine,
         EclipseFormatEngine,
+        SpringFormatEngine,
         ExternalCommandFormatEngine,
         FileCommandFormatEngine {
 

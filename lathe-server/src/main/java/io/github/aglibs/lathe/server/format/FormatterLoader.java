@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -29,40 +30,50 @@ final class FormatterLoader {
     try {
       return method.invoke(target, args);
     } catch (final InvocationTargetException e) {
-      if (e.getCause() instanceof final Exception cause) {
-        throw cause;
-      }
-
-      // Reported as a formatting failure rather than escaping as an internal error. Access is
-      // refused when the server JVM lacks the javac-internals grants (a .lathe/ older than the
-      // last sync, or a launcher not started from the workspace root); any other linkage
-      // failure is a formatter release that does not support this JDK's javac.
-      if (e.getCause() instanceof final IllegalAccessError error) {
-        throw new IllegalStateException(
-            "%s cannot access javac; run `%s` and restart the server: %s"
-                .formatted(
-                    method.getDeclaringClass().getName(),
-                    LatheLayout.SYNC_SCRIPT_COMMAND,
-                    error.getMessage()),
-            error);
-      }
-
-      if (e.getCause() instanceof final LinkageError error) {
-        throw new IllegalStateException(
-            "%s does not support Java %d: %s"
-                .formatted(
-                    method.getDeclaringClass().getName(),
-                    Runtime.version().feature(),
-                    error.getMessage()),
-            error);
-      }
-
-      if (e.getCause() instanceof final Error error) {
-        throw error;
-      }
-
-      throw e;
+      throw unwrapped(e, method.getDeclaringClass());
     }
+  }
+
+  // A formatter-owned constructor, its failures surfaced as invoke surfaces a method's.
+  static Object construct(final Constructor<?> constructor, final Object... args) throws Exception {
+    try {
+      return constructor.newInstance(args);
+    } catch (final InvocationTargetException e) {
+      throw unwrapped(e, constructor.getDeclaringClass());
+    }
+  }
+
+  // The formatter's own failure; an Error other than a linkage failure is thrown as it is.
+  private static Exception unwrapped(
+      final InvocationTargetException e, final Class<?> declaringClass) {
+    if (e.getCause() instanceof final Exception cause) {
+      return cause;
+    }
+
+    // Reported as a formatting failure rather than escaping as an internal error. Access is
+    // refused when the server JVM lacks the javac-internals grants (a .lathe/ older than the last
+    // sync, or a launcher not started from the workspace root); any other linkage failure is a
+    // formatter release that does not support this JDK's javac.
+    if (e.getCause() instanceof final IllegalAccessError error) {
+      return new IllegalStateException(
+          "%s cannot access javac; run `%s` and restart the server: %s"
+              .formatted(
+                  declaringClass.getName(), LatheLayout.SYNC_SCRIPT_COMMAND, error.getMessage()),
+          error);
+    }
+
+    if (e.getCause() instanceof final LinkageError error) {
+      return new IllegalStateException(
+          "%s does not support Java %d: %s"
+              .formatted(declaringClass.getName(), Runtime.version().feature(), error.getMessage()),
+          error);
+    }
+
+    if (e.getCause() instanceof final Error error) {
+      throw error;
+    }
+
+    return e;
   }
 
   // Reads a no-argument accessor of a formatter-owned object (a replacement, a range).

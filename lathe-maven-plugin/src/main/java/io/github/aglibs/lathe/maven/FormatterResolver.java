@@ -44,7 +44,10 @@ final class FormatterResolver {
       return spec;
     }
 
-    try (var spotless = spotlessLibraries(spotlessVersion)) {
+    // An engine that is no Spotless step resolves without Spotless, so its failure cannot disable
+    // it.
+    try (var spotless =
+        FormatterSteps.spotlessStep(spec.engine()) ? spotlessLibraries(spotlessVersion) : null) {
       final FormatterSpec resolved = FormatterSteps.resolve(spec, spotless, projectArtifacts);
       log.info(
           "[sync] formatter %s %s jars=%d"
