@@ -87,7 +87,9 @@ local notify = util.notify
 
 local function on_finished(client, token, label, err, outcome)
   -- An earlier run ending must not forget the one that replaced it.
+  local stopped = false
   if active_run and active_run.token == token then
+    stopped = active_run.stopped == true
     active_run = nil
   end
 
@@ -105,10 +107,17 @@ local function on_finished(client, token, label, err, outcome)
   end
 
   local code = (outcome and outcome.exitCode) or -1
-  notify(
-    ("%s exited %d"):format(label, code),
-    code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
-  )
+  -- A run :LatheRunStop ended exits with a termination signal's code (143 SIGTERM, 137 SIGKILL):
+  -- that is the stop asked for, not a failure to warn about. Any other code is reported as it is,
+  -- as the run may have ended on its own before the stop reached it.
+  if stopped and (code == 143 or code == 137) then
+    notify(("%s stopped"):format(label), vim.log.levels.INFO)
+  else
+    notify(
+      ("%s exited %d"):format(label, code),
+      code == 0 and vim.log.levels.INFO or vim.log.levels.WARN
+    )
+  end
 
   -- Hyperlink any stack frames the run streamed into the shared output buffer, the same way the
   -- test path does once neotest's results() lands -- a main run has no results() hook of its own.
@@ -359,6 +368,7 @@ function M.stop()
     return
   end
 
+  active_run.stopped = true
   util.exec(
     client,
     nil,

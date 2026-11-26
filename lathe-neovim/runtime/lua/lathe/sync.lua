@@ -14,8 +14,8 @@ local M = {}
 -- Before the first sync there is no script to run, so a setup or recovery message names :LatheInit
 -- (the server's SETUP_REMEDIATION, which other clients and MCP agents read, names each build's
 -- own first command).
-M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project); "
-  .. "for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`."
+-- :LatheInit sets an OpenJDK checkout up too, so the hint needs no command of its own for one.
+M.SETUP_HINT = "run `:LatheInit` (it doesn't change your project)."
 -- A first build that stopped before its sync left `.lathe/` with no launcher and no script.
 M.UNFINISHED_HINT = "the first Lathe build of this project stopped before it set Lathe up: "
   .. "fix what stopped it and run `:LatheInit` again."
@@ -45,10 +45,26 @@ end
 
 -- Emits a Lathe toast, reusing state.handle so a backend that honours it (nvim-notify, snacks,
 -- fidget) updates one toast in place via `replace` and drops it after `timeout`; stock vim.notify
--- ignores the opts and just records each line in :messages.
+-- ignores the opts and just records each line in :messages. snacks reuses the toast's window
+-- only for `id`, not for the `replace` it also reads, so the handle goes in both (nvim-notify
+-- ignores `id`).
+-- A run given a shared `toast` continues that toast and leaves its handle there for the next step.
+-- A warning or an error gets a toast of its own: replacing the progress toast, it would take that
+-- toast's short timeout (a backend keeps what a replacement leaves out) and vanish unread.
 local function notify(state, msg, level, timeout)
-  state.handle =
-    vim.notify(msg, level, { title = "Lathe", replace = state.handle, timeout = timeout })
+  if level and level >= vim.log.levels.WARN then
+    vim.notify(msg, level, { title = "Lathe", timeout = timeout })
+    return
+  end
+
+  state.handle = vim.notify(
+    msg,
+    level,
+    { title = "Lathe", id = state.handle, replace = state.handle, timeout = timeout }
+  )
+  if state.toast then
+    state.toast.handle = state.handle
+  end
 end
 
 -- Refreshes the transient "still syncing" toast until the run completes.
@@ -209,7 +225,9 @@ local SCRIPT = require("lathe.workspace").SYNC_SCRIPT
 --- `opts.failure_toast(result)` may return a failed run's toast, shown as a warning instead of the
 --- default error; `opts.success_warning(result)` may return a warning for a run that succeeded but
 --- did not do what it ran for, shown with the build's output as a failure is;
---- `opts.on_done(result)` runs after the build ends, on the main loop.
+--- `opts.toast` (`{ handle = … }`) is a toast to continue, so steps run one after another
+--- (:LatheInit's download, then its build) update one toast; `opts.on_done(result)` runs after the
+--- build ends, on the main loop.
 function M.run(root, capture_tests, modules, opts)
   opts = opts or {}
   if not root or root == "" then
@@ -242,11 +260,20 @@ function M.run(root, capture_tests, modules, opts)
   end
 
   running[root] = opts.action or "sync"
-  last_sync = { root = root, capture_tests = capture_tests, modules = modules, opts = opts }
+  -- A replay (`r` in the output split) starts a toast of its own, not the setup's long-gone one.
+  local replay = vim.tbl_extend("force", {}, opts)
+  replay.toast = nil
+  last_sync = { root = root, capture_tests = capture_tests, modules = modules, opts = replay }
 
   local action = ACTIONS[opts.action or "sync"]
   show_running(action, root, cmd) -- clear the console so an open split never shows the previous run
-  local state = { started = vim.loop.hrtime(), cmd_str = cmd_str, action = action }
+  local state = {
+    started = vim.loop.hrtime(),
+    cmd_str = cmd_str,
+    action = action,
+    toast = opts.toast,
+    handle = opts.toast and opts.toast.handle,
+  }
   notify_progress(state) -- show the command immediately, then keep the toast alive every 3s
   local timer = vim.loop.new_timer()
   timer:start(PROGRESS_INTERVAL_MS, PROGRESS_INTERVAL_MS, function()

@@ -63,6 +63,25 @@ local function notify(msg, level)
   vim.notify("Lathe: " .. msg, level or vim.log.levels.INFO, { title = "Lathe" })
 end
 
+-- One toast per setup, by root: the announcement, the download, the build and the server it set up
+-- update it in place (sync.run continues it through `opts.toast`) instead of stacking a toast each.
+-- Warnings and errors keep toasts of their own.
+local toasts = {}
+
+local function progress(root, msg)
+  local toast = toasts[root]
+  if not toast then
+    notify(msg)
+    return
+  end
+
+  toast.handle = vim.notify(
+    "Lathe: " .. msg,
+    vim.log.levels.INFO,
+    { title = "Lathe", id = toast.handle, replace = toast.handle }
+  )
+end
+
 -- dir and every folder above it, nearest first.
 local function upward(dir)
   local dirs = { dir }
@@ -334,6 +353,7 @@ local function report_version(root, running, wanted)
     return
   end
 
+  -- A toast of its own: replacing the setup's toast, it would take that toast's short timeout.
   if wanted and running ~= wanted then
     notify(
       ("server %s set up at %s: the project's build pins it, so it runs instead of %s."):format(
@@ -345,7 +365,7 @@ local function report_version(root, running, wanted)
     return
   end
 
-  notify(("server %s set up at %s."):format(running, root))
+  progress(root, ("server %s set up at %s."):format(running, root))
 end
 
 -- A buffer opened before the setup took the fallback indent; the project's style is there now.
@@ -458,6 +478,7 @@ local function build(root, cmd, label, version, warning)
     cmd = cmd,
     label = label,
     action = "setup",
+    toast = toasts[root],
     failure_toast = function(result)
       return set_up_but_failed(root, result, started)
     end,
@@ -466,6 +487,7 @@ local function build(root, cmd, label, version, warning)
     end,
     on_done = function(result)
       attach(root, result, version, before)
+      toasts[root] = nil
       -- Only when this build set Lathe up: `.lathe/` an earlier setup left says nothing about it.
       local manifest = vim.uv.fs_stat(workspace.manifest_path(root))
       if warning and manifest and manifest.mtime.sec >= started then
@@ -515,11 +537,13 @@ local function maven_personal(build_, tool, version, warning)
     },
     label = ("%s copy-dependencies (Lathe %s)"):format(vim.fs.basename(tool), version),
     action = "download",
+    toast = toasts[build_.root],
     on_done = function(result)
       -- A failed fetch leaves no partial download; the bootstrap POM stays for the output
       -- split's retry, which runs the same command.
       if result.code ~= 0 then
         vim.fn.delete(fetching, "rf")
+        toasts[build_.root] = nil
         return
       end
 
@@ -589,8 +613,9 @@ local function set_up(found)
     return
   end
 
+  toasts[found.root] = {}
   if found.registered then
-    notify(("building %s, which registers Lathe…"):format(found.root))
+    progress(found.root, ("building %s, which registers Lathe…"):format(found.root))
     if found.kind == "maven" then
       local cmd = vim.list_extend({ tool, "-B" }, MAVEN_FIRST_BUILD)
       build(found.root, cmd, ("%s clean test (capture only)"):format(vim.fs.basename(tool)))
@@ -618,7 +643,8 @@ local function set_up(found)
     return
   end
 
-  notify(
+  progress(
+    found.root,
     ("setting up %s (%s, Lathe %s; your project files are not changed)…"):format(
       found.root,
       KINDS[found.kind],

@@ -29,8 +29,12 @@ vim.system = function(cmd, opts, on_exit)
   return { pid = 1 }
 end
 local notes = {}
-vim.notify = function(msg)
+-- Each toast's opts, and a handle per toast (its index in notes), as a toast backend returns one.
+local note_opts = {}
+vim.notify = function(msg, _, opts)
   table.insert(notes, msg)
+  table.insert(note_opts, opts or {})
+  return #notes
 end
 vim.schedule = function(fn)
   fn()
@@ -238,6 +242,7 @@ spec.check(
 
 -- Maven personal: fetch, then build with the activation, then attach.
 local boot = work .. "/cache/bootstrap/9.9.9"
+local setup_first_note = #notes + 1
 run_from("/multi/core")
 spec.check(
   "the prompt names the version and the kind",
@@ -294,6 +299,16 @@ finish_build(0)
 spec.check("a build that wrote a launcher attaches the root's Java buffers", started[1], java)
 spec.check("and gives them the project's indent", vim.bo[java].shiftwidth, 2)
 spec.check("and names the version set up", last_note_has("Lathe: server 9.9.9 set up at"), true)
+-- One toast for the whole setup: every message after the first updates the one before it.
+local chained = #notes > setup_first_note
+for i = setup_first_note + 1, #notes do
+  chained = chained and note_opts[i].replace == i - 1 and note_opts[i].id == i - 1
+end
+spec.check(
+  "the announcement, fetch, build and server set up update one toast",
+  note_opts[setup_first_note].replace == nil and chained,
+  true
+)
 
 -- A fetch interrupted before it ended left no lib/: the next run fetches again.
 vim.fn.mkdir(work .. "/cache/bootstrap/8.8.8/lib.fetching", "p")
