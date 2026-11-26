@@ -96,9 +96,19 @@
             <configuration>
               <localRepositoryPath>${project.build.directory}/lathe-repo</localRepositoryPath>
               <!-- Not a dependency: Lathe's own Maven extension, on in this repository, pins any
-                   lathe-junit dependency to its released version. -->
+                   lathe-junit dependency to its released version. The formatters the fixtures
+                   resolve come with their dependencies, from ~/.m2 (CI's cache), so the fixtures
+                   find them here rather than on Central: the Spotless and spring-javaformat
+                   releases Lathe pins, google-java-format 1.28.0 (what the fixtures declare, and the
+                   pinned Spotless's default on JDK 17) and that default on JDK 21+. -->
               <extraArtifacts>
                 <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
+                <extraArtifact>com.diffplug.spotless:spotless-lib:${spotless-lib.version}:jar</extraArtifact>
+                <extraArtifact>com.diffplug.spotless:spotless-lib-extra:${spotless-lib.version}:jar</extraArtifact>
+                <extraArtifact>com.google.googlejavaformat:google-java-format:1.28.0:jar</extraArtifact>
+                <extraArtifact>com.google.googlejavaformat:google-java-format:${spotless-default-gjf.version}:jar</extraArtifact>
+                <extraArtifact>io.spring.javaformat:spring-javaformat-formatter:${spring-javaformat.version}:jar</extraArtifact>
+                <extraArtifact>io.spring.javaformat:spring-javaformat-formatter-eclipse-runtime:${spring-javaformat.version}:jar</extraArtifact>
               </extraArtifacts>
               <skipInstallation>${lathe.gradle.skip}</skipInstallation>
             </configuration>
@@ -130,6 +140,7 @@
                 <argument>-Plathe.version=${project.version}</argument>
                 <argument>-Pjunit.version=${junit.version}</argument>
                 <argument>-Passertj.version=${assertj.version}</argument>
+                <argument>-Pspring-javaformat.version=${spring-javaformat.version}</argument>
                 <argument>-PskipTests=${skipTests}</argument>
                 <argument>-PskipUnitTests=${lathe.gradle.skipUnitTests}</argument>
                 <argument>-Plathe.gradle.fixturesHome=${lathe.gradle.fixturesHome}</argument>

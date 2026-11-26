@@ -76,6 +76,11 @@
     <palantir-java-format.version>2.103.0</palantir-java-format.version>
     <!-- The spring-javaformat release a lathe-style.json "spring" engine without a version gets. -->
     <spring-javaformat.version>0.0.48</spring-javaformat.version>
+    <!-- The google-java-format the pinned Spotless (spotless-lib.version) defaults to on JDK 21+, which
+         the Gradle fixtures resolve for a declaration without a version. Not a dependency, so no bump
+         moves it: after a Spotless bump that changes the default, update it, or that fixture fetches
+         the new default from Central. -->
+    <spotless-default-gjf.version>2.0.0</spotless-default-gjf.version>
     <!-- Lombok for the tests and the lombok invoker fixture, never for Lathe itself; 1.18.48 runs on
          JDK 17 to 27. -->
     <lombok.version>1.18.48</lombok.version>

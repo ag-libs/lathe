@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 // lathe:sync runs before the tests, so .lathe/ holds what it wrote for the active profile's
@@ -14,6 +15,7 @@ class FormatterSyncTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir"));
   private static final String ENGINE = System.getProperty("expected.engine");
+  private static final String SPRING_VERSION = System.getProperty("expected.springVersion");
 
   @Test
   void sync_spotlessPalantir_resolvesPinnedJarsAndGrantsJavac() throws IOException {
@@ -59,12 +61,17 @@ class FormatterSyncTest {
     final String style = Files.readString(lathe("style.json"));
 
     assertThat(style).contains("\"engine\": \"spring\"");
-    assertThat(style).contains("\"version\": \"0.0.46\"");
-    assertThat(style).containsPattern("\"[^\"]+spring-javaformat-formatter-0\\.0\\.46\\.jar\"");
-    assertThat(style)
-        .containsPattern("\"[^\"]+spring-javaformat-formatter-eclipse-runtime-0\\.0\\.46\\.jar\"");
+    assertThat(style).contains("\"version\": \"%s\"".formatted(SPRING_VERSION));
+    assertThat(style).containsPattern(jarPath("spring-javaformat-formatter"));
+    assertThat(style).containsPattern(jarPath("spring-javaformat-formatter-eclipse-runtime"));
     assertThat(style).contains("\"profile\": \"editorconfig\"");
     assertThat(lathe("jvm.args")).doesNotExist();
+  }
+
+  // A whole quoted classpath entry ending in the artifact's jar at SPRING_VERSION.
+  private static String jarPath(final String artifact) {
+    final String jar = "%s-%s.jar".formatted(artifact, SPRING_VERSION);
+    return "\"[^\"]+%s\"".formatted(Pattern.quote(jar));
   }
 
   private static Path lathe(final String file) {

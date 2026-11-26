@@ -14,6 +14,8 @@ group = "io.github.ag-libs"
 version = property("lathe.version") as String
 
 val latheRepo = property("latheRepo") as String
+// The spring-javaformat release Lathe pins, which fill-lathe-repo puts in the Lathe repository.
+val springJavaformatVersion = property("spring-javaformat.version") as String
 
 repositories {
   // Lathe's own jars only from the repository the reactor fills, never from a stale ~/.m2.
@@ -128,6 +130,7 @@ val functionalTestTask =
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
       systemProperty("lathe.version", project.version)
+      systemProperty("lathe.springJavaformatVersion", springJavaformatVersion)
       // Both kept out of the build directory, so a clean build starts the fixtures warm. TestKit's
       // Gradle home (generated Gradle API jars, compiled fixture scripts) is shared by every
       // checkout: a Gradle user home, which Gradle locks. The fixtures' Lathe cache stays one per
