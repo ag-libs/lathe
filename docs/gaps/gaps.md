@@ -1272,6 +1272,32 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
+## CQ-0081 — An annotation with a `value()` element completes no element names
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: editor completion in the arguments of an annotation that declares `value()` (Micronaut's `@Requires`, Spring's `@RequestMapping` and `@Value`, JUnit's `@Tag`).**
+
+Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
+
+### Observed behaviour
+
+In `context/.../PropertiesLoggingLevelsConfigurer.java`, `@Requires(§)` offers only `null`, and `@Requires(pro§)` nothing; `@Requires` declares `value()` beside `property`, `beans`, `env` and 18 more elements.
+`@Requirements(§)`, whose only element is `value()`, offers nothing; `@Deprecated(§)` at the same place offers `since` and `forRemoval`.
+A bare argument is classified as the value of `value()` (the `@A("x")` shorthand), and the element names are offered only where the annotation has no `value()`.
+
+### Expected
+
+A bare argument offers the element names (`property = `) and the candidates for `value()`'s value; a prefix filters both.
+
+### Regression targets
+
+None yet.
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
@@ -2338,3 +2364,28 @@ None yet.
 
 ---
 
+## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP file tools on a Java file under a Kotlin or Groovy source directory of a module the build compiled.**
+
+Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
+
+### Observed behaviour
+
+`get_diagnostics` on `test-suite-kotlin/src/test/kotlin/io/micronaut/docs/factories/nullable/EngineSpec.java` answers that the file "is outside the modules the last build compiled (a profile may leave its module out)".
+The module was compiled; its `compileTestJava` had no sources, as javac does not compile the `kotlin` directory, so the file is in no source root.
+The editor's message, "not under any Lathe module source root", is accurate; an agent reading the MCP one looks for a profile that is not there.
+
+### Expected
+
+Where the file's module was compiled, the reason names the source roots javac compiles, or says the file is in none of them, without the profile.
+
+### Regression targets
+
+None yet.
