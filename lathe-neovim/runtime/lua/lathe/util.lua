@@ -2,6 +2,16 @@
 local M = {}
 
 --- Notify the user, every message prefixed and titled alike.
+--- A reactor module as a label names it: the root module's path is empty, and it is `.`, as the
+--- server's messages name it (NV-16); `?` for a module the client does not know.
+function M.module_label(module)
+  if module == nil then
+    return "?"
+  end
+
+  return module == "" and "." or module
+end
+
 function M.notify(message, level)
   vim.notify("Lathe: " .. message, level, { title = "Lathe" })
 end

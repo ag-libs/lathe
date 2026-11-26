@@ -190,7 +190,8 @@ function M.pick()
     title = "Lathe run config",
     items = config_list,
     format = function(config)
-      return ("%s  ·  %s  ·  %s"):format(config.name, config.module or "", config.target or "")
+      local module = config.module and util.module_label(config.module) or ""
+      return ("%s  ·  %s  ·  %s"):format(config.name, module, config.target or "")
     end,
     on_choice = function(config)
       if config then

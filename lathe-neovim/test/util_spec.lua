@@ -35,4 +35,9 @@ spec.check("no buffer -> the current buffer's server", util.client(), second)
 vim.api.nvim_set_current_buf(console)
 spec.check("no buffer, current one unattached -> the first server", util.client(), first)
 
+-- NV-16: the root module's path is empty; labels name it `.`.
+spec.check("root module label", util.module_label(""), ".")
+spec.check("another module keeps its path", util.module_label("core"), "core")
+spec.check("unknown module", util.module_label(nil), "?")
+
 spec.finish("util_spec")
