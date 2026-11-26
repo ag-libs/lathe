@@ -53,8 +53,9 @@ The features jdtls has and Lathe lacks, each a row of its own, so the table show
 These and the refactoring rows above are checked once per server and project: the request or code action of that kind, at a position fixed before the round, offered, and its edit applied to a copy that then compiles where it is an edit.
 Each is confirmed on the pinned jdtls before the round; a row the pinned jdtls does not support either stays in the table, marked so.
 
-Formatting is a row of its own, scored as offered or not on each project, and will read unsupported for Lathe on all three, which the page says and explains: Lathe formats only with the formatter the project declares (Spotless, or a `lathe-style.json`), and spring-petclinic's spring-javaformat is one it does not run (EG-113), while Dropwizard and Helidon declare none.
-jdtls formats any file with Eclipse's formatter, whatever style the project keeps.
+Formatting is a row of its own, scored as offered or not on each project.
+It will read supported for Lathe on spring-petclinic, which formats with spring-javaformat, and unsupported on Dropwizard and Helidon, which declare no formatter; the page says why: Lathe formats only with the formatter the project declares (Spotless, spring-javaformat, or a `lathe-style.json`).
+jdtls formats any file with Eclipse's formatter, whatever style the project keeps: on spring-petclinic, its result is not the project's (123 edits on an already formatted `Owner.java`, tabs turned to spaces and Javadoc rewrapped at 80 columns), and no Eclipse profile reproduces spring-javaformat, which adds its own processing to Eclipse's formatter.
 
 The latency of every row goes in the full report, not the table.
 
@@ -76,7 +77,7 @@ Features jdtls has (item 5 checks each):
 - selection range (EG-018), code lens (EG-064), inlay hints (EG-091);
 - a dependency's class without a sources jar (EG-063);
 - member symbol search (EG-092), not planned;
-- formatting with a formatter the project does not declare: none on a project that declares none, and not spring-javaformat or formatter-maven-plugin (EG-113).
+- formatting with a formatter the project does not declare: none on a project that declares none, and not formatter-maven-plugin (no gap filed).
 
 Smaller gaps in shared features:
 - folding of comments that are not Javadoc (EG-053), and of a package's Javadoc (EG-020);
@@ -160,7 +161,7 @@ python3 -I dev/lsp-bench/selfcheck.py                           # the logic, wit
 Trial sessions run on a snapshot of `main` stamped with its commit (`0.3.99-<commit>`, the amendment's rule), never the local `0.1.0-SNAPSHOT`; the 2026-11-19 trial ran on `0.3.99-0e2144a5`.
 Checked before that, on versions other than the round's pinned ones: the self-checks; the ground truth on spring-petclinic (three target files, each injection reported on its own line, no error on the clean build); and both debug flows on spring-petclinic, each stopping at the breakpoint (Lathe 0.3.1 with its older name for the runnables command, jdtls 1.51).
 The trial round runs them on the pinned versions.
-Lathe 0.3.1 advertises no formatter on spring-petclinic, whose style (spring-javaformat) it does not run, so that row would show Lathe unsupported there.
+Lathe 0.3.1 advertises no formatter on spring-petclinic, whose style (spring-javaformat) it did not run before EG-113, so a round on 0.3.1 would show Lathe unsupported there.
 
 ## What is left to build
 

@@ -258,6 +258,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getServerJars().from(lenient(server));
                   task.getMcpServerJars().from(lenient(mcpServer));
                   task.getDeclaredEngine().set(project.provider(formatter::declaredEngine));
+                  task.getDetectedEngine().set(project.provider(formatter::detectedEngine));
                   task.getFormatter().set(project.provider(formatter::completedJson));
                   task.getFormatterJars().from(formatter.jars());
                   task.getFormatterUnresolved().set(formatter.unresolved());

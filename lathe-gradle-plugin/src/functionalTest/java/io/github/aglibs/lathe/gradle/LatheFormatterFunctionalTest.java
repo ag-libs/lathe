@@ -17,6 +17,8 @@ class LatheFormatterFunctionalTest {
       "%sinclude(\"app\")\n%s"
           .formatted(GradleFixture.latheSettings("root"), GradleFixture.latheRepositories());
   private static final String SPOTLESS_WARNING = "Spotless formats this build";
+  // Not the release Lathe pins, so the tests tell the plugin's release from the fallback.
+  private static final String SPRING_RELEASE = "0.0.46";
 
   @TempDir Path dir;
 
@@ -113,6 +115,119 @@ class LatheFormatterFunctionalTest {
     assertThat(List.of(first.getOutput(), reused.getOutput()))
         .allMatch(output -> output.contains("formatter eclipse declared in lathe-style.json"));
     assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+  }
+
+  // The root's spring-javaformat plugin is detected at its release, under a reused configuration
+  // cache: the formatter with its Eclipse runtime, the indent left to .editorconfig, no javac
+  // grants. A spring declaration without a version takes the plugin's release too.
+  @Test
+  void sync_rootAppliesSpringJavaFormat_springEngineAtThePluginRelease() throws Exception {
+    final var fixture =
+        withStandInSpring(app()).file("build.gradle", "plugins { id 'io.spring.javaformat' }\n");
+
+    fixture.runner("latheSync", "--configuration-cache").build();
+    final var reused = fixture.runner("latheSync", "--configuration-cache").build();
+    final WorkspaceStyleData detected = style();
+    fixture.file(LatheLayout.STYLE_SHARED_FILE, "{\"formatter\": {\"engine\": \"spring\"}}");
+    fixture.runner("latheSync").build();
+
+    assertThat(reused.getOutput()).contains("Reusing configuration cache");
+    assertThat(detected.formatter().engine()).isEqualTo(LatheFlags.FORMATTER_SPRING);
+    assertThat(detected.formatter().version()).isEqualTo(SPRING_RELEASE);
+    assertThat(detected.formatter().classpath())
+        .anyMatch(
+            jar -> jar.endsWith("spring-javaformat-formatter-%s.jar".formatted(SPRING_RELEASE)))
+        .anyMatch(
+            jar ->
+                jar.endsWith(
+                    "spring-javaformat-formatter-eclipse-runtime-%s.jar"
+                        .formatted(SPRING_RELEASE)));
+    assertThat(detected.indent().profile()).isEqualTo("editorconfig");
+    assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.JVM_ARGS_FILE))
+        .doesNotExist();
+    assertThat(style().formatter().version()).isEqualTo(SPRING_RELEASE);
+  }
+
+  // Spotless anywhere in the build wins over the root's spring-javaformat, as on Maven: Lathe
+  // cannot read Spotless's settings on Gradle, so it formats nothing and asks for a declaration.
+  @Test
+  void sync_springJavaFormatBesideSpotless_formatsNothingAndWarns() throws Exception {
+    final var fixture =
+        withStandInSpotless(withStandInSpring(app()))
+            .file("build.gradle", "plugins { id 'io.spring.javaformat' }\n")
+            .file("app/build.gradle", "plugins { id 'java'\n id 'com.diffplug.spotless' }\n");
+
+    final var result = fixture.runner("latheSync").build();
+
+    assertThat(result.getOutput()).contains(SPOTLESS_WARNING);
+    assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+  }
+
+  // Only the root's plugin is read: a subproject's is out of its reach, and the build declares
+  // the engine instead. No style, no configurations of Lathe's, and nothing to warn about.
+  @Test
+  void sync_springJavaFormatOnlyInASubproject_notDetected() throws Exception {
+    final var fixture =
+        withStandInSpring(app())
+            .file("app/build.gradle", "plugins { id 'java'\n id 'io.spring.javaformat' }\n");
+
+    final var result = fixture.runner("latheSync", "dependencies").build();
+
+    assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+    assertThat(result.getOutput())
+        .doesNotContain("latheFormatter")
+        .doesNotContain("[lathe] formatter");
+  }
+
+  // A plugin jar that records no release runs the release Lathe pins, and the sync says so.
+  @Test
+  void sync_springJavaFormatWithoutRecordedRelease_pinnedReleaseWithAWarning() throws Exception {
+    final var fixture =
+        withStandInSpring(app(), "")
+            .file("build.gradle", "plugins { id 'io.spring.javaformat' }\n");
+
+    final var result = fixture.runner("latheSync").build();
+
+    assertThat(result.getOutput()).contains("records no release");
+    assertThat(style().formatter().version()).matches("\\d+\\.\\d+\\.\\d+");
+  }
+
+  private static GradleFixture withStandInSpring(final GradleFixture fixture) throws Exception {
+    return withStandInSpring(fixture, SPRING_RELEASE);
+  }
+
+  // A plugin under spring-javaformat's id whose jar records release, as the real plugin's does
+  // (none when empty); the formatter jars come from Maven Central.
+  private static GradleFixture withStandInSpring(final GradleFixture fixture, final String release)
+      throws Exception {
+    final String manifest =
+        release.isEmpty()
+            ? ""
+            : "jar { manifest { attributes('Implementation-Version': '%s') } }\n"
+                .formatted(release);
+    return fixture
+        .file(
+            "buildSrc/build.gradle",
+            """
+                plugins { id 'java' }
+                dependencies { implementation gradleApi() }
+                %s"""
+                .formatted(manifest))
+        .file(
+            "buildSrc/src/main/java/standin/StandInSpring.java",
+            """
+                package standin;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class StandInSpring implements Plugin<Project> {
+                  public void apply(Project project) {}
+                }
+                """)
+        .file(
+            "buildSrc/src/main/resources/META-INF/gradle-plugins/io.spring.javaformat.properties",
+            "implementation-class=standin.StandInSpring\n");
   }
 
   // A plugin under Spotless's id, so the fixture needs no plugin portal: the sync only asks
