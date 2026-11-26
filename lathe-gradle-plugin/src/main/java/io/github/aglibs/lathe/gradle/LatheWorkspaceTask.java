@@ -89,6 +89,11 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   @Optional
   public abstract Property<String> getDeclaredEngine();
 
+  // The engine detected without a declaration (the root's spring-javaformat); absent when none is.
+  @Input
+  @Optional
+  public abstract Property<String> getDetectedEngine();
+
   // The declared pinned formatter, completed from Spotless's defaults; absent when there is none.
   @Input
   @Optional
@@ -242,10 +247,20 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
     return FormatterSteps.javacGrants(resolved);
   }
 
-  // A declared pinned formatter that could not be completed, or Spotless with no declaration:
-  // Gradle's Spotless keeps its settings out of reach, so the project must say what it formats
-  // with; declaring "none" silences this.
+  // A declared or detected pinned formatter that could not be completed, or Spotless with no
+  // declaration: Gradle's Spotless keeps its settings out of reach, so the project must say what it
+  // formats with; declaring "none" silences this.
   private void warnUnformatted(final List<ProjectFacts> facts) {
+    final boolean spotless = facts.stream().anyMatch(ProjectFacts::spotless);
+    if (getDetectedEngine().isPresent() && !spotless) {
+      getLogger()
+          .warn(
+              "[lathe] formatter {} applied in the root project could not be completed, formatting"
+                  + " disabled; see the warning when the build was configured",
+              getDetectedEngine().get());
+      return;
+    }
+
     if (getDeclaredEngine().isPresent()) {
       final String engine = getDeclaredEngine().get();
       if (FormatterSteps.pinned(engine)) {
@@ -260,7 +275,7 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
       return;
     }
 
-    if (facts.stream().noneMatch(ProjectFacts::spotless)) {
+    if (!spotless) {
       return;
     }
 

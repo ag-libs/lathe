@@ -163,18 +163,56 @@ class LatheFormatterFunctionalTest {
     assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
   }
 
-  // A plugin under spring-javaformat's id whose jar records SPRING_RELEASE, as the real plugin's
-  // does; the formatter jars of that release come from Maven Central.
+  // Only the root's plugin is read: a subproject's is out of its reach, and the build declares
+  // the engine instead. No style, no configurations of Lathe's, and nothing to warn about.
+  @Test
+  void sync_springJavaFormatOnlyInASubproject_notDetected() throws Exception {
+    final var fixture =
+        withStandInSpring(app())
+            .file("app/build.gradle", "plugins { id 'java'\n id 'io.spring.javaformat' }\n");
+
+    final var result = fixture.runner("latheSync", "dependencies").build();
+
+    assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+    assertThat(result.getOutput())
+        .doesNotContain("latheFormatter")
+        .doesNotContain("[lathe] formatter");
+  }
+
+  // A plugin jar that records no release runs the release Lathe pins, and the sync says so.
+  @Test
+  void sync_springJavaFormatWithoutRecordedRelease_pinnedReleaseWithAWarning() throws Exception {
+    final var fixture =
+        withStandInSpring(app(), "")
+            .file("build.gradle", "plugins { id 'io.spring.javaformat' }\n");
+
+    final var result = fixture.runner("latheSync").build();
+
+    assertThat(result.getOutput()).contains("records no release");
+    assertThat(style().formatter().version()).matches("\\d+\\.\\d+\\.\\d+");
+  }
+
   private static GradleFixture withStandInSpring(final GradleFixture fixture) throws Exception {
+    return withStandInSpring(fixture, SPRING_RELEASE);
+  }
+
+  // A plugin under spring-javaformat's id whose jar records release, as the real plugin's does
+  // (none when empty); the formatter jars come from Maven Central.
+  private static GradleFixture withStandInSpring(final GradleFixture fixture, final String release)
+      throws Exception {
+    final String manifest =
+        release.isEmpty()
+            ? ""
+            : "jar { manifest { attributes('Implementation-Version': '%s') } }\n"
+                .formatted(release);
     return fixture
         .file(
             "buildSrc/build.gradle",
             """
                 plugins { id 'java' }
                 dependencies { implementation gradleApi() }
-                jar { manifest { attributes('Implementation-Version': '%s') } }
-                """
-                .formatted(SPRING_RELEASE))
+                %s"""
+                .formatted(manifest))
         .file(
             "buildSrc/src/main/java/standin/StandInSpring.java",
             """
