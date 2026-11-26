@@ -328,9 +328,9 @@ final class LatheMcpTools {
             EDITS_IN_PLACE,
             """
                 Format a Java file in place with the formatter the project pins (its Spotless \
-                step: google-java-format, palantir, Eclipse), so your edits pass the build's \
-                formatting check. Returns the lines it rewrote, or says the file was already \
-                formatted. Call after editing a file, before verify_change.\
+                step: google-java-format, palantir, Eclipse; or spring-javaformat), so your edits \
+                pass the build's formatting check. Returns the lines it rewrote, or says the file \
+                was already formatted. Call after editing a file, before verify_change.\
                 """,
             LatheMcpTools::handleFormatFile),
         tool(

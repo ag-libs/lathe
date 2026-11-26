@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 // lathe:sync runs before the tests, so .lathe/ holds what it wrote for the active profile's
-// Spotless formatter: the engine, the release that Spotless version pins, and its resolved jars.
+// formatter: the engine, the release its plugin version pins, and its resolved jars.
 class FormatterSyncTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir"));
@@ -48,6 +48,22 @@ class FormatterSyncTest {
         ROOT.resolve("eclipse-formatter.xml").toAbsolutePath().toString().replace("\\", "\\\\");
     assertThat(style).contains("\"file\": \"%s\"".formatted(profile));
     assertThat(style).containsPattern("\"[^\"]+org\\.eclipse\\.jdt\\.core-[^\"]+\\.jar\"");
+    assertThat(lathe("jvm.args")).doesNotExist();
+  }
+
+  // spring-javaformat is no Spotless step: its engine at the plugin's version (a resolved property),
+  // the formatter with its Eclipse runtime, the indent left to .editorconfig, and no javac grants.
+  @Test
+  void sync_springJavaFormat_resolvesFormatterAndRuntimeAtThePluginVersion() throws IOException {
+    assumeTrue("spring".equals(ENGINE), "spring-javaformat profile only");
+    final String style = Files.readString(lathe("style.json"));
+
+    assertThat(style).contains("\"engine\": \"spring\"");
+    assertThat(style).containsPattern("\"version\": \"\\d+\\.\\d+\\.\\d+\"");
+    assertThat(style).containsPattern("\"[^\"]+spring-javaformat-formatter-\\d[^\"]+\\.jar\"");
+    assertThat(style)
+        .containsPattern("\"[^\"]+spring-javaformat-formatter-eclipse-runtime-[^\"]+\\.jar\"");
+    assertThat(style).contains("\"profile\": \"editorconfig\"");
     assertThat(lathe("jvm.args")).doesNotExist();
   }
 
