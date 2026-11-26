@@ -83,10 +83,10 @@ spec.check(
   true
 )
 spec.check(
-  "configured, no workspace: message names :LatheInit and the OpenJDK command",
+  "configured, no workspace: message names :LatheInit, which sets up OpenJDK too",
   notes[2]
     and notes[2]:find(":LatheInit", 1, true) ~= nil
-    and notes[2]:find("lathe-openjdk-maven-plugin:sync", 1, true) ~= nil,
+    and notes[2]:find("lathe-openjdk-maven-plugin:sync", 1, true) == nil,
   true
 )
 
