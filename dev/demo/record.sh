@@ -10,7 +10,7 @@
 #
 # The cut (≈64 s): a title card, then the five universal beats, then an end card.
 #
-#   title-card → 0 capture → 1 everyday editing → 4 run → 5 debug → 6 test → end-card
+#   title-card → 0 :LatheInit → 1 everyday editing → 4 run → 5 debug → 6 test → end-card
 #
 # Beats 2 (annotation processing) and 3 (JPMS module graph) are retained under dev/demo/beats/ as an
 # optional deep-dive but are deliberately NOT in this cut — they are the longest, most niche beats and
@@ -20,8 +20,8 @@
 # intermediates (gitignored); only the content-hashed docs/demo-<hash>.gif is committed and embedded
 # in the README. The hash in the filename busts browser/CDN caches — see the publish step below.
 #
-# Each beat tape re-runs `mvn clean test -Dlathe.capture.only=true` (build cache off) in its hidden
-# setup, so .lathe is captured fresh with the currently-installed Lathe on every render.
+# The beats run on the spring-petclinic clone prepare.sh sets up with :LatheInit; beat 0 runs
+# :LatheInit on camera, on a fresh clone of it.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -35,7 +35,7 @@ work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 card_bg="0x16181d"
 title_dur="2.8"
 end_dur="3.0"
-beats=(beat0-capture beat1-edit beat4-run beat5-debug beat6-test)
+beats=(beat0-init beat1-edit beat4-run beat5-debug beat6-test)
 order=(title-card "${beats[@]}" end-card)
 min_clip_s=6            # a good render is always longer than this; shorter => VHS dropped, retry
 

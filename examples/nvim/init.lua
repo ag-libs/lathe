@@ -56,16 +56,18 @@ require("lazy").setup({
     end,
   },
 
-  -- Notifications as toasts. Lathe updates one toast in place while a sync or `:LatheInit` runs;
-  -- the stock message area would stack them into a "Press ENTER" prompt instead.
+  -- Notifications as toasts (snacks.nvim's notifier, which renders their markdown and keeps them
+  -- in one stack). Lathe updates one toast in place while a sync or `:LatheInit` runs; the stock
+  -- message area would stack them into a "Press ENTER" prompt instead.
   {
-    "rcarriga/nvim-notify",
+    "folke/snacks.nvim",
+    priority = 1000,
     lazy = false,
-    config = function()
-      local notify = require("notify")
-      notify.setup({ render = "wrapped-compact", max_width = 70, stages = "static" })
-      vim.notify = notify
-    end,
+    opts = {
+      notifier = { enabled = true, style = "compact" },
+      -- Wrap long messages instead of cutting them at the toast's edge.
+      styles = { notification = { wo = { wrap = true, linebreak = true } } },
+    },
   },
 
   -- Syntax highlighting via Treesitter (ASTs instead of regex).

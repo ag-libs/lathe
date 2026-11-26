@@ -1,15 +1,13 @@
-# Beat 4 — Run (modular). Narration captions (burned in post-render), finalized separately:
-#   (1) "Run a modular main — replayed from your capture"
-#   (2) "Live JUL output — running Java on the captured module path" (stdout vs stderr colour-coded)
-#   (3) "The launch command — a plain modular java run"
+# Beat 4 — Run. Narration captions (burned in post-render), see beat4-run.ass:
+#   (1) "Run the Spring Boot app — from the captured classpath"
+#   (2) "Live output — Tomcat up on :8080"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat4-run.tape
 #
-# Story: run jpms/HelloMain at beat 3's end state (logger + requires java.logging). <leader>rr
-# (:LatheRun) replays it from captured .lathe bytecode — no Maven, no recompile — and the two JUL
-# INFO lines stream into Lathe's docked output split, a second apart (Thread.sleep) so it reads live.
-# The final-state sources are copied from dev/demo/beats/beat4-fixture/ (beat 3 produces this state;
-# each clip is independent, so beat 4 establishes it directly). leader = Space.
+# Story: <leader>rr (:LatheRun) on PetClinicApplication.main runs it from .lathe/ bytecode and the
+# classpath :LatheInit captured — no Maven, no recompile. The Spring banner and the startup log stream
+# into Lathe's docked output split until "Started PetClinicApplication"; :LatheRunStop ends it.
+# Each step waits on the screen, not a fixed time: the machine may be busy. leader = Space.
 Output "docs/videos/beat4-run.mp4"
 Require nvim
 
@@ -21,37 +19,39 @@ Set Height 1080
 Set Padding 30
 Set TypingSpeed 45ms
 
-# --- hidden setup: isolated config + Lathe from checkout + invoker cache; write the beat-3 end state
-# (logger + requires), capture so .lathe has the classes + main-launch.json, open HelloMain, warm. ---
+# --- hidden setup: the clone prepare.sh set up with :LatheInit, sources reset; open the application
+# class and wait for the workspace. `|| exit 1` guards the cd. ---
 Hide
 Type 'R="$PWD"' Enter
 Type 'source "$R/dev/demo/env.sh"' Enter
-Type 'cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1' Enter
-Type 'cp "$R/dev/demo/beats/beat4-fixture/HelloMain.java" jpms/src/main/java/com/example/jpms/HelloMain.java' Enter
-Type 'cp "$R/dev/demo/beats/beat4-fixture/module-info.java" jpms/src/main/java/module-info.java' Enter
-Type 'mvn -q clean test -Dlathe.capture.only=true >/dev/null 2>&1' Enter
-Sleep 12s
+Type 'renice -n 15 $$ >/dev/null' Enter
+Type 'cd "$PETCLINIC" || exit 1' Enter
+Type 'git checkout -q -- src' Enter
 Type 'clear' Enter
-Type 'nvim -n jpms/src/main/java/com/example/jpms/HelloMain.java' Enter
-Sleep 9s
+Type 'nvim -n src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java +33' Enter
+Wait+Screen@60s /workspace ready/
+Type ':lua Snacks.notifier.hide()' Enter
+Type ':echo ""' Enter
+Sleep 500ms
 Show
 
-# --- run the modular main; the JUL lines stream into the docked output split ---
-Type '11G'                # onto the `public static void main(...)` line
-Sleep 800ms
-Type ' rr'                # <leader>rr = :LatheRun — replay from .lathe, output docks and streams
-Sleep 2200ms             # launch command + "INFO: starting"
-Sleep 2200ms             # ~1s later (Thread.sleep) "INFO: done" appears — visibly live
-Sleep 800ms              # brief dwell on the completed run
+# --- run the main under the cursor; the Spring Boot startup streams into the docked output ---
+Sleep 1500ms
+Type ' rr'                # <leader>rr = :LatheRun
+# Spring's log lines run past the right edge: wrap Lathe's output split, off camera, without
+# focusing it (a focused split stops following the output).
+Wait+Screen@30s /Running org/
+Hide
+# Wrapped lines push the tail below the window, and the split's follow does not scroll for them:
+# a timer keeps it on the last line.
+Type ':lua local t = vim.uv.new_timer(); t:start(0, 200, vim.schedule_wrap(function() for _, w in ipairs(vim.api.nvim_list_wins()) do if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == "lathe-test-output" then vim.wo[w].wrap = true; vim.api.nvim_win_call(w, function() vim.cmd("normal! Gzb") end) end end end))' Enter
+Type ':echo ""' Enter
+Show
+Wait+Screen@60s /Started PetClinicApplication in/
+Sleep 5000ms              # dwell on "Tomcat started on port 8080" + "Started PetClinicApplication in"
 
-# focus the docked output, jump to line 1 (the runner command), wrap it so the whole modular
-# `java --module-path ... -m com.example.jpms/...HelloMain` launch — replayed from .lathe — is visible
-Ctrl+W
-Type 'j'
-Sleep 700ms
-Type 'gg'
-Sleep 500ms
-Type ':setlocal wrap'
+# --- stop it ---
+Type ':LatheRunStop'
+Sleep 300ms
 Enter
-Sleep 2600ms
-
+Sleep 2500ms

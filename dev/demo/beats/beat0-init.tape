@@ -35,7 +35,7 @@ Type 'clear' Enter
 Show
 
 # --- in the petclinic folder, open a class: no language server yet, Lathe says to run :LatheInit ---
-Type 'nvim -n src/main/java/org/springframework/samples/petclinic/owner/Owner.java'
+Type@10ms 'nvim -n src/main/java/org/springframework/samples/petclinic/owner/Owner.java'
 Sleep 400ms
 Enter
 Wait+Screen@30s /isn't set up yet/

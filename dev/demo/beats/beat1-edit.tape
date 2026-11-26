@@ -32,7 +32,9 @@ Type 'git checkout -q -- src' Enter
 Type 'clear' Enter
 Type 'nvim -n "$PETCLINIC_MAIN" +149' Enter
 Wait+Screen@60s /workspace ready/
-Sleep 3s                  # the toast fades before Show
+Type ':lua Snacks.notifier.hide()' Enter
+Type ':echo ""' Enter
+Sleep 500ms
 Show
 
 # Navigation notes (this config): the cursor keeps its column after `NG`, so always re-anchor with
@@ -67,7 +69,8 @@ Sleep 200ms
 Escape
 Sleep 150ms
 Escape
-Wait+Screen@15s /cannot be converted to int/
+# The message runs off the right edge ("...java.lang.String cannot be converted to"): match its start.
+Wait+Screen@15s /incompatible types/
 Sleep 2000ms              # read the live diagnostic
 
 # --- fix it: int -> String, then save clean ---
