@@ -679,9 +679,12 @@ None yet.
 
 ## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
 
-**Status: deferred** (triaged 2026-11-18: a feature, and the feature freeze holds)
+**Status: accepted** (triaged 2026-11-26: the feature freeze is lifted for the spring-javaformat part, so Petclinic, the demo project, formats; formatter-maven-plugin stays deferred)
+**Value: medium — Size: M**
 
 **Kind: feature**
+
+Signal: Petclinic is the demo project, and jdtls formats it in the wrong style (spaces for tabs, Javadoc wrapped at 80 columns).
 
 **Affects: `format_file`, `:LatheFormat` and the editor's formatting on Maven builds.**
 
