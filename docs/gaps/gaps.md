@@ -2312,31 +2312,6 @@ None yet.
 
 ---
 
-## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results
-
-**Status: deferred** (triaged 2026-11-18: low; the count is right, only the first lines are)
-
-**Kind: bug**
-
-**Affects: MCP `find_implementations` and the other capped lists.**
-
-Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
-
-### Observed behaviour
-
-`find_implementations` of `GenericVisitor` with `maxResults: 5` answers "33 implementations (showing first 5)", all anonymous classes in tests of `javaparser-core-testing` and `javaparser-core-testing-bdd`; `GenericVisitorAdapter` itself is not among them.
-The list is in path order, and `javaparser-core-testing/…` sorts before `javaparser-core/…` because `-` sorts before `/`.
-
-### Fix direction
-
-Order a capped list by module and source tree (main before test, the declaring module first), then by path.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-104 — `call_hierarchy` reads a snippet for every call site, then keeps only `maxResults` of them
 
 **Status: deferred** (2026-11-23: the answer is right, only the work is wasted, and no timing shows it matters; not worth changing `LatheEngine` just before the release)

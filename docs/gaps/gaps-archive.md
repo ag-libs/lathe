@@ -15747,6 +15747,42 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Affects: MCP `find_implementations` and the other capped lists.**
+
+Found by the exploratory round on javaparser (2026-11-18, main `cdf57f1`).
+
+### Observed behaviour
+
+`find_implementations` of `GenericVisitor` with `maxResults: 5` answers "33 implementations (showing first 5)", all anonymous classes in tests of `javaparser-core-testing` and `javaparser-core-testing-bdd`; `GenericVisitorAdapter` itself is not among them.
+The list is in path order, and `javaparser-core-testing/…` sorts before `javaparser-core/…` because `-` sorts before `/`.
+
+### Fix direction
+
+Order a capped list by module and source tree (main before test, the declaring module first), then by path.
+
+### Resolution
+
+`LatheEngine` orders every capped list (`find_references`, `find_implementations`, `analyze_change`'s implementations and redeclarations, incoming `call_hierarchy`) by origin as MC-70 does; then the files of a module before those of none; main sources before tests, so other modules' production code, which a change breaks, comes before the declaring module's own tests; within each, the module declaring the symbol first (as definition finds it from the asked position, or the call hierarchy's declaration), so asking from a use in a sibling module lists the declaring module first too; then by module, file and position.
+A file's module and tree come from the workspace's source layout (`SourceLayout.placementOf`: the config whose source root holds it most closely, as a test root may lie inside a main one), read with the declaration in one event-loop request, only for a list of two or more, once per file.
+On EqualsVerifier (2026-11-26), `find_implementations` of `ValueProvider` capped at 5 lists core's own implementations, where `equalsverifier-26`'s test class came first, and incoming calls to `forClass` start with core's production caller instead of the `-21`, `-25` and `-26` tests. On Helidon, the two uses of `WebServer.builder()` in other modules' production code come before webserver's 96 test uses, where they came 97th and 98th.
+
+Not covered: a generated or external location keeps MC-70's place after the project's own, whatever its module.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.findImplementations_siblingModuleSortsFirst_listsMainBeforeTestsDeclaringModuleFirst`
+- `LatheEngineNavigationTest.referencesAndCallers_askedFromASiblingModulesUse_listTheDeclaringModuleFirst`
+- `SourceLayoutTest.placementOf_testRootInsideMainRoot_closestRootWins`
+- `LatheEngineNavigationTest.referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten` (MC-70's origin order, kept)
+
+---
+
 ## MC-111 — A file tool given `path:line` says only that it is not a `.java` file — done
 
 **Status: done** (2026-11-26)
