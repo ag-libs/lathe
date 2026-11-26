@@ -68,7 +68,7 @@ final class MemberAccessCompleter {
     final boolean staleBeforeToken = staleBeforeCompletionToken(req, injected);
     final boolean shouldReattribute =
         compiler != null
-            && (methodChainReceiver || !req.noDiff())
+            && (methodChainReceiver || injected.closedBraces() || !req.noDiff())
             && (initialResolved == null || initialUnusable || staleBeforeToken);
     // A switch typed line by line leaves its block open, and javac's recovery drops the case's
     // pattern variable; the injected content closes the block (CQ-0079). Neither it nor a method
@@ -93,7 +93,9 @@ final class MemberAccessCompleter {
     final var resolved = hasMembers(reattributedResolved) ? reattributedResolved : initialResolved;
     final var snapshot =
         (reattributedResolved != null && resolved == reattributedResolved)
-                || (resolved == null && (cacheableAnalysis != null || injected.closedBraces()))
+                || (resolved == null
+                    && (cacheableAnalysis != null
+                        || injected.closedBraces() && reattributedAnalysis != null))
             ? reattributedAnalysis
             : initialSnapshot;
 

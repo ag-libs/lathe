@@ -5017,21 +5017,22 @@ The analysis fixture compiles the injected text, so its tests completed; the edi
 
 ### Resolution
 
-- `SentinelInjector.closesSwitchLabel`: a `->` or `:` that closes a `case` or `default` label (the keyword before it, at its own nesting, with no statement boundary between, string and character literals skipped) starts a statement, so the sentinel ends with `;`. A lambda's arrow and a ternary's colon still end an expression.
-- In a switch label's body, the braces the content leaves open are the switch being typed: they close right after the label's statement, so the members after it keep their structure. Elsewhere an open brace may be another method's, so it still closes at the end of the file.
-- `MemberAccessCompleter` resolves a switch label's receiver on the injected content when it closed braces there (`SentinelInjectionResult.closedBraces`), as it does for a method chain; that analysis is not cached, and a receiver that does not resolve (a package) falls back on it rather than on the analysis from before the edit.
+- `SentinelParser` reports, through javac's tree, when the sentinel is the body of a switch label: a `case` reached through its body, not its labels or guard, before any lambda, call, parenthesis, conditional, array, block, method or class; a block javac's recovery made under an erroneous tree does not stop it.
+- When that body is the last thing on its line and the content leaves a block open, `CompletionEngine` injects the sentinel again as a statement that ends with `;` and closes the open blocks right after it, and parses again. It keeps that parse only where the top-level class still ends at the text's last brace, that is, where the switch was the open block; where another block was open, closing it at the label cuts the class short, and the first injection stays, its braces closed at the end of the file. A closed switch, text after the cursor on its line, or a guard keep the usual injection.
+- `MemberAccessCompleter` resolves such a receiver on the injected content (`SentinelInjectionResult.closedBraces`), as it does for a method chain, even once the module's analysis has caught up with the text; that analysis is not cached, and a receiver that does not resolve (a package) falls back on it.
 
 Checked end to end on Helidon with a server built from the change, in `ServerListener`'s constructor with `switch (o) {` open: arrow cases on `String` (73 items), `ListenerConfig` (45, `port` among them; none before), the enclosing class and a guarded case; a colon case, `default ->`, a `char` label, a package receiver (`java.util.`), a typed prefix; an open `if` block, a closed switch and a brace left open in a later method answer as before.
 The round's other completion, diagnostics, rename and signature probes answer as before.
-Completion in an open switch reattributes on each request the cache cannot answer (about 80–210 ms on Helidon).
+Completion in an open switch parses twice and reattributes the injected text on each request (about 80–210 ms on Helidon).
 
-Not covered: a lambda block whose `};` is not typed yet (`Runnable r = () -> {` then `x.`), which answers nothing on Helidon before and after this change, though the server test's smaller class completes; and a `case` keyword inside a text block between the label and the cursor.
+Not covered: a lambda block whose `};` is not typed yet (`Runnable r = () -> {` then `x.`), which answers nothing on Helidon before and after this change, though the server test's smaller class completes.
 
 ### Regression targets
 
-- `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedBlockAfterAnEdit_offersTheReceiversMembers` (through the module compiler, with the analysis from before the edit: a switch on a JDK type and on the class's own type, a colon case; an `if` block and a lambda block)
-- `CompletionUnclosedBlockTest.completion_braceLeftOpenInALaterMethod_offersTheReceiversMembers`
+- `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedBlockAfterAnEdit_offersTheReceiversMembers` (through the module compiler, with the analysis from before the edit: a switch on a JDK type and on the class's own type, a colon case, one after an earlier statement; an `if` block and a lambda block)
+- `CompletionUnclosedBlockTest.completion_memberAccessInUnclosedSwitchOnceTheAnalysisCaughtUp_offersTheMembers` and `completion_braceLeftOpenInALaterMethod_offersTheReceiversMembers`
 - `CompletionCaseTest.completion_memberAccessInUnclosedSwitchLabel_offersTheReceiversMembers` (arrow, `default ->`, colon, string, `char` and escaped-quote labels) and, on JDK 21+, `completion_memberAccessInUnclosedJava21SwitchLabel_offersTheReceiversMembers` (a guard, a record pattern)
+- `CompletionCaseTest.completion_memberAccessInASwitchLabelsExpression_offersTheReceiversMembers` (text after the cursor, a chain, an array index, a closed switch with a brace open later) and, on JDK 21+, `completion_memberAccessInASwitchGuard_offersTheReceiversMembers`
 - `CompletionCaseTest.completion_memberAccessInLambdaBodyBeforeAStatement_offersTheReceiversMembers` and `completion_memberAccessAfterTernaryColon_offersTheReceiversMembers`
 
 ---

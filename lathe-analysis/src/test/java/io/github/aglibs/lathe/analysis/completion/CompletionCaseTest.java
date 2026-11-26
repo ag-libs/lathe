@@ -234,4 +234,88 @@ class CompletionCaseTest extends CompletionTestSupport {
         Arguments.of("lambdaBlock", "Runnable r = () -> {\n nested.§", "width"),
         Arguments.of("forBlock", "for (int i = 0; i < 2; i++) {\n nested.§", "width"));
   }
+
+  // Where the switch is closed, or text follows the cursor on its line, the injection is the
+  // usual one: no `;` is forced into the label's expression.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("switchLabelsKeepingTheirExpression")
+  void completion_memberAccessInASwitchLabelsExpression_offersTheReceiversMembers(
+      final String label, final String source, final String member) {
+    assertThat(labels(fixture.complete(source))).as(label).contains(member);
+  }
+
+  static Stream<Arguments> switchLabelsKeepingTheirExpression() {
+    return Stream.of(
+        Arguments.of(
+            "textAfterOnTheLine",
+            """
+            class Test {
+              int m(Object o) {
+                return switch (o) {
+                  case String s -> s.§ + 1;
+                  default -> 0;
+                };
+              }
+            }""",
+            "length"),
+        Arguments.of(
+            "chainAfterTheToken",
+            """
+            class Test {
+              void m(Object o) {
+                switch (o) {
+                  case String s -> s.toU§.trim();
+                  default -> {}
+                }
+              }
+            }""",
+            "toUpperCase"),
+        Arguments.of(
+            "arrayIndexInAnOpenSwitch",
+            """
+            class Test {
+              int next;
+              void m(Object o, int[] arr, java.util.List<String> list) {
+                switch (o) {
+                  case Integer i -> arr[list.§
+                next = 1;
+              }
+            }""",
+            "size"),
+        Arguments.of(
+            "closedSwitchWithABraceOpenLater",
+            """
+            class Test {
+              void m(Object o) {
+                switch (o) {
+                  case String s -> s.§
+                  default -> {}
+                }
+              }
+
+              void k(boolean b) {
+                if (b) {
+              }
+            }""",
+            "isEmpty"));
+  }
+
+  // The sentinel in a guard is not the label's body.
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_21)
+  void completion_memberAccessInASwitchGuard_offersTheReceiversMembers() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+              int m(Object o) {
+                return switch (o) {
+                  case String s when s.length() < s.§ -> 0;
+                  default -> 1;
+                };
+              }
+            }""");
+
+    assertThat(labels(items)).contains("length");
+  }
 }

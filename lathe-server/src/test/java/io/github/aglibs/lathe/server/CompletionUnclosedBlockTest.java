@@ -19,7 +19,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 // CQ-0079: a block typed line by line is not closed yet when completion asks for a member. The
 // module's analysis is the file's before the edit, as in the editor, so the receiver resolves on
-// the edited text through the module's own compiler; the class's other members follow the block.
+// the edited text through the module's own compiler; the class's other members follow the block,
+// a modifier or an annotation starting them, where javac's recovery ends the open method.
 class CompletionUnclosedBlockTest extends ServiceTestBase {
 
   private static final String MARKER = "§";
@@ -40,7 +41,12 @@ class CompletionUnclosedBlockTest extends ServiceTestBase {
           next = 1;
         }
 
-        void n() {}
+        private void n() {}
+
+        @Override
+        public String toString() {
+          return "use";
+        }
       }
       """;
 
@@ -72,6 +78,38 @@ class CompletionUnclosedBlockTest extends ServiceTestBase {
         .as(label)
         .extracting(CompletionItem::getLabel)
         .anySatisfy(item -> assertThat(item).startsWith(member));
+  }
+
+  // Once the module's analysis has caught up with the edit, the open switch is still resolved on
+  // the text the injection closes, not on that analysis, where javac's recovery dropped `w`.
+  @Test
+  void completion_memberAccessInUnclosedSwitchOnceTheAnalysisCaughtUp_offersTheMembers()
+      throws Exception {
+    final Path use =
+        TestCompiler.writeMirroredModule(
+                tmp, "app", Map.of("com/app/Use.java", BEFORE), List.of(), 1_000L)
+            .get(0);
+    host.initialize(tmp);
+    awaitStartup();
+    openDoc(use, BEFORE);
+    awaitWorkerIdle();
+    final String marked =
+        BEFORE.replace(
+            "    next = 1;\n", "    switch (o) {\n      case Nested w -> w.§\n    next = 1;\n");
+    final int at = marked.indexOf(MARKER);
+    final String edited = marked.replace(MARKER, "");
+    change(use, edited, 2);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    awaitWorkerIdle();
+
+    final Either<List<CompletionItem>, CompletionList> items =
+        service
+            .completion(new CompletionParams(documentOf(use), position(edited, at)))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(items.isLeft() ? items.getLeft() : items.getRight().getItems())
+        .extracting(CompletionItem::getLabel)
+        .anySatisfy(item -> assertThat(item).startsWith("width"));
   }
 
   // A brace left open after the cursor, in another method, is that method's: the member access
@@ -125,6 +163,10 @@ class CompletionUnclosedBlockTest extends ServiceTestBase {
         Arguments.of(
             "switchOnTheClassesOwnType", "switch (o) {\n      case Nested w -> w.§", "width"),
         Arguments.of("colonCase", "switch (o) {\n      case Nested w:\n        w.§", "width"),
+        Arguments.of(
+            "colonCaseAfterAStatement",
+            "switch (o) {\n      case Nested w:\n        next = 2;\n        w.§",
+            "width"),
         Arguments.of("ifBlock", "if (next > 0) {\n      nested.§", "width"),
         Arguments.of("lambdaBlock", "Runnable r = () -> {\n      nested.§", "width"));
   }
