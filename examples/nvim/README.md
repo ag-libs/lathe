@@ -1,6 +1,6 @@
 # Sample Neovim config (Lathe demo)
 
-The [example init.lua](init.lua) sets up completion with blink.cmp, navigation with Telescope, and JUnit test results with neotest.
+The [example init.lua](init.lua) sets up completion with blink.cmp, navigation with Telescope, JUnit test results with neotest, debugging with nvim-dap and dap-view, and toasts with snacks.nvim.
 Copy the pieces you want into your config, or try the whole example in an isolated Neovim session.
 For a minimal installation, use the [Neovim quick start](../../README.md#neovim).
 
@@ -8,9 +8,8 @@ For a minimal installation, use the [Neovim quick start](../../README.md#neovim)
 
 Use Neovim 0.12 or later on Linux or macOS.
 Install Git, the `tree-sitter` CLI, and a C compiler so nvim-treesitter can build its parsers.
-Complete the [first build](../../README.md#first-build) in the Java project you want to open.
 
-From that project, replace `/path/to/lathe` with your Lathe checkout and `SomeFile.java` with a source file in the project.
+From the Maven or Gradle project you want to open, replace `/path/to/lathe` with your Lathe checkout and `SomeFile.java` with a source file in the project.
 The following command keeps the example's plugins and settings separate from your usual ones.
 
 ```sh
@@ -21,10 +20,9 @@ XDG_STATE_HOME=/tmp/lathe-demo/state \
 ```
 
 The first launch downloads lazy.nvim and the plugins listed in `init.lua`.
-Lathe starts the server installed by the project's build.
+Run `:LatheInit` to set the project up: one build, and the project's build files are not changed.
+A project whose build already registers Lathe needs no setup: Lathe starts the server that build installed.
 If you are developing the client itself, set `LATHE_NVIM_DIR` to your checkout's `lathe-neovim/runtime` directory.
-To add breakpoints to this example, load nvim-dap before Lathe.
-[Debugger setup](../../docs/guide/editors/neovim.md#debug-nvim-dap)
 
 ## Keymaps
 
@@ -44,4 +42,6 @@ Leader is Space. The Lathe-relevant bindings:
 | `<leader>tt` / `<leader>tf` | Run nearest test / file tests |
 | `<leader>to` / `<leader>ts` | Test output (docked) / test summary |
 | `<leader>td` / `<leader>tq` | Failed test's expected vs actual / results with times |
+| `<leader>db` / `<leader>dd` | Toggle breakpoint / debug the test or `main` under the cursor |
+| `<leader>dc` / `<leader>dt` | Continue / terminate the debug session |
 | `<leader>ff` / `<leader>fg` | Find files / live grep |

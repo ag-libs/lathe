@@ -1,18 +1,18 @@
-# Beat 5 — Debug. Narration captions (burned in post-render), finalized separately:
-#   (1) "Set a breakpoint, debug the replay"
-#   (2) "Inspect the frame — the User record"
-#   (3) "Live expression eval — user.name().toLowerCase() -> alice"
+# Beat 5 — Debug. Narration captions (burned in post-render), see beat5-debug.ass:
+#   (1) "Set a breakpoint and debug the test"
+#   (2) "Inspect the paused frame"
+#   (3) "Evaluate a call: pet.getName().toUpperCase() → BUDDY"
+#   (4) "Continue — the test passes"
 # Part of the Lathe demo; see dev/demo/demo-script.md. Run from the repo root after ./dev/demo/prepare.sh.
 #   vhs dev/demo/beats/beat5-debug.tape
 #
-# Story: debug app/Main replayed from .lathe — breakpoint on the println, hit it, inspect the `user`
-# record and evaluate a live method call (user.name().toLowerCase() -> "alice") in the dap-view panel,
-# then continue. Notes:
-#  - First DAP attach is slow (~18s): warm it hidden (run one session, terminate), and close the
-#    leftover docked output split before Show so the clip doesn't open on a finished run.
-#  - Watch expressions are added via a `:Watch <expr>` command (defined hidden) that calls
-#    dap-view's add_expr — robust vs. focusing the panel/REPL by hand under VHS. It shows the value
-#    inline in the Watches section (records expand to their fields).
+# Story: debug petclinic's OwnerTests.addPetAddsPersistedPet, replayed from .lathe/ — a breakpoint on
+# the assertion, :LatheDebug, then the paused frame in dap-view: watch the owner's pets and evaluate a
+# method call in the debuggee, then continue. Notes:
+#  - The first debug attach is slow: it is warmed off camera (one session, terminated), and the
+#    leftover output split is closed before Show.
+#  - Watches are added with a `:Watch <expr>` command (defined off camera) that calls dap-view's
+#    add_expr — robust next to focusing the panel by hand under VHS.
 # leader = Space. Line/motion navigation only.
 Output "docs/videos/beat5-debug.mp4"
 Require nvim
@@ -25,61 +25,56 @@ Set Height 1080
 Set Padding 30
 Set TypingSpeed 45ms
 
-# --- hidden setup: reset app sources, capture, open Main, warm index + debug attach, then clean up ---
+# --- hidden setup: the clone prepare.sh set up, sources reset; open the test, wait for the
+# workspace, warm the debug attach, then clean up. `|| exit 1` guards the cd. ---
 Hide
 Type 'R="$PWD"' Enter
 Type 'source "$R/dev/demo/env.sh"' Enter
-Type 'cd "$R/lathe-maven-plugin/target/it/multi-module" || exit 1' Enter
-Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/app/src/main/java/com/example/app/Main.java" app/src/main/java/com/example/app/Main.java' Enter
-Type 'cp "$R/lathe-maven-plugin/src/it/multi-module/app/src/main/java/com/example/app/User.java" app/src/main/java/com/example/app/User.java' Enter
-Type 'mvn -q clean test -Dlathe.capture.only=true >/dev/null 2>&1' Enter
-Sleep 12s
+Type 'renice -n 15 $$ >/dev/null' Enter
+Type 'cd "$PETCLINIC" || exit 1' Enter
+Type 'git checkout -q -- src' Enter
 Type 'clear' Enter
-Type 'nvim -n app/src/main/java/com/example/app/Main.java' Enter
-Sleep 9s
-# a small command that adds an evaluated watch to the dap-view panel (robust vs. panel/REPL focus)
+Type 'nvim -n src/test/java/org/springframework/samples/petclinic/owner/OwnerTests.java +34' Enter
+Wait+Screen@60s /workspace ready/
 Type ':command! -nargs=1 Watch lua require("dap-view").add_expr(<q-args>, false)' Enter
-Sleep 200ms
-# warm the debug attach so the visible one is fast, then terminate and clear
-Type '9G'
+Type '34G'
 Type ' db'
 Sleep 400ms
 Type ' dd'
-Sleep 22s
+Sleep 25s
 Type ' dt'
-Sleep 2000ms
+Sleep 3s
 Type ' db'
 Sleep 500ms
-# close the leftover docked output split so the clip opens on a clean editor, not a finished run
-Ctrl+W
-Type 't'
-Ctrl+W
-Type 'o'
+Type ':only' Enter
 Type 'gg'
+Type ':lua Snacks.notifier.hide()' Enter
 Type ':echo ""' Enter
 Sleep 500ms
 Show
 
-# --- 1) set a breakpoint on the println and start debugging ---
-Type '9G'                 # the println line — `user` is assigned on the line above
+# --- 1) a breakpoint on the assertion, then debug the test ---
+Type '34G'                # assertTrue(owner.getPets().contains(pet)) — owner and pet are in scope
 Sleep 700ms
 Type ' db'                # toggle breakpoint (gutter sign)
 Sleep 1200ms
-Type ' dd'                # :LatheDebug — replay under the debugger, suspends and hits the breakpoint
-Sleep 1000ms             # warmed attach stops by ~3s (fast) — add the first watch promptly so the
-                         # empty "No expressions" panel is barely shown
+Type ' dd'                # :LatheDebug — replay under the debugger, stops at the breakpoint
+Wait+Screen@60s /Listening for transport/
+Sleep 2000ms              # the debugger attaches and the frame pauses on the breakpoint
 
-# --- 2) inspect the User record at the paused frame ---
-Type ':Watch user'
+# --- 2) inspect the paused frame ---
+Type ':Watch owner.getPets()'
 Enter
-Sleep 2800ms             # Watches shows user expanded -> name = "Alice", age = 30
+Wait+Screen@20s /size=1/
+Sleep 2000ms
 
-# --- 3) live expression evaluation (method invocation in the debuggee) ---
-Type ':Watch user.name().toLowerCase()'
+# --- 3) live expression evaluation (a method call in the debuggee) ---
+Type ':Watch pet.getName().toUpperCase()'
 Enter
-Sleep 3600ms             # -> "alice"
+Wait+Screen@20s /"BUDDY"/
+Sleep 2500ms
 
-# --- 4) continue to completion ---
+# --- 4) continue to the end ---
 Type ' dc'
-Sleep 2800ms             # resumes; the docked output prints ALICE and the session ends
-
+Wait+Screen@30s /1 passed/
+Sleep 2000ms              # the test finishes: "1 passed"
