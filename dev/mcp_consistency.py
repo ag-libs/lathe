@@ -11,6 +11,7 @@ LOCATION = re.compile(r"(\S+\.java):(\d+)(?::(\d+))?(?: \[(\w+)\])?: ?(.*)$")
 # A kind may be two words ("enum constant"); a name is one.
 OUTLINE_ITEM = re.compile(r"^( *)(.+?) (\S+)  (\d+):(\d+): ")
 SERVER_LOG_FAILURE = "see the server log"
+TEST_TREE = "/src/test/"
 
 
 def first(text):
@@ -204,7 +205,8 @@ def list_shape(b, ws: Path, text, label, duplicates_known=None, grouped_known=No
     if "showing first" not in text:
         b.check("%s: header counts every row" % label, count(text) == len(rows), "header %d, rows %d"
                 % (count(text), len(rows)))
-    order = [module_of(ws, p) for p, _, _ in rows]
+    # A list puts main sources before tests (MC-100), so a module's rows come in up to two runs.
+    order = [(module_of(ws, p), TEST_TREE in p) for p, _, _ in rows]
     seen, scattered = set(), set()
     for i, module in enumerate(order):
         if module in seen and order[i - 1] != module:
