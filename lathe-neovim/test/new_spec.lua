@@ -129,6 +129,23 @@ do
   vim.cmd.edit(vim.fn.tempname() .. "/BarTest.java")
   spec.check("test seed keeps an existing suffix", new._test_seed(0), "BarTest")
 
+  -- NV-16: the root module's path is empty; the labels name it `.`.
+  spec.check(
+    "a root module's destination row names it .",
+    new._dest_label({ pkg = "com.app", module = "", scope = "main" }),
+    "com.app (. · main)"
+  )
+  spec.check(
+    "a root module's prompt names it .",
+    new._name_label("class", { module = "" }, "main"),
+    "Class in . · main"
+  )
+  spec.check(
+    "another module keeps its path",
+    new._name_label("test", { module = "core" }, "test"),
+    "Test class in core · test"
+  )
+
   spec.check(
     "cmd completes kinds by prefix",
     table.concat(new._cmd_complete("pa", "LatheNew pa", 11), ","),

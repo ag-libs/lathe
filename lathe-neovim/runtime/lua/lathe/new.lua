@@ -117,15 +117,18 @@ end
 
 -- The destination-row label: `pkg (module · scope)`, all three fuzzy-matchable in one line.
 local function dest_label(item)
-  return ("%s (%s · %s)"):format(item.pkg, item.module, item.scope)
+  return ("%s (%s · %s)"):format(item.pkg, util.module_label(item.module), item.scope)
 end
 
 -- The prompt label shows the module and scope (fixed by the picked row); the package + class name are
 -- edited in the input itself.
 local function name_label(kind, dest, scope)
   local noun = kind == "test" and "Test class" or (kind:sub(1, 1):upper() .. kind:sub(2))
-  return ("%s in %s · %s"):format(noun, dest.module or "?", scope)
+  return ("%s in %s · %s"):format(noun, util.module_label(dest.module), scope)
 end
+
+M._dest_label = dest_label
+M._name_label = name_label
 
 -- ── prompts ──────────────────────────────────────────────────────────────────
 
@@ -196,6 +199,7 @@ local function choose_module(modules, ctx, cb)
   pick.pick({
     title = "Module:",
     items = M._float_module(modules, ctx and ctx.moduleRel),
+    format = util.module_label,
     on_choice = function(module)
       if module then
         cb(module)

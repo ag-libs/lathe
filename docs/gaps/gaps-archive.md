@@ -15271,6 +15271,35 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-16 — `:LatheNew` names a single-module project's module as blank — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheNew`'s destination rows and name prompt in a project whose only module is its root.**
+
+Found by the exploratory round on the Neovim client's commands (2026-11-26, `main` at `5c5ec96`, a scratch clone of spring-petclinic set up with `:LatheInit maven`).
+
+### Observed behaviour
+
+`:LatheNew class` from `Owner.java` prompted "Class in  · main: ", and the destination rows read `com.app ( · main)`: the root module's path is empty, and the labels printed it as it is.
+The server names the root module `.` in its messages (`LatheLayout.displayedModule`).
+
+### Resolution
+
+The destination rows, the name prompt and the `Module:` picker of `:LatheNew`, and the run-configuration picker, name the root module `.`, through one helper (`util.module_label`); another module keeps its path, and a module the client does not know still shows `?`.
+On the petclinic clone the prompt reads "Class in . · main: ".
+
+### Regression targets
+
+- `lathe-neovim/test/new_spec.lua`: "a root module's destination row names it .", "a root module's prompt names it .", "another module keeps its path"
+- `lathe-neovim/test/util_spec.lua`: "root module label", "another module keeps its path", "unknown module"
+
+---
+
 ## NV-15 — `:LatheResourceFind <name>` ignores the name without Telescope — done
 
 **Status: done** (2026-11-26)
