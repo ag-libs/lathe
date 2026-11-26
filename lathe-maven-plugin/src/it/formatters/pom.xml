@@ -59,8 +59,8 @@
       </plugin>
     </plugins>
   </build>
-  <!-- Config-only: Spotless never runs here; lathe:sync reads the active profile's formatter and
-       resolves the jars that Spotless version pins. -->
+  <!-- Config-only: neither Spotless nor spring-javaformat runs here; lathe:sync reads the active
+       profile's formatter and resolves the jars its plugin version pins. -->
   <profiles>
     <profile>
       <id>spotless-palantir</id>
@@ -100,6 +100,24 @@
                 </eclipse>
               </java>
             </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>spring-javaformat</id>
+      <properties>
+        <expected.engine>spring</expected.engine>
+        <!-- A property, as Spring projects pin it: the plugin version Lathe reads is the resolved
+             one. -->
+        <spring-format.version>@spring-javaformat.version@</spring-format.version>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>io.spring.javaformat</groupId>
+            <artifactId>spring-javaformat-maven-plugin</artifactId>
+            <version>${spring-format.version}</version>
           </plugin>
         </plugins>
       </build>
