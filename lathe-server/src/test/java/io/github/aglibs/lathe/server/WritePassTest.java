@@ -405,7 +405,7 @@ class WritePassTest extends ServiceTestBase {
     awaitStartup();
     final Path user = fx.users().get(0);
     openDoc(user, Files.readString(user));
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
     final var otherServer = new SessionHost(DEBOUNCE_MS);
     try {
@@ -421,7 +421,7 @@ class WritePassTest extends ServiceTestBase {
           .get(10, TimeUnit.SECONDS);
       reconcileNow(true).get(10, TimeUnit.SECONDS);
 
-      verify(client, timeout(5_000))
+      verify(client, timeout(TIMEOUT_MS))
           .publishDiagnostics(argThat(p -> isFor(p, user) && hasMessage(p, "cannot find symbol")));
     } finally {
       otherServer.close();
@@ -434,13 +434,13 @@ class WritePassTest extends ServiceTestBase {
     host.initialize(tmp);
     final Path user = fx.users().get(0);
     openDoc(user, Files.readString(user));
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
 
     Files.delete(fx.dep());
     reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
 
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(
             argThat(
                 p ->
@@ -466,7 +466,7 @@ class WritePassTest extends ServiceTestBase {
     assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
     verify(client, never()).showMessageRequest(any());
     // The in-process recompile reports a self-clearing progress task (begin "recompiling" + end).
-    verify(client, timeout(5_000).atLeastOnce())
+    verify(client, timeout(TIMEOUT_MS).atLeastOnce())
         .notifyProgress(argThat(WritePassTest::isRecompileBegin));
   }
 

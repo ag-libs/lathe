@@ -112,7 +112,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
       service.didChange(changeParams("content-" + i));
     }
 
-    verify(client, timeout(5_000).atLeastOnce())
+    verify(client, timeout(TIMEOUT_MS).atLeastOnce())
         .publishDiagnostics(argThat(p -> p.getUri().equals(URI) && !p.getDiagnostics().isEmpty()));
   }
 
@@ -122,7 +122,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
       service.didChange(changeParams("content-" + i));
     }
 
-    verify(client, timeout(5_000).atLeastOnce())
+    verify(client, timeout(TIMEOUT_MS).atLeastOnce())
         .publishDiagnostics(
             argThat(
                 p ->
@@ -140,7 +140,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class Foo {}")));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client, timeout(5_000)).publishDiagnostics(captor.capture());
+    verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
   }
 
@@ -193,7 +193,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(URI)));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client, timeout(5_000)).publishDiagnostics(captor.capture());
+    verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
     assertThat(captor.getValue().getDiagnostics()).isEmpty();
   }
@@ -219,7 +219,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(edits).isNotEmpty();
-    verify(client, timeout(2000))
+    verify(client, timeout(TIMEOUT_MS))
         .showMessage(
             argThat(
                 m -> m.getType() == MessageType.Info && m.getMessage().contains("formatted in")));
@@ -264,7 +264,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     assertThat(first).isEmpty();
     assertThat(second).isEmpty();
-    verify(client, timeout(2000).times(1))
+    verify(client, timeout(TIMEOUT_MS).times(1))
         .showMessage(
             argThat(
                 m ->
@@ -293,7 +293,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class Foo {}")));
 
     assertThat(service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
-    verify(client, timeout(2000))
+    verify(client, timeout(TIMEOUT_MS))
         .showMessage(
             argThat(
                 m ->
@@ -355,7 +355,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
-    verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
+    verify(client, timeout(TIMEOUT_MS).atLeast(2)).notifyProgress(progressCaptor.capture());
     assertThat(locations).hasSize(2);
     assertThat(progressCaptor.getAllValues()).extracting(ProgressParams::getToken).contains(token);
     assertThat(CollectionUtil.last(progressCaptor.getAllValues()).getValue().getLeft())
@@ -555,7 +555,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
-    verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
+    verify(client, timeout(TIMEOUT_MS).atLeast(2)).notifyProgress(progressCaptor.capture());
     assertThat(sites).isNotEmpty();
     assertThat(CollectionUtil.last(progressCaptor.getAllValues()).getValue().getLeft())
         .isInstanceOf(WorkDoneProgressEnd.class);
@@ -1098,7 +1098,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     host.initialize(tmp);
 
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .showMessage(
             argThat(
                 m ->
@@ -1118,7 +1118,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     host.initialize(tmp);
 
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .showMessage(
             argThat(
                 m ->
@@ -1138,7 +1138,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     host.initialize(tmp);
 
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .showMessage(
             argThat(
                 m ->
@@ -1153,7 +1153,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   void initialize_workspaceWithAModule_saysReady() throws Exception {
     openShop();
 
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .showMessage(
             argThat(
                 m ->
@@ -1408,7 +1408,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(definitionAt(useFile, use, "Foo foo")).hasSize(1);
     assertThat(definitionAt(useFile, use, "String text")).isEmpty();
     assertThat(definitionAt(useFile, use, "length()")).isEmpty();
-    verify(client, timeout(2000).times(1))
+    verify(client, timeout(TIMEOUT_MS).times(1))
         .showMessage(
             argThat(
                 m ->
@@ -1433,7 +1433,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     assertThat(definitionAt(useFile, use, "Lib first")).isEmpty();
     assertThat(definitionAt(useFile, use, "Lib second")).isEmpty();
-    verify(client, timeout(2000).times(1))
+    verify(client, timeout(TIMEOUT_MS).times(1))
         .showMessage(
             argThat(
                 m ->
