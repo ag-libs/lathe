@@ -75,7 +75,7 @@ local function open_entry(entry, client)
 end
 
 --- Lists every resource in the workspace (reactor + dependencies) and opens the picked one. `query`
---- prefills the Telescope prompt (the prefill-last-query preference); the fallback starts empty.
+--- starts the picker's prompt, Telescope's or the built-in one, which filters by it at once.
 function M.find(query)
   local client = util.client()
   if not client then

@@ -82,6 +82,7 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
   resources.find("schema")
 
   spec.check("dispatch method command", commands[1], "lathe.resources.list")
+  spec.check("the name reaches the picker as its default text", picked and picked.default_text, "schema")
   spec.check("entry count", picked and #picked.items, 2)
   spec.check(
     "display leads with source icon + module + path",

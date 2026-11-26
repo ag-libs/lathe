@@ -62,8 +62,8 @@ end
 
 --- Let the user pick one of `entries` (each with a `display`, and an `ordinal` to match): in
 --- Telescope when it is installed, else lathe.pick. opts: `title`, `on_choice(entry)`,
---- `default_text` (Telescope's prefilled prompt) and `preview_locations` (Telescope previews each
---- entry's filename and lnum).
+--- `default_text` (the prompt's starting text, in both pickers) and `preview_locations`
+--- (Telescope previews each entry's filename and lnum).
 function M.pick(entries, opts)
   if not pcall(require, "telescope.pickers") then
     require("lathe.pick").pick({
@@ -72,6 +72,7 @@ function M.pick(entries, opts)
         return entry.display
       end,
       title = opts.title,
+      default_text = opts.default_text,
       on_choice = function(entry)
         if entry then
           opts.on_choice(entry)

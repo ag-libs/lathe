@@ -8,6 +8,7 @@
 --     items = {...},                 -- arbitrary values
 --     format = function(item) ... end, -- item -> display string (fuzzy matched on this)
 --     title = "Where:",
+--     default_text = "app",          -- optional: the prompt's starting text, which filters at once
 --     on_choice = function(item) ... end, -- item, or nil on cancel
 --   })
 
@@ -69,7 +70,11 @@ function M.pick(opts)
     title = opts.title,
   })
 
-  local state = { filtered = entries, positions = {} }
+  -- A default text starts the prompt and the filter, as Telescope's prompt does (NV-15).
+  local default_text = opts.default_text or ""
+  vim.api.nvim_buf_set_lines(prompt_buf, 0, -1, false, { default_text })
+  local filtered, positions = M._filter(entries, default_text)
+  local state = { filtered = filtered, positions = positions }
   local resolved = false
 
   local function finish(item)
@@ -103,10 +108,14 @@ function M.pick(opts)
     vim.bo[results_buf].modifiable = false
 
     vim.api.nvim_buf_clear_namespace(results_buf, ns, 0, -1)
+    -- matchfuzzypos counts characters and extmarks count bytes: a row that starts with a
+    -- multibyte icon (a resource's) would shift every highlight.
     for line, cols in ipairs(state.positions) do
+      local text = state.filtered[line].text
       for _, c in ipairs(cols) do
-        pcall(vim.api.nvim_buf_set_extmark, results_buf, ns, line - 1, c, {
-          end_col = c + 1,
+        local start = vim.str_byteindex(text, "utf-32", c)
+        pcall(vim.api.nvim_buf_set_extmark, results_buf, ns, line - 1, start, {
+          end_col = vim.str_byteindex(text, "utf-32", c + 1),
           hl_group = "Special",
         })
       end
@@ -161,7 +170,7 @@ function M.pick(opts)
   vim.api.nvim_create_autocmd("BufLeave", { buffer = prompt_buf, once = true, callback = cancel })
 
   render()
-  vim.cmd("startinsert")
+  vim.cmd(default_text == "" and "startinsert" or "startinsert!")
 end
 
 return M
