@@ -805,6 +805,33 @@ None yet.
 
 ---
 
+## EG-130 — A `:LatheNew` test skeleton fails a build that checks formatting until it is formatted
+
+**Status: deferred** (triaged 2026-11-26: low; the first save formats the file where format-on-save is on, and the real fix, formatting the skeleton, is a feature)
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: `:LatheNew test` in a project whose build validates formatting (spring-javaformat's `validate`, Spotless' `check`); every client, as the server writes the file.**
+
+Found by the exploratory round on the Neovim client's commands (2026-11-26, `main` at `5c5ec96`, a scratch clone of spring-petclinic set up with `:LatheInit maven`).
+
+### Observed behaviour
+
+`:LatheNew test` from `Owner.java` wrote `src/test/java/.../owner/OwnerTest.java` to disk at once, and the next `:LatheSync` failed: `spring-javaformat:validate` reported "Formatting violations found" in it, as the user's own `mvn verify` would.
+The skeleton (`NewTypeTemplates`) is left unformatted on purpose, for the user's format-on-save to canonicalise; the file is on disk before any save, format-on-save is off by default, and an agent never saves.
+The class, record and interface skeletons pass, their bodies empty.
+
+### Fix direction
+
+Copying the destination's indentation is not enough, and was tried: with tabs, spring-javaformat still wants a blank line before the class's closing brace, and google-java-format collapses the empty `@Test` method body to `{}`, so a Spotless check fails on today's two-space skeleton too.
+Only the project's formatter knows its rules: format the skeleton with it (`FormatService`) before writing it, where one is configured, and place the caret in the collapsed body; with no formatter (a Gradle build's Spotless, which Lathe cannot read), the skeleton stays as it is.
+
+### Regression targets
+
+None yet.
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
