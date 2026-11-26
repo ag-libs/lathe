@@ -131,7 +131,7 @@ It formats as the plugin's `apply` goal does:
 When a Maven build runs both Spotless and spring-javaformat, Spotless wins.
 A Gradle build that applies both formats nothing, and the sync warns, until `lathe-style.json` declares the formatter: Lathe cannot read Spotless's settings on Gradle.
 On Maven, one release serves the workspace: the root's plugin, or the one every Java module runs.
-On Gradle, only a root project that applies the plugin is detected; a build that applies it only in subprojects declares `{ "formatter": { "engine": "spring" } }`, which then takes the release Lathe pins (0.0.47) unless it names a `version`.
+On Gradle, only a root project that applies the plugin is detected; a build that applies it only in subprojects declares `{ "formatter": { "engine": "spring" } }`, which then takes the release Lathe pins unless it names a `version`.
 
 ### Declaring it
 
@@ -147,7 +147,7 @@ A `lathe-style.json` at the repo root names the formatter, for any build tool:
 
 #### The formatter version
 
-`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for palantir-java-format, `4.41` for Eclipse, `0.0.47` for spring-javaformat.
+`version` names the release of the formatter itself: `1.28.0` for google-java-format, `2.102.0` for palantir-java-format, `4.41` for Eclipse, `0.0.48` for spring-javaformat.
 It is what the jars are resolved at, so pin it when the editor must format exactly as your CI does.
 
 Left out, it is the default Spotless picks:

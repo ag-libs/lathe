@@ -68,7 +68,7 @@ Spring projects (spring-boot, Petclinic) use spring-javaformat throughout.
 ### Resolution
 
 A `spring` engine runs spring-javaformat as its build plugin does.
-The sync resolves the formatter and its Eclipse runtime (provided scope in the formatter's POM, so named too) at the plugin's release, else 0.0.47, the release Lathe pins.
+The sync resolves the formatter and its Eclipse runtime (provided scope in the formatter's POM, so named too) at the plugin's release, else the release Lathe pins (0.0.47 when it landed, bumped with the build's dependencies).
 The server loads them in an isolated classloader, reads `.springjavaformatconfig` upwards from the module's directory as the plugin reads it from the project's, and formats in one pass, whole files and ranges.
 Maven detects `spring-javaformat-maven-plugin` (its version a resolved property), with the rule Spotless uses for the project whose plugin applies; Gradle detects a root project's `io.spring.javaformat` plugin, its release read from the plugin jar's manifest.
 Spotless wins in a Maven build that runs both, including a Spotless setup sync refuses; a Gradle build that applies both formats nothing until `lathe-style.json` declares the formatter, as for Spotless alone.
