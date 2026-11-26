@@ -679,9 +679,12 @@ None yet.
 
 ## EG-113 — Formatting recognizes only Spotless, not spring-javaformat or formatter-maven-plugin
 
-**Status: deferred** (triaged 2026-11-18: a feature, and the feature freeze holds)
+**Status: accepted** (triaged 2026-11-26: the feature freeze is lifted for the spring-javaformat part, so Petclinic, the demo project, formats; formatter-maven-plugin stays deferred)
+**Value: medium — Size: M**
 
 **Kind: feature**
+
+Signal: Petclinic is the demo project, and jdtls formats it in the wrong style (spaces for tabs, Javadoc wrapped at 80 columns).
 
 **Affects: `format_file`, `:LatheFormat` and the editor's formatting on Maven builds.**
 
@@ -1297,39 +1300,6 @@ Every bound has the type-argument role of CQ-0066, which allows any reference ty
 Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
-
-## CQ-0079 — Member completion after `case X x -> x.` answers nothing while the switch block is not closed
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: S–M**
-
-**Affects: editor completion in a `switch` with arrow cases, typed line by line (Neovim without auto-pairs leaves the block open).**
-
-Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
-
-### Observed behaviour
-
-In a method of `ServerListener`, with `Object o = null;` before it:
-
-```java
-switch (o) {
-    case ListenerConfig lc -> lc.§
-```
-
-with no `}` yet, completion answers 0 items; `case String str -> str.§` does too.
-The same with the block closed (`}` on the next line, or `; default -> { } }`) answers 43 items, `port` among them.
-An unclosed classic `case String str:` then `str.§`, an `instanceof` pattern, a switch expression's arrow case and a lambda body all complete.
-
-### Expected
-
-Members of the pattern variable's type, as with the block closed: the recovery that closes an unfinished classic case closes an unfinished arrow case too.
-
-### Regression targets
-
-None yet.
 
 # Workspace Lifecycle Gaps (WS)
 
@@ -2421,29 +2391,4 @@ A `$` in a query is read as a nesting dot; a query that matches no type but look
 None yet.
 
 ---
-
-## MC-111 — A file tool given `path:line` says only that it is not a `.java` file
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP file tools (`get_diagnostics`, `outline`, and the position tools' `file`).**
-
-Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
-
-### Observed behaviour
-
-`get_diagnostics {file: "webserver/webserver/src/main/java/io/helidon/webserver/ServerListener.java:134"}` answers "…ServerListener.java:134 is not a .java file".
-Agents often copy a location as `path:line` (or `path:line:column`, the form Lathe's own answers print), and the answer does not say what to change.
-
-### Expected
-
-A `.java` path followed by `:line` or `:line:column` gets a note to pass the path alone, with the line and column apart; or the tools that take a position read them from it.
-
-### Regression targets
-
-None yet.
 

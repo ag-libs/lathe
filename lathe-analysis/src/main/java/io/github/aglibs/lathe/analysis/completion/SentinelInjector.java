@@ -35,7 +35,26 @@ final class SentinelInjector {
   }
 
   SentinelInjectionResult inject(final int cursorOffset) {
-    final BackwardResult back = backwardScan(cursorOffset);
+    return inject(cursorOffset, false);
+  }
+
+  // switchLabelBody: the parse of a first injection found the sentinel in the body of a switch
+  // label, the last thing on its line, in a switch the content leaves open (`case S s -> s.§`, or
+  // `case S s:` then `s.§`). The body is a statement (an arrow's expression body ends with `;`
+  // too),
+  // which the backward scan reads as an expression after `->` or `:`.
+  SentinelInjectionResult inject(final int cursorOffset, final boolean switchLabelBody) {
+    final BackwardResult scanned = backwardScan(cursorOffset);
+    final BackwardResult back =
+        switchLabelBody
+            ? new BackwardResult(
+                scanned.prefix(),
+                scanned.tokenStart(),
+                Context.STATEMENT,
+                scanned.receiverText(),
+                scanned.hasDot(),
+                scanned.memberReference())
+            : scanned;
     final ForwardResult fwd = forwardScan();
 
     final int suffixStart = DeclarationNames.identifierEnd(content, cursorOffset);
@@ -48,15 +67,22 @@ final class SentinelInjector {
             && shouldSuppressSemicolon(content, suffixStart);
     final var semicolon =
         back.context() == Context.STATEMENT && !parenFollows && !suppressSemicolon ? ";" : "";
+    // In a switch label's body, the blocks the content leaves open are the switch being typed: they
+    // close right after the label's statement, so the members after it keep their structure. At
+    // the end of the file, javac's recovery reads those members into the switch and loses the
+    // enclosing class's own types (CQ-0079). Elsewhere an open brace may be another method's, so
+    // the braces close at the end of the file, as they always have.
+    final boolean closeHere = switchLabelBody && !semicolon.isEmpty();
     final var injected =
-        "%s%s%s%s%s%s"
+        "%s%s%s%s%s%s%s"
             .formatted(
                 content.substring(0, back.tokenStart()),
                 SENTINEL,
                 ")".repeat(fwd.unclosedParens()),
                 semicolon,
+                closeHere ? "}".repeat(fwd.unclosedBraces()) : "",
                 content.substring(suffixStart),
-                "}".repeat(fwd.unclosedBraces()));
+                closeHere ? "" : "}".repeat(fwd.unclosedBraces()));
     final int memberStubAt =
         semicolon.isEmpty() || fwd.unclosedParens() > 0
             ? -1
@@ -71,7 +97,9 @@ final class SentinelInjector {
         back.hasDot(),
         back.memberReference(),
         injected,
-        memberStubAt);
+        memberStubAt,
+        closeHere && fwd.unclosedBraces() > 0,
+        fwd.unclosedBraces());
   }
 
   private BackwardResult backwardScan(final int cursorOffset) {
@@ -253,6 +281,18 @@ final class SentinelInjector {
    *   <li>{@code \{} — opening brace follows (extends / implements clause before class body)
    * </ul>
    */
+  // Whether the token at the cursor is the last thing on its line, so javac reads the next line
+  // into
+  // a switch label's body the sentinel does not end.
+  boolean lastOnItsLine(final int cursorOffset) {
+    int i = DeclarationNames.identifierEnd(content, cursorOffset);
+    while (i < content.length() && (content.charAt(i) == ' ' || content.charAt(i) == '\t')) {
+      i++;
+    }
+
+    return i >= content.length() || content.charAt(i) == '\n' || content.charAt(i) == '\r';
+  }
+
   private static boolean shouldSuppressSemicolon(final String content, final int suffixStart) {
     int i = suffixStart;
     while (i < content.length() && (content.charAt(i) == ' ' || content.charAt(i) == '\t')) {

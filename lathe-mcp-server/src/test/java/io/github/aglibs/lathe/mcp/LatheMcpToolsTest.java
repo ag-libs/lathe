@@ -506,6 +506,31 @@ class LatheMcpToolsTest {
     assertThat(text(notJava)).endsWith("pom.xml is not a .java file");
   }
 
+  // MC-111: agents copy a location as Lathe's answers print it, `path:line` or `path:line:column`,
+  // into a file argument; the answer names the path to pass instead.
+  @Test
+  void fileTools_fileGivenAsALocation_returnErrorNamingThePath() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loc.java"), "class Loc {}");
+
+    final CallToolResult diagnostics =
+        call("get_diagnostics", Map.of("file", "%s:12".formatted(file)));
+    final CallToolResult described =
+        call("describe_symbol", Map.of("file", "%s:1:7".formatted(file), "line", 1, "column", 7));
+    final CallToolResult verified =
+        call("verify_change", Map.of("files", List.of("%s:3".formatted(file))));
+
+    assertThat(List.of(diagnostics, described, verified))
+        .allSatisfy(
+            result -> {
+              assertThat(result.isError()).isTrue();
+              assertThat(text(result))
+                  .contains("is a location, not a file: pass %s as the file".formatted(file));
+            });
+    assertThat(text(call("get_diagnostics", Map.of("file", "%s:x".formatted(file)))))
+        .as("not a location")
+        .doesNotContain("is a location");
+  }
+
   @Test
   void getDiagnostics_missingFileArgument_returnsError() {
     final CallToolResult result = call("get_diagnostics", Map.of());
