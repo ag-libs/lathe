@@ -71,6 +71,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -271,7 +272,7 @@ public final class LatheEngine {
                     column,
                     (session, uri, pos, cancel, progress) ->
                         session.search().referencesFuture(uri, pos, true, cancel, progress)))
-            .map(matches -> keptReferences(matches, kept, maxResults));
+            .map(matches -> keptReferences(matches, kept, maxResults, file, line, column));
     final LatheReferences refs = found.value();
     if (!refs.resolved() || refs.total() > 0 || refs.filteredOut() > 0) {
       return found;
@@ -325,16 +326,19 @@ public final class LatheEngine {
   private LatheReferences keptReferences(
       final List<ReferenceMatch> matches,
       final Set<LatheReference.Access> kept,
-      final int maxResults) {
+      final int maxResults,
+      final Path file,
+      final int line,
+      final int column) {
     // The declarations come too: a position naming a symbol is its declaration or one of its uses,
     // so an empty search means no symbol, and an unused symbol finds only its declaration.
     final List<ReferenceMatch> found =
         matches.stream().filter(match -> match.role() != ReferenceRole.DECLARATION).toList();
     final List<ReferenceMatch> uses =
-        found.stream()
-            .filter(match -> kept.contains(access(match)))
-            .sorted(Comparator.comparing(ReferenceMatch::toLocation, locationOrder()))
-            .toList();
+        ordered(
+            found.stream().filter(match -> kept.contains(access(match))).toList(),
+            ReferenceMatch::toLocation,
+            () -> listHome(file, line, column));
     final long filteredOut = found.stream().filter(match -> !kept.contains(access(match))).count();
     return new LatheReferences(
         uses.size(),
@@ -358,10 +362,11 @@ public final class LatheEngine {
   }
 
   private CappedLocations capLocations(
-      final List<? extends Location> locations, final int maxResults) {
+      final List<? extends Location> locations,
+      final int maxResults,
+      final Supplier<ListHome> home) {
     final List<LatheLocation> capped =
-        locations.stream()
-            .sorted(locationOrder())
+        ordered(locations, (Location found) -> found, home).stream()
             .limit(maxResults)
             .map(this::toLatheLocation)
             .toList();
@@ -389,14 +394,15 @@ public final class LatheEngine {
                 column,
                 (session, uri, pos, cancel, progress) ->
                     session.search().implementationFuture(uri, pos)))
-        .map(either -> capImplementations(either, maxResults));
+        .map(either -> capImplementations(either, maxResults, () -> listHome(file, line, column)));
   }
 
   private LatheImplementations capImplementations(
       final Either<List<? extends Location>, List<? extends LocationLink>> either,
-      final int maxResults) {
+      final int maxResults,
+      final Supplier<ListHome> home) {
     // The implementation search answers in locations (FeatureAnswers.definitionResult).
-    final CappedLocations capped = capLocations(either.getLeft(), maxResults);
+    final CappedLocations capped = capLocations(either.getLeft(), maxResults, home);
     return new LatheImplementations(capped.total(), capped.truncated(), capped.locations());
   }
 
@@ -1146,33 +1152,121 @@ public final class LatheEngine {
   }
 
   // One LatheCall per call site (a caller may invoke the symbol at several ranges).
+  // The callers' list is ordered from the declaration's module, as the declaration is asked about.
   private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
-    return request(
-            (session, cancel, progress) ->
-                session.search().incomingCallsFuture(item, cancel, progress))
+    final List<Map.Entry<String, Location>> sites =
+        request(
+                (session, cancel, progress) ->
+                    session.search().incomingCallsFuture(item, cancel, progress))
+            .stream()
+            .flatMap(
+                call ->
+                    call.getFromRanges().stream()
+                        .map(
+                            range ->
+                                Map.entry(
+                                    call.getFrom().getName(),
+                                    new Location(call.getFrom().getUri(), range))))
+            .toList();
+    return ordered(
+            sites,
+            Map.Entry::getValue,
+            () -> listHome(query(WorkspaceSession::layout), LatheUri.toPath(item.getUri())))
         .stream()
-        .flatMap(
-            call ->
-                call.getFromRanges().stream()
-                    .map(
-                        range ->
-                            Map.entry(
-                                call.getFrom().getName(),
-                                new Location(call.getFrom().getUri(), range))))
-        .sorted(Map.Entry.comparingByValue(locationOrder()))
         .map(site -> new LatheCall(site.getKey(), toLatheLocation(site.getValue())))
         .toList();
   }
 
   // The order every capped list answers in: the project's own sources, then its generated ones,
-  // then the JDK's and dependencies'; by file within each, which keeps a module's together (in the
-  // usual layout its main sources before its tests), then by position. A cap then keeps what the
-  // agent edits.
-  private Comparator<Location> locationOrder() {
-    return Comparator.comparing((Location location) -> origin(LatheUri.toPath(location.getUri())))
-        .thenComparing(Location::getUri)
-        .thenComparingInt(location -> location.getRange().getStart().getLine())
-        .thenComparingInt(location -> location.getRange().getStart().getCharacter());
+  // then the JDK's and dependencies'; within the project's, the files of a module before those of
+  // none, main sources before tests, the module declaring the symbol first in each, then by
+  // module, file and position. Path order alone put a sibling module whose name sorts first, and
+  // its tests, before the declaring module (MC-100); and the declaring module's tests ahead of
+  // other modules' production code would hide the uses a change breaks. A cap then keeps what the
+  // agent edits. The layout and the declaring module are read only for a list with something to
+  // order.
+  private <T> List<T> ordered(
+      final List<? extends T> items,
+      final Function<? super T, Location> location,
+      final Supplier<ListHome> home) {
+    if (items.size() < 2) {
+      return List.copyOf(items);
+    }
+
+    final ListHome listHome = home.get();
+    final Map<Path, Optional<SourceLayout.Placement>> placements = new HashMap<>();
+    final List<ListOrderKey<T>> keys = new ArrayList<>(items.size());
+    for (final T item : items) {
+      final Location at = location.apply(item);
+      final Path path = LatheUri.toPath(at.getUri());
+      final Optional<SourceLayout.Placement> placement =
+          placements.computeIfAbsent(path, listHome.layout()::placementOf);
+      keys.add(new ListOrderKey<>(item, at, origin(path), placement.orElse(null)));
+    }
+
+    final Comparator<ListOrderKey<T>> order =
+        Comparator.comparing((ListOrderKey<T> key) -> key.origin())
+            .thenComparing(key -> key.placement() == null)
+            .thenComparing(key -> key.placement() != null && key.placement().test())
+            .thenComparing(key -> !listHome.declares(key.placement()))
+            .thenComparing(key -> key.placement() == null ? "" : key.placement().moduleRel())
+            .thenComparing(key -> key.location().getUri())
+            .thenComparingInt(key -> key.location().getRange().getStart().getLine())
+            .thenComparingInt(key -> key.location().getRange().getStart().getCharacter());
+    keys.sort(order);
+    return keys.stream().map(ListOrderKey::item).toList();
+  }
+
+  // An item of a capped list with what orders it; placement is null for a file in no module.
+  private record ListOrderKey<T>(
+      T item, Location location, LatheLocation.Origin origin, SourceLayout.Placement placement) {
+    ListOrderKey {
+      ValidCheck.check()
+          .notNull(item, "item")
+          .notNull(location, "location")
+          .notNull(origin, "origin")
+          .validate();
+    }
+  }
+
+  // What a capped list is ordered from: the workspace's layout and the module declaring the
+  // symbol, null where the declaration is in no module of the project.
+  private record ListHome(SourceLayout layout, String declaringModule) {
+    ListHome {
+      ValidCheck.check().notNull(layout, "layout").validate();
+    }
+
+    boolean declares(final SourceLayout.Placement placement) {
+      return placement != null && placement.moduleRel().equals(declaringModule);
+    }
+  }
+
+  // The symbol at the position's declaration, as definition finds it, read in the same request as
+  // the layout; the asked file where it resolves to none.
+  private ListHome listHome(final Path file, final int line, final int column) {
+    return request(
+        positionWork(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) ->
+                session
+                    .features()
+                    .explainedDefinitionFuture(uri, pos)
+                    .thenApply(
+                        answer ->
+                            listHome(
+                                session.layout(),
+                                answer.locations().stream()
+                                    .map(found -> LatheUri.toPath(found.getUri()))
+                                    .findFirst()
+                                    .orElse(file)))));
+  }
+
+  private static ListHome listHome(final SourceLayout layout, final Path declaration) {
+    return new ListHome(
+        layout,
+        layout.placementOf(declaration).map(SourceLayout.Placement::moduleRel).orElse(null));
   }
 
   // Where the method calls each callee, in source order, so the answer reads as the method does.
@@ -1386,8 +1480,11 @@ public final class LatheEngine {
                                                             references))))));
     final ChangeFacts facts = read.value();
     final String signature = hoverText(facts.hover());
-    final CappedLocations overriddenBy = familyMembers(facts.members(), false, maxResults);
-    final CappedLocations redeclaredBy = familyMembers(facts.members(), true, maxResults);
+    // Read once for both lists, and only where there is something to order.
+    final ListHome declaring = facts.members().size() < 2 ? null : listHome(file, line, column);
+    final Supplier<ListHome> home = () -> declaring;
+    final CappedLocations overriddenBy = familyMembers(facts.members(), false, maxResults, home);
+    final CappedLocations redeclaredBy = familyMembers(facts.members(), true, maxResults, home);
     // Every reference is counted: a count from a capped list would read as the whole.
     final List<Path> paths =
         facts.references().stream().map(ref -> LatheUri.toPath(ref.getUri())).toList();
@@ -1483,13 +1580,17 @@ public final class LatheEngine {
   // The family members below the symbol of one kind, implementations or redeclarations: the first
   // maxResults listed, all counted.
   private CappedLocations familyMembers(
-      final List<ImplementationHit> family, final boolean redeclarations, final int maxResults) {
+      final List<ImplementationHit> family,
+      final boolean redeclarations,
+      final int maxResults,
+      final Supplier<ListHome> home) {
     return capLocations(
         family.stream()
             .filter(hit -> hit.redeclaration() == redeclarations)
             .map(ImplementationHit::location)
             .toList(),
-        maxResults);
+        maxResults,
+        home);
   }
 
   // The file's own first compile error, by line, against the classes as they are now: a class it

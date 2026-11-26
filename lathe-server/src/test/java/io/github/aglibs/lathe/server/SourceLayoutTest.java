@@ -234,6 +234,25 @@ class SourceLayoutTest {
         .isNull();
   }
 
+  // A test root inside a main one (`src`, `src/test`) places its files in the test tree; a file in
+  // no tree has no placement.
+  @Test
+  void placementOf_testRootInsideMainRoot_closestRootWins() {
+    final var main =
+        TestCompiler.moduleConfig(
+            tmp.resolve(".lathe/module"),
+            tmp.resolve("module/target/classes"),
+            tmp.resolve("module/src"));
+    final var test = TestCompiler.testTreeConfig(tmp, "module", "src/test");
+    final var layout = new SourceLayout(List.of(main, test), tmp);
+
+    assertThat(layout.placementOf(tmp.resolve("module/src/test/com/example/FooTest.java")))
+        .hasValue(new SourceLayout.Placement("module", true));
+    assertThat(layout.placementOf(tmp.resolve("module/src/com/example/Foo.java")))
+        .hasValue(new SourceLayout.Placement("module", false));
+    assertThat(layout.placementOf(tmp.resolve("module/target/Built.java"))).isEmpty();
+  }
+
   @Test
   void dirRun_packageDirInsideTestTree_singlePackageSelector() {
     // A package dir resolves by pure path arithmetic (its package relative to the test root), so no
