@@ -221,6 +221,100 @@ class MavenStyleTest {
     assertThat(generated.formatter().classpath()).isEmpty();
   }
 
+  @Test
+  void springSource_rootOrJavaModules_takesTheModulesOnlyWhenAllRunTheSameVersion()
+      throws Exception {
+    final MavenProject root = project("root", "pom");
+    final MavenProject core = withSpring(javaModule("core"), "0.0.47");
+    final MavenProject app = withSpring(javaModule("app"), "0.0.47");
+    final var style = new MavenStyle(null, new SystemStreamLog());
+
+    assertThat(style.springSource(root, List.of(root, core, app))).contains(core);
+    assertThat(
+            style.springSource(root, List.of(root, core, withSpring(javaModule("old"), "0.0.43"))))
+        .isEmpty();
+    assertThat(style.springSource(root, List.of(root, core, javaModule("plain")))).isEmpty();
+    final MavenProject springRoot = withSpring(project("root", "pom"), "0.0.47");
+    assertThat(style.springSource(springRoot, List.of(springRoot, javaModule("plain"))))
+        .contains(springRoot);
+    assertThat(style.springSource(root, List.of(root, javaModule("plain")))).isEmpty();
+  }
+
+  // Spotless wins in a build that runs both: the declared engine keeps Spotless's indent, not the
+  // editorconfig indent spring-javaformat leaves it to.
+  @Test
+  void write_spotlessAndSpringJavaFormat_spotlessWins() throws Exception {
+    final MavenProject root =
+        withSpring(withSpotless(project("root", "pom"), "<googleJavaFormat/>", "3.0.0"), "0.0.47");
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\":{\"engine\":\"none\"}}");
+
+    new MavenStyle(null, new SystemStreamLog()).write(tmp, root, List.of(root));
+
+    assertThat(generatedStyle().indent().block()).isEqualTo(2);
+  }
+
+  // A declared engine without jars replaces spring-javaformat as it replaces Spotless: nothing is
+  // resolved (no resolver here) or granted.
+  @Test
+  void write_springJavaFormatWithDeclaredNone_writesNoneWithEditorconfigIndent() throws Exception {
+    final MavenProject root = withSpring(project("root", "pom"), "0.0.47");
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\":{\"engine\":\"none\"}}");
+
+    final WorkspaceStyleData granted =
+        new MavenStyle(null, new SystemStreamLog()).write(tmp, root, List.of(root));
+
+    assertThat(granted).isNull();
+    assertThat(generatedStyle().formatter().engine()).isEqualTo(LatheFlags.FORMATTER_NONE);
+    assertThat(generatedStyle().indent().profile()).isEqualTo("editorconfig");
+  }
+
+  // Spotless refused (modules run different ones) leaves the build unformatted: spring-javaformat
+  // in the root does not take over code Spotless formats.
+  @Test
+  void write_refusedSpotlessAndSpringJavaFormat_writesNoStyle() throws Exception {
+    final MavenProject root = withSpring(project("root", "pom"), "0.0.47");
+    final MavenProject core = withSpotless(javaModule("core"), "<googleJavaFormat/>", "3.0.0");
+    final MavenProject app = withSpotless(javaModule("app"), "<googleJavaFormat/>", "3.1.0");
+    StyleWriter.write(tmp, MavenStyle.detect(core));
+
+    final WorkspaceStyleData written =
+        new MavenStyle(null, new SystemStreamLog()).write(tmp, root, List.of(root, core, app));
+
+    assertThat(written).isNull();
+    assertThat(tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+  }
+
+  @Test
+  void withBuildSpringVersion_declaredSpring_takesTheBuildPluginVersionOnlyWhenUnset()
+      throws Exception {
+    final MavenProject root = project("root", "pom");
+    final MavenProject core = withSpring(javaModule("core"), "0.0.43");
+    final var bare = new FormatterSpec(LatheFlags.FORMATTER_SPRING, List.of());
+    final var pinned =
+        new FormatterSpec(LatheFlags.FORMATTER_SPRING, List.of(), "0.0.46", Map.of(), List.of());
+
+    assertThat(MavenStyle.withBuildSpringVersion(bare, root, List.of(root, core)).version())
+        .isEqualTo("0.0.43");
+    assertThat(MavenStyle.withBuildSpringVersion(pinned, root, List.of(root, core)).version())
+        .isEqualTo("0.0.46");
+    assertThat(MavenStyle.withBuildSpringVersion(bare, root, List.of(root)).version()).isEmpty();
+    assertThat(
+            MavenStyle.withBuildSpringVersion(
+                    new FormatterSpec(LatheFlags.FORMATTER_ECLIPSE, List.of()),
+                    root,
+                    List.of(root, core))
+                .version())
+        .isEmpty();
+  }
+
+  private WorkspaceStyleData generatedStyle() throws Exception {
+    return Json.read(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE),
+        WorkspaceStyleData.class);
+  }
+
   private MavenProject project(final String name, final String packaging) {
     final var project = new MavenProject();
     project.setPackaging(packaging);
@@ -234,6 +328,19 @@ class MavenStyleTest {
     Files.createDirectories(sources);
     Files.writeString(sources.resolve("A.java"), "class A {}\n");
     project.addCompileSourceRoot(sources.toString());
+    return project;
+  }
+
+  private static MavenProject withSpring(final MavenProject project, final String version) {
+    final var spring = new Plugin();
+    spring.setGroupId("io.spring.javaformat");
+    spring.setArtifactId("spring-javaformat-maven-plugin");
+    spring.setVersion(version);
+    if (project.getBuild() == null) {
+      project.setBuild(new Build());
+    }
+
+    project.getBuild().addPlugin(spring);
     return project;
   }
 

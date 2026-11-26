@@ -127,7 +127,9 @@ class SpringFormatEngineTest {
         FormatterFixtures.springJavaFormatClasspath().stream()
             .filter(jar -> !jar.contains("eclipse-runtime"))
             .toList();
-    final FormatEngine engine = new SpringFormatEngine("0.0.47", withoutRuntime, project);
+    final FormatEngine engine =
+        new SpringFormatEngine(
+            FormatterFixtures.springJavaFormatRelease(), withoutRuntime, project);
 
     assertThatThrownBy(() -> engine.format(MANGLED, target()))
         .isInstanceOf(IllegalStateException.class)

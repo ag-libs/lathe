@@ -231,7 +231,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new FormatterSpec(
             LatheFlags.FORMATTER_SPRING,
             List.of(),
-            "0.0.47",
+            FormatterFixtures.springJavaFormatRelease(),
             Map.of(),
             FormatterFixtures.springJavaFormatClasspath());
     host.initialize(tmp);
