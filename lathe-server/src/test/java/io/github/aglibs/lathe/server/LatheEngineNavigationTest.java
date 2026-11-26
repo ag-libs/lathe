@@ -1079,10 +1079,11 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .endsWith("Config");
   }
 
-  // MC-100: a capped list starts with the asked file's module, its main sources before its tests,
+  // MC-100: a capped list lists main sources before tests, the declaring module first in each,
   // where a sibling module's name sorts before it (`app-26` before `app-core`).
   @Test
-  void findImplementations_siblingModuleSortsFirst_listsTheHomeModulesMainFirst() throws Exception {
+  void findImplementations_siblingModuleSortsFirst_listsMainBeforeTestsDeclaringModuleFirst()
+      throws Exception {
     final String apiSource = "package com.example; public interface Api { void run(); }";
     final List<Path> core =
         TestCompiler.writeMirroredModule(
@@ -1128,7 +1129,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
                 .implementations())
         .extracting(
             location -> Path.of(java.net.URI.create(location.uri())).getFileName().toString())
-        .containsExactly("CoreImpl.java", "CoreTestImpl.java", "Impl26.java");
+        .containsExactly("CoreImpl.java", "Impl26.java", "CoreTestImpl.java");
   }
 
   // Asked from a use in the sibling module, a capped list still starts with the declaring module:

@@ -1179,10 +1179,12 @@ public final class LatheEngine {
 
   // The order every capped list answers in: the project's own sources, then its generated ones,
   // then the JDK's and dependencies'; within the project's, the files of a module before those of
-  // none, the module declaring the symbol first, main sources before tests, then by module, file
-  // and position. Path order alone put a sibling module whose name sorts first, and its tests,
-  // before the declaring module (MC-100). A cap then keeps what the agent edits. The layout and the
-  // declaring module are read only for a list with something to order.
+  // none, main sources before tests, the module declaring the symbol first in each, then by
+  // module, file and position. Path order alone put a sibling module whose name sorts first, and
+  // its tests, before the declaring module (MC-100); and the declaring module's tests ahead of
+  // other modules' production code would hide the uses a change breaks. A cap then keeps what the
+  // agent edits. The layout and the declaring module are read only for a list with something to
+  // order.
   private <T> List<T> ordered(
       final List<? extends T> items,
       final Function<? super T, Location> location,
@@ -1205,8 +1207,8 @@ public final class LatheEngine {
     final Comparator<ListOrderKey<T>> order =
         Comparator.comparing((ListOrderKey<T> key) -> key.origin())
             .thenComparing(key -> key.placement() == null)
-            .thenComparing(key -> !listHome.declares(key.placement()))
             .thenComparing(key -> key.placement() != null && key.placement().test())
+            .thenComparing(key -> !listHome.declares(key.placement()))
             .thenComparing(key -> key.placement() == null ? "" : key.placement().moduleRel())
             .thenComparing(key -> key.location().getUri())
             .thenComparingInt(key -> key.location().getRange().getStart().getLine())
