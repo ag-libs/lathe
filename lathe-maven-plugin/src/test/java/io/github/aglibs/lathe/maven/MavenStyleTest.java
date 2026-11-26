@@ -286,6 +286,21 @@ class MavenStyleTest {
     assertThat(tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
   }
 
+  // The plugin's own version, not the release Lathe pins: the invoker fixture runs the pinned one,
+  // so only this tells the two apart.
+  @Test
+  void springFormatter_pluginWithAndWithoutVersion_springEngineAtThePluginVersion()
+      throws Exception {
+    final MavenProject versioned = withSpring(project("root", "pom"), "0.0.43");
+    final MavenProject unversioned = withSpring(project("other", "pom"), null);
+
+    assertThat(MavenStyle.springFormatter(versioned))
+        .isEqualTo(
+            new FormatterSpec(
+                LatheFlags.FORMATTER_SPRING, List.of(), "0.0.43", Map.of(), List.of()));
+    assertThat(MavenStyle.springFormatter(unversioned).version()).isEmpty();
+  }
+
   @Test
   void withBuildSpringVersion_declaredSpring_takesTheBuildPluginVersionOnlyWhenUnset()
       throws Exception {

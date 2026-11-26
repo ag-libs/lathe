@@ -14,6 +14,7 @@ class FormatterSyncTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir"));
   private static final String ENGINE = System.getProperty("expected.engine");
+  private static final String SPRING_VERSION = System.getProperty("expected.springVersion");
 
   @Test
   void sync_spotlessPalantir_resolvesPinnedJarsAndGrantsJavac() throws IOException {
@@ -59,10 +60,10 @@ class FormatterSyncTest {
     final String style = Files.readString(lathe("style.json"));
 
     assertThat(style).contains("\"engine\": \"spring\"");
-    assertThat(style).contains("\"version\": \"0.0.46\"");
-    assertThat(style).containsPattern("\"[^\"]+spring-javaformat-formatter-0\\.0\\.46\\.jar\"");
+    assertThat(style).contains("\"version\": \"%s\"".formatted(SPRING_VERSION));
+    assertThat(style).contains("spring-javaformat-formatter-%s.jar".formatted(SPRING_VERSION));
     assertThat(style)
-        .containsPattern("\"[^\"]+spring-javaformat-formatter-eclipse-runtime-0\\.0\\.46\\.jar\"");
+        .contains("spring-javaformat-formatter-eclipse-runtime-%s.jar".formatted(SPRING_VERSION));
     assertThat(style).contains("\"profile\": \"editorconfig\"");
     assertThat(lathe("jvm.args")).doesNotExist();
   }

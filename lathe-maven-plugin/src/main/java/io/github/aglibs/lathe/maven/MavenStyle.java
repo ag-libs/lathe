@@ -103,8 +103,8 @@ final class MavenStyle {
   }
 
   // spring-javaformat-maven-plugin's formatter, at the plugin's version, for a build that runs no
-  // Spotless Java formatter; Spotless wins in a build that runs both.
-  private static FormatterSpec springFormatter(final MavenProject springSource) {
+  // Spotless Java formatter; Spotless wins in a build that runs both. Package-private for tests.
+  static FormatterSpec springFormatter(final MavenProject springSource) {
     return new FormatterSpec(
         LatheFlags.FORMATTER_SPRING,
         List.of(),

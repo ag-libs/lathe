@@ -17,15 +17,18 @@ class LatheFormatterFunctionalTest {
       "%sinclude(\"app\")\n%s"
           .formatted(GradleFixture.latheSettings("root"), GradleFixture.latheRepositories());
   private static final String SPOTLESS_WARNING = "Spotless formats this build";
-  // Not the release Lathe pins, so the tests tell the plugin's release from the fallback.
-  private static final String SPRING_RELEASE = "0.0.46";
+  // The release Lathe pins, which the build puts in the Lathe repository, so the fixtures resolve
+  // it
+  // without Central; the absent fallback warning tells the plugin's release from the pinned one.
+  private static final String SPRING_RELEASE = System.getProperty("lathe.springJavaformatVersion");
 
   @TempDir Path dir;
 
   // The formatter lathe-style.json declares is completed from the Spotless release Lathe pins and
   // resolved through Gradle, with the indent it implies and the javac access it needs, under a
   // reused configuration cache. Editing the declaration invalidates the cache: the next sync
-  // resolves the new formatter.
+  // resolves the new formatter. Both name google-java-format 1.28.0, which the build puts in the
+  // Lathe repository; a version left out is FormatterStepsTest's.
   @Test
   void sync_declaredFormatter_resolvedAndReresolvedWhenTheDeclarationChanges() throws Exception {
     final var fixture =
@@ -52,13 +55,15 @@ class LatheFormatterFunctionalTest {
         .content()
         .contains(LatheFlags.FORMATTER_JAVAC_GRANTS.get(0));
 
-    fixture.file(LatheLayout.STYLE_SHARED_FILE, "{\"formatter\": {\"engine\": \"aosp\"}}");
+    fixture.file(
+        LatheLayout.STYLE_SHARED_FILE,
+        "{\"formatter\": {\"engine\": \"aosp\", \"version\": \"1.28.0\"}}");
     final var changed = fixture.runner("latheSync", "--configuration-cache").build();
 
     assertThat(changed.getOutput()).doesNotContain("Reusing configuration cache");
     final WorkspaceStyleData aosp = style();
     assertThat(aosp.formatter().engine()).isEqualTo(LatheFlags.FORMATTER_AOSP);
-    assertThat(aosp.formatter().version()).matches("\\d+\\.\\d+(\\.\\d+)?");
+    assertThat(aosp.formatter().version()).isEqualTo("1.28.0");
     assertThat(aosp.formatter().options()).containsEntry(LatheFlags.FORMAT_STYLE, "AOSP");
     assertThat(aosp.indent().block()).isEqualTo(4);
   }
@@ -125,13 +130,14 @@ class LatheFormatterFunctionalTest {
     final var fixture =
         withStandInSpring(app()).file("build.gradle", "plugins { id 'io.spring.javaformat' }\n");
 
-    fixture.runner("latheSync", "--configuration-cache").build();
+    final var first = fixture.runner("latheSync", "--configuration-cache").build();
     final var reused = fixture.runner("latheSync", "--configuration-cache").build();
     final WorkspaceStyleData detected = style();
     fixture.file(LatheLayout.STYLE_SHARED_FILE, "{\"formatter\": {\"engine\": \"spring\"}}");
     fixture.runner("latheSync").build();
 
     assertThat(reused.getOutput()).contains("Reusing configuration cache");
+    assertThat(first.getOutput()).doesNotContain("records no release");
     assertThat(detected.formatter().engine()).isEqualTo(LatheFlags.FORMATTER_SPRING);
     assertThat(detected.formatter().version()).isEqualTo(SPRING_RELEASE);
     assertThat(detected.formatter().classpath())
