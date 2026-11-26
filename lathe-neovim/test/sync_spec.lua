@@ -208,6 +208,63 @@ pending_cb({ code = 0 })
 vim.fn.delete(link)
 vim.fn.delete(real_dir, "rf")
 
+-- A run given a shared toast continues it and leaves its handle there, so the next run continues
+-- the same toast. snacks reuses a toast's window only for `id`, so the handle goes in both fields.
+local plain_notify = vim.notify
+local toast_opts = {}
+local next_handle = 100
+vim.notify = function(msg, level, opts)
+  table.insert(notes, msg)
+  table.insert(levels, level)
+  table.insert(toast_opts, opts or {})
+  next_handle = next_handle + 1
+  return next_handle
+end
+local mvn = { cmd = { "/opt/bin/mvn" }, label = "mvn" }
+local toast = { handle = 41 }
+sync.run("/ws/t", false, nil, vim.tbl_extend("force", mvn, { action = "download", toast = toast }))
+spec.check("shared toast: the run's first toast replaces it", toast_opts[1].replace, 41)
+spec.check("shared toast: and names it by id", toast_opts[1].id, 41)
+pending_cb({ code = 0 })
+spec.check("shared toast: holds the run's last handle", toast.handle, next_handle)
+local first_run_handle = toast.handle
+local before_second = #toast_opts
+sync.run("/ws/t", false, nil, vim.tbl_extend("force", mvn, { action = "setup", toast = toast }))
+spec.check(
+  "shared toast: the next run continues it",
+  toast_opts[before_second + 1].replace,
+  first_run_handle
+)
+pending_cb({ code = 0 })
+sync.run("/ws/t", false, nil, vim.tbl_extend("force", mvn, { action = "setup" }))
+spec.check("no shared toast: a run starts its own", toast_opts[#toast_opts].replace, nil)
+pending_cb({ code = 0 })
+
+-- A step that fails: its error is a toast of its own, so it keeps its own timeout rather than the
+-- progress toast's, and the shared toast is left as it was.
+sync.run("/ws/t", false, nil, vim.tbl_extend("force", mvn, { action = "setup", toast = toast }))
+local progress_handle = toast.handle
+pending_cb({ code = 1 })
+local failure_opts = toast_opts[#toast_opts]
+spec.check(
+  "shared toast: a failure gets a toast of its own",
+  failure_opts.replace == nil and failure_opts.id == nil,
+  true
+)
+spec.check("shared toast: a failure leaves it as it was", toast.handle, progress_handle)
+
+-- Replaying that run (`r` in the output split) starts a toast of its own, not the setup's.
+local replay
+for _, map in ipairs(vim.api.nvim_buf_get_keymap(vim.fn.bufnr("Lathe Sync Output"), "n")) do
+  if map.lhs == "r" then
+    replay = map.callback
+  end
+end
+replay()
+spec.check("replay: starts a toast of its own", toast_opts[#toast_opts].replace, nil)
+pending_cb({ code = 0 })
+vim.notify = plain_notify
+
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
 sync.run("/ws/b", false)
 spec.check("a plain sync is not a setup", sync.setting_up("/ws/b/src/A.java"), false)

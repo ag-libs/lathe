@@ -63,6 +63,23 @@ function M.reset()
   vim.api.nvim_buf_clear_namespace(buf, LIVE_OUTPUT_NS, 0, -1)
 end
 
+-- The first line of the view that ends on `last`, counting each line's screen rows once wrapped:
+-- the highest line from which the rest still fit the window.
+local function tail_topline(win, last)
+  local height = vim.api.nvim_win_get_height(win)
+  local topline = last
+  while topline > 1 do
+    local rows = vim.api.nvim_win_text_height(win, { start_row = topline - 2, end_row = last - 1 })
+    if rows.all > height then
+      break
+    end
+
+    topline = topline - 1
+  end
+
+  return topline
+end
+
 --- Appends one streamed line, coloring stderr, and follows the tail while the window is
 --- open but not focused (so scrolling up to read stays sticky).
 local function live_append(stream, text)
@@ -84,6 +101,15 @@ local function live_append(stream, text)
 
   if live_is_open() and vim.api.nvim_get_current_win() ~= live_win then
     pcall(vim.api.nvim_win_set_cursor, live_win, { vim.api.nvim_buf_line_count(buf), 0 })
+    -- With 'wrap' set, the cursor's line can sit below the window's last row: scroll so it ends
+    -- on it. Set through the view, not `normal! zb`, which from a handler could disturb the mode
+    -- the user is in elsewhere.
+    if vim.wo[live_win].wrap then
+      local topline = tail_topline(live_win, vim.api.nvim_buf_line_count(buf))
+      pcall(vim.api.nvim_win_call, live_win, function()
+        vim.fn.winrestview({ topline = topline })
+      end)
+    end
   end
 end
 
