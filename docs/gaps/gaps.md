@@ -2447,28 +2447,3 @@ None yet.
 
 ---
 
-## MC-111 — A file tool given `path:line` says only that it is not a `.java` file
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP file tools (`get_diagnostics`, `outline`, and the position tools' `file`).**
-
-Found by the exploratory round on Helidon (2026-11-25, `0.1.0-SNAPSHOT` at `d3e0a33`, Helidon at `27a692eb0d`; report `dev/reports/qa-2026-11-25-helidon-exploratory.md`).
-
-### Observed behaviour
-
-`get_diagnostics {file: "webserver/webserver/src/main/java/io/helidon/webserver/ServerListener.java:134"}` answers "…ServerListener.java:134 is not a .java file".
-Agents often copy a location as `path:line` (or `path:line:column`, the form Lathe's own answers print), and the answer does not say what to change.
-
-### Expected
-
-A `.java` path followed by `:line` or `:line:column` gets a note to pass the path alone, with the line and column apart; or the tools that take a position read them from it.
-
-### Regression targets
-
-None yet.
-
