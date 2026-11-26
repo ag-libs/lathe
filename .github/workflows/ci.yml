@@ -94,20 +94,23 @@ jobs:
         # The JDK 17 row runs every test and the invoker fixture builds on JDK 17, and switches off
         # the multi-release test layering, which is for JDK 21+ test runs.
         #
-        # The Gradle plugin is built and tested by the gradle jobs, in parallel with this one.
+        # The Gradle plugin is built and tested by the gradle jobs, in parallel with this one. The rows
+        # that save the Maven repository still fill its fixtures' repository, so the cache holds the
+        # formatters (and their dependencies) the gradle jobs resolve there.
         env:
           GRADLE: -Dlathe.gradle.skip=true
+          GRADLE_REPO: -Dlathe.gradle.skipRepo=false
         run: |
           if [ "${{ matrix.java }}" = "17" ]; then
             mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
               -Djvm="$JAVA_HOME_17_X64/bin/java" -Dinvoker.javaHome="$JAVA_HOME_17_X64" \
               -P '!multi-release-jdk21' $GRADLE
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
-            mvn -B --no-transfer-progress clean install $GRADLE
+            mvn -B --no-transfer-progress clean install $GRADLE $GRADLE_REPO
           elif [ "${{ runner.os }}" = "Windows" ]; then
             # Neovim on Windows is a non-goal, so the row sets none up; the VS Code extension builds,
             # since Cursor on Windows is a target.
-            mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE
+            mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE $GRADLE_REPO
           else
             mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
@@ -125,8 +128,12 @@ jobs:
         # the release profile requires both for Maven Central. They don't depend on the OS or the
         # test JDK, so the release baseline row checks them. Before the Maven repository is saved,
         # so the plugins this alone resolves reach the cache, and named in full, so Maven looks up
-        # no plugin prefix on Central (the versions come from the root POM's pluginManagement).
+        # no plugin prefix on Central (the versions come from the root POM's pluginManagement). A
+        # failure fails the job only after the save ("Fail on a javadoc or sources failure"), so
+        # broken javadoc does not also cost the cache.
+        id: javadoc
         if: matrix.java == '21' && runner.os == 'Linux'
+        continue-on-error: true
         run: >-
           mvn -B --no-transfer-progress -DskipTests
           org.apache.maven.plugins:maven-javadoc-plugin:jar
@@ -164,6 +171,12 @@ jobs:
             ~/.m2/repository
             !~/.m2/repository/io/github/ag-libs
           key: maven-${{ runner.os }}-2-${{ hashFiles('**/pom.xml', '!**/target/**') }}
+
+      - name: Fail on a javadoc or sources failure
+        if: steps.javadoc.outcome == 'failure'
+        run: |
+          echo "::error::javadoc:jar or source:jar-no-fork failed; see 'Verify javadoc and sources generate'"
+          exit 1
 
       - name: Runner info at the end
         if: always()
