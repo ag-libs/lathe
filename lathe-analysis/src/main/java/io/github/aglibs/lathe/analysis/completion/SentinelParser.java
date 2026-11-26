@@ -20,6 +20,8 @@ import javax.lang.model.type.TypeKind;
 final class SentinelParser {
 
   private static final Logger LOG = Logger.getLogger(SentinelParser.class.getName());
+  // The element an annotation's shorthand argument (`@A(x)`) sets.
+  static final String VALUE_ELEMENT = "value";
 
   private final SourceParser sourceParser;
 
@@ -907,6 +909,7 @@ final class SentinelParser {
     return null;
   }
 
+  // elementName: null for a bare name, which may be `value()`'s value or another element's name.
   private record AnnotationValueInfo(String annotationType, String elementName) {}
 
   private static AnnotationValueInfo annotationArgumentValue(
@@ -927,10 +930,21 @@ final class SentinelParser {
         }
       }
 
+      // A name that is the sole argument is the `value()` shorthand or the start of a named
+      // element:
+      // no element name, so both are offered (CQ-0081). Beside other arguments it can only start a
+      // named one, an argument's name, not a value. One inside the argument (an array
+      // initializer's) is `value()`'s.
       if (parent instanceof final AnnotationTree annotationTree
           && !(currentChild instanceof AssignmentTree)
           && annotationTree.getArguments().stream().anyMatch(arg -> arg == currentChild)) {
-        return new AnnotationValueInfo(annotationTree.getAnnotationType().toString(), "value");
+        if (currentChild == sentinel && annotationTree.getArguments().size() > 1) {
+          return null;
+        }
+
+        return new AnnotationValueInfo(
+            annotationTree.getAnnotationType().toString(),
+            currentChild == sentinel ? null : VALUE_ELEMENT);
       }
 
       child = parent;

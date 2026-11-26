@@ -40,12 +40,35 @@ final class AnnotationCompletionProvider {
       final AttributedFileAnalysis analysis,
       final int cursorOffset) {
     final TypeMirror elementType =
-        resolveAnnotationElementType(
-            parsed.annotationTypeText(), parsed.enclosingMethodName(), analysis);
+        resolveAnnotationElementType(parsed.annotationTypeText(), elementName(parsed), analysis);
     if (elementType == null) {
       return completeArgument(parsed, injected, analysis);
     }
 
+    final List<CompletionItem> values =
+        valueCandidates(parsed, injected, analysis, cursorOffset, elementType);
+    // A bare name is the `value()` shorthand or the start of a named element (CQ-0081): the names
+    // first, then the values, each group in its own order.
+    if (!bareArgument(parsed)) {
+      return values;
+    }
+
+    final List<CompletionItem> names = completeArgument(parsed, injected, analysis);
+    names.forEach(item -> item.setSortText("0%s".formatted(item.getLabel())));
+    values.forEach(
+        item ->
+            item.setSortText(
+                "1%s"
+                    .formatted(item.getSortText() != null ? item.getSortText() : item.getLabel())));
+    return Stream.concat(names.stream(), values.stream()).toList();
+  }
+
+  private static List<CompletionItem> valueCandidates(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final AttributedFileAnalysis analysis,
+      final int cursorOffset,
+      final TypeMirror elementType) {
     final TypeMirror expectedType = annotationValueCompletionType(elementType);
     final var semanticContext =
         new SemanticCompletionContext(
@@ -66,11 +89,19 @@ final class AnnotationCompletionProvider {
     return items;
   }
 
+  // The element a value is for; a bare argument's is `value()`, the one its shorthand sets.
+  private static String elementName(final ParsedSentinel parsed) {
+    return bareArgument(parsed) ? SentinelParser.VALUE_ELEMENT : parsed.enclosingMethodName();
+  }
+
+  private static boolean bareArgument(final ParsedSentinel parsed) {
+    return parsed.enclosingMethodName() == null;
+  }
+
   static boolean isClassValuedElement(
       final ParsedSentinel parsed, final AttributedFileAnalysis analysis) {
     final TypeMirror elementType =
-        resolveAnnotationElementType(
-            parsed.annotationTypeText(), parsed.enclosingMethodName(), analysis);
+        resolveAnnotationElementType(parsed.annotationTypeText(), elementName(parsed), analysis);
     if (elementType == null) {
       return false;
     }
