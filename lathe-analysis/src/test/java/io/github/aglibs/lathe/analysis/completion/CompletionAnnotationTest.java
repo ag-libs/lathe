@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Comparator;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
@@ -29,6 +30,79 @@ class CompletionAnnotationTest extends CompletionTestSupport {
     assertThat(labels(fixture.complete("class Test { @Deprecated(si§ @Override void foo() {} }")))
         .contains("since")
         .doesNotContain("forRemoval");
+  }
+
+  // CQ-0081: a bare argument is the `value()` shorthand or the start of a named element, so an
+  // annotation that declares `value()` offers both; after `=` only the element's value is.
+  private static final String REQUIRES =
+      """
+      package p;
+      @interface Requires {
+        String value() default "";
+        String property() default "";
+        Class<?>[] beans() default {};
+      }
+      """;
+
+  @Test
+  void annotationArgument_annotationWithValueElement_offersElementNamesAndValue() {
+    assertThat(labels(fixture.complete(REQUIRES + "@Requires(§) class Test {}")))
+        .contains("value", "property", "beans", "null");
+    assertThat(labels(fixture.complete(REQUIRES + "@Requires(pro§) class Test {}")))
+        .contains("property")
+        .doesNotContain("beans", "value");
+    assertThat(labels(fixture.complete(REQUIRES + "class Test { @Requires(§) void m() {} }")))
+        .contains("property", "beans");
+  }
+
+  // Beside other arguments a bare name can only start a named element: the shorthand is the sole
+  // argument's.
+  @Test
+  void annotationArgument_besideOtherArguments_offersElementNamesOnly() {
+    assertThat(labels(fixture.complete(REQUIRES + "@Requires(property = \"a\", §) class Test {}")))
+        .contains("beans", "value")
+        .doesNotContain("null");
+  }
+
+  @Test
+  void annotationArgumentValue_afterEqualsOrInAnArray_offersNoElementNames() {
+    assertThat(labels(fixture.complete(REQUIRES + "@Requires(value = §) class Test {}")))
+        .containsOnly("null");
+    assertThat(labels(fixture.complete(REQUIRES + "@Requires(property = §) class Test {}")))
+        .containsOnly("null");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "import java.lang.annotation.*; @Target({ § }) @interface Marker {}")))
+        .doesNotContain("value");
+  }
+
+  @Test
+  void annotationArgument_onlyValueElement_offersItsNameAndItsValues() {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                import java.lang.annotation.Retention;
+
+                @Retention(§)
+                class Test {}
+                """));
+
+    assertThat(items).contains("value", "RetentionPolicy.RUNTIME");
+    assertThat(
+            bySortText(
+                fixture.complete(
+                    "import java.lang.annotation.Retention; @Retention(§) class Test {}")))
+        .as("the names, then the values")
+        .containsSubsequence("value", "RetentionPolicy.RUNTIME");
+  }
+
+  private static List<String> bySortText(final List<CompletionItem> items) {
+    return items.stream()
+        .sorted(Comparator.comparing(CompletionItem::getSortText))
+        .map(CompletionItem::getLabel)
+        .toList();
   }
 
   @Test

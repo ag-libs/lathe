@@ -5024,6 +5024,48 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0081 — An annotation with a `value()` element completes no element names — done
+
+**Status: done** (2026-11-26)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: editor completion in the arguments of an annotation that declares `value()` (Micronaut's `@Requires`, Spring's `@RequestMapping` and `@Value`, JUnit's `@Tag`).**
+
+Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
+
+### Observed behaviour
+
+In `context/.../PropertiesLoggingLevelsConfigurer.java`, `@Requires(§)` offers only `null`, and `@Requires(pro§)` nothing; `@Requires` declares `value()` beside `property`, `beans`, `env` and 18 more elements.
+`@Requirements(§)`, whose only element is `value()`, offers nothing; `@Deprecated(§)` at the same place offers `since` and `forRemoval`.
+A bare argument is classified as the value of `value()` (the `@A("x")` shorthand), and the element names are offered only where the annotation has no `value()`.
+
+### Expected
+
+A bare argument offers the element names (`property = `) and the candidates for `value()`'s value; a prefix filters both.
+
+### Resolution
+
+`SentinelParser` marks a name that is itself an annotation's argument as bare, with no element name, as it may be `value()`'s value or the start of a named element; one inside the argument, as an array initializer's, stays `value()`'s.
+`AnnotationCompletionProvider.completeArgumentValue` offers a bare argument the element names beside the candidates for `value()`'s value; after `=` only the element's value is offered, as before.
+Checked on micronaut-core: `@Requires(§)` offers its 21 elements' names with `null`, where it offered `null` alone, and `@Requires(pro§)` offers `property`; `@Requires(property = §)`, a class literal after `beans =`, and `@Deprecated(§)` answer as before.
+
+A bare name beside other arguments offers the element names alone, as the shorthand is the sole argument's; the names come before the values, each group in its own order.
+
+Not covered: an annotation declared in the default package, whose arguments complete nothing; and elements an annotation already sets, which are offered again (`property` after `property = "a",`), as before this change.
+
+### Regression targets
+
+- `CompletionAnnotationTest.annotationArgument_annotationWithValueElement_offersElementNamesAndValue`
+- `CompletionAnnotationTest.annotationArgument_onlyValueElement_offersItsNameAndItsValues`
+- `CompletionAnnotationTest.annotationArgument_besideOtherArguments_offersElementNamesOnly`
+- `CompletionAnnotationTest.annotationArgumentValue_afterEqualsOrInAnArray_offersNoElementNames`
+
+---
+
+
 ## CQ-0079 — Member completion after `case X x -> x.` answers nothing while the switch block is not closed — done
 
 **Status: done** (2026-11-25)

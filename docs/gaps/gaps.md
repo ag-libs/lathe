@@ -1272,32 +1272,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0081 — An annotation with a `value()` element completes no element names
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: editor completion in the arguments of an annotation that declares `value()` (Micronaut's `@Requires`, Spring's `@RequestMapping` and `@Value`, JUnit's `@Tag`).**
-
-Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
-
-### Observed behaviour
-
-In `context/.../PropertiesLoggingLevelsConfigurer.java`, `@Requires(§)` offers only `null`, and `@Requires(pro§)` nothing; `@Requires` declares `value()` beside `property`, `beans`, `env` and 18 more elements.
-`@Requirements(§)`, whose only element is `value()`, offers nothing; `@Deprecated(§)` at the same place offers `since` and `forRemoval`.
-A bare argument is classified as the value of `value()` (the `@A("x")` shorthand), and the element names are offered only where the annotation has no `value()`.
-
-### Expected
-
-A bare argument offers the element names (`property = `) and the candidates for `value()`'s value; a prefix filters both.
-
-### Regression targets
-
-None yet.
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
