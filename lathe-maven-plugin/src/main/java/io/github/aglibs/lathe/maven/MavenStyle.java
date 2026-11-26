@@ -54,6 +54,11 @@ final class MavenStyle {
     }
 
     final Optional<MavenProject> styleSource = styleSource(rootProject, projects);
+    if (styleSource.isEmpty() && runsSpotlessJava(rootProject, projects)) {
+      StyleWriter.delete(workspaceRoot);
+      return null;
+    }
+
     if (styleSource.isEmpty()) {
       return writeSpring(workspaceRoot, declared, rootProject, projects);
     }
@@ -116,26 +121,58 @@ final class MavenStyle {
   }
 
   // The pinned formatter lathe-style.json declares, completed and resolved with the defaults of
-  // the build's Spotless, if it has one.
+  // the build's Spotless, if it has one; a spring engine with the build's plugin version.
   private WorkspaceStyleData writeDeclared(
       final Path workspaceRoot,
       final FormatterSpec declared,
       final MavenProject rootProject,
       final List<MavenProject> projects) {
-    final String spotlessVersion =
-        Stream.concat(Stream.of(rootProject), projects.stream())
-            .map(MavenStyle::spotlessPlugin)
-            .filter(Objects::nonNull)
-            .map(MavenStyle::versionOf)
-            .findFirst()
-            .orElse("");
+    final String spotlessVersion = pluginVersion(rootProject, projects, SPOTLESS_PLUGIN_KEY);
     final FormatterSpec formatter =
-        withLocalProfile(declared, workspaceRoot)
+        withLocalProfile(withBuildSpringVersion(declared, rootProject, projects), workspaceRoot)
             .map(spec -> resolver.resolve(spec, spotlessVersion))
             .orElse(declared);
     final var style = new WorkspaceStyleData(formatter, FormatterSteps.indent(formatter));
     StyleWriter.write(workspaceRoot, style);
     return style;
+  }
+
+  // A declared spring engine without a version runs the build's spring-javaformat-maven-plugin
+  // release, if it has one, as Spotless's defaults complete a Spotless step. Package-private for
+  // tests.
+  static FormatterSpec withBuildSpringVersion(
+      final FormatterSpec declared,
+      final MavenProject rootProject,
+      final List<MavenProject> projects) {
+    if (!LatheFlags.FORMATTER_SPRING.equals(declared.engine()) || !declared.version().isBlank()) {
+      return declared;
+    }
+
+    return new FormatterSpec(
+        declared.engine(),
+        declared.command(),
+        pluginVersion(rootProject, projects, SPRING_PLUGIN_KEY),
+        declared.options(),
+        declared.classpath());
+  }
+
+  // The version of the first project's plugin of that key, or empty when none runs it.
+  private static String pluginVersion(
+      final MavenProject rootProject, final List<MavenProject> projects, final String key) {
+    return Stream.concat(Stream.of(rootProject), projects.stream())
+        .map(project -> plugin(project, key))
+        .filter(Objects::nonNull)
+        .map(MavenStyle::versionOf)
+        .findFirst()
+        .orElse("");
+  }
+
+  // Whether any project runs a Spotless Java formatter: one whose configuration was refused leaves
+  // the build unformatted rather than formatted by another plugin.
+  private static boolean runsSpotlessJava(
+      final MavenProject rootProject, final List<MavenProject> projects) {
+    return Stream.concat(Stream.of(rootProject), projects.stream())
+        .anyMatch(project -> detect(project) != null);
   }
 
   // A plugin the POM declares without a version has none in the model; Lathe then takes the
@@ -204,7 +241,7 @@ final class MavenStyle {
     final List<MavenProject> formatted =
         javaModules.stream().filter(project -> identity.apply(project) != null).toList();
     if (formatted.isEmpty()) {
-      log.debug("[sync] no %s — skipping style.json".formatted(formatter));
+      log.debug("[sync] no %s".formatted(formatter));
       return Optional.empty();
     }
 

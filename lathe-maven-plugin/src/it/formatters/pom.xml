@@ -109,8 +109,8 @@
       <properties>
         <expected.engine>spring</expected.engine>
         <!-- A property, as Spring projects pin it: the plugin version Lathe reads is the resolved
-             one. -->
-        <spring-format.version>@spring-javaformat.version@</spring-format.version>
+             one. Not the release Lathe pins, so the test tells the plugin's from the fallback. -->
+        <spring-format.version>0.0.46</spring-format.version>
       </properties>
       <build>
         <plugins>

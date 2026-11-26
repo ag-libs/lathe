@@ -59,10 +59,10 @@ class FormatterSyncTest {
     final String style = Files.readString(lathe("style.json"));
 
     assertThat(style).contains("\"engine\": \"spring\"");
-    assertThat(style).containsPattern("\"version\": \"\\d+\\.\\d+\\.\\d+\"");
-    assertThat(style).containsPattern("\"[^\"]+spring-javaformat-formatter-\\d[^\"]+\\.jar\"");
+    assertThat(style).contains("\"version\": \"0.0.46\"");
+    assertThat(style).containsPattern("\"[^\"]+spring-javaformat-formatter-0\\.0\\.46\\.jar\"");
     assertThat(style)
-        .containsPattern("\"[^\"]+spring-javaformat-formatter-eclipse-runtime-[^\"]+\\.jar\"");
+        .containsPattern("\"[^\"]+spring-javaformat-formatter-eclipse-runtime-0\\.0\\.46\\.jar\"");
     assertThat(style).contains("\"profile\": \"editorconfig\"");
     assertThat(lathe("jvm.args")).doesNotExist();
   }

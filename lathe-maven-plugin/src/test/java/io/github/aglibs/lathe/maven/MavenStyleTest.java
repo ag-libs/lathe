@@ -270,6 +270,45 @@ class MavenStyleTest {
     assertThat(generatedStyle().indent().profile()).isEqualTo("editorconfig");
   }
 
+  // Spotless refused (modules run different ones) leaves the build unformatted: spring-javaformat
+  // in the root does not take over code Spotless formats.
+  @Test
+  void write_refusedSpotlessAndSpringJavaFormat_writesNoStyle() throws Exception {
+    final MavenProject root = withSpring(project("root", "pom"), "0.0.47");
+    final MavenProject core = withSpotless(javaModule("core"), "<googleJavaFormat/>", "3.0.0");
+    final MavenProject app = withSpotless(javaModule("app"), "<googleJavaFormat/>", "3.1.0");
+    StyleWriter.write(tmp, MavenStyle.detect(core));
+
+    final WorkspaceStyleData written =
+        new MavenStyle(null, new SystemStreamLog()).write(tmp, root, List.of(root, core, app));
+
+    assertThat(written).isNull();
+    assertThat(tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE)).doesNotExist();
+  }
+
+  @Test
+  void withBuildSpringVersion_declaredSpring_takesTheBuildPluginVersionOnlyWhenUnset()
+      throws Exception {
+    final MavenProject root = project("root", "pom");
+    final MavenProject core = withSpring(javaModule("core"), "0.0.43");
+    final var bare = new FormatterSpec(LatheFlags.FORMATTER_SPRING, List.of());
+    final var pinned =
+        new FormatterSpec(LatheFlags.FORMATTER_SPRING, List.of(), "0.0.46", Map.of(), List.of());
+
+    assertThat(MavenStyle.withBuildSpringVersion(bare, root, List.of(root, core)).version())
+        .isEqualTo("0.0.43");
+    assertThat(MavenStyle.withBuildSpringVersion(pinned, root, List.of(root, core)).version())
+        .isEqualTo("0.0.46");
+    assertThat(MavenStyle.withBuildSpringVersion(bare, root, List.of(root)).version()).isEmpty();
+    assertThat(
+            MavenStyle.withBuildSpringVersion(
+                    new FormatterSpec(LatheFlags.FORMATTER_ECLIPSE, List.of()),
+                    root,
+                    List.of(root, core))
+                .version())
+        .isEmpty();
+  }
+
   private WorkspaceStyleData generatedStyle() throws Exception {
     return Json.read(
         tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE),
