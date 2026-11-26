@@ -199,12 +199,16 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
     CapturePruner.prune(root, currentTrees(root, facts));
   }
 
-  // .lathe/style.json for the declared pinned formatter, with its resolved jars and the indent it
-  // implies; returns the javac access it needs. Without one, there is no generated style: the
-  // server reads any other declaration itself. Its warnings are the task's own, so a reused
+  // .lathe/style.json for the declared or detected pinned formatter, with its resolved jars and the
+  // indent it implies; returns the javac access it needs. Without one, there is no generated style:
+  // the server reads any other declaration itself. Its warnings are the task's own, so a reused
   // configuration cache still shows them.
   private List<String> writeStyle(final Path root, final List<ProjectFacts> facts) {
-    if (!getFormatter().isPresent()) {
+    // A detected formatter (the root's spring-javaformat) gives way to Spotless anywhere in the
+    // build, as on Maven: Lathe cannot read Spotless's settings here, so it formats nothing.
+    final boolean detectedBesideSpotless =
+        !getDeclaredEngine().isPresent() && facts.stream().anyMatch(ProjectFacts::spotless);
+    if (!getFormatter().isPresent() || detectedBesideSpotless) {
       StyleWriter.delete(root);
       warnUnformatted(facts);
       return List.of();

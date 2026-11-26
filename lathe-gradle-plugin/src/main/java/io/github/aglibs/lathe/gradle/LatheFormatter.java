@@ -13,8 +13,11 @@ import java.io.IOException;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.ArtifactCollection;
 import org.gradle.api.artifacts.Configuration;
@@ -28,13 +31,15 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.provider.Provider;
 
-// The formatter the root's lathe-style.json declares, completed from Spotless's defaults and
-// resolved through Gradle for the workspace task. Gradle resolves only what a configuration
-// declares, so the formatter's coordinates are added as its configuration resolves, once Spotless's
-// step classes (the applied plugin's, else the release Lathe pins) say which release and jars.
+// The formatter the root's lathe-style.json declares, else the spring-javaformat plugin the root
+// applies, completed from Spotless's defaults (spring's from the plugin's release) and resolved
+// through Gradle for the workspace task. Gradle resolves only what a configuration declares, so the
+// formatter's coordinates are added as its configuration resolves, once Spotless's step classes
+// (the applied plugin's, else the release Lathe pins) say which release and jars.
 final class LatheFormatter {
 
   static final String SPOTLESS_PLUGIN = "com.diffplug.spotless";
+  private static final String SPRING_PLUGIN = "io.spring.javaformat";
   private static final String SPOTLESS_CONFIGURATION = "latheSpotless";
   private static final String FORMATTER_CONFIGURATION = "latheFormatter";
 
@@ -47,13 +52,15 @@ final class LatheFormatter {
   private final Provider<String> unresolved;
   private FileCollection pinnedSpotless;
   private boolean completed;
-  // Null when nothing pinned is declared, or it cannot be completed.
+  // Null when nothing pinned is declared or detected, or it cannot be completed.
   private Completion completion;
 
   private LatheFormatter(final Project project, final FormatterSpec declared) {
     this.project = project;
     this.declared = declared;
-    if (declared == null || !FormatterSteps.pinned(declared.engine())) {
+    // Without a declaration, the root may still apply spring-javaformat, which its build script
+    // does only after this runs.
+    if (declared != null && !FormatterSteps.pinned(declared.engine())) {
       this.jars = project.files();
       this.unresolved = project.provider(() -> "");
       return;
@@ -141,8 +148,8 @@ final class LatheFormatter {
     return declared != null ? declared.engine() : null;
   }
 
-  // The completed spec, without its jars, or null when nothing pinned is declared or it cannot be
-  // completed. A task input, so it is computed when the configuration cache is stored.
+  // The completed spec, without its jars, or null when nothing pinned is declared or detected, or
+  // it cannot be completed. A task input, so it is computed when the configuration cache is stored.
   String completedJson() {
     return completed().map(completed -> Json.toJson(completed.spec())).orElse(null);
   }
@@ -175,25 +182,26 @@ final class LatheFormatter {
 
   // Null when there is nothing to resolve.
   private Completion complete() {
-    if (declared == null || !FormatterSteps.pinned(declared.engine())) {
+    final FormatterSpec wanted = declared != null ? withRootSpringVersion(declared) : rootSpring();
+    if (wanted == null || !FormatterSteps.pinned(wanted.engine())) {
       return null;
     }
 
     final Optional<FormatterSpec> local =
-        FormatterSteps.withLocalProfile(declared, project.getProjectDir().toPath());
+        FormatterSteps.withLocalProfile(wanted, project.getProjectDir().toPath());
     if (local.isEmpty()) {
       project
           .getLogger()
           .warn(
               "[lathe] formatter {} profile {} is not a local file, formatting disabled",
-              declared.engine(),
-              declared.options().get(LatheFlags.FORMAT_FILE));
+              wanted.engine(),
+              wanted.options().get(LatheFlags.FORMAT_FILE));
       return null;
     }
 
     // An engine that is no Spotless step (spring) completes without Spotless, and its version
     // owes nothing to the Spotless Lathe pins.
-    final boolean spotlessStep = FormatterSteps.spotlessStep(declared.engine());
+    final boolean spotlessStep = FormatterSteps.spotlessStep(wanted.engine());
     final Object applied = project.getPlugins().findPlugin(SPOTLESS_PLUGIN);
     try (var pinned = applied == null && spotlessStep ? pinnedSpotlessLoader() : null) {
       final ClassLoader spotless = applied != null ? applied.getClass().getClassLoader() : pinned;
@@ -201,17 +209,49 @@ final class LatheFormatter {
       return new Completion(
           spec,
           FormatterSteps.jars(spec, spotless),
-          spotlessStep && applied == null && declared.version().isBlank());
+          spotlessStep && applied == null && wanted.version().isBlank());
     } catch (final ReflectiveOperationException | IOException | RuntimeException e) {
       project
           .getLogger()
           .warn(
               "[lathe] formatter {} unresolved, formatting disabled: {} ({})",
-              declared.engine(),
+              wanted.engine(),
               e.getMessage(),
               ExceptionUtil.rootCause(e).getMessage());
       return null;
     }
+  }
+
+  // The spring engine at the release of the spring-javaformat plugin the root applies; null when it
+  // applies none. Only the root's is read: another project's plugins are out of the root's reach.
+  private FormatterSpec rootSpring() {
+    final Plugin<?> spring = project.getPlugins().findPlugin(SPRING_PLUGIN);
+    if (spring == null) {
+      return null;
+    }
+
+    return new FormatterSpec(
+        LatheFlags.FORMATTER_SPRING, List.of(), pluginVersion(spring), Map.of(), List.of());
+  }
+
+  // A declared spring engine without a version runs the root plugin's release, if it applies one.
+  private FormatterSpec withRootSpringVersion(final FormatterSpec spec) {
+    if (!LatheFlags.FORMATTER_SPRING.equals(spec.engine()) || !spec.version().isBlank()) {
+      return spec;
+    }
+
+    final FormatterSpec root = rootSpring();
+    return root == null
+        ? spec
+        : new FormatterSpec(
+            spec.engine(), spec.command(), root.version(), spec.options(), spec.classpath());
+  }
+
+  // The plugin jar's Implementation-Version, as spring-javaformat's jars record their release;
+  // empty, and so the release Lathe pins, when it records none.
+  private static String pluginVersion(final Plugin<?> plugin) {
+    return Objects.requireNonNullElse(
+        plugin.getClass().getPackage().getImplementationVersion(), "");
   }
 
   private URLClassLoader pinnedSpotlessLoader() {
