@@ -32,6 +32,8 @@
   </dependencies>
 
   <build>
+    <!-- WS-52: a build directory moved from target/; the sync records it from the model. -->
+    <directory>${project.basedir}/out</directory>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
