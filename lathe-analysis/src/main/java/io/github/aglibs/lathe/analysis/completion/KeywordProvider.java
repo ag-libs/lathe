@@ -17,6 +17,19 @@ final class KeywordProvider {
   private static final List<String> VALUE_EXPRESSIONS =
       List.of("new", "null", "true", "false", "this", "super");
 
+  // A switch expression's own value may be a nested switch expression; the other value positions
+  // leave `switch` out.
+  private static final List<String> YIELD_VALUES =
+      Stream.concat(VALUE_EXPRESSIONS.stream(), Stream.of("switch")).toList();
+
+  private static final List<String> SWITCH_RULE_VALUES =
+      Stream.concat(YIELD_VALUES.stream(), Stream.of("throw")).toList();
+
+  private static final List<String> EXPRESSION_STATEMENT_STARTERS = List.of("new", "this", "super");
+
+  private static final List<String> SWITCH_RULE_STATEMENTS =
+      Stream.concat(EXPRESSION_STATEMENT_STARTERS.stream(), Stream.of("throw")).toList();
+
   // Annotation element values: new/this/super are not legal in annotation contexts
   private static final List<String> ANNOTATION_VALUE_KEYWORDS = List.of("null", "true", "false");
 
@@ -100,7 +113,7 @@ final class KeywordProvider {
   private static List<String> selectKeywords(
       final ParsedSentinel parsed, final SentinelInjector.Context injectorContext) {
     return switch (parsed.sentinelContext()) {
-      case SIMPLE_NAME -> parsed.inExpression() ? VALUE_EXPRESSIONS : selectByScope(parsed);
+      case SIMPLE_NAME -> simpleNameKeywords(parsed);
       case TYPE_REFERENCE -> classBodyKeywordsIfApplicable(parsed);
       case VARIABLE_DECLARATION ->
           isRealNameSlot(parsed) ? List.of() : classBodyKeywordsIfApplicable(parsed);
@@ -110,6 +123,17 @@ final class KeywordProvider {
           // EXPRESSION == cursor is in the argument list; STATEMENT == cursor is on the type name.
           injectorContext == SentinelInjector.Context.EXPRESSION ? VALUE_EXPRESSIONS : List.of();
       default -> List.of();
+    };
+  }
+
+  private static List<String> simpleNameKeywords(final ParsedSentinel parsed) {
+    return switch (parsed.keywordSlot()) {
+      case BLOCK_STATEMENT -> selectByScope(parsed);
+      case VALUE -> VALUE_EXPRESSIONS;
+      case YIELD_VALUE -> YIELD_VALUES;
+      case SWITCH_RULE_VALUE -> SWITCH_RULE_VALUES;
+      case SWITCH_RULE_STATEMENT -> SWITCH_RULE_STATEMENTS;
+      case EXPRESSION_STATEMENT -> EXPRESSION_STATEMENT_STARTERS;
     };
   }
 

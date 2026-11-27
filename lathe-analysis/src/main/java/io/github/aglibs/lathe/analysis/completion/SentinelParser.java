@@ -8,6 +8,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.CompilerTrees;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -285,7 +286,7 @@ final class SentinelParser {
             enclosedBySwitchStatement,
             enclosedBySwitchExpression,
             inEqualityComparison,
-            cls.inExpression(),
+            cls.keywordSlot(),
             catchParameter,
             constantField,
             labelTopLevelEnd,
@@ -590,16 +591,42 @@ final class SentinelParser {
       String declaredElementTypeName,
       String annotationTypeText,
       TypeReferenceRole typeReferenceRole,
-      boolean inExpression) {
+      KeywordSlot keywordSlot) {
+
+    Classification {
+      ValidCheck.check()
+          .notNull(context, "context")
+          .notNull(typeReferenceRole, "typeReferenceRole")
+          .notNull(keywordSlot, "keywordSlot")
+          .validate();
+    }
 
     static Classification of(final SentinelContext ctx) {
       return new Classification(
-          ctx, -1, null, null, -1, null, null, null, TypeReferenceRole.ORDINARY, false);
+          ctx,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          null,
+          TypeReferenceRole.ORDINARY,
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification typeReference(final TypeReferenceRole role) {
       return new Classification(
-          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, null, null, role, false);
+          SentinelContext.TYPE_REFERENCE,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          null,
+          role,
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification annotation() {
@@ -613,7 +640,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ANNOTATION,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification annotationArgument(final String annotationTypeText) {
@@ -627,7 +654,7 @@ final class SentinelParser {
           null,
           annotationTypeText,
           TypeReferenceRole.ORDINARY,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification annotationArgumentValue(
@@ -642,10 +669,14 @@ final class SentinelParser {
           null,
           annotationTypeName,
           TypeReferenceRole.ORDINARY,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification expression() {
+      return simpleName(KeywordSlot.VALUE);
+    }
+
+    static Classification simpleName(final KeywordSlot keywordSlot) {
       return new Classification(
           SentinelContext.SIMPLE_NAME,
           -1,
@@ -656,7 +687,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ORDINARY,
-          true);
+          keywordSlot);
     }
   }
 
@@ -706,8 +737,31 @@ final class SentinelParser {
         && (parent instanceof final ReturnTree returnTree && returnTree.getExpression() == sentinel
             || parent instanceof final ThrowTree throwTree && throwTree.getExpression() == sentinel
             || parent instanceof final VariableTree variable
-                && variable.getInitializer() == sentinel)) {
+                && variable.getInitializer() == sentinel
+            || parent instanceof final NewArrayTree newArray
+                && newArray.getInitializers() != null
+                && newArray.getInitializers().contains(sentinel))) {
       return Classification.expression();
+    }
+
+    if (simpleName
+        && parent instanceof final YieldTree yieldTree
+        && yieldTree.getValue() == sentinel) {
+      return Classification.simpleName(KeywordSlot.YIELD_VALUE);
+    }
+
+    // A switch expression's arrow body is the case's own body, the switch's value (CQ-0084).
+    if (simpleName
+        && parent instanceof final CaseTree caseTree
+        && caseTree.getBody() == sentinel
+        && parentPath.getParentPath().getLeaf() instanceof SwitchExpressionTree) {
+      return Classification.simpleName(KeywordSlot.SWITCH_RULE_VALUE);
+    }
+
+    final Classification expressionStatement =
+        simpleName ? expressionStatementClassification(parentPath) : null;
+    if (expressionStatement != null) {
+      return expressionStatement;
     }
 
     // --- expression-tree parents: sentinel is a sub-expression ---
@@ -803,7 +857,7 @@ final class SentinelParser {
         realType ? elementTypeName(type) : null,
         null,
         TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   // The declared type's simple name, taken from the AST so no type text is parsed: the base of a
@@ -862,7 +916,7 @@ final class SentinelParser {
         null,
         null,
         TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   private static Classification classifyLambda(
@@ -878,7 +932,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ORDINARY,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     final var params = lambda.getParameters();
@@ -898,7 +952,7 @@ final class SentinelParser {
         null,
         null,
         TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   private static Classification classifyConstructorCall(
@@ -917,7 +971,7 @@ final class SentinelParser {
         null,
         null,
         argIndex < 0 ? TypeReferenceRole.CONSTRUCTOR : TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   private static String annotationArgumentType(final Tree sentinel, final TreePath parentPath) {
@@ -1075,6 +1129,34 @@ final class SentinelParser {
     }
 
     return TypeReferenceRole.ORDINARY;
+  }
+
+  // A name alone is no statement: javac wraps it in an erroneous tree inside an expression
+  // statement. Where that statement is a switch statement's arrow body or a `for` loop's update,
+  // only some statements stand there (CQ-0084); null elsewhere, a block's or a colon case's
+  // statement among them.
+  private static Classification expressionStatementClassification(final TreePath parentPath) {
+    if (!(parentPath.getLeaf() instanceof ErroneousTree)) {
+      return null;
+    }
+
+    final TreePath statementPath = parentPath.getParentPath();
+    if (statementPath == null
+        || statementPath.getParentPath() == null
+        || !(statementPath.getLeaf() instanceof final ExpressionStatementTree statement)) {
+      return null;
+    }
+
+    final Tree owner = statementPath.getParentPath().getLeaf();
+    if (owner instanceof final CaseTree caseTree && caseTree.getBody() == statement) {
+      return Classification.simpleName(KeywordSlot.SWITCH_RULE_STATEMENT);
+    }
+
+    if (owner instanceof final ForLoopTree forLoop && forLoop.getUpdate().contains(statement)) {
+      return Classification.simpleName(KeywordSlot.EXPRESSION_STATEMENT);
+    }
+
+    return null;
   }
 
   private static Classification classifyDefault(final Tree sentinel) {

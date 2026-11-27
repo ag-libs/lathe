@@ -24,7 +24,7 @@ record ParsedSentinel(
     boolean enclosedBySwitchStatement,
     boolean enclosedBySwitchExpression,
     boolean inEqualityComparison,
-    boolean inExpression,
+    KeywordSlot keywordSlot,
     boolean catchParameter,
     boolean constantField,
     // Where the top-level class ends when the sentinel is a switch label's body, -1 otherwise: a
@@ -47,6 +47,7 @@ record ParsedSentinel(
         .nullOrNotEmpty(receiverText, "receiverText")
         .when(valid, v -> v.notNull(sentinelContext, "sentinelContext"))
         .notNull(typeReferenceRole, "typeReferenceRole")
+        .notNull(keywordSlot, "keywordSlot")
         .notNull(typeVariables, "typeVariables")
         .when(
             !valid,
@@ -81,7 +82,7 @@ record ParsedSentinel(
         false,
         false,
         false,
-        false,
+        KeywordSlot.BLOCK_STATEMENT,
         false,
         false,
         -1,
@@ -117,7 +118,7 @@ record ParsedSentinel(
         false,
         false,
         false,
-        false,
+        KeywordSlot.BLOCK_STATEMENT,
         false,
         false,
         -1,
@@ -146,7 +147,7 @@ record ParsedSentinel(
       final boolean enclosedBySwitchStatement,
       final boolean enclosedBySwitchExpression,
       final boolean inEqualityComparison,
-      final boolean inExpression,
+      final KeywordSlot keywordSlot,
       final boolean catchParameter,
       final boolean constantField,
       final int labelTopLevelEnd,
@@ -175,7 +176,7 @@ record ParsedSentinel(
         enclosedBySwitchStatement,
         enclosedBySwitchExpression,
         inEqualityComparison,
-        inExpression,
+        keywordSlot,
         catchParameter,
         constantField,
         labelTopLevelEnd,
