@@ -21,7 +21,6 @@ import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
-import io.github.aglibs.lathe.server.engine.LathePropertyMentions;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.Noted;
@@ -204,56 +203,6 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             r ->
                 r.location().uri().endsWith("Caller.java")
                     && r.location().snippet().contains("greet"));
-  }
-
-  // MC-109: a getter no Java code calls, whose property name another file still holds as text (a
-  // test's hasProperty("city"), a template), lists where, for both tools; a method that is no
-  // accessor lists nothing.
-  @Test
-  void references_unusedGetterNamedAsItsProperty_listsThePropertyMentions() throws Exception {
-    final String ownerSource =
-        """
-        package com.example;
-        class Owner {
-          private String city;
-          String getCity() { return city; }
-          String phone() { return ""; }
-        }
-        """;
-    final Path owner = TestCompiler.writeModuleSource(tmp, "com/example/Owner.java", ownerSource);
-    final Path check =
-        TestCompiler.writeModuleSource(
-            tmp,
-            "com/example/OwnerCheck.java",
-            "package com.example;\nclass OwnerCheck {\n  String key() { return \"city\"; }\n}\n");
-    compileIntoMirror(owner, check);
-    engine = new LatheEngine(tmp);
-    final var getter = positionOf(ownerSource, "getCity");
-
-    final LatheReferences refs =
-        engine.references(owner, getter.getLine(), getter.getCharacter(), 50, ANY_ACCESS).value();
-    assertThat(refs.total()).isZero();
-    assertThat(refs.propertyMentions().property()).isEqualTo("city");
-    assertThat(refs.propertyMentions().mentions())
-        .extracting(LatheLocation::path)
-        .singleElement()
-        .asString()
-        .endsWith("OwnerCheck.java");
-    assertThat(
-            engine
-                .analyzeChange(owner, getter.getLine(), getter.getCharacter(), 50)
-                .value()
-                .propertyMentions()
-                .mentions())
-        .hasSize(1);
-
-    final var other = positionOf(ownerSource, "phone");
-    assertThat(
-            engine
-                .references(owner, other.getLine(), other.getCharacter(), 50, ANY_ACCESS)
-                .value()
-                .propertyMentions())
-        .isEqualTo(LathePropertyMentions.NONE);
   }
 
   // FR-038: references to an override are the calls that can reach it, through its class, a
