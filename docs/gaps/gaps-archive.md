@@ -7,6 +7,46 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-036 — Renaming a getter leaves its property name in templates and message files unreported — non-goal
+
+**Status: non-goal** (2026-11-27: that a template, a serializer or a query binds an accessor by its property name is the framework's rule, which javac does not see)
+
+**Kind: bug**
+
+**Affects: MCP `rename_symbol` and `verify_change`, and the editor's rename.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-17).
+
+### Observed behaviour
+
+`rename_symbol` on `Person.getFirstName` → `getGivenName` edits 4 places in 3 files and lists no place to review.
+Petclinic's Thymeleaf templates use the JavaBean property, not the method: `${owner.firstName}` in `ownersList.html`, `*{firstName + ' ' + lastName}` in `ownerDetails.html`, and two more; the message bundles key `firstName` too.
+"Not renamed — review" lists only the old method name as text, so none of them is named, and `verify_change` says clean.
+The application then fails at runtime, on the first page that renders an owner.
+The same holds for a property Jackson serializes or a JPQL query names: any framework that reads accessors as properties.
+
+Seen again on Petclinic (2026-11-25, `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2 and P3): the resource scan matches only qualified forms (`${owner.city}`), so Thymeleaf's selection form (`*{city}`, `th:field="*{city}"`) and a fragment argument (`'city'`) are never listed, which decides how far a property-name review can reach; [MC-109](#mc-109--find_references-and-analyze_change-say-nothing-uses-a-getter-that-templates-bind--done) gives the agent's references the same property-name mentions.
+Seen again on Petclinic (2026-11-26, `dev/reports/qa-2026-11-26-petclinic-exploratory.md`, finding 3): `rename_symbol` of `Owner.getCity` to `getTown` makes 1 edit and lists nothing to review, while `find_references` and `analyze_change` on the same getter name the 11 places its property `city` is text (MC-109), and renaming the field `city` lists them; `rename_symbol` is now the one tool that does not.
+
+### Resolution
+
+Not Lathe's to model.
+A rename changes what javac resolves to the symbol and lists where its old name is still text; a property name is another name, bound by the framework's rules (JavaBeans accessors in Spring, Thymeleaf, Jackson, JPA), and Lathe keeps no per-framework rules, as with [FR-041](#fr-041--renaming-a-spring-data-derived-query-method-changes-its-query-without-a-word--non-goal).
+Listing every accessor rename's property mentions would also list most unrelated text for a common name.
+[MC-109](#mc-109--find_references-and-analyze_change-say-nothing-uses-a-getter-that-templates-bind--done)'s property-name listing is taken out for the same reason: `find_references` and `analyze_change` on a symbol no Java code uses now say that javac does not see uses by reflection or by a framework (templates, serializers, injection), naming none, so the agent is not told it is dead code.
+
+### Fix direction (not taken)
+
+When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
+A field renamed with its accessors is the same case.
+
+### Regression targets
+
+- `McpTextTest.analyzeResult_noReferences_saysJavacSeesNoFrameworkUses`
+- `McpTextTest.referencesResult_noUsesOrNoSymbol_saysWhich`
+
+---
+
 ## FR-041 — Renaming a Spring Data derived query method changes its query without a word — non-goal
 
 **Status: non-goal** (2026-11-27: knowing a method is a derived query takes Spring Data's and JPA's runtime rules, which javac does not see)
@@ -16513,7 +16553,7 @@ Not covered: IntelliJ's ±1 terms (ties broken here by top-level and use instead
 
 ## MC-109 — `find_references` and `analyze_change` say nothing uses a getter that templates bind — done
 
-**Status: done** (2026-11-25; triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M)
+**Status: done** (2026-11-25; triaged 2026-11-25: medium, for the release; the answer is a certainty an agent acts on, and the scan to qualify it exists; size S–M; the property-name listing withdrawn 2026-11-27 with FR-036, see below)
 
 **Kind: bug**
 
@@ -16542,13 +16582,13 @@ Checked on Petclinic with a server built from the branch: `getCity()` and `getTe
 
 Not covered: the scan's qualified forms only, so Thymeleaf's selection form (`*{city}`) and a fragment's `'city'` are not listed (FR-036); an `is` method that returns no boolean is taken for an accessor, as the target carries no return type; the editor's references, which carry locations only, are unchanged.
 
+Withdrawn (2026-11-27, with [FR-036](#fr-036--renaming-a-getter-leaves-its-property-name-in-templates-and-message-files-unreported--non-goal)): a property name is bound by a framework's rules, which Lathe does not keep, and the listing was text that sometimes matched.
+`BeanProperties` and the listing are removed; what stays is the answer's wording: no Java code uses the symbol, and javac does not see uses by reflection or by a framework (templates, serializers, injection), so the agent still does not take it for dead code.
+
 ### Regression targets
 
-- `LatheEngineNavigationTest.references_unusedGetterNamedAsItsProperty_listsThePropertyMentions`
-- `BeanPropertiesTest.name_fieldAndAccessors_theirJavaBeansProperty`
-- `BeanPropertiesTest.name_notAnAccessor_none`
-- `McpTextTest.referencesResult_unusedAccessorWithPropertyMentions_listsThemAsLeads`
-- `McpTextTest.analyzeResult_noReferencesButPropertyMentions_countsThem`
+- `McpTextTest.referencesResult_noUsesOrNoSymbol_saysWhich`
+- `McpTextTest.analyzeResult_noReferences_saysJavacSeesNoFrameworkUses`
 
 ---
 

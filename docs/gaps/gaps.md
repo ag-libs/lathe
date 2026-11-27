@@ -1000,38 +1000,6 @@ None yet.
 
 ---
 
-## FR-036 — Renaming a getter leaves its property name in templates and message files unreported
-
-**Status: deferred** (triaged 2026-11-18: still on main `cdf57f1`; the review list is advisory, and listing property names needs a rule for which accessors count)
-
-**Kind: bug**
-
-**Affects: MCP `rename_symbol` and `verify_change`, and the editor's rename.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-17).
-
-### Observed behaviour
-
-`rename_symbol` on `Person.getFirstName` → `getGivenName` edits 4 places in 3 files and lists no place to review.
-Petclinic's Thymeleaf templates use the JavaBean property, not the method: `${owner.firstName}` in `ownersList.html`, `*{firstName + ' ' + lastName}` in `ownerDetails.html`, and two more; the message bundles key `firstName` too.
-"Not renamed — review" lists only the old method name as text, so none of them is named, and `verify_change` says clean.
-The application then fails at runtime, on the first page that renders an owner.
-The same holds for a property Jackson serializes or a JPQL query names: any framework that reads accessors as properties.
-
-Seen again on Petclinic (2026-11-25, `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2 and P3): the resource scan matches only qualified forms (`${owner.city}`), so Thymeleaf's selection form (`*{city}`, `th:field="*{city}"`) and a fragment argument (`'city'`) are never listed, which decides how far a property-name review can reach; [MC-109](#mc-109--find_references-and-analyze_change-say-nothing-uses-a-getter-that-templates-bind) gives the agent's references the same property-name mentions.
-Seen again on Petclinic (2026-11-26, `dev/reports/qa-2026-11-26-petclinic-exploratory.md`, finding 3): `rename_symbol` of `Owner.getCity` to `getTown` makes 1 edit and lists nothing to review, while `find_references` and `analyze_change` on the same getter name the 11 places its property `city` is text (MC-109), and renaming the field `city` lists them; `rename_symbol` is now the one tool that does not.
-
-### Fix direction
-
-When the renamed symbol is a JavaBean accessor (`get`/`is`/`set` + capitalised name), list the text mentions of its property name (`firstName`) in resources the way the old method name is listed, as places to review, never edited.
-A field renamed with its accessors is the same case.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
