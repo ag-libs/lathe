@@ -271,6 +271,47 @@ spec.check(
   root_of("/both-registered"),
   "/both-registered gradle"
 )
+next_answer = false
+run_from("/both-gradle")
+spec.check(
+  "and the prompt names the Maven build",
+  prompts[#prompts].prompt,
+  "Lathe: build the Gradle project (a Maven build is there too: `:LatheInit maven`), which registers Lathe, in: "
+)
+-- Neither registered: the build an earlier personal setup used, read from its sync script.
+write(work .. "/both-personal-maven/settings.gradle")
+write(work .. "/both-personal-maven/pom.xml")
+write(
+  work .. "/both-personal-maven/.lathe/lathe-sync.sh",
+  "mvn -Dmaven.ext.class.path=/cache/bootstrap/9.9.9/lib/lathe-core-9.9.9.jar"
+)
+spec.check(
+  "both builds, a personal Maven setup: Maven",
+  root_of("/both-personal-maven"),
+  "/both-personal-maven maven"
+)
+write(work .. "/both-personal-gradle/settings.gradle")
+write(work .. "/both-personal-gradle/pom.xml")
+write(
+  work .. "/both-personal-gradle/.lathe/lathe-sync.sh",
+  "gradle --init-script /cache/bootstrap/9.9.9/lathe.init.gradle.kts latheSync"
+)
+spec.check(
+  "both builds, a personal Gradle setup: Gradle",
+  root_of("/both-personal-gradle"),
+  "/both-personal-gradle gradle"
+)
+-- A root typed into the prompt follows the same rule.
+spec.check(
+  "a typed root with both builds takes the one that registers Lathe",
+  latheinit.build_at(work .. "/both-maven").kind,
+  "maven"
+)
+spec.check(
+  "a typed root with both builds, neither registered: Gradle",
+  latheinit.build_at(work .. "/both").kind,
+  "gradle"
+)
 
 -- Maven personal: fetch, then build with the activation, then attach.
 local boot = work .. "/cache/bootstrap/9.9.9"

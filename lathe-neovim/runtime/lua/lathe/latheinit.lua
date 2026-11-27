@@ -213,12 +213,28 @@ local function describe(root, kind)
   return { root = root, kind = kind, registered = registers_lathe(root, kind) }
 end
 
--- Both builds at one folder: the one that registers Lathe, as setting up the other would replace a
--- working setup (NV-17); else Gradle, whose settings script is the more explicit marker. `also`
--- names the other, so the prompt can.
+-- The kind an earlier personal setup at `root` used, read from the sync script it wrote, which
+-- replays its activation: Maven's extension class path or the Gradle init script; nil without one.
+local function personal_kind(root)
+  local script = read(vim.fs.joinpath(root, workspace.SYNC_SCRIPT))
+  if script:find("maven.ext.class.path", 1, true) then
+    return "maven"
+  end
+
+  return script:find(INIT_SCRIPT, 1, true) and "gradle" or nil
+end
+
+-- Both builds at one folder: the one that registers Lathe or, with neither registered, the one an
+-- earlier personal setup used, as setting up the other would replace a working setup (NV-17); else
+-- Gradle, whose settings script is the more explicit marker. `also` names the other, so the prompt
+-- can.
 local function both_at(root)
   local gradle, maven = describe(root, "gradle"), describe(root, "maven")
-  if maven.registered and not gradle.registered then
+  local neither = not maven.registered and not gradle.registered
+  if
+    maven.registered and not gradle.registered
+    or neither and personal_kind(root) == "maven"
+  then
     maven.also = "gradle"
     return maven
   end
@@ -258,6 +274,10 @@ end
 --- The build at exactly `root`, a folder the user typed: `kind`'s if given, else the first kind
 --- whose files are there.
 function M.build_at(root, kind)
+  if not kind and not AT.openjdk(root) and AT.gradle(root) and AT.maven(root) then
+    return both_at(root)
+  end
+
   for _, candidate in ipairs(kind and { kind } or { "openjdk", "gradle", "maven" }) do
     if AT[candidate](root) then
       return describe(root, candidate)
