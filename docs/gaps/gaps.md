@@ -832,6 +832,34 @@ Only the project's formatter knows its rules: format the skeleton with it (`Form
 
 None yet.
 
+## EG-131 — Signature help and hover show a generic member's type variables, not the receiver's type arguments
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: signature help and hover on a member inherited from a generic type (every Spring Data repository method, collections, `Optional`).**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+`this.owners.save(` on an `OwnerRepository extends JpaRepository<Owner, Integer>` shows `<S extends T> S save(S entity)`, and `this.owners.findAll(` shows `List<T> findAll(Sort sort)`.
+`List<Owner> l; l.add(` shows `boolean add(E e)`; `orElseThrow(` on `findById(ownerId)` (`OwnerController.java:68`) shows `<X extends Throwable> T orElseThrow(Supplier<? extends X> exceptionSupplier) throws X`.
+Hover on the same calls shows the same declared signatures.
+jdtls 1.63 shows `orElseThrow(Supplier<? extends X> exceptionSupplier) : Owner`, the member's type as seen from the receiver, which is what javac attributes the call to.
+
+### Expected
+
+Signature help and hover on a call show the member's type as seen from the receiver (`Types.memberType`): `<S extends Owner> S save(S entity)`, `List<Owner> findAll(Sort sort)`, `boolean add(Owner e)`.
+The method's own type variables stay where the call does not fix them.
+
+### Regression targets
+
+None yet.
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1087,6 +1115,7 @@ The application then fails at runtime, on the first page that renders an owner.
 The same holds for a property Jackson serializes or a JPQL query names: any framework that reads accessors as properties.
 
 Seen again on Petclinic (2026-11-25, `dev/reports/qa-2026-11-25-petclinic-mcp.md`, P2 and P3): the resource scan matches only qualified forms (`${owner.city}`), so Thymeleaf's selection form (`*{city}`, `th:field="*{city}"`) and a fragment argument (`'city'`) are never listed, which decides how far a property-name review can reach; [MC-109](#mc-109--find_references-and-analyze_change-say-nothing-uses-a-getter-that-templates-bind) gives the agent's references the same property-name mentions.
+Seen again on Petclinic (2026-11-26, `dev/reports/qa-2026-11-26-petclinic-exploratory.md`, finding 3): `rename_symbol` of `Owner.getCity` to `getTown` makes 1 edit and lists nothing to review, while `find_references` and `analyze_change` on the same getter name the 11 places its property `city` is text (MC-109), and renaming the field `city` lists them; `rename_symbol` is now the one tool that does not.
 
 ### Fix direction
 
@@ -1098,6 +1127,33 @@ A field renamed with its accessors is the same case.
 None yet.
 
 ---
+
+## FR-041 — Renaming a Spring Data derived query method changes its query without a word
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol` and `analyze_change` on a Spring Data repository interface.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+Editor `textDocument/rename` and MCP `rename_symbol` of `OwnerRepository.findByLastNameStartingWith` to `findByLastName` or `lookupOwners` make 14 edits in 4 files, which compile, with no note; `analyze_change` on the method says nothing either.
+Spring Data derives the query from the method name: `findByLastName` becomes an equality query, so the owner search stops matching prefixes while the tests that mock the repository still pass, and `lookupOwners` names no query Spring Data can derive, so the application context fails to start.
+javac compiles both, so `verify_change` cannot catch it.
+
+### Expected
+
+A rename of a method declared in an interface that extends Spring Data's `Repository`, whose name is a derived query (`find…By`, `count…By`, `exists…By`, `delete…By`, …) and carries no `@Query`, is refused or carries a note that the name is the query: the new name either derives another query or none.
+Related: [FR-034](#fr-034--renaming-a-member-a-processor-derives-another-from-leaves-the-derived-members-callers-broken) (a member a processor derives from), which needs generated code; Spring Data derives at runtime.
+
+### Regression targets
+
+None yet.
 
 # Code Action Gaps (CA)
 
@@ -1241,6 +1297,59 @@ None yet.
 
 ---
 
+## CA-22 — Extract method offers nothing, and says nothing, for statements that reassign a local used after them
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: the editor's extract-method code action.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+In `OwnerController.processFindForm`, the statements `if (lastName == null) { lastName = ""; } else { lastName = lastName.strip(); }` (lines 99–104), selected as a range or line-wise, get no code action at all, not a disabled one with a reason; neither does the `if` alone (99–101).
+`lastName` is read after them.
+jdtls 1.63 extracts them as `lastName = extracted(lastName);`, which compiles.
+Statements that only read locals, and expressions, extract and compile.
+
+### Expected
+
+Where exactly one local assigned in the selection is read after it, extract a method that returns it and assign the call's result to it, as jdtls does; otherwise offer the action disabled, with the reason (the locals the selection assigns and the code after it reads).
+
+### Regression targets
+
+None yet.
+
+## CA-23 — "Implement abstract methods" inserts the stub at column 0
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: the implement-missing-methods quick fix, in a class indented with tabs (or not with four spaces).**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+With `PetValidator.supports` deleted, the quick fix adds `@Override` and `public boolean supports(Class<?> clazz) {` at column 0, with a body indented by four spaces, in a class whose body is indented with tabs.
+The result compiles; the project's formatter (spring-javaformat) fixes it on the next format.
+jdtls indents its stub with the class body.
+
+### Expected
+
+The stub takes the indentation of the class body's members, as [EG-130](#eg-130--a-lathenew-test-skeleton-fails-a-build-that-checks-formatting-until-it-is-formatted)'s fix direction proposes for a generated skeleton: formatted with the project's formatter where one is configured.
+
+### Regression targets
+
+None yet.
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
@@ -1298,6 +1407,58 @@ Every bound has the type-argument role of CQ-0066, which allows any reference ty
 Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
+
+## CQ-0082 — Member completion in a closed switch block leaves out void methods, and with a prefix answers nothing
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: member completion in a `case` of a switch statement whose block is closed: the shape an editor with auto-pairs leaves.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+In `OwnerController.processFindForm`, after `String lastName = owner.getLastName();`: `switch (lastName) {` / `case "a" -> owner.ad§` / `}` answers 0 items; so do `owner.ad§;`, a `default -> {}` after it, and a colon case `case "a":` / `owner.ad§` / `break;` / `}`.
+Without a prefix, `case Owner ow -> ow.§` in a closed switch lists 15 items, none of them void (`addPet`, `addVisit`, `setCity` are missing); the same switch left open lists 23.
+The same text in an `if` block, after an `instanceof` pattern, in an open switch, or in a `{ … }` case body lists `addPet` and `addVisit`.
+It predates [CQ-0079](gaps-archive.md#cq-0079--member-completion-after-case-x-x---x-answers-nothing-while-the-switch-block-is-not-closed--done): a `lathe-analysis` completion probe fails the same closed-switch cases (arrow, arrow with a prefix, colon, pattern) on main just before and just after its merge (`17756b3e`); CQ-0079 fixed only the open switch.
+
+### Expected
+
+A case of a switch statement is a statement position: javac accepts `case "a" -> owner.addPet(pet);`, so the void members are offered, as in an `if` block.
+
+### Regression targets
+
+None yet.
+
+## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values`
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: completion of an enum-typed annotation element's value.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+`@OneToMany(…, fetch = FetchType.§)` offers `EAGER`, `LAZY`, `valueOf`, `values` and `class`; likewise `CascadeType.` and `GenerationType.` (`BaseEntity.java:36`).
+jdtls 1.63 offers the constants alone.
+
+### Expected
+
+An annotation element of an enum type takes an enum constant only (JLS 9.7.1): `FetchType.valueOf("EAGER")` does not compile there, so only the constants are offered.
+
+### Regression targets
+
+None yet.
 
 # Workspace Lifecycle Gaps (WS)
 
@@ -1804,6 +1965,31 @@ python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.ja
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
+
+## NV-17 — `:LatheInit` with no kind offers a Gradle setup where the Maven build already registers Lathe
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheInit` without a kind on a folder holding both builds; the Neovim client.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+On Petclinic, `.mvn/extensions.xml` registers Lathe and `.lathe/` is the Maven build's, yet `find_build` takes the Gradle root (the same folder, not registered) and offers to set it up; the prompt names the Maven build (NV-14), but accepting it replaces the Maven-synced setup with a Gradle one.
+[NV-14](gaps-archive.md#nv-14--on-a-project-with-both-a-maven-and-a-gradle-build-latheinit-picks-gradle-without-saying-maven-is-there--done) kept Gradle first for a project with neither build set up.
+
+### Expected
+
+At one root with both builds, a build that already registers Lathe is the default, and the prompt names the other; with neither registered, NV-14's order holds.
+
+### Regression targets
+
+None yet.
 
 # MCP / Agent Facade Gaps (MC)
 
@@ -2386,6 +2572,36 @@ The editor's message, "not under any Lathe module source root", is accurate; an 
 ### Expected
 
 Where the file's module was compiled, the reason names the source roots javac compiles, or says the file is in none of them, without the profile.
+
+### Regression targets
+
+None yet.
+
+## MC-113 — `search_symbols` ranks a generated type below weaker matches when the query is lowercase or CamelHumps
+
+**Status: documented**
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `search_symbols` on a reactor whose public types are processor output (Helidon's builders).**
+
+Found by the release check on Helidon (2026-11-26, `main` at `6dc6245`, Helidon at `27a692eb0d`; report `dev/reports/release-0.1.0-SNAPSHOT-2026-11-26.md`).
+What [MC-110](gaps-archive.md#mc-110--search_symbols-lists-an-exact-match-below-partial-ones-when-the-match-is-generated--done) left: its fix puts an exact, case-sensitive match first, and its third symptom (`LiCo`) was not covered.
+
+### Observed behaviour
+
+`search_symbols {query: "listenerconfig", scope: "reactor"}` lists `ListenerConfigBlueprint`, `ListenerConfigTest`, `ListenerConfigDecorator`, `ListenerConfigurationParamHandler`, then `ListenerConfig` [GENERATED], fifth; `webserverconfig` lists `WebServerConfig` fourth.
+`LiCo` and `LisCon` leave `ListenerConfig` out of the first twelve, behind hand-written matches that fit the query worse (`AimdLimitConfigBlueprint`, `LinkedListConverter`).
+`ListenerConfig` and `WebServerConfig`, as typed, list the generated type first.
+A hand-written type is not affected: on Dropwizard, `abstractserverfactory` and `duration` list the exact type first.
+The editor's `workspace/symbol` lists `ListenerConfig` first for `listenerconfig` and `LiCo` (2026-11-25's round), so an agent and the editor are handed different first answers.
+
+### Expected
+
+A name equal to the query ignoring case counts as exact, as the editor's search treats it.
+Among the rest, how well a type matches ranks it before MC-39's hand-written-before-generated order, so a generated type that matches the query's humps closely is not listed after a hand-written one that matches them loosely.
 
 ### Regression targets
 
