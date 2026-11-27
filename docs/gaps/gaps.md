@@ -1405,6 +1405,49 @@ An annotation element of an enum type takes an enum constant only (JLS 9.7.1): `
 
 None yet.
 
+## CQ-0084 — Keyword completion offers statement keywords where only a value or an expression statement can stand
+
+**Status: accepted** (2026-11-27)
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: keyword completion of a simple name in a switch label's arrow body, after `yield`, in an array initializer, and in a `for` loop's update.**
+
+Found checking [CQ-0082](gaps-archive.md)'s fix on `main` at `37cdada1` (2026-11-27), with `lathe-analysis` completion probes.
+
+### Observed behaviour
+
+A value position should offer only the value keywords (`new`, `null`, `true`, `false`, `this`, `super`), as `return §`, an assignment, a condition, an operand, an argument or a lambda's expression body do.
+These offer the whole set a block statement gets (`return`, `assert`, `if`, `for`, `while`, `do`, `try`, `synchronized`, `var`, `final`, the primitive types):
+
+- a switch expression's arrow body, `default ->` too, open or closed: `return switch (x) { case "a" -> §`, with `yield` as well; `case "a" -> re§` offers `return` alone, which javac rejects (a `return` out of a switch expression);
+- a `yield`'s value: `yield §;`;
+- an array initializer's element: `int[] a = { § };`, `new int[] { § }`, a field's `{ § }`;
+- a switch statement's arrow body, `switch (x) { case "a" -> §`, with `break` as well: javac accepts only an expression statement, a block or a `throw` there;
+- a `for` loop's update, `for (int i = 0; i < 3; §)`, with `break` and `continue`: only expression statements stand there.
+
+### Cause
+
+`SentinelParser.classifySentinel` marks a simple name as an expression (`inExpression`) only where its parent is a listed value position; a `CaseTree` whose body it is, a `YieldTree` and an array initializer are not listed, and a switch statement's arrow body and a `for` update are expression statements, the shape a block statement has.
+The name then falls to `classifyDefault`, and `KeywordProvider.selectKeywords` gives every simple name not marked an expression the method body's keywords.
+
+### Expected
+
+A switch expression's arrow body offers the value keywords and `throw`; a `yield`'s value and an array initializer's element the value keywords; a switch statement's arrow body `new`, `this`, `super` and `throw`; a `for` update `new`, `this` and `super`.
+A colon case's statements and a block inside an arrow keep the statement keywords.
+
+Not covered:
+- `assert`'s condition and detail, which offer the statement keywords too, and whose condition offers void methods: deferred.
+- `switch` as a value (`return switch (x) { … }`), which no value position offers.
+- A `for` loop's initializer, which offers the statement keywords where a local declaration or an expression statement stands.
+- A field initializer (`int f = §`) offers void methods, which a local's initializer leaves out.
+
+### Regression targets
+
+None yet.
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
