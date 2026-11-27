@@ -8,6 +8,7 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.CompilerTrees;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -285,7 +286,7 @@ final class SentinelParser {
             enclosedBySwitchStatement,
             enclosedBySwitchExpression,
             inEqualityComparison,
-            cls.inExpression(),
+            cls.keywordSlot(),
             catchParameter,
             constantField,
             labelTopLevelEnd,
@@ -590,16 +591,42 @@ final class SentinelParser {
       String declaredElementTypeName,
       String annotationTypeText,
       TypeReferenceRole typeReferenceRole,
-      boolean inExpression) {
+      KeywordSlot keywordSlot) {
+
+    Classification {
+      ValidCheck.check()
+          .notNull(context, "context")
+          .notNull(typeReferenceRole, "typeReferenceRole")
+          .notNull(keywordSlot, "keywordSlot")
+          .validate();
+    }
 
     static Classification of(final SentinelContext ctx) {
       return new Classification(
-          ctx, -1, null, null, -1, null, null, null, TypeReferenceRole.ORDINARY, false);
+          ctx,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          null,
+          TypeReferenceRole.ORDINARY,
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification typeReference(final TypeReferenceRole role) {
       return new Classification(
-          SentinelContext.TYPE_REFERENCE, -1, null, null, -1, null, null, null, role, false);
+          SentinelContext.TYPE_REFERENCE,
+          -1,
+          null,
+          null,
+          -1,
+          null,
+          null,
+          null,
+          role,
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification annotation() {
@@ -613,7 +640,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ANNOTATION,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification annotationArgument(final String annotationTypeText) {
@@ -627,7 +654,7 @@ final class SentinelParser {
           null,
           annotationTypeText,
           TypeReferenceRole.ORDINARY,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification annotationArgumentValue(
@@ -642,7 +669,7 @@ final class SentinelParser {
           null,
           annotationTypeName,
           TypeReferenceRole.ORDINARY,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     static Classification expression() {
@@ -656,7 +683,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ORDINARY,
-          true);
+          KeywordSlot.VALUE);
     }
   }
 
@@ -803,7 +830,7 @@ final class SentinelParser {
         realType ? elementTypeName(type) : null,
         null,
         TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   // The declared type's simple name, taken from the AST so no type text is parsed: the base of a
@@ -862,7 +889,7 @@ final class SentinelParser {
         null,
         null,
         TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   private static Classification classifyLambda(
@@ -878,7 +905,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ORDINARY,
-          false);
+          KeywordSlot.BLOCK_STATEMENT);
     }
 
     final var params = lambda.getParameters();
@@ -898,7 +925,7 @@ final class SentinelParser {
         null,
         null,
         TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   private static Classification classifyConstructorCall(
@@ -917,7 +944,7 @@ final class SentinelParser {
         null,
         null,
         argIndex < 0 ? TypeReferenceRole.CONSTRUCTOR : TypeReferenceRole.ORDINARY,
-        false);
+        KeywordSlot.BLOCK_STATEMENT);
   }
 
   private static String annotationArgumentType(final Tree sentinel, final TreePath parentPath) {

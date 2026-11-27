@@ -91,7 +91,7 @@ class ReceiverResolverTest {
             false,
             false,
             false,
-            false,
+            KeywordSlot.BLOCK_STATEMENT,
             false,
             false,
             -1,

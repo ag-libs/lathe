@@ -100,7 +100,7 @@ final class KeywordProvider {
   private static List<String> selectKeywords(
       final ParsedSentinel parsed, final SentinelInjector.Context injectorContext) {
     return switch (parsed.sentinelContext()) {
-      case SIMPLE_NAME -> parsed.inExpression() ? VALUE_EXPRESSIONS : selectByScope(parsed);
+      case SIMPLE_NAME -> simpleNameKeywords(parsed);
       case TYPE_REFERENCE -> classBodyKeywordsIfApplicable(parsed);
       case VARIABLE_DECLARATION ->
           isRealNameSlot(parsed) ? List.of() : classBodyKeywordsIfApplicable(parsed);
@@ -110,6 +110,13 @@ final class KeywordProvider {
           // EXPRESSION == cursor is in the argument list; STATEMENT == cursor is on the type name.
           injectorContext == SentinelInjector.Context.EXPRESSION ? VALUE_EXPRESSIONS : List.of();
       default -> List.of();
+    };
+  }
+
+  private static List<String> simpleNameKeywords(final ParsedSentinel parsed) {
+    return switch (parsed.keywordSlot()) {
+      case BLOCK_STATEMENT -> selectByScope(parsed);
+      case VALUE -> VALUE_EXPRESSIONS;
     };
   }
 
