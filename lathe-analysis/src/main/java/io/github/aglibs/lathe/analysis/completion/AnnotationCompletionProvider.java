@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -12,6 +13,9 @@ import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CompletionItem;
 
 final class AnnotationCompletionProvider {
+
+  private static final Set<CandidateKind> NESTED_TYPE_KINDS =
+      Set.of(CandidateKind.TYPE_CLASS, CandidateKind.TYPE_INTERFACE, CandidateKind.TYPE_ENUM);
 
   private AnnotationCompletionProvider() {}
 
@@ -100,13 +104,75 @@ final class AnnotationCompletionProvider {
 
   static boolean isClassValuedElement(
       final ParsedSentinel parsed, final AttributedFileAnalysis analysis) {
-    final TypeMirror elementType =
-        resolveAnnotationElementType(parsed.annotationTypeText(), elementName(parsed), analysis);
-    if (elementType == null) {
+    return isClassType(valueType(parsed, analysis));
+  }
+
+  // After `Type.` in an element's value, only what JLS 9.7.1 allows there (CQ-0083): an enum
+  // element takes one of its constants, a Class element a class literal, any other element a
+  // constant field. A nested type may continue the name, and no method call stands there; an
+  // element whose type is not known keeps all but the methods.
+  static List<CompletionCandidate> qualifiedValueCandidates(
+      final List<CompletionCandidate> candidates,
+      final ParsedSentinel parsed,
+      final AttributedFileAnalysis analysis) {
+    final TypeMirror valueType = valueType(parsed, analysis);
+    return candidates.stream()
+        .filter(candidate -> qualifiedValue(candidate, valueType, analysis))
+        .toList();
+  }
+
+  private static boolean qualifiedValue(
+      final CompletionCandidate candidate,
+      final TypeMirror valueType,
+      final AttributedFileAnalysis analysis) {
+    if (candidate.kind() == CandidateKind.METHOD) {
       return false;
     }
 
-    return annotationValueCompletionType(elementType) instanceof final DeclaredType declaredType
+    if (NESTED_TYPE_KINDS.contains(candidate.kind()) || valueType == null) {
+      return true;
+    }
+
+    if (isClassType(valueType)) {
+      return candidate.kind() == CandidateKind.KEYWORD;
+    }
+
+    if (valueType instanceof final DeclaredType declaredType
+        && declaredType.asElement() instanceof final TypeElement enumType
+        && enumType.getKind() == ElementKind.ENUM) {
+      return isConstantOf(candidate, enumType, analysis);
+    }
+
+    return candidate.kind() == CandidateKind.FIELD;
+  }
+
+  private static boolean isConstantOf(
+      final CompletionCandidate candidate,
+      final TypeElement enumType,
+      final AttributedFileAnalysis analysis) {
+    final boolean sameType =
+        analysis.types() == null
+            || candidate.valueType() != null
+                && analysis.types().isSameType(candidate.valueType(), enumType.asType());
+    return candidate.kind() == CandidateKind.FIELD
+        && sameType
+        && enumType.getEnclosedElements().stream()
+            .anyMatch(
+                el ->
+                    el.getKind() == ElementKind.ENUM_CONSTANT
+                        && el.getSimpleName().contentEquals(candidate.name()));
+  }
+
+  // The type a value of the element takes: an array element's component, so `{ … }` holds them.
+  private static TypeMirror valueType(
+      final ParsedSentinel parsed, final AttributedFileAnalysis analysis) {
+    final TypeMirror elementType =
+        resolveAnnotationElementType(parsed.annotationTypeText(), elementName(parsed), analysis);
+    return elementType == null ? null : annotationValueCompletionType(elementType);
+  }
+
+  private static boolean isClassType(final TypeMirror type) {
+    return type instanceof final DeclaredType declaredType
         && declaredType.asElement() instanceof final TypeElement typeElement
         && typeElement.getQualifiedName().contentEquals("java.lang.Class");
   }

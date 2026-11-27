@@ -657,6 +657,23 @@ final class SentinelParser {
           KeywordSlot.BLOCK_STATEMENT);
     }
 
+    // A qualified name in an element's value: member access, which keeps the annotation and the
+    // element so only what JLS 9.7.1 allows there is offered (CQ-0083).
+    static Classification annotationMemberAccess(
+        final String annotationTypeName, final String elementName) {
+      return new Classification(
+          SentinelContext.MEMBER_ACCESS,
+          -1,
+          null,
+          elementName, // enclosingMethodName repurposed, as for an argument value
+          -1,
+          null,
+          null,
+          annotationTypeName,
+          TypeReferenceRole.ORDINARY,
+          KeywordSlot.BLOCK_STATEMENT);
+    }
+
     static Classification annotationArgumentValue(
         final String annotationTypeName, final String elementName) {
       return new Classification(
@@ -708,11 +725,14 @@ final class SentinelParser {
     final Tree parent = parentPath.getLeaf();
     final boolean simpleName = !(sentinel instanceof MemberSelectTree);
     final String annotationArgumentType = annotationArgumentType(sentinel, parentPath);
+    final AnnotationValueInfo annotationValue = annotationArgumentValue(sentinel, parentPath);
     if (!simpleName && annotationArgumentType != null) {
-      return Classification.of(SentinelContext.MEMBER_ACCESS);
+      return annotationValue == null
+          ? Classification.of(SentinelContext.MEMBER_ACCESS)
+          : Classification.annotationMemberAccess(
+              annotationValue.annotationType(), annotationValue.elementName());
     }
 
-    final AnnotationValueInfo annotationValue = annotationArgumentValue(sentinel, parentPath);
     if (annotationValue != null) {
       return Classification.annotationArgumentValue(
           annotationValue.annotationType(), annotationValue.elementName());
