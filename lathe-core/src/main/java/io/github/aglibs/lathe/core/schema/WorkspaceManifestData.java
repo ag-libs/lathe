@@ -23,7 +23,10 @@ public record WorkspaceManifestData(
     Map<String, List<String>> runnerClasspaths,
     // Each module's build directory (target/, build/, or where the build moved it), workspace-
     // relative: build output, never a source a search must read (WS-52).
-    List<String> buildDirs) {
+    List<String> buildDirs,
+    // Per module (workspace-relative, "" for the root), the keys of the languages besides Java its
+    // sources hold (OtherLanguage), as the build reports its source sets (WS-53).
+    Map<String, List<String>> otherLanguages) {
 
   public WorkspaceManifestData {
     ValidCheck.check()
@@ -37,6 +40,7 @@ public record WorkspaceManifestData(
     outputs = Objects.requireNonNullElse(outputs, List.of());
     runnerClasspaths = Map.copyOf(Objects.requireNonNullElse(runnerClasspaths, Map.of()));
     buildDirs = List.copyOf(Objects.requireNonNullElse(buildDirs, List.of()));
+    otherLanguages = Map.copyOf(Objects.requireNonNullElse(otherLanguages, Map.of()));
   }
 
   public WorkspaceManifestData withBuildFiles(final List<BuildFileData> files) {
@@ -52,6 +56,7 @@ public record WorkspaceManifestData(
         outputs,
         buildTool,
         runnerClasspaths,
-        buildDirs);
+        buildDirs,
+        otherLanguages);
   }
 }

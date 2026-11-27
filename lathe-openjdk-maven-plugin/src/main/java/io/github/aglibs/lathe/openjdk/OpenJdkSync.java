@@ -323,7 +323,8 @@ public final class OpenJdkSync {
             List.of(),
             buildTool.toString(),
             Map.of(),
-            buildDirs);
+            buildDirs,
+            Map.of());
     WorkspaceManifestWriter.writeManifest(latheDir(workspaceRoot), manifest);
   }
 

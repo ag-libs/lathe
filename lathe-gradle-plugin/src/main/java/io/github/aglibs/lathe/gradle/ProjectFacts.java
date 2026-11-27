@@ -26,9 +26,11 @@ record ProjectFacts(
     List<String> runnerClasspath,
     boolean spotless,
     // The project's build directory, root-relative, as its layout sets it (WS-52); null when it
-    // lies
-    // outside the root.
-    String buildDir) {
+    // lies outside the root.
+    String buildDir,
+    // The keys of the languages besides Java its source sets hold (OtherLanguage), as their
+    // directory sets report them (WS-53).
+    List<String> otherLanguages) {
 
   ProjectFacts {
     ValidCheck.check().notNull(module, "module").validate();
@@ -40,6 +42,7 @@ record ProjectFacts(
     dependencyClasspath =
         dependencyClasspath != null ? List.copyOf(dependencyClasspath) : List.of();
     runnerClasspath = runnerClasspath != null ? List.copyOf(runnerClasspath) : List.of();
+    otherLanguages = otherLanguages != null ? List.copyOf(otherLanguages) : List.of();
   }
 
   // A project without Java: its directory, and whether it applies Spotless (a root formatting the
@@ -47,7 +50,7 @@ record ProjectFacts(
   static ProjectFacts of(final String module, final boolean spotless, final String buildDir) {
     return new ProjectFacts(
         module, List.of(), List.of(), null, 0, List.of(), List.of(), List.of(), List.of(),
-        List.of(), spotless, buildDir);
+        List.of(), spotless, buildDir, List.of());
   }
 
   // Known only when the facts task runs: after any task that generates sources, and resolved then.
@@ -68,6 +71,7 @@ record ProjectFacts(
         libraryClasspath,
         testRunner,
         spotless,
-        buildDir);
+        buildDir,
+        otherLanguages);
   }
 }

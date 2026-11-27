@@ -396,7 +396,8 @@ class LatheLifecycleParticipantTest {
             List.of(outputs),
             null,
             Map.of(),
-            List.of()),
+            List.of(),
+            Map.of()),
         root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

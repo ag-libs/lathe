@@ -3,12 +3,15 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OtherLanguage;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.install.ResolvedJar;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -343,6 +346,52 @@ public final class ReactorProjects {
             Comparator.comparing(
                 repository -> RepositorySystem.DEFAULT_REMOTE_REPO_ID.equals(repository.getId())))
         .toList();
+  }
+
+  // Per module ("" for the root), the languages besides Java in the source roots its model holds
+  // after the build, main and test, by the files there (WS-53); a module with none is left out. A
+  // plugin that compiles from folders of its own, outside these roots, is not seen.
+  public static Map<String, List<String>> otherLanguages(
+      final Path workspaceRoot, final List<MavenProject> projects) {
+    final var byModule = new TreeMap<String, List<String>>();
+    for (final MavenProject project : projects) {
+      final List<String> languages =
+          languagesIn(
+              Stream.concat(
+                      project.getCompileSourceRoots().stream(),
+                      project.getTestCompileSourceRoots().stream())
+                  .map(Path::of)
+                  .toList());
+      if (!languages.isEmpty()) {
+        byModule.put(
+            FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath())), languages);
+      }
+    }
+
+    return Map.copyOf(byModule);
+  }
+
+  // The keys of the languages besides Java whose files the roots hold, in OtherLanguage's order. A
+  // root that cannot be walked (a folder another build is cleaning) is skipped: the languages only
+  // feed a note, which must not fail the sync.
+  static List<String> languagesIn(final List<Path> roots) {
+    final Set<OtherLanguage> found = EnumSet.noneOf(OtherLanguage.class);
+    for (final Path root : roots) {
+      final List<Path> files;
+      try {
+        files =
+            FileUtil.walkFiles(
+                root, path -> OtherLanguage.ofFileName(path.getFileName().toString()).isPresent());
+      } catch (final IOException | UncheckedIOException e) {
+        continue;
+      }
+
+      for (final Path file : files) {
+        OtherLanguage.ofFileName(file.getFileName().toString()).ifPresent(found::add);
+      }
+    }
+
+    return found.stream().map(OtherLanguage::key).toList();
   }
 
   public static String moduleRel(final Path workspaceRoot, final MavenProject project) {

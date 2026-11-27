@@ -12186,6 +12186,49 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-53 — Which modules hold Kotlin or Groovy is guessed from `src/<source set>/kotlin` and `groovy` — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: the answers that name the modules Lathe does not read (Kotlin, Groovy): `find_references`, `workspace_summary` and the other notes; every build front-end's `workspace.json`.**
+
+Found by the 2026-11-27 audit of layout assumptions, after MC-112's first fix matched `src/<source set>/kotlin`.
+
+### Observed behaviour
+
+The server named a module as holding Kotlin or Groovy when it had a `src/<source set>/kotlin` or `groovy` folder, and looked only in modules with a javac output.
+A module whose Kotlin lives elsewhere (`kotlin.srcDir("src/kt")`, a Maven root moved by build-helper) was missed, a Kotlin-only module with no Java was never named, and an unused `kotlin` folder counted.
+
+### Expected
+
+Which languages a module's sources hold comes from the build: each front-end records it, and the server keeps no folder names.
+
+### Resolution
+
+`workspace.json` gains `otherLanguages`, per module the keys of the languages besides Java its sources hold (`OtherLanguage` in `lathe-core`: `kotlin`, `groovy`, `scala`).
+Maven reads the files in each module's compile and test compile source roots as its model holds them after the build; Gradle reads each source set's `kotlin`, `groovy` and `scala` directory sets, which those plugins add to it, under the configuration cache.
+The server's `UnreadLanguage`, its `src` constant and the folder walk are gone; the notes name the same languages from the manifest, Kotlin-only modules included.
+
+Not covered: a Maven module whose Kotlin or Groovy plugin compiles from folders of its own (`kotlin-maven-plugin`'s `<sourceDirs>`, GMavenPlus's `<sources>`) without adding them to the model's source roots is not named; today's folder rule found the default `src/<set>/kotlin` there.
+
+### Future: source directories the build can tell
+
+Reading `kotlin-maven-plugin`'s `<sourceDirs>` and GMavenPlus's `<sources>` from the model's plugin configuration, as the sync already reads Spotless's, would name those modules again without a folder rule.
+The same applies wherever Lathe still assumes a directory the build can report: the Maven extension's test-capture check of a `java` root's sibling folders (to be read from the model's test source roots once build-helper has added them), and any future need for a module's source folders by language, which Gradle's directory sets and Maven's model give directly.
+
+### Regression targets
+
+- `WorkspaceManifestTest.unreadModuleDirs_modulesWithKotlinOrGroovySources_listedByLanguage_javaModuleNot` (fed from the manifest)
+- `LatheEngineNotesTest.notes_moduleWithKotlinAndGroovySources_namesItUnderEach` (fed from the manifest)
+- `ReactorProjectsTest.otherLanguages_filesInTheModelsSourceRoots_namedByLanguage`
+- `LatheSyncTaskFunctionalTest.sync_groovySourcesInAMovedFolder_recordedAsTheSourceSetsReportThem` (Gradle TestKit)
+
+---
+
 ## WS-52 — A rename's outside-sources list takes build output to be in `target/` or `build/` — done
 
 **Status: done** (2026-11-27)

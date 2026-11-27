@@ -28,6 +28,34 @@ class ReactorProjectsTest {
 
   @TempDir Path tmp;
 
+  // WS-53: a module's other languages are the files in the source roots its model holds, wherever
+  // those lie, in OtherLanguage's order; Java alone, or a root that does not exist, is none.
+  @Test
+  void otherLanguages_filesInTheModelsSourceRoots_namedByLanguage() throws Exception {
+    final Path mixed = tmp.resolve("mixed");
+    write(mixed.resolve("src/kt/com/example/A.kt"));
+    write(mixed.resolve("src/main/java/com/example/B.java"));
+    write(mixed.resolve("specs/com/example/CSpec.groovy"));
+    final MavenProject mixedProject = project("com.example", "mixed", "1", mixed);
+    mixedProject.addCompileSourceRoot(mixed.resolve("src/kt").toString());
+    mixedProject.addCompileSourceRoot(mixed.resolve("src/main/java").toString());
+    mixedProject.addTestCompileSourceRoot(mixed.resolve("specs").toString());
+    final Path java = tmp.resolve("java");
+    write(java.resolve("src/main/java/com/example/D.java"));
+    write(java.resolve("src/main/kotlin/com/example/Unused.kt"));
+    final MavenProject javaProject = project("com.example", "java", "1", java);
+    javaProject.addCompileSourceRoot(java.resolve("src/main/java").toString());
+    javaProject.addTestCompileSourceRoot(java.resolve("missing").toString());
+
+    assertThat(ReactorProjects.otherLanguages(tmp, List.of(mixedProject, javaProject)))
+        .containsExactly(entry("mixed", List.of("kotlin", "groovy")));
+  }
+
+  private static void write(final Path file) throws IOException {
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, "x");
+  }
+
   @Test
   void moduleRel_rootProject_returnsDot() {
     final MavenProject root = project("com.example", "root", "1", tmp);

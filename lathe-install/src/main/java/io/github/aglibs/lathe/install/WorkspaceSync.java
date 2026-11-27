@@ -46,6 +46,8 @@ public final class WorkspaceSync {
       List<OutputData> outputs,
       // Each module's build directory, workspace-relative, as the build sets it.
       List<String> buildDirs,
+      // Per module, the keys of the languages besides Java its sources hold (OtherLanguage).
+      Map<String, List<String>> otherLanguages,
       SyncScript syncScript) {
 
     public Inputs {
@@ -61,6 +63,7 @@ public final class WorkspaceSync {
       resourceRoots = List.copyOf(resourceRoots);
       outputs = List.copyOf(outputs);
       buildDirs = List.copyOf(buildDirs);
+      otherLanguages = Map.copyOf(otherLanguages);
     }
   }
 
@@ -87,7 +90,8 @@ public final class WorkspaceSync {
         inputs.outputs(),
         inputs.syncScript().tool(),
         inputs.runnerClasspaths(),
-        inputs.buildDirs());
+        inputs.buildDirs(),
+        inputs.otherLanguages());
     inputs.syncScript().write(inputs.workspaceRoot());
     writeGitignore(inputs.workspaceRoot());
   }

@@ -100,6 +100,7 @@ class LatheWorkspaceTaskTest {
         List.of(),
         runner,
         false,
-        null);
+        null,
+        List.of());
   }
 }

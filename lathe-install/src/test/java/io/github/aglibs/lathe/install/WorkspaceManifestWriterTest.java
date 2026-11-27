@@ -65,7 +65,8 @@ class WorkspaceManifestWriterTest {
         List.of(output),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -115,7 +116,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -145,7 +147,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
 
     final var data =
         Json.read(
@@ -171,7 +174,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -190,7 +194,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
 
     // Same content: the rewrite is skipped but the mtime is bumped; the content stays
     // byte-identical.
@@ -226,7 +231,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -256,7 +262,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of("app/target", "lib/out"));
+        List.of("app/target", "lib/out"),
+        Map.of());
     assertThat(Json.read(manifest, WorkspaceManifestData.class).buildDirs())
         .containsExactly("app/target", "lib/out");
 
@@ -271,7 +278,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         TOOL,
         Map.of(),
-        List.of());
+        List.of(),
+        Map.of());
     assertThat(Json.read(manifest, WorkspaceManifestData.class).buildDirs()).isEmpty();
   }
 }

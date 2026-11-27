@@ -193,6 +193,11 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             resourceRoots,
             outputs,
             facts.stream().map(ProjectFacts::buildDir).filter(Objects::nonNull).distinct().toList(),
+            facts.stream()
+                .filter(fact -> !fact.otherLanguages().isEmpty())
+                .collect(
+                    Collectors.toUnmodifiableMap(
+                        ProjectFacts::module, ProjectFacts::otherLanguages)),
             script));
     final List<String> formatterGrants = writeStyle(root, facts);
     JvmArgsWriter.write(

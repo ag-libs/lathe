@@ -217,7 +217,8 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
             data.outputs(),
             data.buildTool(),
             data.runnerClasspaths(),
-            List.of("module/out")),
+            List.of("module/out"),
+            Map.of()),
         manifest);
     engine = new LatheEngine(tmp);
 

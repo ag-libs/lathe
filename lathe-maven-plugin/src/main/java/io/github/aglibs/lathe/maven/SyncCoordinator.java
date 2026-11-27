@@ -104,6 +104,7 @@ final class SyncCoordinator {
               ModuleResourcesReader.read(workspaceRoot, projects),
               ReactorProjects.outputs(workspaceRoot, projects),
               buildDirs(workspaceRoot, projects),
+              ReactorProjects.otherLanguages(workspaceRoot, projects),
               MavenSyncScript.of(
                   session.getSystemProperties(),
                   session.getUserProperties(),

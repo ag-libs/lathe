@@ -754,7 +754,8 @@ class WritePassTest extends ServiceTestBase {
             List.of(new OutputData(outputDir, "app", LatheLayout.CLASSES_DIR)),
             null,
             Map.of(),
-            List.of()),
+            List.of(),
+            Map.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 

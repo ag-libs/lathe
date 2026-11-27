@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.gradle;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.FileUtil;
@@ -422,6 +423,39 @@ class LatheSyncTaskFunctionalTest {
                 "lib/build/libs/lib-test-fixtures.jar", "lib", "classes-testFixtures", false, true),
             new OutputData("lib/build/classes/java/main", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("app/build/libs/app.jar", "app", LatheLayout.CLASSES_DIR));
+  }
+
+  // WS-53: a project's other languages come from its source sets' directory sets, wherever they
+  // point, by the language's own files: app applies Groovy but holds only Java in its Groovy
+  // folder,
+  // which joint compilation lets the set hold, as the Kotlin plugin's set holds the Java beside it.
+  @Test
+  void sync_groovySourcesInAMovedFolder_recordedAsTheSourceSetsReportThem() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "lib/build.gradle",
+                """
+                plugins { id 'java-library'; id 'groovy' }
+                dependencies { implementation localGroovy() }
+                sourceSets.main.groovy.srcDirs = ['groovy-src']
+                """)
+            .file(
+                "lib/groovy-src/com/example/lib/Greeting.groovy",
+                "package com.example.lib\nclass Greeting { String text = 'hi' }\n")
+            .file(
+                "app/build.gradle",
+                """
+                plugins { id 'java'; id 'groovy' }
+                dependencies { implementation project(':lib'); implementation localGroovy() }
+                """)
+            .file(
+                "app/src/main/groovy/com/example/app/Joint.java",
+                "package com.example.app; class Joint {}\n");
+
+    fixture.runner("latheSync", "--configuration-cache").build();
+
+    assertThat(workspace().otherLanguages()).containsExactly(entry("lib", List.of("groovy")));
   }
 
   // Module-access flags a forked compile and the daemon run with reach the server's jvm.args. The

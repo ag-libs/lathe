@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
+import io.github.aglibs.lathe.core.schema.OtherLanguage;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -164,18 +165,13 @@ class WorkspaceManifestTest {
     assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
-  // Lathe reads no Kotlin or Groovy: a built module with such sources where their plugins look by
-  // default, in any source set, is named under its language, so an answer about a symbol's uses can
-  // say it did not search there; the root module too, and a module with both under each.
+  // Lathe reads no Kotlin or Groovy: a module the build reports such sources in, in any source set,
+  // is named under its language, so an answer about a symbol's uses can say it did not search
+  // there; the root module too, and a module with both under each (WS-53: from the build, not from
+  // src/<set>/<language> folders).
   @Test
   void unreadModuleDirs_modulesWithKotlinOrGroovySources_listedByLanguage_javaModuleNot()
       throws Exception {
-    Files.createDirectories(tmp.resolve("app-kotlin/src/integrationTest/kotlin"));
-    Files.createDirectories(tmp.resolve("app/src/main/java"));
-    Files.createDirectories(tmp.resolve("specs/src/test/groovy"));
-    Files.createDirectories(tmp.resolve("mixed/src/main/kotlin"));
-    Files.createDirectories(tmp.resolve("mixed/src/test/groovy"));
-    Files.createDirectories(tmp.resolve("src/main/kotlin"));
     writeWorkspaceManifest(
         LatheLayout.SCHEMA_VERSION,
         List.of(),
@@ -188,12 +184,19 @@ class WorkspaceManifestTest {
             new OutputData("specs/build/classes/java/test", "specs", LatheLayout.TEST_CLASSES_DIR),
             new OutputData("mixed/build/classes/java/main", "mixed", LatheLayout.CLASSES_DIR),
             new OutputData("target/classes", "", LatheLayout.CLASSES_DIR)));
+    TestCompiler.recordOtherLanguages(
+        tmp,
+        Map.of(
+            "app-kotlin", List.of("kotlin"),
+            "specs", List.of("groovy"),
+            "mixed", List.of("kotlin", "groovy"),
+            "", List.of("kotlin")));
 
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    assertThat(manifest.unreadModuleDirs(UnreadLanguage.KOTLIN))
+    assertThat(manifest.unreadModuleDirs(OtherLanguage.KOTLIN))
         .containsExactlyInAnyOrder(tmp.resolve("app-kotlin"), tmp.resolve("mixed"), tmp);
-    assertThat(manifest.unreadModuleDirs(UnreadLanguage.GROOVY))
+    assertThat(manifest.unreadModuleDirs(OtherLanguage.GROOVY))
         .containsExactlyInAnyOrder(tmp.resolve("specs"), tmp.resolve("mixed"));
   }
 
@@ -330,7 +333,8 @@ class WorkspaceManifestTest {
             outputs,
             null,
             Map.of(),
-            List.of()),
+            List.of(),
+            Map.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }
