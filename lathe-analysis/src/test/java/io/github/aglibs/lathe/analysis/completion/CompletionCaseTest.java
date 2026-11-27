@@ -300,6 +300,135 @@ class CompletionCaseTest extends CompletionTestSupport {
             "isEmpty"));
   }
 
+  // CQ-0082: with the switch closed, as an editor with auto-pairs leaves it, a case of a switch
+  // statement is a statement position, so a void member is offered as in a block.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("closedSwitchStatementLabels")
+  void completion_voidMemberInClosedSwitchStatementLabel_isOffered(
+      final String label, final String switchBody) {
+    assertThat(labels(fixture.complete(closedSwitch(switchBody)))).as(label).contains("clear");
+  }
+
+  static Stream<Arguments> closedSwitchStatementLabels() {
+    return Stream.of(
+        Arguments.of("arrowCaseWithAPrefix", "case \"a\" -> list.cl§"),
+        Arguments.of("arrowCase", "case \"a\" -> list.§"),
+        Arguments.of("textAfterTheCursor", "case \"a\" -> list.cl§;"),
+        Arguments.of("defaultArrowBeforeACase", "default -> list.cl§\n      case \"b\" -> { }"),
+        Arguments.of("colonCaseBeforeBreak", "case \"a\":\n        list.cl§\n        break;"));
+  }
+
+  // A type pattern in a switch is Java 21's; the fixture compiles at the test JDK's level.
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_21)
+  void completion_voidMemberInClosedSwitchStatementPatternLabel_isOffered() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+              void m(Object o) {
+                switch (o) {
+                  case java.util.List<?> l -> l.cl§
+                  default -> { }
+                }
+              }
+            }""");
+
+    assertThat(labels(items)).contains("clear");
+  }
+
+  // As in the editor, the analysis is the file's before the switch was typed.
+  @Test
+  void completion_voidMemberInClosedSwitchLabelAfterAnEdit_isOffered() {
+    final String before =
+        """
+        class Test {
+          void m(String text, java.util.List<String> list) {
+          }
+        }""";
+    final List<CompletionItem> items =
+        fixture.completeWithCache(before, closedSwitch("case \"a\" -> list.cl§"));
+
+    assertThat(labels(items)).contains("clear");
+  }
+
+  // A statement may start with a type, as in a block.
+  @Test
+  void completion_typeNameInClosedSwitchStatementLabel_offersTheType() {
+    assertThat(labels(fixture.complete(closedSwitch("case \"a\" -> Str§")))).contains("String");
+  }
+
+  // A value inside a case's statement stays a value, as in a block: no void member there.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("valuesInClosedSwitchStatementLabels")
+  void completion_valueInClosedSwitchStatementLabel_leavesOutVoidMembers(
+      final String label, final String switchBody) {
+    assertThat(labels(fixture.complete(closedSwitch(switchBody))))
+        .as(label)
+        .contains("isEmpty")
+        .doesNotContain("clear");
+  }
+
+  static Stream<Arguments> valuesInClosedSwitchStatementLabels() {
+    return Stream.of(
+        Arguments.of(
+            "forEachIterableInAColonCase",
+            "case \"a\":\n        for (String s : list.§) { }\n        break;"),
+        Arguments.of(
+            "comparisonOperandInAColonCase",
+            "case \"a\":\n        boolean ok = 0 < list.§;\n        break;"));
+  }
+
+  // A colon case's `yield` in a switch expression is the switch's value.
+  @Test
+  void completion_memberInSwitchExpressionColonYield_leavesOutVoidMembers() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+              boolean m(String text, java.util.List<String> list) {
+                return switch (text) {
+                  case "a":
+                    yield list.§;
+                  default:
+                    yield false;
+                };
+              }
+            }""");
+
+    assertThat(labels(items)).contains("isEmpty").doesNotContain("clear");
+  }
+
+  // A switch expression's arrow body is the switch's value: no void member there.
+  @Test
+  void completion_memberInSwitchExpressionArrowBody_leavesOutVoidMembers() {
+    final List<CompletionItem> items =
+        fixture.complete(
+            """
+            class Test {
+              boolean m(String text, java.util.List<String> list) {
+                return switch (text) {
+                  case "a" -> list.§;
+                  default -> false;
+                };
+              }
+            }""");
+
+    assertThat(labels(items)).contains("isEmpty").doesNotContain("clear");
+  }
+
+  private static String closedSwitch(final String switchBody) {
+    return """
+        class Test {
+          void m(String text, java.util.List<String> list) {
+            switch (text) {
+              %s
+            }
+          }
+        }"""
+        .formatted(switchBody);
+  }
+
   // The sentinel in a guard is not the label's body.
   @Test
   @EnabledForJreRange(min = JRE.JAVA_21)

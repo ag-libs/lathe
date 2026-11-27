@@ -92,8 +92,12 @@ public final class CompletionEngine {
                   .formatted(req.uri(), useRelabeled, watch.elapsedMs()));
     }
 
-    final var initial = useRelabeled ? relabeled : first;
+    final var chosen = useRelabeled ? relabeled : first;
     final var initialParse = useRelabeled ? relabeledParse : firstParse;
+    // The text scan reads the slot after a label's `->` or `:` as an expression, as after a
+    // lambda's arrow or a ternary's colon; javac's tree says where the label's body is a statement,
+    // so a closed switch offers what a block offers, void members among them (CQ-0082).
+    final var initial = initialParse.labelBodyStatement() ? chosen.asStatement() : chosen;
 
     final Optional<SentinelInjectionResult> typeStub =
         initialParse.valid() ? Optional.empty() : initial.asMemberStub();

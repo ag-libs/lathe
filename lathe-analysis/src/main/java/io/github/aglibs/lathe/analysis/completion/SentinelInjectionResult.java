@@ -40,6 +40,24 @@ record SentinelInjectionResult(
         .validate();
   }
 
+  // The same injection read as a statement: javac's tree found the sentinel to be a statement of a
+  // switch label's body, which the text scan read as an expression after its `->` or `:`
+  // (CQ-0082). The text is unchanged; it already parses.
+  SentinelInjectionResult asStatement() {
+    return new SentinelInjectionResult(
+        prefix,
+        tokenStart,
+        tokenEnd,
+        receiverText,
+        SentinelInjector.Context.STATEMENT,
+        hasDot,
+        memberReference,
+        injectedContent,
+        memberStubAt,
+        closedBraces,
+        openBraces);
+  }
+
   // Built only for the retry, so a completion that never needs it copies no text.
   Optional<SentinelInjectionResult> asMemberStub() {
     return withMemberStub(SentinelInjector.MEMBER_STUB);

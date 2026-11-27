@@ -257,10 +257,13 @@ final class SentinelParser {
     final List<String> typeVariables =
         acceptsTypeVariable(cls, sentinelPath) ? typeVariablesInScope(sentinelPath) : List.of();
 
-    // Where the top-level class ends when the sentinel is a switch label's body, -1 otherwise.
+    // Where the top-level class ends when the sentinel is a switch label's body, -1 otherwise, and
+    // whether the sentinel is that body's statement.
     final Optional<TreePath> labelCase = labelBodyCase(sentinelPath);
     final int labelTopLevelEnd =
         labelCase.map(path -> topLevelEnd(path, cu, sourcePositions)).orElse(-1);
+    final boolean labelBodyStatement =
+        labelCase.filter(path -> labelBodyStatement(path, sentinelPath)).isPresent();
 
     final var parsed =
         ParsedSentinel.valid(
@@ -286,6 +289,7 @@ final class SentinelParser {
             catchParameter,
             constantField,
             labelTopLevelEnd,
+            labelBodyStatement,
             typeVariables,
             null,
             version);
@@ -322,6 +326,29 @@ final class SentinelParser {
     }
 
     return Optional.empty();
+  }
+
+  // Whether the sentinel is itself a statement of the case: the expression of one of its expression
+  // statements, reached through nothing but member selects and the erroneous tree javac wraps an
+  // unfinished one in, so a value inside the statement (a for-each's iterable, an operand, a
+  // `yield`) stays a value. In a switch statement javac reads an arrow's body as a statement
+  // (`case "a" -> list.clear();`), and a colon case's code is statements in either kind of switch;
+  // a switch expression's arrow body is the switch's value (CQ-0082).
+  private static boolean labelBodyStatement(final TreePath casePath, final TreePath sentinelPath) {
+    TreePath path = sentinelPath;
+    while (path.getLeaf() instanceof IdentifierTree
+        || path.getLeaf() instanceof MemberSelectTree
+        || path.getLeaf() instanceof ErroneousTree) {
+      path = path.getParentPath();
+    }
+
+    if (!(path.getLeaf() instanceof ExpressionStatementTree)
+        || path.getParentPath().getLeaf() != casePath.getLeaf()) {
+      return false;
+    }
+
+    return casePath.getParentPath().getLeaf() instanceof SwitchTree
+        || ((CaseTree) casePath.getLeaf()).getCaseKind() == CaseTree.CaseKind.STATEMENT;
   }
 
   private static int topLevelEnd(
