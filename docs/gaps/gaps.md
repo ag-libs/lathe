@@ -1425,11 +1425,23 @@ Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc62
 In `OwnerController.processFindForm`, after `String lastName = owner.getLastName();`: `switch (lastName) {` / `case "a" -> owner.ad§` / `}` answers 0 items; so do `owner.ad§;`, a `default -> {}` after it, and a colon case `case "a":` / `owner.ad§` / `break;` / `}`.
 Without a prefix, `case Owner ow -> ow.§` in a closed switch lists 15 items, none of them void (`addPet`, `addVisit`, `setCity` are missing); the same switch left open lists 23.
 The same text in an `if` block, after an `instanceof` pattern, in an open switch, or in a `{ … }` case body lists `addPet` and `addVisit`.
-It predates [CQ-0079](gaps-archive.md#cq-0079--member-completion-after-case-x-x---x-answers-nothing-while-the-switch-block-is-not-closed--done): a `lathe-analysis` completion probe fails the same closed-switch cases (arrow, arrow with a prefix, colon, pattern) on main just before and just after its merge (`17756b3e`); CQ-0079 fixed only the open switch.
+`SentinelInjector`'s backward scan stops at the label's `->` or `:` and marks the slot `EXPRESSION` (the `LATHE_DEBUG` log reads `[completion] inject … ctx=EXPRESSION` for the switch, `ctx=STATEMENT` for the same text in an `if`); an `EXPRESSION` slot is a value context, so `CompletionCandidateRanker.valid` drops every void method.
+Only `CompletionEngine`'s relabel turns the slot back into a statement, and it runs only when a block is left open and the cursor is last on its line, so a closed switch, or text after the cursor (`owner.ad§;`), keeps `EXPRESSION`.
 
 ### Expected
 
 A case of a switch statement is a statement position: javac accepts `case "a" -> owner.addPet(pet);`, so the void members are offered, as in an `if` block.
+
+### History
+
+[CQ-0079](gaps-archive.md#cq-0079--member-completion-after-case-x-x---x-answers-nothing-while-the-switch-block-is-not-closed--done)'s PR #509 fixed this and then lost it.
+A `lathe-analysis` completion probe (an `if` block; a closed switch with an arrow case, an arrow case with a prefix, a colon case before `break;`, a pattern case; an open arrow case) fails every closed-switch case on main before the PR, passes all of them at its first commit (`30a6d996`, which set `STATEMENT` for any switch label's body), and fails them again at its merge (`17756b3e`): its refactor `84a35378` moved the decision into the relabel, which runs only for an open block.
+So it is not a regression against the last round's build (`d3e0a33`), and CQ-0079's regression targets cover open switches only.
+
+### Fix direction
+
+When javac's tree puts the sentinel in a switch label's body, treat it as a statement whether or not a block is open; keep the open-block and last-on-line conditions only for closing the braces at the label.
+Test a closed switch with a void member and a prefix (`case "a" -> owner.ad§` then `}`), and a colon case before `break;`.
 
 ### Regression targets
 
