@@ -39,62 +39,6 @@ public record WorkspaceManifestData(
     buildDirs = List.copyOf(Objects.requireNonNullElse(buildDirs, List.of()));
   }
 
-  // A workspace whose front-end records no build directories.
-  public WorkspaceManifestData(
-      final String schemaVersion,
-      final String workspaceRoot,
-      final String serverVersion,
-      final List<String> runnerClasspath,
-      final JdkSourceData jdk,
-      final List<DependencyData> dependencySources,
-      final List<BuildFileData> buildFiles,
-      final List<ResourceRootData> resourceRoots,
-      final List<OutputData> outputs,
-      final String buildTool,
-      final Map<String, List<String>> runnerClasspaths) {
-    this(
-        schemaVersion,
-        workspaceRoot,
-        serverVersion,
-        runnerClasspath,
-        jdk,
-        dependencySources,
-        buildFiles,
-        resourceRoots,
-        outputs,
-        buildTool,
-        runnerClasspaths,
-        List.of());
-  }
-
-  // A workspace with one runner for every module, as a build front-end that resolves no other
-  // writes it.
-  public WorkspaceManifestData(
-      final String schemaVersion,
-      final String workspaceRoot,
-      final String serverVersion,
-      final List<String> runnerClasspath,
-      final JdkSourceData jdk,
-      final List<DependencyData> dependencySources,
-      final List<BuildFileData> buildFiles,
-      final List<ResourceRootData> resourceRoots,
-      final List<OutputData> outputs,
-      final String buildTool) {
-    this(
-        schemaVersion,
-        workspaceRoot,
-        serverVersion,
-        runnerClasspath,
-        jdk,
-        dependencySources,
-        buildFiles,
-        resourceRoots,
-        outputs,
-        buildTool,
-        Map.of(),
-        List.of());
-  }
-
   public WorkspaceManifestData withBuildFiles(final List<BuildFileData> files) {
     return new WorkspaceManifestData(
         schemaVersion,

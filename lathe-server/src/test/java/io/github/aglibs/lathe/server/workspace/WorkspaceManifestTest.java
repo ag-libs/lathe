@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -327,7 +328,9 @@ class WorkspaceManifestTest {
             List.of(),
             List.of(),
             outputs,
-            null),
+            null,
+            Map.of(),
+            List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

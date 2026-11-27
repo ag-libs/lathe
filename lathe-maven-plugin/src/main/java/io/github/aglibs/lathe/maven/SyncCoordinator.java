@@ -225,11 +225,15 @@ final class SyncCoordinator {
 
   // Each module's build directory as its model sets it (<build><directory>), so nothing downstream
   // takes target/ for build output (WS-52).
+  // One outside the workspace (another drive, a shared output folder) holds nothing a search of the
+  // workspace reads, so it is left out.
   private static List<String> buildDirs(
       final Path workspaceRoot, final List<MavenProject> projects) {
+    final Path root = workspaceRoot.toAbsolutePath().normalize();
     return projects.stream()
-        .map(project -> Path.of(project.getBuild().getDirectory()))
-        .map(dir -> FileUtil.slashed(workspaceRoot.relativize(dir)))
+        .map(project -> Path.of(project.getBuild().getDirectory()).toAbsolutePath().normalize())
+        .filter(dir -> dir.startsWith(root))
+        .map(dir -> FileUtil.slashed(root.relativize(dir)))
         .distinct()
         .toList();
   }

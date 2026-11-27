@@ -848,13 +848,13 @@ public final class LatheEngine {
           "the rename would edit files outside the reactor: %s".formatted(nonReactor));
     }
 
-    // Searched before the edits are written, so a failed walk leaves the workspace untouched.
+    // Searched before the edits are written, so a failed walk leaves the workspace untouched. The
+    // roots and build directories are read together, from one manifest.
+    final Map.Entry<List<Path>, List<Path>> skipped =
+        query(
+            session -> Map.entry(session.verifier().sourceRoots(), session.verifier().buildDirs()));
     final List<Location> outside =
-        OutsideSources.mentioning(
-            workspaceRoot,
-            query(session -> session.verifier().sourceRoots()),
-            query(session -> session.verifier().buildDirs()),
-            oldName);
+        OutsideSources.mentioning(workspaceRoot, skipped.getKey(), skipped.getValue(), oldName);
 
     final List<LatheFileEdit> files =
         textEdits.entrySet().stream()

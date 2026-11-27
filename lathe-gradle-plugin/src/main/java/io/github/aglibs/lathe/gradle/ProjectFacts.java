@@ -25,7 +25,9 @@ record ProjectFacts(
     List<String> dependencyClasspath,
     List<String> runnerClasspath,
     boolean spotless,
-    // The project's build directory, root-relative, as its layout sets it (WS-52).
+    // The project's build directory, root-relative, as its layout sets it (WS-52); null when it
+    // lies
+    // outside the root.
     String buildDir) {
 
   ProjectFacts {

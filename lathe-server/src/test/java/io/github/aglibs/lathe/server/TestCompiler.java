@@ -414,7 +414,9 @@ public final class TestCompiler {
                 List.of(),
                 List.of(),
                 List.of(),
-                null);
+                null,
+                Map.of(),
+                List.of());
     Files.createDirectories(manifestFile.getParent());
     Json.write(
         new WorkspaceManifestData(
@@ -427,7 +429,9 @@ public final class TestCompiler {
             buildFiles.apply(existing),
             existing.resourceRoots(),
             outputs.apply(existing),
-            existing.buildTool()),
+            existing.buildTool(),
+            Map.of(),
+            List.of()),
         manifestFile);
   }
 

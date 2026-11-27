@@ -729,10 +729,20 @@ public class LatheProjectPlugin implements Plugin<Project> {
         buildDir(project));
   }
 
-  // Read when the facts are, so a build script that moves it is seen.
+  // Read when the facts are, so a build script that moves it is seen; null when it lies outside the
+  // root (another drive, a shared output folder), where no search of the workspace reaches.
   private static String buildDir(final Project project) {
-    return relative(
-        project.getRootDir().toPath(), project.getLayout().getBuildDirectory().get().getAsFile());
+    final Path root = project.getRootDir().toPath().toAbsolutePath().normalize();
+    final Path dir =
+        project
+            .getLayout()
+            .getBuildDirectory()
+            .get()
+            .getAsFile()
+            .toPath()
+            .toAbsolutePath()
+            .normalize();
+    return dir.startsWith(root) ? FileUtil.slashed(root.relativize(dir)) : null;
   }
 
   // A source set's classes and resources, and its jar when it has one (test fixtures do): each a
