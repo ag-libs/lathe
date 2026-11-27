@@ -16085,15 +16085,13 @@ Where the file's module was compiled, the reason names the source roots javac co
 
 ### Resolution
 
-`ChangeVerifier`'s reason for a file outside the built modules now checks the file's path first: under a Kotlin or Groovy source directory (`src/<source set>/kotlin` or `groovy`, `UnreadLanguage.ofSourcePath`) it says the file is under that language's source directory, which javac does not compile.
-Any other file outside the built modules keeps the profile message.
-Checked live on a two-module Maven probe: `extra/src/test/kotlin/…/Spec.java`, in no module, read "a profile may leave its module out" on `main` and now names the Kotlin directory; a Kotlin directory of a built module keeps "in no source root of module".
+The reason for a file outside the modules the last build compiled now gives both causes Lathe cannot tell apart: "(a profile may leave its module out, or its module has no Java the build compiles)".
+A first fix matched the file's path against `src/<source set>/kotlin` and `groovy`; it was dropped, as Lathe takes its directories from the build and a module may point javac at such a folder.
+Naming the module and its unread languages takes the build front-ends recording them, which the follow-up layout work covers.
 
 ### Regression targets
 
-- `LatheEngineNotesTest.notes_javaFileInKotlinOrGroovySourceDirectory_namesTheDirectory`
-- `UnreadLanguageTest` (Kotlin, Groovy, a Java directory, `kotlin` outside a source tree)
-- `LatheEngineNotesTest.notes_fileNoModuleCompiles_notCheckedWithItsCause` (the profile message, kept)
+- `LatheEngineNotesTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
 
 ---
 

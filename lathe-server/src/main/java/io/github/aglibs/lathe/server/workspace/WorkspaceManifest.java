@@ -30,7 +30,7 @@ import java.util.stream.Stream;
 public final class WorkspaceManifest {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
-  static final String SOURCES_DIR = "src";
+  private static final String SOURCES_DIR = "src";
 
   private final LibrarySources libraries;
   private final List<Path> typeIndexShardPaths;
