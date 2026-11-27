@@ -31,6 +31,10 @@ record ParsedSentinel(
     // second injection that closes the switch at the label keeps it only where the class still ends
     // at the text's last brace (CQ-0079).
     int labelTopLevelEnd,
+    // Whether the sentinel is itself a statement of a switch label's body (a case of a switch
+    // statement, or a colon case): a statement position, whatever the text scan read after the
+    // label's `->` or `:` (CQ-0082).
+    boolean labelBodyStatement,
     // The type variables a type written at the cursor may name, innermost first; empty where no
     // type variable can stand (an expression, a supertype, after `new`).
     List<String> typeVariables,
@@ -81,6 +85,7 @@ record ParsedSentinel(
         false,
         false,
         -1,
+        false,
         List.of(),
         null,
         docVersion);
@@ -116,6 +121,7 @@ record ParsedSentinel(
         false,
         false,
         -1,
+        false,
         List.of(),
         directiveKeyword,
         docVersion);
@@ -144,6 +150,7 @@ record ParsedSentinel(
       final boolean catchParameter,
       final boolean constantField,
       final int labelTopLevelEnd,
+      final boolean labelBodyStatement,
       final List<String> typeVariables,
       final ModuleDirectiveKind directiveKeyword,
       final int docVersion) {
@@ -172,6 +179,7 @@ record ParsedSentinel(
         catchParameter,
         constantField,
         labelTopLevelEnd,
+        labelBodyStatement,
         typeVariables,
         directiveKeyword,
         docVersion);

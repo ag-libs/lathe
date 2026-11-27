@@ -5024,6 +5024,58 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0082 — Member completion in a closed switch block leaves out void methods, and with a prefix answers nothing — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: high — Size: S**
+
+**Affects: member completion in a `case` of a switch statement whose block is closed: the shape an editor with auto-pairs leaves.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+In `OwnerController.processFindForm`, after `String lastName = owner.getLastName();`: `switch (lastName) {` / `case "a" -> owner.ad§` / `}` answers 0 items; so do `owner.ad§;`, a `default -> {}` after it, and a colon case `case "a":` / `owner.ad§` / `break;` / `}`.
+Without a prefix, `case Owner ow -> ow.§` in a closed switch lists 15 items, none of them void (`addPet`, `addVisit`, `setCity` are missing); the same switch left open lists 23.
+The same text in an `if` block, after an `instanceof` pattern, in an open switch, or in a `{ … }` case body lists `addPet` and `addVisit`.
+`SentinelInjector`'s backward scan stops at the label's `->` or `:` and marks the slot `EXPRESSION` (the `LATHE_DEBUG` log reads `[completion] inject … ctx=EXPRESSION` for the switch, `ctx=STATEMENT` for the same text in an `if`); an `EXPRESSION` slot is a value context, so `CompletionCandidateRanker.valid` drops every void method.
+Only `CompletionEngine`'s relabel turns the slot back into a statement, and it runs only when a block is left open and the cursor is last on its line, so a closed switch, or text after the cursor (`owner.ad§;`), keeps `EXPRESSION`.
+
+### Expected
+
+A case of a switch statement is a statement position: javac accepts `case "a" -> owner.addPet(pet);`, so the void members are offered, as in an `if` block.
+
+### History
+
+[CQ-0079](gaps-archive.md#cq-0079--member-completion-after-case-x-x---x-answers-nothing-while-the-switch-block-is-not-closed--done)'s PR #509 fixed this and then lost it.
+A `lathe-analysis` completion probe (an `if` block; a closed switch with an arrow case, an arrow case with a prefix, a colon case before `break;`, a pattern case; an open arrow case) fails every closed-switch case on main before the PR, passes all of them at its first commit (`30a6d996`, which set `STATEMENT` for any switch label's body), and fails them again at its merge (`17756b3e`): its refactor `84a35378` moved the decision into the relabel, which runs only for an open block.
+So it is not a regression against the last round's build (`d3e0a33`), and CQ-0079's regression targets cover open switches only.
+
+### Resolution
+
+`SentinelParser` reports, from javac's tree, whether the sentinel is itself a statement of a switch label's body: the expression of one of the case's expression statements, reached through nothing but member selects and the erroneous tree javac wraps an unfinished one in, in a case of a switch statement, whose arrow body javac reads as a statement, or in a colon case, whose code is statements in either kind of switch.
+A value inside such a statement (a for-each's iterable, an operand, a `yield`) stays a value, as in a block.
+`CompletionEngine` then reads the injection as a statement (`SentinelInjectionResult.asStatement`), whichever injection it parsed, so a closed switch offers what a block offers: void members, and a typed prefix of one.
+The text is unchanged: the closed switch's injection already parsed and resolved its receiver, which is why the non-void members were listed.
+A switch expression's arrow body stays an expression, the switch's value, so it offers no void member.
+The relabel, its second injection and the braces it closes at the label are unchanged, so an open switch completes as before.
+Not covered: an open switch expression's arrow body, which the relabel reads as a statement, as before; its expected type (`int n = switch …`, `return switch …`) still leaves the void members out.
+
+### Regression targets
+
+- `CompletionCaseTest.completion_voidMemberInClosedSwitchStatementLabel_isOffered` (an arrow case with and without a prefix, text after the cursor, `default ->` before a case, a colon case before `break;`)
+- `CompletionCaseTest.completion_voidMemberInClosedSwitchStatementPatternLabel_isOffered` (JDK 21+)
+- `CompletionCaseTest.completion_voidMemberInClosedSwitchLabelAfterAnEdit_isOffered`
+- `CompletionCaseTest.completion_typeNameInClosedSwitchStatementLabel_offersTheType`
+- `CompletionCaseTest.completion_valueInClosedSwitchStatementLabel_leavesOutVoidMembers` (a for-each's iterable and a comparison's operand in a colon case)
+- `CompletionCaseTest.completion_memberInSwitchExpressionColonYield_leavesOutVoidMembers`
+- `CompletionCaseTest.completion_memberInSwitchExpressionArrowBody_leavesOutVoidMembers`
+
+---
+
 ## CQ-0081 — An annotation with a `value()` element completes no element names — done
 
 **Status: done** (2026-11-26)
