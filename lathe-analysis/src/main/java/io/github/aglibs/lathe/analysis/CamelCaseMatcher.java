@@ -22,7 +22,7 @@ import java.util.OptionalInt;
 // above AsyncAppenderFactory, whose S only continues As; each word skipped between two runs and
 // each lowercase letter that starts a word cost less; starting and ending with the name decide
 // what is left.
-final class CamelCaseMatcher {
+public final class CamelCaseMatcher {
 
   private static final int WORD_START = 1000;
   private static final int CAPITAL = 50;
@@ -67,7 +67,7 @@ final class CamelCaseMatcher {
   // How well the query matches the name, higher is better; empty when it does not match. Scored on
   // the match found, not the best one a name allows, as IntelliJ does: TM ranks TestTaskManager
   // (T on Test) below TaskManager.
-  static OptionalInt degree(final String query, final String candidateSimpleName) {
+  public static OptionalInt degree(final String query, final String candidateSimpleName) {
     if (query.isEmpty()) {
       return OptionalInt.empty();
     }
