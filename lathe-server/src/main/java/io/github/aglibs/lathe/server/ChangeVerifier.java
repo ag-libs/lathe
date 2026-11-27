@@ -147,6 +147,11 @@ final class ChangeVerifier {
     return state.registry().allSourceRoots();
   }
 
+  // The build's output directories, which hold no source a search reads (WS-52).
+  List<Path> buildDirs() {
+    return state.manifest().buildDirs();
+  }
+
   // The changed files whose content is not what the last build compiled: a change put back is no
   // change, so verify_change neither checks it nor asks for a sync. A deleted file stays, as its
   // callers break. Each module's stamps are read once.

@@ -24,7 +24,9 @@ record ProjectFacts(
     List<DependencyFact> dependencies,
     List<String> dependencyClasspath,
     List<String> runnerClasspath,
-    boolean spotless) {
+    boolean spotless,
+    // The project's build directory, root-relative, as its layout sets it (WS-52).
+    String buildDir) {
 
   ProjectFacts {
     ValidCheck.check().notNull(module, "module").validate();
@@ -40,10 +42,10 @@ record ProjectFacts(
 
   // A project without Java: its directory, and whether it applies Spotless (a root formatting the
   // whole build's sources often does).
-  static ProjectFacts of(final String module, final boolean spotless) {
+  static ProjectFacts of(final String module, final boolean spotless, final String buildDir) {
     return new ProjectFacts(
         module, List.of(), List.of(), null, 0, List.of(), List.of(), List.of(), List.of(),
-        List.of(), spotless);
+        List.of(), spotless, buildDir);
   }
 
   // Known only when the facts task runs: after any task that generates sources, and resolved then.
@@ -63,6 +65,7 @@ record ProjectFacts(
         libraries,
         libraryClasspath,
         testRunner,
-        spotless);
+        spotless,
+        buildDir);
   }
 }

@@ -851,7 +851,10 @@ public final class LatheEngine {
     // Searched before the edits are written, so a failed walk leaves the workspace untouched.
     final List<Location> outside =
         OutsideSources.mentioning(
-            workspaceRoot, query(session -> session.verifier().sourceRoots()), oldName);
+            workspaceRoot,
+            query(session -> session.verifier().sourceRoots()),
+            query(session -> session.verifier().buildDirs()),
+            oldName);
 
     final List<LatheFileEdit> files =
         textEdits.entrySet().stream()

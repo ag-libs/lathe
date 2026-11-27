@@ -29,6 +29,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
@@ -191,6 +192,7 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             buildFiles(root),
             resourceRoots,
             outputs,
+            facts.stream().map(ProjectFacts::buildDir).filter(Objects::nonNull).distinct().toList(),
             script));
     final List<String> formatterGrants = writeStyle(root, facts);
     JvmArgsWriter.write(

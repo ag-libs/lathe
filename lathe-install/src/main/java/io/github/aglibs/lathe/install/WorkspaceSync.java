@@ -44,6 +44,8 @@ public final class WorkspaceSync {
       List<String> buildFiles,
       List<ResourceRootData> resourceRoots,
       List<OutputData> outputs,
+      // Each module's build directory, workspace-relative, as the build sets it.
+      List<String> buildDirs,
       SyncScript syncScript) {
 
     public Inputs {
@@ -58,6 +60,7 @@ public final class WorkspaceSync {
       buildFiles = List.copyOf(buildFiles);
       resourceRoots = List.copyOf(resourceRoots);
       outputs = List.copyOf(outputs);
+      buildDirs = List.copyOf(buildDirs);
     }
   }
 
@@ -83,7 +86,8 @@ public final class WorkspaceSync {
         inputs.resourceRoots(),
         inputs.outputs(),
         inputs.syncScript().tool(),
-        inputs.runnerClasspaths());
+        inputs.runnerClasspaths(),
+        inputs.buildDirs());
     inputs.syncScript().write(inputs.workspaceRoot());
     writeGitignore(inputs.workspaceRoot());
   }

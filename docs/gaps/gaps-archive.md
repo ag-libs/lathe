@@ -12186,6 +12186,42 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-52 — A rename's outside-sources list takes build output to be in `target/` or `build/` — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: MCP `rename_symbol`'s "Not checked" list; every build front-end's `workspace.json`.**
+
+Found by the 2026-11-27 audit of layout assumptions, after MC-112's first fix matched `src/<source set>/kotlin`.
+
+### Observed behaviour
+
+After a rename, `rename_symbol` lists the Java files outside every synced source root that name the old name, skipping hidden directories and any directory named `target` or `build`.
+A module whose build directory is moved (`<directory>out</directory>`, `layout.buildDirectory = file('out')`) has its build output listed as if it were source, and a source folder named `build` is never searched: Lathe guessed the layout instead of taking it from the build.
+
+### Expected
+
+Build output is what the build says it is: each front-end records every module's build directory, and the search skips those and hidden directories only.
+
+### Resolution
+
+`workspace.json` gains `buildDirs`, each module's build directory relative to the workspace: Maven's `project.getBuild().getDirectory()`, Gradle's `layout.buildDirectory` (read with the project's other facts, under the configuration cache), and the OpenJDK build configuration the sync used when it lies in the workspace.
+`OutsideSources` skips the synced source roots, those directories and hidden ones, and no longer knows `target` or `build`.
+A module the build left out has no recorded build directory, as the build never modelled it, so its build output is searched too: stale generated code there may be listed, never edited.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_outsideList_skipsRecordedBuildDirsAndSearchesUnrecordedOnes`
+- `WorkspaceManifestWriterTest.write_buildDirs_recordedAsGiven`
+- `LatheSyncTaskFunctionalTest.sync_movedBuildDirectory_recordedAsTheLayoutSetsIt` (Gradle TestKit)
+- `MultiModuleTest.sync_workspaceJson_recordsEachModulesBuildDirectory` (Maven invoker, `shapes` moved to `out/`)
+
+---
+
 ## WS-51 — After a personal setup, the project's own build fails a check that scans the whole project — done
 
 **Status: done** (2026-11-25: `:LatheInit` warns; the mirror moving out of the project stays the [External Content Directory](../potential/lathe-external-content-dir.md) design)

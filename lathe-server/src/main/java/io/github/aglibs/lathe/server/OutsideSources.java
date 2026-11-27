@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -30,15 +31,18 @@ final class OutsideSources {
 
   private static final Logger LOG = Logger.getLogger(OutsideSources.class.getName());
 
-  // Build output; hidden directories (.git, .lathe) are skipped too.
-  private static final Set<String> OUTPUT_DIRS = Set.of("target", "build");
-
   private OutsideSources() {}
 
   // The first place each such file names it, ordered by file.
+  // Skipped: the synced source roots, the build directories the front-ends recorded (build output,
+  // wherever the build put it), and hidden directories (.git, .lathe).
   static List<Location> mentioning(
-      final Path root, final List<Path> sourceRoots, final String name) {
-    final Set<Path> synced = Set.copyOf(sourceRoots);
+      final Path root,
+      final List<Path> sourceRoots,
+      final List<Path> buildDirs,
+      final String name) {
+    final Set<Path> synced =
+        Set.copyOf(Stream.concat(sourceRoots.stream(), buildDirs.stream()).toList());
     final var found = new ArrayList<Location>();
     IOUtil.unchecked(
         () ->
@@ -76,7 +80,7 @@ final class OutsideSources {
 
   private static boolean skipped(final Path dir, final Set<Path> synced) {
     final String dirName = dir.getFileName().toString();
-    return synced.contains(dir) || dirName.startsWith(".") || OUTPUT_DIRS.contains(dirName);
+    return synced.contains(dir) || dirName.startsWith(".");
   }
 
   private static Optional<Location> firstMention(final Path file, final String name) {

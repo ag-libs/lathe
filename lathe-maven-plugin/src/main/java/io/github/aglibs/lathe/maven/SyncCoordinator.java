@@ -103,6 +103,7 @@ final class SyncCoordinator {
               buildFiles,
               ModuleResourcesReader.read(workspaceRoot, projects),
               ReactorProjects.outputs(workspaceRoot, projects),
+              buildDirs(workspaceRoot, projects),
               MavenSyncScript.of(
                   session.getSystemProperties(),
                   session.getUserProperties(),
@@ -220,5 +221,16 @@ final class SyncCoordinator {
               .formatted(
                   ReactorProjects.moduleRel(workspaceRoot, project), ReactorProjects.gav(project)));
     }
+  }
+
+  // Each module's build directory as its model sets it (<build><directory>), so nothing downstream
+  // takes target/ for build output (WS-52).
+  private static List<String> buildDirs(
+      final Path workspaceRoot, final List<MavenProject> projects) {
+    return projects.stream()
+        .map(project -> Path.of(project.getBuild().getDirectory()))
+        .map(dir -> FileUtil.slashed(workspaceRoot.relativize(dir)))
+        .distinct()
+        .toList();
   }
 }

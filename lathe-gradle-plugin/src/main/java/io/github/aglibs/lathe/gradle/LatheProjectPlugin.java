@@ -129,7 +129,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
                                           module(project),
                                           project
                                               .getPluginManager()
-                                              .hasPlugin(LatheFormatter.SPOTLESS_PLUGIN)))));
+                                              .hasPlugin(LatheFormatter.SPOTLESS_PLUGIN),
+                                          buildDir(project)))));
                   task.getFactsFile()
                       .set(
                           LatheWorkspaceTask.factsFile(
@@ -724,7 +725,14 @@ public class LatheProjectPlugin implements Plugin<Project> {
         List.of(),
         List.of(),
         List.of(),
-        project.getPluginManager().hasPlugin(LatheFormatter.SPOTLESS_PLUGIN));
+        project.getPluginManager().hasPlugin(LatheFormatter.SPOTLESS_PLUGIN),
+        buildDir(project));
+  }
+
+  // Read when the facts are, so a build script that moves it is seen.
+  private static String buildDir(final Project project) {
+    return relative(
+        project.getRootDir().toPath(), project.getLayout().getBuildDirectory().get().getAsFile());
   }
 
   // A source set's classes and resources, and its jar when it has one (test fixtures do): each a

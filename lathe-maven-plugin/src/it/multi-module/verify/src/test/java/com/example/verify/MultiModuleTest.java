@@ -182,6 +182,14 @@ class MultiModuleTest {
     assertThat(content).contains(Os.json(Path.of("type-index/jdks")));
   }
 
+  // WS-52: each module's build directory as its model sets it, shapes' moved to out/.
+  @Test
+  void sync_workspaceJson_recordsEachModulesBuildDirectory() throws IOException {
+    assertThat(read(lathe("workspace.json")))
+        .contains("\"buildDirs\"", "\"core/target\"", "\"shapes/out\"")
+        .doesNotContain("\"shapes/target\"");
+  }
+
   @Test
   void sync_styleJson_detectsGoogleFromSpotless() throws IOException {
     final var style = lathe("style.json");

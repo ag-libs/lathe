@@ -54,6 +54,7 @@ public final class WorkspaceManifest {
   private final boolean missing;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
+  private final List<Path> buildDirs;
   // The built modules with sources of each language Lathe does not read, mixed ones too: an answer
   // about a symbol's uses cannot vouch for theirs, and the summary names them.
   private final Map<UnreadLanguage, List<Path>> unreadModuleDirs;
@@ -75,6 +76,7 @@ public final class WorkspaceManifest {
       final boolean missing,
       final Path buildTool,
       final List<Path> builtModuleDirs,
+      final List<Path> buildDirs,
       final String jdkSourcesNote) {
     this.libraries = libraries;
     this.typeIndexShardPaths = typeIndexShardPaths;
@@ -89,6 +91,7 @@ public final class WorkspaceManifest {
     this.missing = missing;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
+    this.buildDirs = buildDirs;
     this.unreadModuleDirs =
         Arrays.stream(UnreadLanguage.values())
             .collect(
@@ -119,6 +122,7 @@ public final class WorkspaceManifest {
         loadProblem,
         missing,
         null,
+        List.of(),
         List.of(),
         null);
   }
@@ -214,6 +218,7 @@ public final class WorkspaceManifest {
               .map(output -> workspaceRoot.resolve(output.module()).normalize())
               .distinct()
               .toList(),
+          data.buildDirs().stream().map(dir -> workspaceRoot.resolve(dir).normalize()).toList(),
           jdk != null ? jdk.missingSourcesNote().orElse(null) : null);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
@@ -241,6 +246,11 @@ public final class WorkspaceManifest {
     return builtModuleDirs.stream()
         .filter(normalized::startsWith)
         .max(Comparator.comparingInt(Path::getNameCount));
+  }
+
+  // Each module's build directory, as its front-end recorded it: build output, not sources.
+  public List<Path> buildDirs() {
+    return buildDirs;
   }
 
   public List<Path> unreadModuleDirs(final UnreadLanguage language) {

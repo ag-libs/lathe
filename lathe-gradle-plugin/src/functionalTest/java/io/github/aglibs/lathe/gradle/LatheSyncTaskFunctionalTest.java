@@ -341,6 +341,26 @@ class LatheSyncTaskFunctionalTest {
         .doesNotContain("app");
   }
 
+  // WS-52: each project's build directory as its layout sets it, a moved one too, recorded under
+  // the configuration cache.
+  @Test
+  void sync_movedBuildDirectory_recordedAsTheLayoutSetsIt() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "lib/build.gradle",
+                """
+                plugins { id 'java-library' }
+                layout.buildDirectory = file('out')
+                """);
+
+    fixture.runner("latheSync", "--configuration-cache").build();
+
+    assertThat(workspace().buildDirs())
+        .contains("lib/out", "app/build")
+        .doesNotContain("lib/build");
+  }
+
   // A library that disables its jar task and publishes a shaded jar at the jar's path, as JUnit's
   // shadow convention does: the jar is listed as shaded, since it holds relocated classes its
   // mirror lacks. The app's jar task is enabled, so its jar is not.
