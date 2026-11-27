@@ -26,7 +26,7 @@ The OpenJDK checkout uses that route, or `:LatheInit openjdk` after `make jdk`.
 ### More on `:LatheInit`
 
 `:LatheInit` picks the build around the current file.
-When a project has both a Maven and a Gradle build at the same root, it picks Gradle.
+When a project has both a Maven and a Gradle build at the same root, it picks the one that registers Lathe, else Gradle, and names the other.
 To choose the build yourself, pass it: `:LatheInit maven`, `:LatheInit gradle` or `:LatheInit openjdk`.
 On a project already set up at this Lathe version, or one whose build registers Lathe, `:LatheInit` builds nothing and points to `:LatheSync`.
 `:LatheInit!` runs the build anyway.

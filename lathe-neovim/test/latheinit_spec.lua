@@ -240,6 +240,38 @@ spec.check(
   "Lathe: set up Lathe 9.9.9 for the Gradle build in: "
 )
 
+-- Both builds at one root, one of them registering Lathe: that one, as setting up the other would
+-- replace a working setup (NV-17), and the prompt names the other. Both registered: Gradle.
+write(work .. "/both-maven/settings.gradle")
+write(work .. "/both-maven/pom.xml")
+write(work .. "/both-maven/.mvn/extensions.xml", "<artifactId>lathe-maven-extension</artifactId>")
+spec.check(
+  "both builds, Maven registers Lathe: Maven",
+  root_of("/both-maven"),
+  "/both-maven maven"
+)
+next_answer = false
+run_from("/both-maven")
+spec.check(
+  "and the prompt names the Gradle build",
+  prompts[#prompts].prompt,
+  "Lathe: build the Maven project (a Gradle build is there too: `:LatheInit gradle`), which registers Lathe, in: "
+)
+write(work .. "/both-gradle/settings.gradle", 'plugins { id("io.github.ag-libs.lathe") }')
+write(work .. "/both-gradle/pom.xml")
+spec.check(
+  "both builds, Gradle registers Lathe: Gradle",
+  root_of("/both-gradle"),
+  "/both-gradle gradle"
+)
+write(work .. "/both-registered/settings.gradle", 'plugins { id("io.github.ag-libs.lathe") }')
+write(work .. "/both-registered/pom.xml", "<extension><artifactId>lathe-maven-extension</artifactId>")
+spec.check(
+  "both builds register Lathe: Gradle",
+  root_of("/both-registered"),
+  "/both-registered gradle"
+)
+
 -- Maven personal: fetch, then build with the activation, then attach.
 local boot = work .. "/cache/bootstrap/9.9.9"
 local setup_first_note = #notes + 1

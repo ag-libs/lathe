@@ -213,10 +213,24 @@ local function describe(root, kind)
   return { root = root, kind = kind, registered = registers_lathe(root, kind) }
 end
 
+-- Both builds at one folder: the one that registers Lathe, as setting up the other would replace a
+-- working setup (NV-17); else Gradle, whose settings script is the more explicit marker. `also`
+-- names the other, so the prompt can.
+local function both_at(root)
+  local gradle, maven = describe(root, "gradle"), describe(root, "maven")
+  if maven.registered and not gradle.registered then
+    maven.also = "gradle"
+    return maven
+  end
+
+  gradle.also = "maven"
+  return gradle
+end
+
 --- The build around `start` (a folder): `{ root, kind = "maven"|"gradle"|"openjdk", registered }`,
 --- or nil. With `kind`, only that kind's root. Otherwise an OpenJDK checkout first, then the nearer
---- of a Maven and a Gradle root; at the same folder, Gradle, whose settings script is the more
---- explicit marker, with `also = "maven"` so the prompt can name the other.
+--- of a Maven and a Gradle root; at the same folder, the one that registers Lathe, else Gradle, with
+--- `also` naming the other so the prompt can.
 function M.find_build(start, kind)
   local dirs = upward(start)
   if kind then
@@ -230,10 +244,12 @@ function M.find_build(start, kind)
   end
 
   local gradle, maven = gradle_root(dirs), maven_root(dirs)
-  if gradle and (not maven or #gradle >= #maven) then
-    local found = describe(gradle, "gradle")
-    found.also = maven == gradle and "maven" or nil
-    return found
+  if gradle and gradle == maven then
+    return both_at(gradle)
+  end
+
+  if gradle and (not maven or #gradle > #maven) then
+    return describe(gradle, "gradle")
   end
 
   return maven and describe(maven, "maven") or nil
