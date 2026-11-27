@@ -12186,6 +12186,42 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-54 — A capture-only run takes a `java` root's sibling folders for other-language tests — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: the Maven extension's capture-only test selection.**
+
+Found by the 2026-11-27 audit of layout assumptions.
+
+### Observed behaviour
+
+A capture-only run narrows Surefire to a few Java test classes, unless the module's tests are partly in another language, whose Java may be only helpers.
+It looked for those tests in the test roots and, for a root named `java`, in its `src/<set>/` siblings (`src/test/kotlin`), as build-helper adds that root only later in the build: Kotlin tests in any other folder were missed, and the narrowed run of helper classes then started no JVM, so the module's tests could not be replayed.
+
+### Expected
+
+Whether a module may keep tests in another language comes from its build, not a folder name.
+
+### Resolution
+
+The selection is left alone when the module's build has a compiler for another language: `kotlin-maven-plugin`, `gmavenplus-plugin`, `scala-maven-plugin`, or `maven-compiler-plugin` with the Groovy Eclipse compiler; the check of the test roots the model holds now stays.
+A module that applies one but tests in Java only runs all its tests during capture: slower, never a capture that starts no JVM.
+
+Not covered: another language's compiler not in that list; WS-53's "Future" lists reading the plugins' own source folders.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection` (now from the Kotlin plugin)
+- `LatheModelInjectorTest.injectCaptureClass_groovyEclipseCompiler_leavesTheSelection`
+- `LatheModelInjectorTest.injectCaptureClass_kotlinFolderWithoutAKotlinBuild_selectsTheJavaTests`
+
+---
+
 ## WS-53 — Which modules hold Kotlin or Groovy is guessed from `src/<source set>/kotlin` and `groovy` — done
 
 **Status: done** (2026-11-27)
@@ -12218,7 +12254,7 @@ Not covered: a Maven module whose Kotlin or Groovy plugin compiles from folders 
 ### Future: source directories the build can tell
 
 Reading `kotlin-maven-plugin`'s `<sourceDirs>` and GMavenPlus's `<sources>` from the model's plugin configuration, as the sync already reads Spotless's, would name those modules again without a folder rule.
-The same applies wherever Lathe still assumes a directory the build can report: the Maven extension's test-capture check of a `java` root's sibling folders (to be read from the model's test source roots once build-helper has added them), and any future need for a module's source folders by language, which Gradle's directory sets and Maven's model give directly.
+The same applies wherever Lathe still assumes a directory the build can report: any future need for a module's source folders by language, which Gradle's directory sets and Maven's model give directly.
 
 ### Regression targets
 
