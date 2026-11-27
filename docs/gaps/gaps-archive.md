@@ -5072,6 +5072,68 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0084 — Keyword completion offers statement keywords where only a value or an expression statement can stand — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: medium — Size: S–M**
+
+**Affects: keyword completion of a simple name in a switch label's arrow body, after `yield`, in an array initializer, and in a `for` loop's update.**
+
+Found checking [CQ-0082](gaps-archive.md)'s fix on `main` at `37cdada1` (2026-11-27), with `lathe-analysis` completion probes.
+
+### Observed behaviour
+
+A value position should offer only the value keywords (`new`, `null`, `true`, `false`, `this`, `super`), as `return §`, an assignment, a condition, an operand, an argument or a lambda's expression body do.
+These offer the whole set a block statement gets (`return`, `assert`, `if`, `for`, `while`, `do`, `try`, `synchronized`, `var`, `final`, the primitive types):
+
+- a switch expression's arrow body, `default ->` too, open or closed: `return switch (x) { case "a" -> §`, with `yield` as well; `case "a" -> re§` offers `return` alone, which javac rejects (a `return` out of a switch expression);
+- a `yield`'s value: `yield §;`;
+- an array initializer's element: `int[] a = { § };`, `new int[] { § }`, a field's `{ § }`;
+- a switch statement's arrow body, `switch (x) { case "a" -> §`, with `break` as well: javac accepts only an expression statement, a block or a `throw` there;
+- a `for` loop's update, `for (int i = 0; i < 3; §)`, with `break` and `continue`: only expression statements stand there.
+
+### Cause
+
+`SentinelParser.classifySentinel` marks a simple name as an expression (`inExpression`) only where its parent is a listed value position; a `CaseTree` whose body it is, a `YieldTree` and an array initializer are not listed, and a switch statement's arrow body and a `for` update are expression statements, the shape a block statement has.
+The name then falls to `classifyDefault`, and `KeywordProvider.selectKeywords` gives every simple name not marked an expression the method body's keywords.
+
+### Expected
+
+A switch expression's arrow body offers the value keywords and `throw`; a `yield`'s value and an array initializer's element the value keywords; a switch statement's arrow body `new`, `this`, `super` and `throw`; a `for` update `new`, `this` and `super`.
+A colon case's statements and a block inside an arrow keep the statement keywords.
+
+### Resolution
+
+The flag that told a simple name's slot apart, `inExpression`, becomes a `KeywordSlot`: a block statement, a value, a switch expression's arrow body, a switch statement's arrow body, or an expression statement; `KeywordProvider` gives each its keywords.
+`SentinelParser` reads the slot from javac's tree:
+- a `yield`'s value and an array initializer's element are values, as `return` and an initializer are;
+- a case whose body is the name itself is a switch expression's arrow body, as only a switch expression has an expression for a body;
+- a name javac wraps as an unfinished expression statement takes that statement's slot: a switch statement's arrow body when the statement is a rule's body, an expression statement when it is a `for` loop's update, a block statement elsewhere, a colon case's statements among them.
+Each rule applies to a simple name only; a member select keeps its member completion.
+The tree shapes hold in the open switch the CQ-0079 relabel injects again, which the tests cover.
+
+Not covered:
+- `assert`'s condition and detail, which offer the statement keywords too, and whose condition offers void methods: deferred.
+- `switch` as a value (`return switch (x) { … }`), which no value position offers.
+- A `for` loop's initializer, an unbraced `if`, `else` or `while` body, and a labelled statement, which offer the whole block set, declarations javac rejects there among them.
+- An array element's expected type is the array's (`int[]`), so `int[] a = { § }` keeps `null` and `boolean[] b = { § }` offers no `true` or `false`.
+- An annotation default `int[] value() default { § }` now offers `new`, `this` and `super`, which an annotation value cannot hold; it offered the whole block set before.
+- A field initializer (`int f = §`) offers void methods, which a local's initializer leaves out.
+
+### Regression targets
+
+- `CompletionKeywordAndNoSlotTest.keywords_switchExpressionArrowBody_valueKeywordsAndThrow` (closed, open, `default ->`, text after the cursor)
+- `CompletionKeywordAndNoSlotTest.keywords_switchExpressionArrowBodyWithPrefix_noReturn`
+- `CompletionKeywordAndNoSlotTest.keywords_yieldValue_valueKeywordsOnly` (closed, open)
+- `CompletionKeywordAndNoSlotTest.keywords_arrayInitializerElement_valueKeywordsOnly` (a local's, a second element, `new Object[] { … }`, a field's)
+- `CompletionKeywordAndNoSlotTest.keywords_switchStatementArrowBody_expressionStatementStartersAndThrow` (closed, open)
+- `CompletionKeywordAndNoSlotTest.keywords_forUpdate_expressionStatementStartersOnly` (first and second update)
+
+---
+
 ## CQ-0082 — Member completion in a closed switch block leaves out void methods, and with a prefix answers nothing — done
 
 **Status: done** (2026-11-27)
