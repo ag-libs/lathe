@@ -2549,33 +2549,3 @@ Where the file's module was compiled, the reason names the source roots javac co
 ### Regression targets
 
 None yet.
-
-## MC-113 — `search_symbols` ranks a generated type below weaker matches when the query is lowercase or CamelHumps
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `search_symbols` on a reactor whose public types are processor output (Helidon's builders).**
-
-Found by the release check on Helidon (2026-11-26, `main` at `6dc6245`, Helidon at `27a692eb0d`; report `dev/reports/release-0.1.0-SNAPSHOT-2026-11-26.md`).
-What [MC-110](gaps-archive.md#mc-110--search_symbols-lists-an-exact-match-below-partial-ones-when-the-match-is-generated--done) left: its fix puts an exact, case-sensitive match first, and its third symptom (`LiCo`) was not covered.
-
-### Observed behaviour
-
-`search_symbols {query: "listenerconfig", scope: "reactor"}` lists `ListenerConfigBlueprint`, `ListenerConfigTest`, `ListenerConfigDecorator`, `ListenerConfigurationParamHandler`, then `ListenerConfig` [GENERATED], fifth; `webserverconfig` lists `WebServerConfig` fourth.
-`LiCo` and `LisCon` leave `ListenerConfig` out of the first twelve, behind hand-written matches that fit the query worse (`AimdLimitConfigBlueprint`, `LinkedListConverter`).
-`ListenerConfig` and `WebServerConfig`, as typed, list the generated type first.
-A hand-written type is not affected: on Dropwizard, `abstractserverfactory` and `duration` list the exact type first.
-The editor's `workspace/symbol` lists `ListenerConfig` first for `listenerconfig` and `LiCo` (2026-11-25's round), so an agent and the editor are handed different first answers.
-
-### Expected
-
-A name equal to the query ignoring case counts as exact, as the editor's search treats it.
-Among the rest, how well a type matches ranks it before MC-39's hand-written-before-generated order, so a generated type that matches the query's humps closely is not listed after a hand-written one that matches them loosely.
-
-### Regression targets
-
-None yet.

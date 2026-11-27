@@ -1079,6 +1079,93 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         .endsWith("Config");
   }
 
+  // MC-113: a name equal to the query but for case is the type it names, generated or not.
+  @Test
+  void searchSymbols_exactNameInLowerCase_listsTheGeneratedTypeFirst() throws Exception {
+    engine = listenerConfigEngine();
+
+    assertThat(engine.searchSymbols("listenerconfig", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .startsWith("ListenerConfig");
+    assertThat(engine.searchSymbols("com.example.listenerconfig", SymbolScope.REACTOR, 50).value())
+        .as("a qualified name")
+        .extracting(LatheSymbol::name)
+        .startsWith("ListenerConfig");
+  }
+
+  @Test
+  void searchSymbols_exactNameInLowerCase_handWrittenExactMatchStillFirst() throws Exception {
+    engine = listenerConfigEngine();
+
+    assertThat(engine.searchSymbols("listenerconfigblueprint", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .startsWith("ListenerConfigBlueprint");
+  }
+
+  // MC-113: a generated type ranks by how well its name matches, not after every hand-written one.
+  @Test
+  void searchSymbols_generatedTypeMatchesBetter_rankedBeforeWeakerHandWrittenMatch()
+      throws Exception {
+    engine = listenerConfigEngine();
+
+    final List<String> names =
+        engine.searchSymbols("LiCo", SymbolScope.REACTOR, 50).value().stream()
+            .map(LatheSymbol::name)
+            .toList();
+
+    assertThat(names).contains("ListenerConfig", "LinkedListConverter");
+    assertThat(names.indexOf("ListenerConfig"))
+        .as("initials on consecutive words match better than across a skipped one")
+        .isLessThan(names.indexOf("LinkedListConverter"));
+  }
+
+  // MC-113: ignoring case finds both, but the type named in the query's own case comes first.
+  @Test
+  void searchSymbols_namesDifferOnlyInCase_exactCaseFirst() throws Exception {
+    final Path upper =
+        TestCompiler.writeModuleSource(tmp, "com/a/URL.java", "package com.a; class URL {}");
+    final Path lower =
+        TestCompiler.writeModuleSource(tmp, "com/b/Url.java", "package com.b; class Url {}");
+    compileIntoMirror(upper, lower);
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.searchSymbols("URL", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .containsExactly("URL", "Url");
+    assertThat(engine.searchSymbols("Url", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .containsExactly("Url", "URL");
+  }
+
+  // A hand-written blueprint and a weaker match beside the generated ListenerConfig, as Helidon
+  // declares its builders.
+  private LatheEngine listenerConfigEngine() throws Exception {
+    final Path blueprint =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/ListenerConfigBlueprint.java",
+            "package com.example; interface ListenerConfigBlueprint {}");
+    final Path weaker =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/LinkedListConverter.java",
+            "package com.example; class LinkedListConverter {}");
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/ListenerConfig.java"),
+            "package com.example; public interface ListenerConfig extends ListenerConfigBlueprint {}",
+            1_000L);
+    compileIntoMirror(blueprint, weaker, generated);
+    return new LatheEngine(tmp);
+  }
+
   // MC-100: a capped list lists main sources before tests, the declaring module first in each,
   // where a sibling module's name sorts before it (`app-26` before `app-core`).
   @Test

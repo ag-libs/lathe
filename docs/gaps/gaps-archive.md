@@ -15986,6 +15986,51 @@ Not covered: a generated or external location keeps MC-70's place after the proj
 
 ---
 
+## MC-113 — `search_symbols` ranks a generated type below weaker matches when the query is lowercase or CamelHumps — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `search_symbols` on a reactor whose public types are processor output (Helidon's builders).**
+
+Found by the release check on Helidon (2026-11-26, `main` at `6dc6245`, Helidon at `27a692eb0d`; report `dev/reports/release-0.1.0-SNAPSHOT-2026-11-26.md`).
+What [MC-110](#mc-110--search_symbols-lists-an-exact-match-below-partial-ones-when-the-match-is-generated--done) left: its fix puts an exact, case-sensitive match first, and its third symptom (`LiCo`) was not covered.
+
+### Observed behaviour
+
+`search_symbols {query: "listenerconfig", scope: "reactor"}` lists `ListenerConfigBlueprint`, `ListenerConfigTest`, `ListenerConfigDecorator`, `ListenerConfigurationParamHandler`, then `ListenerConfig` [GENERATED], fifth; `webserverconfig` lists `WebServerConfig` fourth.
+`LiCo` and `LisCon` leave `ListenerConfig` out of the first twelve, behind hand-written matches that fit the query worse (`AimdLimitConfigBlueprint`, `LinkedListConverter`).
+`ListenerConfig` and `WebServerConfig`, as typed, list the generated type first.
+A hand-written type is not affected: on Dropwizard, `abstractserverfactory` and `duration` list the exact type first.
+The editor's `workspace/symbol` lists `ListenerConfig` first for `listenerconfig` and `LiCo` (2026-11-25's round), so an agent and the editor are handed different first answers.
+
+### Expected
+
+A name equal to the query ignoring case counts as exact, as the editor's search treats it.
+Among the rest, how well a type matches ranks it before MC-39's hand-written-before-generated order, so a generated type that matches the query's humps closely is not listed after a hand-written one that matches them loosely.
+
+### Resolution
+
+`LatheEngine.ranked` orders the hits as IntelliJ does: the type the query names first, in the query's case before ignoring it (so `URL` keeps `java.net.URL` ahead of a reactor `Url`); then the origin tiers, the reactor's hand-written and generated types together; then how well the name matches, with the score the editor's search uses (`CamelCaseMatcher.degree`, now public); and MC-39's hand-written-before-generated order only as the tie-break, so an equal match keeps it (`Cal` still lists `Callee` and `Caller` before a generated `Call`).
+`listenerconfig` and `com.example.listenerconfig` list the generated `ListenerConfig` first, and `LiCo` lists it above a hand-written type whose initials skip a word (`LinkedListConverter`).
+
+Not covered: a type from a dependency without sources is listed after every located hit, even when the query names it, as before.
+A qualified query is capped at the search limit in the index's order before it is ranked, in any case, so a package with more matching types than the limit can leave the named one out.
+The order of a case-exact match from the JDK or a dependency over a reactor type that differs only in case has no test: the test workspace indexes no external type with a file.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.searchSymbols_exactNameInLowerCase_listsTheGeneratedTypeFirst`
+- `LatheEngineNavigationTest.searchSymbols_exactNameInLowerCase_handWrittenExactMatchStillFirst`
+- `LatheEngineNavigationTest.searchSymbols_generatedTypeMatchesBetter_rankedBeforeWeakerHandWrittenMatch`
+- `LatheEngineNavigationTest.searchSymbols_namesDifferOnlyInCase_exactCaseFirst`
+- `LatheEngineNavigationTest.searchSymbols_generatedExactMatch_listedBeforeHandWrittenPartialMatches` and `referencesAndCallers_handWrittenBeforeGenerated_cappedToTheHandWritten` (MC-110's and MC-70's orders, kept)
+
+---
+
 ## MC-111 — A file tool given `path:line` says only that it is not a `.java` file — done
 
 **Status: done** (2026-11-26)
