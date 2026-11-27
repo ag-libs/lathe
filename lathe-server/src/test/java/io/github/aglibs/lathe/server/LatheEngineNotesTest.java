@@ -239,6 +239,39 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     assertThat(notes.syncRequired()).isEmpty();
   }
 
+  // MC-112: a Java file in a Kotlin or Groovy source directory of a module javac compiled nothing
+  // in is not checked because javac does not compile that directory, not because of a profile.
+  @Test
+  void notes_javaFileInKotlinOrGroovySourceDirectory_namesTheDirectory() throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        Map.of("com/example/Sample.java", "package com.example; class Sample {}"),
+        List.of(),
+        1_000L);
+    final Path inKotlin =
+        TestCompiler.writeAt(
+            tmp.resolve("test-suite-kotlin/src/test/kotlin/com/example/EngineSpec.java"),
+            "package com.example; class EngineSpec {}",
+            1_000L);
+    final Path inGroovy =
+        TestCompiler.writeAt(
+            tmp.resolve("test-suite-groovy/src/main/groovy/com/example/Joint.java"),
+            "package com.example; class Joint {}",
+            1_000L);
+    engine = new LatheEngine(tmp);
+
+    final LatheNotes notes = engine.notes(List.of(inKotlin, inGroovy));
+
+    assertThat(notes.notChecked())
+        .containsExactly(
+            "%s is under a Kotlin source directory, which javac does not compile, so Lathe cannot check it"
+                .formatted(
+                    Path.of("test-suite-kotlin/src/test/kotlin/com/example/EngineSpec.java")),
+            "%s is under a Groovy source directory, which javac does not compile, so Lathe cannot check it"
+                .formatted(Path.of("test-suite-groovy/src/main/groovy/com/example/Joint.java")));
+  }
+
   // MC-103: a file the build's annotation processing wrote is not checked where the build put it;
   // the note names Lathe's copy of it, the test tree's for a test file, or says a sync makes one.
   @Test

@@ -16061,6 +16061,42 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP file tools on a Java file under a Kotlin or Groovy source directory of a module the build compiled.**
+
+Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
+
+### Observed behaviour
+
+`get_diagnostics` on `test-suite-kotlin/src/test/kotlin/io/micronaut/docs/factories/nullable/EngineSpec.java` answers that the file "is outside the modules the last build compiled (a profile may leave its module out)".
+The module was compiled; its `compileTestJava` had no sources, as javac does not compile the `kotlin` directory, so the file is in no source root.
+The editor's message, "not under any Lathe module source root", is accurate; an agent reading the MCP one looks for a profile that is not there.
+
+### Expected
+
+Where the file's module was compiled, the reason names the source roots javac compiles, or says the file is in none of them, without the profile.
+
+### Resolution
+
+`ChangeVerifier`'s reason for a file outside the built modules now checks the file's path first: under a Kotlin or Groovy source directory (`src/<source set>/kotlin` or `groovy`, `UnreadLanguage.ofSourcePath`) it says the file is under that language's source directory, which javac does not compile.
+Any other file outside the built modules keeps the profile message.
+Checked live on a two-module Maven probe: `extra/src/test/kotlin/…/Spec.java`, in no module, read "a profile may leave its module out" on `main` and now names the Kotlin directory; a Kotlin directory of a built module keeps "in no source root of module".
+
+### Regression targets
+
+- `LatheEngineNotesTest.notes_javaFileInKotlinOrGroovySourceDirectory_namesTheDirectory`
+- `UnreadLanguageTest` (Kotlin, Groovy, a Java directory, `kotlin` outside a source tree)
+- `LatheEngineNotesTest.notes_fileNoModuleCompiles_notCheckedWithItsCause` (the profile message, kept)
+
+---
+
 ## MC-56 — No map of JAX-RS routes and their wiring — non-goal
 
 **Status: non-goal** (2026-11-27: a route map takes JAX-RS's resolution of paths, sub-resources and providers; it needs a framework's runtime rules that javac does not see, which Lathe does not model (FR-041))
