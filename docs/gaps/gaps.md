@@ -573,32 +573,6 @@ None yet.
 
 ---
 
-## EG-095 — No Spring Boot or Quarkus configuration-key navigation
-
-**Status: deferred** (2026-11-15: feature freeze)
-
-**Kind: feature**
-
-**Affects: the editor and MCP.**
-
-Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), which links keys in `application*.properties` and `.yml` both ways with the Java that reads them
-(`@Value`, `@ConfigurationProperties`, `@ConfigProperty`, `@ConfigMapping`, `getProperty("…")`), shows per-profile values on hover, and has an MCP `java_config` tool.
-
-### Gap
-
-Lathe does not read configuration files; a key and the code that binds it are connected only by grep.
-
-### Fix direction
-
-Design first: the resource roots are already captured; the binding annotations are attributed by javac, so the Java side is exact.
-Decide the scope (which frameworks, relaxed binding, profiles) before any code.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed
 
 **Status: deferred** (2026-11-16)
@@ -1100,33 +1074,6 @@ None yet.
 
 ---
 
-## FR-041 — Renaming a Spring Data derived query method changes its query without a word
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: M**
-
-**Affects: the editor's rename and MCP `rename_symbol` and `analyze_change` on a Spring Data repository interface.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-Editor `textDocument/rename` and MCP `rename_symbol` of `OwnerRepository.findByLastNameStartingWith` to `findByLastName` or `lookupOwners` make 14 edits in 4 files, which compile, with no note; `analyze_change` on the method says nothing either.
-Spring Data derives the query from the method name: `findByLastName` becomes an equality query, so the owner search stops matching prefixes while the tests that mock the repository still pass, and `lookupOwners` names no query Spring Data can derive, so the application context fails to start.
-javac compiles both, so `verify_change` cannot catch it.
-
-### Expected
-
-A rename of a method declared in an interface that extends Spring Data's `Repository`, whose name is a derived query (`find…By`, `count…By`, `exists…By`, `delete…By`, …) and carries no `@Query`, is refused or carries a note that the name is the query: the new name either derives another query or none.
-Related: [FR-034](#fr-034--renaming-a-member-a-processor-derives-another-from-leaves-the-derived-members-callers-broken) (a member a processor derives from), which needs generated code; Spring Data derives at runtime.
-
-### Regression targets
-
-None yet.
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -1271,7 +1218,7 @@ None yet.
 
 ## CA-22 — Extract method offers nothing, and says nothing, for statements that reassign a local used after them
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-27: low value; extracting a method that returns the reassigned local needs a data-flow pass)
 
 **Kind: bug**
 
@@ -1298,7 +1245,7 @@ None yet.
 
 ## CA-23 — "Implement abstract methods" inserts the stub at column 0
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-27: every use of the quick fix in a class not indented with four spaces shows it; indent the stub as the class's members)
 
 **Kind: bug**
 
@@ -1382,7 +1329,7 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values`
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-27: JLS 9.7.1 settles it, and jdtls 1.63 offers the constants alone)
 
 **Kind: bug**
 
@@ -1913,7 +1860,7 @@ Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ## NV-17 — `:LatheInit` with no kind offers a Gradle setup where the Maven build already registers Lathe
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-27: accepting the default would replace a working Maven setup; a build that registers Lathe wins)
 
 **Kind: bug**
 
@@ -2145,38 +2092,6 @@ A filter on `find_references` (or its own tool) keeping the uses that test a val
 `instanceof`, type patterns in `switch` and record patterns, and casts.
 These are tree kinds javac already gives the reference search, not text matches.
 Related: [MC-27](#mc-27--no-view-of-a-types-api-by-name-members-supertypes-and-the-first-javadoc-line) for the type hierarchy.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-56 — No map of JAX-RS routes and their wiring
-
-**Status: deferred** (2026-11-15: bug fixes only for now; a new tool or view waits)
-
-**Kind: feature**
-
-**Value: medium — Size: L**
-
-**Affects: MCP.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-"Which endpoint needs which role" and "in what order do the request filters run" were key questions.
-The agent grepped for `@Path` and the auth annotations and still could not establish the filter order.
-
-### Fix direction
-
-A `routes` tool listing each HTTP method and full path (class plus method `@Path`) with its resource method
-and the security annotations on it (`@RolesAllowed`, `@PermitAll` and custom ones),
-plus the `@Provider` filters and interceptors with their `@Priority` and name bindings.
-All of it is annotation data in the attributed trees, so it suits Lathe; registration in code
-(`register(...)` calls) is the part a static view can only list, not order.
-Framework-specific: JAX-RS first (Jersey, Dropwizard, Helidon MP); decide the scope before others.
 
 ### Regression targets
 
@@ -2498,7 +2413,7 @@ None yet.
 
 ## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile
 
-**Status: documented**
+**Status: accepted** (triaged 2026-11-27: the answer sends an agent after a profile that is not there)
 
 **Kind: bug**
 

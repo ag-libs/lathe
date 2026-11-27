@@ -7,6 +7,41 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-041 — Renaming a Spring Data derived query method changes its query without a word — non-goal
+
+**Status: non-goal** (2026-11-27: knowing a method is a derived query takes Spring Data's and JPA's runtime rules, which javac does not see)
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol` and `analyze_change` on a Spring Data repository interface.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+Editor `textDocument/rename` and MCP `rename_symbol` of `OwnerRepository.findByLastNameStartingWith` to `findByLastName` or `lookupOwners` make 14 edits in 4 files, which compile, with no note; `analyze_change` on the method says nothing either.
+Spring Data derives the query from the method name: `findByLastName` becomes an equality query, so the owner search stops matching prefixes while the tests that mock the repository still pass, and `lookupOwners` names no query Spring Data can derive, so the application context fails to start.
+javac compiles both, so `verify_change` cannot catch it.
+
+### Expected
+
+A rename of a method declared in an interface that extends Spring Data's `Repository`, whose name is a derived query (`find…By`, `count…By`, `exists…By`, `delete…By`, …) and carries no `@Query`, is refused or carries a note that the name is the query: the new name either derives another query or none.
+Related: [FR-034](gaps.md#fr-034--renaming-a-member-a-processor-derives-another-from-leaves-the-derived-members-callers-broken) (a member a processor derives from), which needs generated code; Spring Data derives at runtime.
+
+### Resolution
+
+Not Lathe's to model.
+Telling a derived query from any other abstract repository method takes Spring Data's lookup order: `@Query` and its kin, a JPA named query (`@NamedQuery`, `orm.xml`, `jpa-named-queries.properties`), a custom fragment, the configured lookup strategy, and each store's own annotations.
+That is framework runtime behaviour javac does not see, and Lathe keeps no per-framework rules for it; as with jdtls, a rename of such a method goes ahead.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## FR-040 — Rename's text review lists a resource match once per declared resource folder, and at column 1 — done
 
 **Status: done** (2026-11-25; triaged 2026-11-25: low, for the release; the review list is advisory, but a doubled row and a wrong column make it look unreliable; size S)
@@ -1718,6 +1753,34 @@ another type, the result does not compile until the type is built and completion
 `CompletionArgumentTest.argumentPosition_externalNestedEnumParam_offersConstantsQualifiedFromTopLevelType`,
 `LatheEngineEditTest.fixImports_nestedTypes_neverImportedButNamedForAQualifiedName`,
 `McpTextTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`.
+
+---
+
+## EG-095 — No Spring Boot or Quarkus configuration-key navigation — non-goal
+
+**Status: non-goal** (2026-11-27: linking a configuration key to the code that binds it takes each framework's binding rules (`@Value`, `@ConfigurationProperties`, `@ConfigMapping`, relaxed names, profiles); it needs a framework's runtime rules that javac does not see, which Lathe does not model (FR-041))
+
+**Kind: feature**
+
+**Affects: the editor and MCP.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), which links keys in `application*.properties` and `.yml` both ways with the Java that reads them
+(`@Value`, `@ConfigurationProperties`, `@ConfigProperty`, `@ConfigMapping`, `getProperty("…")`), shows per-profile values on hover, and has an MCP `java_config` tool.
+
+### Gap
+
+Lathe does not read configuration files; a key and the code that binds it are connected only by grep.
+
+### Fix direction
+
+Design first: the resource roots are already captured; the binding annotations are attributed by javac, so the Java side is exact.
+Decide the scope (which frameworks, relaxed binding, profiles) before any code.
+
+### Regression targets
+
+None yet.
+
+---
 
 ---
 
@@ -15997,6 +16060,40 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-56 — No map of JAX-RS routes and their wiring — non-goal
+
+**Status: non-goal** (2026-11-27: a route map takes JAX-RS's resolution of paths, sub-resources and providers; it needs a framework's runtime rules that javac does not see, which Lathe does not model (FR-041))
+
+**Kind: feature**
+
+**Value: medium — Size: L**
+
+**Affects: MCP.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Which endpoint needs which role" and "in what order do the request filters run" were key questions.
+The agent grepped for `@Path` and the auth annotations and still could not establish the filter order.
+
+### Fix direction
+
+A `routes` tool listing each HTTP method and full path (class plus method `@Path`) with its resource method
+and the security annotations on it (`@RolesAllowed`, `@PermitAll` and custom ones),
+plus the `@Provider` filters and interceptors with their `@Priority` and name bindings.
+All of it is annotation data in the attributed trees, so it suits Lathe; registration in code
+(`register(...)` calls) is the part a static view can only list, not order.
+Framework-specific: JAX-RS first (Jersey, Dropwizard, Helidon MP); decide the scope before others.
+
+### Regression targets
+
+None yet.
+
+---
+
+---
 
 ## MC-100 — A capped list shows sibling modules' tests before the declaring module's own results — done
 
