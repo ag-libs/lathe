@@ -1833,31 +1833,6 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
-## NV-17 — `:LatheInit` with no kind offers a Gradle setup where the Maven build already registers Lathe
-
-**Status: accepted** (triaged 2026-11-27: accepting the default would replace a working Maven setup; a build that registers Lathe wins)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: `:LatheInit` without a kind on a folder holding both builds; the Neovim client.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-On Petclinic, `.mvn/extensions.xml` registers Lathe and `.lathe/` is the Maven build's, yet `find_build` takes the Gradle root (the same folder, not registered) and offers to set it up; the prompt names the Maven build (NV-14), but accepting it replaces the Maven-synced setup with a Gradle one.
-[NV-14](gaps-archive.md#nv-14--on-a-project-with-both-a-maven-and-a-gradle-build-latheinit-picks-gradle-without-saying-maven-is-there--done) kept Gradle first for a project with neither build set up.
-
-### Expected
-
-At one root with both builds, a build that already registers Lathe is the default, and the prompt names the other; with neither registered, NV-14's order holds.
-
-### Regression targets
-
-None yet.
-
 # MCP / Agent Facade Gaps (MC)
 
 Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
