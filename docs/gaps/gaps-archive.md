@@ -15566,12 +15566,16 @@ At one root with both builds, a build that already registers Lathe is the defaul
 
 ### Resolution
 
-At a folder holding both builds, `find_build` takes the one that registers Lathe, and marks the other as `also`, so the prompt names it (`:LatheInit gradle`); with both registered or neither, Gradle, as NV-14 left it.
+At a folder holding both builds, `find_build` takes the one that registers Lathe, and marks the other as `also`, so the prompt names it (`:LatheInit gradle`).
+With neither registered, it takes the build an earlier personal setup used, read from the sync script that setup wrote (Maven's `maven.ext.class.path` or the Gradle init script), as setting up the other would replace that setup too; otherwise Gradle, as NV-14 left it.
+A root typed into the prompt (`build_at`) follows the same rule.
 On Petclinic, whose `.mvn/extensions.xml` registers Lathe, `:LatheInit` now says the project's build has set Lathe up and `:LatheSync` refreshes it, and `:LatheInit!` offers to build the Maven project again, naming the Gradle build; `:LatheInit gradle` still sets up Gradle.
+
+Not covered: both builds registering Lathe, where Gradle is taken even if the existing `.lathe/` came from the Maven build.
 
 ### Regression targets
 
-- `lathe-neovim/test/latheinit_spec.lua`: "both builds, Maven registers Lathe: Maven", "and the prompt names the Gradle build", "both builds, Gradle registers Lathe: Gradle", "both builds register Lathe: Gradle"; NV-14's "both builds at one root: Gradle" and its prompt checks, kept.
+- `lathe-neovim/test/latheinit_spec.lua`: "both builds, Maven registers Lathe: Maven", "and the prompt names the Gradle build", "both builds, Gradle registers Lathe: Gradle", "and the prompt names the Maven build", "both builds register Lathe: Gradle", "both builds, a personal Maven setup: Maven", "both builds, a personal Gradle setup: Gradle", "a typed root with both builds takes the one that registers Lathe", "a typed root with both builds, neither registered: Gradle"; NV-14's "both builds at one root: Gradle" and its prompt checks, kept.
 
 ---
 
