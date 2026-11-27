@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class CompletionAnnotationTest extends CompletionTestSupport {
 
@@ -228,5 +232,97 @@ class CompletionAnnotationTest extends CompletionTestSupport {
     assertThat(labels(fixture.complete("@interface Marker { Str§ value(); }")))
         .contains("String")
         .doesNotContain("true", "false");
+  }
+
+  // CQ-0083: after `Type.` in an element's value, only what JLS 9.7.1 allows there.
+  private static final String RELATION =
+      """
+      package p;
+      enum Fetch {
+        EAGER, LAZY;
+        static final Fetch DEFAULT = EAGER;
+        static Fetch parse(String s) { return EAGER; }
+      }
+      class Names {
+        static final String FIRST = "first";
+        static String make() { return ""; }
+      }
+      @interface Relation {
+        Fetch fetch() default Fetch.EAGER;
+        Fetch[] fetches() default {};
+        Class<?> type() default Object.class;
+        String name() default "";
+      }
+      @interface Mode {
+        Fetch value();
+      }
+      """;
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("enumElementValues")
+  void annotationValue_enumElement_offersOnlyItsConstants(
+      final String label, final String annotation, final List<String> constants) {
+    assertThat(labels(fixture.complete(relationUse(annotation))))
+        .as(label)
+        .containsAll(constants)
+        .doesNotContain("valueOf", "values", "class", "DEFAULT", "parse");
+  }
+
+  static Stream<Arguments> enumElementValues() {
+    return Stream.of(
+        Arguments.of("namedElement", "@Relation(fetch = Fetch.§)", List.of("EAGER", "LAZY")),
+        Arguments.of("arrayElement", "@Relation(fetches = { Fetch.§ })", List.of("EAGER", "LAZY")),
+        Arguments.of("valueShorthand", "@Mode(Fetch.§)", List.of("EAGER", "LAZY")),
+        Arguments.of("withAPrefix", "@Relation(fetch = Fetch.E§)", List.of("EAGER")));
+  }
+
+  @Test
+  void annotationValue_classElement_offersClassLiteral() {
+    assertThat(labels(fixture.complete(relationUse("@Relation(type = Fetch.§)"))))
+        .contains("class")
+        .doesNotContain("EAGER", "valueOf", "values");
+  }
+
+  @Test
+  void annotationValue_constantElement_offersFieldsNotMethods() {
+    assertThat(labels(fixture.complete(relationUse("@Relation(name = Names.§)"))))
+        .contains("FIRST")
+        .doesNotContain("make", "class");
+  }
+
+  // An unimported receiver resolves through the workspace type index alone, the fallback an empty
+  // answer reaches too: it is filtered as well, a prefix only methods match among its cases.
+  @Test
+  void annotationValue_unimportedEnumReceiver_offersOnlyItsConstants() {
+    assertThat(labels(fixture.complete(timedUse("TimeUnit.§"))))
+        .contains("SECONDS", "MINUTES")
+        .doesNotContain("valueOf", "values", "of", "class");
+    assertThat(labels(fixture.complete(timedUse("TimeUnit.v§"))))
+        .doesNotContain("valueOf", "values");
+  }
+
+  private static String timedUse(final String value) {
+    return """
+        package p;
+        @interface Timed {
+          java.util.concurrent.TimeUnit unit();
+        }
+        class Test {
+          @Timed(unit = %s)
+          void m() {}
+        }"""
+        .formatted(value);
+  }
+
+  // Outside an annotation a type's static members and `class` are all offered, as before.
+  @Test
+  void memberAccess_outsideAnnotation_offersStaticMethodsAndClass() {
+    assertThat(
+            labels(fixture.complete(RELATION + "class Test { void m() { Object o = Fetch.§; } }")))
+        .contains("EAGER", "valueOf", "values", "class");
+  }
+
+  private static String relationUse(final String annotation) {
+    return "%sclass Test { %s void m() {} }".formatted(RELATION, annotation);
   }
 }
