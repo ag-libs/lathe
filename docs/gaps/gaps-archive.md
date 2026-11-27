@@ -72,11 +72,12 @@ The method's own type variables stay where the call does not fix them.
 ### Resolution
 
 `SignatureHelpResolver` keeps the type a call reaches its overloads through (a qualified call's receiver, an unqualified call's enclosing class) and builds each label from `HoverFormatter.asSeenFrom`, javac's `Types.asMemberOf`: return, parameter and thrown types and the bounds of the method's own type variables read the receiver's type arguments, so `owners.save(` reads `<S extends Owner> S save(S entity)`.
-A raw or type-variable receiver, a static import and a constructor keep the declared signature.
+A type-variable receiver reads its bound's (`<R extends OwnerRepository>`), and a raw receiver, or a raw supertype, the erasure, as javac compiles the call (`put(Object value)`).
+A receiver with a wildcard type argument, or the capture javac makes of one, keeps the declared signature, as no source can name a capture; so do a static import and a constructor.
 
 Hover stays as declared, as IntelliJ's quick documentation shows a member (jdtls substitutes there too); signature help, where both IDEs substitute, is where the call's types matter.
 
-Not covered: a constructor's signature with a parameterized `new` (`new Box<String>(`) shows the class's type variables.
+Not covered: a constructor's signature with a parameterized or diamond `new` (`new Box<String>(`, `new Box<>(`) shows the class's type variables.
 
 ### Regression targets
 
@@ -84,7 +85,10 @@ Not covered: a constructor's signature with a parameterized `new` (`new Box<Stri
 - `SignatureHelpTest.signatureHelp_inheritedReturnAndThrows_readTheReceiversTypeArguments`
 - `SignatureHelpTest.signatureHelp_parameterizedJdkReceiver_readsItsTypeArgument`
 - `SignatureHelpTest.signatureHelp_unqualifiedInheritedCall_readsTheEnclosingClassesTypeArguments`
-- `SignatureHelpTest.signatureHelp_rawReceiver_showsTheDeclaredSignature`
+- `SignatureHelpTest.signatureHelp_rawReceiver_showsTheErasedSignature`
+- `SignatureHelpTest.signatureHelp_typeVariableReceiverWithParameterizedBound_readsTheBoundsTypeArguments`
+- `SignatureHelpTest.signatureHelp_wildcardReceiver_showsTheDeclaredSignature`
+- `SignatureHelpTest.signatureHelp_capturedReceiver_namesNoCapture`
 - `HoverTest.hover_genericMethodDeclaration_showsItDeclared`; `HoverTest.hover_members_showModifiersTheSourceWouldWrite` (hover on a call, as declared)
 
 ---

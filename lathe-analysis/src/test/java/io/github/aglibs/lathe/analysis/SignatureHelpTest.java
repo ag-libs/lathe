@@ -1017,14 +1017,58 @@ class SignatureHelpTest {
         .isEqualTo("void put(String value)");
   }
 
+  // A raw receiver erases the member, as javac compiles the call, and a raw supertype the same.
   @Test
-  void signatureHelp_rawReceiver_showsTheDeclaredSignature() {
+  void signatureHelp_rawReceiver_showsTheErasedSignature() {
     final var source =
         """
         class Test {
           static class Box<T> { void put(T value) {} }
+          static class RawBox extends Box {}
           @SuppressWarnings({"rawtypes", "unchecked"})
-          void caller(Box box) { box.put(§null); }
+          void caller(Box box, RawBox rawBox) { box.put(null); rawBox.put(§null); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void put(Object value)");
+  }
+
+  @Test
+  void signatureHelp_typeVariableReceiverWithParameterizedBound_readsTheBoundsTypeArguments() {
+    final var source =
+        REPOSITORY
+            + """
+              <R extends OwnerRepository> void caller(R owners) { owners.save(§null); }
+            }
+            """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("<S extends Owner> S save(S entity)");
+  }
+
+  // A wildcard, or the capture javac makes of it, has no type the label could name.
+  @Test
+  void signatureHelp_wildcardReceiver_showsTheDeclaredSignature() {
+    final var source =
+        """
+        class Test {
+          static class Box<T> { void put(T value) {} }
+          void caller(Box<? extends Number> box) { box.put(§null); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void put(T value)");
+  }
+
+  @Test
+  void signatureHelp_capturedReceiver_namesNoCapture() {
+    final var source =
+        """
+        class Test {
+          static class Box<T> { Box<T> self() { return this; } void put(T value) {} }
+          void caller(Box<? extends Number> box) { box.self().put(§null); }
         }
         """;
 
