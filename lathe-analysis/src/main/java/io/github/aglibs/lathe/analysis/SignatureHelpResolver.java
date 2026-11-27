@@ -33,6 +33,7 @@ import javax.lang.model.element.Name;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -82,7 +83,14 @@ final class SignatureHelpResolver {
             .map(
                 m ->
                     buildSignature(
-                        m, fmt, target.name(), parser, sourceRoots, javadocLocator, reader))
+                        m,
+                        HoverFormatter.asSeenFrom(analysis.types(), target.receiver(), m),
+                        fmt,
+                        target.name(),
+                        parser,
+                        sourceRoots,
+                        javadocLocator,
+                        reader))
             .toList();
     final int activeSignature = activeSignature(target);
     final int activeParam =
@@ -197,7 +205,8 @@ final class SignatureHelpResolver {
               .mapToObj(reached::get)
               .toList(),
           resolved,
-          args);
+          args,
+          receiver);
     }
 
     if (!(select instanceof final IdentifierTree id) || self == null) {
@@ -226,7 +235,7 @@ final class SignatureHelpResolver {
       final List<ExecutableElement> imported =
           single.isEmpty() ? importedMethods(analysis, scope, id.getName(), true) : single;
       if (!imported.isEmpty()) {
-        return new CallTarget(id.getName().toString(), imported, resolved, args);
+        return new CallTarget(id.getName().toString(), imported, resolved, args, null);
       }
     }
 
@@ -235,7 +244,8 @@ final class SignatureHelpResolver {
         id.getName().toString(),
         accessibleMethods(analysis, scope, owner, owner, id.getName()),
         resolved,
-        args);
+        args,
+        owner.asType());
   }
 
   // The classes a receiver's methods come from. A type variable's, a captured wildcard's among
@@ -418,7 +428,8 @@ final class SignatureHelpResolver {
             .filter(reachable)
             .toList(),
         resolved,
-        args);
+        args,
+        null);
   }
 
   // The resolved overload; for a call that does not attribute yet, the first whose arity fits the
@@ -502,6 +513,7 @@ final class SignatureHelpResolver {
 
   private static SignatureInformation buildSignature(
       final ExecutableElement method,
+      final ExecutableType seen,
       final TypeDisplayFormatter fmt,
       final String callName,
       final SourceParser parser,
@@ -509,12 +521,12 @@ final class SignatureHelpResolver {
       final JavadocLocator javadocLocator,
       final DocReader reader) {
     final var params = method.getParameters();
-    final var label = new StringBuilder(HoverFormatter.typeParameterPrefix(method, fmt));
+    final var label = new StringBuilder(HoverFormatter.typeParameterPrefix(seen, fmt));
 
     final List<String> sourceNames = parser.resolveParamNames(method, sourceRoots);
 
     if (method.getKind() != ElementKind.CONSTRUCTOR) {
-      label.append(fmt.format(method.getReturnType())).append(' ');
+      label.append(fmt.format(seen.getReturnType())).append(' ');
     }
 
     label.append(callName).append('(');
@@ -524,7 +536,12 @@ final class SignatureHelpResolver {
       final int start = label.length();
       label.append(
           HoverFormatter.formatParam(
-              params.get(i), fmt, sourceNames, i, method.isVarArgs() && i == params.size() - 1));
+              seen.getParameterTypes().get(i),
+              params.get(i),
+              fmt,
+              sourceNames,
+              i,
+              method.isVarArgs() && i == params.size() - 1));
       final int end = label.length();
 
       if (i < params.size() - 1) {
@@ -535,7 +552,7 @@ final class SignatureHelpResolver {
       paramInfo.setLabel(Tuple.two(start, end));
       paramInfos.add(paramInfo);
     }
-    label.append(')').append(HoverFormatter.throwsSuffix(method, fmt));
+    label.append(')').append(HoverFormatter.throwsSuffix(seen, fmt));
 
     final var sig = new SignatureInformation(label.toString());
     sig.setParameters(paramInfos);
@@ -558,13 +575,15 @@ final class SignatureHelpResolver {
     return sig;
   }
 
-  // The overloads a call can name, and the one javac resolved it to (null until the call
-  // attributes).
+  // The overloads a call can name, the one javac resolved it to (null until the call attributes),
+  // and the type the call reaches them through (null for a constructor or a static import), whose
+  // type arguments the signatures read.
   private record CallTarget(
       String name,
       List<ExecutableElement> overloads,
       ExecutableElement resolved,
-      List<? extends Tree> args) {
+      List<? extends Tree> args,
+      TypeMirror receiver) {
 
     CallTarget {
       ValidCheck.check().notBlank(name, "name").notNull(args, "args").validate();

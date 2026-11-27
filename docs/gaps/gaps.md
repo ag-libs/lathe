@@ -832,34 +832,6 @@ Only the project's formatter knows its rules: format the skeleton with it (`Form
 
 None yet.
 
-## EG-131 — Signature help and hover show a generic member's type variables, not the receiver's type arguments
-
-**Status: documented**
-
-**Kind: bug**
-
-**Value: medium — Size: M**
-
-**Affects: signature help and hover on a member inherited from a generic type (every Spring Data repository method, collections, `Optional`).**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-`this.owners.save(` on an `OwnerRepository extends JpaRepository<Owner, Integer>` shows `<S extends T> S save(S entity)`, and `this.owners.findAll(` shows `List<T> findAll(Sort sort)`.
-`List<Owner> l; l.add(` shows `boolean add(E e)`; `orElseThrow(` on `findById(ownerId)` (`OwnerController.java:68`) shows `<X extends Throwable> T orElseThrow(Supplier<? extends X> exceptionSupplier) throws X`.
-Hover on the same calls shows the same declared signatures.
-jdtls 1.63 shows `orElseThrow(Supplier<? extends X> exceptionSupplier) : Owner`, the member's type as seen from the receiver, which is what javac attributes the call to.
-
-### Expected
-
-Signature help and hover on a call show the member's type as seen from the receiver (`Types.memberType`): `<S extends Owner> S save(S entity)`, `List<Owner> findAll(Sort sort)`, `boolean add(Owner e)`.
-The method's own type variables stay where the call does not fix them.
-
-### Regression targets
-
-None yet.
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.

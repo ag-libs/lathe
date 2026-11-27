@@ -15,7 +15,10 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
+import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -41,16 +44,26 @@ final class HoverFormatter {
 
     final String sig;
     if (element instanceof final ExecutableElement exe) {
+      // As declared, as IntelliJ's quick documentation shows a member; signature help reads it as
+      // seen from the call's receiver (EG-131).
+      final var seen = (ExecutableType) exe.asType();
       final var params = exe.getParameters();
       final int last = params.size() - 1;
       final boolean varargs = exe.isVarArgs();
       final String paramStr =
           IntStream.range(0, params.size())
               .mapToObj(
-                  i -> formatParam(params.get(i), fmt, sourceParamNames, i, varargs && i == last))
+                  i ->
+                      formatParam(
+                          seen.getParameterTypes().get(i),
+                          params.get(i),
+                          fmt,
+                          sourceParamNames,
+                          i,
+                          varargs && i == last))
               .collect(Collectors.joining(", "));
-      final String typePrefix = typeParameterPrefix(exe, fmt);
-      final String thrown = throwsSuffix(exe, fmt);
+      final String typePrefix = typeParameterPrefix(seen, fmt);
+      final String thrown = throwsSuffix(seen, fmt);
       if (exe.getKind() == ElementKind.CONSTRUCTOR) {
         // A constructor's element name is <init> and its return type is void; render it as the
         // enclosing type's name with no return type, matching how the source declares it, under
@@ -69,7 +82,7 @@ final class HoverFormatter {
                 .formatted(
                     modifiers(exe),
                     typePrefix,
-                    display(exe.getReturnType(), fmt),
+                    display(seen.getReturnType(), fmt),
                     exe.getSimpleName(),
                     paramStr,
                     thrown);
@@ -288,16 +301,65 @@ final class HoverFormatter {
         .formatted(label, method.getEnclosingElement().getSimpleName(), method.getSimpleName());
   }
 
+  // A method's type as seen from the type a use reaches it through (EG-131): a call on an
+  // OwnerRepository, a JpaRepository<Owner, Integer>, takes and returns Owner where the declaration
+  // says T. The declared type where there is no receiver, the receiver is not a parameterized type
+  // (a type variable, a raw type, whose erasure javac would show), or the method is not its member.
+  static ExecutableType asSeenFrom(
+      final Types types, final TypeMirror receiver, final ExecutableElement method) {
+    final var declared = (ExecutableType) method.asType();
+    if (!(receiver instanceof final DeclaredType type) || raw(type)) {
+      return declared;
+    }
+
+    try {
+      return types.asMemberOf(type, method) instanceof final ExecutableType seen ? seen : declared;
+    } catch (final IllegalArgumentException notAMember) {
+      return declared;
+    }
+  }
+
+  private static boolean raw(final DeclaredType type) {
+    return type.getTypeArguments().isEmpty()
+        && type.asElement() instanceof final TypeElement element
+        && !element.getTypeParameters().isEmpty();
+  }
+
   // A method's type parameters and a space, e.g. "<R, X extends Exception> ", or "" when it has
-  // none; shared with signature help, so its label reads as the hover does.
-  static String typeParameterPrefix(final ExecutableElement exe, final TypeDisplayFormatter fmt) {
-    final String typeParams = formatTypeParameters(exe.getTypeParameters(), fmt);
-    return typeParams.isEmpty() ? "" : "%s ".formatted(typeParams);
+  // none; shared with signature help, so its label reads as the hover does. The bounds are seen's,
+  // so `<S extends T>` reads `<S extends Owner>` on a JpaRepository<Owner, Integer>.
+  static String typeParameterPrefix(final ExecutableType seen, final TypeDisplayFormatter fmt) {
+    if (seen.getTypeVariables().isEmpty()) {
+      return "";
+    }
+
+    return seen.getTypeVariables().stream()
+        .map(variable -> typeVariable(variable, fmt))
+        .collect(Collectors.joining(", ", "<", "> "));
+  }
+
+  // A type variable as the source declares it, e.g. "V extends Comparable<V>"; a lone Object bound
+  // is implied, as MethodStubRenderer.typeParameter writes it.
+  private static String typeVariable(final TypeVariable variable, final TypeDisplayFormatter fmt) {
+    final TypeMirror upper = variable.getUpperBound();
+    final List<? extends TypeMirror> bounds =
+        upper instanceof final IntersectionType intersection
+            ? intersection.getBounds()
+            : List.of(upper);
+    final String name = variable.asElement().getSimpleName().toString();
+    if (bounds.size() == 1 && MethodStubRenderer.isObject(bounds.get(0))) {
+      return name;
+    }
+
+    return "%s extends %s"
+        .formatted(
+            name,
+            bounds.stream().map(bound -> display(bound, fmt)).collect(Collectors.joining(" & ")));
   }
 
   // A space and a method's throws clause, e.g. " throws X", or "" when it throws nothing.
-  static String throwsSuffix(final ExecutableElement exe, final TypeDisplayFormatter fmt) {
-    return clause("throws", exe.getThrownTypes().stream().map(t -> display(t, fmt)).toList())
+  static String throwsSuffix(final ExecutableType seen, final TypeDisplayFormatter fmt) {
+    return clause("throws", seen.getThrownTypes().stream().map(t -> display(t, fmt)).toList())
         .map(" %s"::formatted)
         .orElse("");
   }
@@ -308,7 +370,18 @@ final class HoverFormatter {
       final List<String> sourceNames,
       final int index,
       final boolean vararg) {
-    final String rawType = display(param.asType(), fmt);
+    return formatParam(param.asType(), param, fmt, sourceNames, index, vararg);
+  }
+
+  // A parameter of the given type, named as the source names it.
+  static String formatParam(
+      final TypeMirror type,
+      final VariableElement param,
+      final TypeDisplayFormatter fmt,
+      final List<String> sourceNames,
+      final int index,
+      final boolean vararg) {
+    final String rawType = display(type, fmt);
     // A varargs parameter's declared type is an array; render it as T... rather than T[].
     final String typeName =
         vararg && rawType.endsWith("[]")

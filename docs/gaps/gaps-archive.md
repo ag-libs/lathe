@@ -45,6 +45,50 @@ Not covered: a line holding the name qualified twice is one row, at the first; t
 
 ---
 
+## EG-131 — Signature help and hover show a generic member's type variables, not the receiver's type arguments — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: signature help and hover on a member inherited from a generic type (every Spring Data repository method, collections, `Optional`).**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+`this.owners.save(` on an `OwnerRepository extends JpaRepository<Owner, Integer>` shows `<S extends T> S save(S entity)`, and `this.owners.findAll(` shows `List<T> findAll(Sort sort)`.
+`List<Owner> l; l.add(` shows `boolean add(E e)`; `orElseThrow(` on `findById(ownerId)` (`OwnerController.java:68`) shows `<X extends Throwable> T orElseThrow(Supplier<? extends X> exceptionSupplier) throws X`.
+Hover on the same calls shows the same declared signatures.
+jdtls 1.63 shows `orElseThrow(Supplier<? extends X> exceptionSupplier) : Owner`, the member's type as seen from the receiver, which is what javac attributes the call to.
+
+### Expected
+
+Signature help on a call shows the member's type as seen from the receiver (`Types.memberType`): `<S extends Owner> S save(S entity)`, `List<Owner> findAll(Sort sort)`, `boolean add(Owner e)`.
+The method's own type variables stay where the call does not fix them.
+
+### Resolution
+
+`SignatureHelpResolver` keeps the type a call reaches its overloads through (a qualified call's receiver, an unqualified call's enclosing class) and builds each label from `HoverFormatter.asSeenFrom`, javac's `Types.asMemberOf`: return, parameter and thrown types and the bounds of the method's own type variables read the receiver's type arguments, so `owners.save(` reads `<S extends Owner> S save(S entity)`.
+A raw or type-variable receiver, a static import and a constructor keep the declared signature.
+
+Hover stays as declared, as IntelliJ's quick documentation shows a member (jdtls substitutes there too); signature help, where both IDEs substitute, is where the call's types matter.
+
+Not covered: a constructor's signature with a parameterized `new` (`new Box<String>(`) shows the class's type variables.
+
+### Regression targets
+
+- `SignatureHelpTest.signatureHelp_inheritedGenericMethod_readsTheReceiversTypeArguments`
+- `SignatureHelpTest.signatureHelp_inheritedReturnAndThrows_readTheReceiversTypeArguments`
+- `SignatureHelpTest.signatureHelp_parameterizedJdkReceiver_readsItsTypeArgument`
+- `SignatureHelpTest.signatureHelp_unqualifiedInheritedCall_readsTheEnclosingClassesTypeArguments`
+- `SignatureHelpTest.signatureHelp_rawReceiver_showsTheDeclaredSignature`
+- `HoverTest.hover_genericMethodDeclaration_showsItDeclared`; `HoverTest.hover_members_showModifiersTheSourceWouldWrite` (hover on a call, as declared)
+
+---
+
 ## EG-113 — Formatting recognizes only Spotless, not spring-javaformat — done
 
 **Status: done** (2026-11-26; triaged 2026-11-26: the feature freeze lifted for the spring-javaformat part, so Petclinic, the demo project, formats)
