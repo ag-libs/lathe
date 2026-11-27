@@ -669,7 +669,10 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     reloadAddingModule("added");
     assertThat(busy).as("the retired worker is still busy").isNotDone();
 
-    final CompletableFuture<Void> closing = CompletableFuture.runAsync(host::close);
+    // On a thread of its own: get() on a common-pool task that has not started runs it on the
+    // waiting thread, so under a busy pool this test ran close() itself and blocked inside it.
+    final CompletableFuture<Void> closing =
+        CompletableFuture.runAsync(host::close, task -> new Thread(task, "test-close").start());
 
     assertThatThrownBy(() -> closing.get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS))
         .isInstanceOf(TimeoutException.class);
