@@ -2383,31 +2383,3 @@ A `$` in a query is read as a nesting dot; a query that matches no type but look
 ### Regression targets
 
 None yet.
-
----
-
-## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile
-
-**Status: accepted** (triaged 2026-11-27: the answer sends an agent after a profile that is not there)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP file tools on a Java file under a Kotlin or Groovy source directory of a module the build compiled.**
-
-Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
-
-### Observed behaviour
-
-`get_diagnostics` on `test-suite-kotlin/src/test/kotlin/io/micronaut/docs/factories/nullable/EngineSpec.java` answers that the file "is outside the modules the last build compiled (a profile may leave its module out)".
-The module was compiled; its `compileTestJava` had no sources, as javac does not compile the `kotlin` directory, so the file is in no source root.
-The editor's message, "not under any Lathe module source root", is accurate; an agent reading the MCP one looks for a profile that is not there.
-
-### Expected
-
-Where the file's module was compiled, the reason names the source roots javac compiles, or says the file is in none of them, without the profile.
-
-### Regression targets
-
-None yet.

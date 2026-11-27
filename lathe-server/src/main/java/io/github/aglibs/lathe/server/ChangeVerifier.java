@@ -755,7 +755,7 @@ final class ChangeVerifier {
                         .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND))
         .orElseGet(
             () ->
-                "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
+                "%s is outside the modules the last build compiled (a profile may leave its module out, or its module has no Java the build compiles), so Lathe cannot check it"
                     .formatted(relative));
   }
 
