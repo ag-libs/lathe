@@ -15963,9 +15963,10 @@ Among the rest, how well a type matches ranks it before MC-39's hand-written-bef
 ### Resolution
 
 `LatheEngine.ranked` orders the hits as IntelliJ does: the type the query names first, in the query's case before ignoring it (so `URL` keeps `java.net.URL` ahead of a reactor `Url`); then the origin tiers, the reactor's hand-written and generated types together; then how well the name matches, with the score the editor's search uses (`CamelCaseMatcher.degree`, now public); and MC-39's hand-written-before-generated order only as the tie-break, so an equal match keeps it (`Cal` still lists `Callee` and `Caller` before a generated `Call`).
-`listenerconfig` and `com.example.listenerconfig` list the generated `ListenerConfig` first, and `LiCo` lists it above a hand-written type whose initials sit mid-name.
+`listenerconfig` and `com.example.listenerconfig` list the generated `ListenerConfig` first, and `LiCo` lists it above a hand-written type whose initials skip a word (`LinkedListConverter`).
 
-Not covered: a qualified query is capped at the search limit in the index's order before it is ranked, in any case, so a package with more matching types than the limit can leave the named one out.
+Not covered: a type from a dependency without sources is listed after every located hit, even when the query names it, as before.
+A qualified query is capped at the search limit in the index's order before it is ranked, in any case, so a package with more matching types than the limit can leave the named one out.
 The order of a case-exact match from the JDK or a dependency over a reactor type that differs only in case has no test: the test workspace indexes no external type with a file.
 
 ### Regression targets

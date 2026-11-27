@@ -1113,10 +1113,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             .map(LatheSymbol::name)
             .toList();
 
-    assertThat(names).contains("ListenerConfig", "AimdLimitConfig");
+    assertThat(names).contains("ListenerConfig", "LinkedListConverter");
     assertThat(names.indexOf("ListenerConfig"))
-        .as("initials at the name's start match better than in its middle")
-        .isLessThan(names.indexOf("AimdLimitConfig"));
+        .as("initials on consecutive words match better than across a skipped one")
+        .isLessThan(names.indexOf("LinkedListConverter"));
   }
 
   // MC-113: ignoring case finds both, but the type named in the query's own case comes first.
@@ -1148,8 +1148,8 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final Path weaker =
         TestCompiler.writeModuleSource(
             tmp,
-            "com/example/AimdLimitConfig.java",
-            "package com.example; class AimdLimitConfig {}");
+            "com/example/LinkedListConverter.java",
+            "package com.example; class LinkedListConverter {}");
     TestCompiler.writeModuleParams(
         tmp,
         "module",

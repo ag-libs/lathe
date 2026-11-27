@@ -114,6 +114,7 @@ public final class LatheEngine {
   private static final int TEST_CLASS_CANDIDATES = 20;
   // A JDK type in a package its module does not export to everyone: listed last.
   private static final int JDK_INTERNAL_RANK = 3;
+  private static final int REACTOR_RANK = 0;
   // The reactor's generated types: with its hand-written ones a tier, after them on a tie.
   private static final int GENERATED_RANK = 1;
   private static final int LISTED_MENTIONS = 20;
@@ -650,33 +651,28 @@ public final class LatheEngine {
   // before ignoring it; then the reactor's types before the JDK's and dependencies', and within
   // each how well the name matches (MC-113: Helidon's generated ListenerConfig is its public API,
   // not to be listed after every hand-written type that matches worse); a hand-written type before
-  // a generated one that matches as well. The sourceless hits go among the dependencies' types,
-  // ahead of the JDK internals. Lazy, so only the hits kept read their snippet.
+  // a generated one that matches as well. The sourceless hits, which have no file, go after the
+  // located ones among the dependencies' types, and JDK internals last, a named one too (MC-110).
+  // Lazy, so only the hits kept read their snippet.
   private Stream<LatheSymbol> ranked(final String query, final SymbolHits hits) {
     final String simpleQuery = query.substring(query.lastIndexOf('.') + 1);
     final String lowerQuery = query.toLowerCase(Locale.ROOT);
     final var degrees = new HashMap<String, Integer>();
     final var ranks = new IdentityHashMap<SymbolInformation, Integer>();
+    final var named = new IdentityHashMap<SymbolInformation, Integer>();
     for (final SymbolInformation symbol : hits.located()) {
       degrees.computeIfAbsent(
           symbol.getName(),
           name -> CamelCaseMatcher.degree(simpleQuery, name).orElse(Integer.MIN_VALUE));
       ranks.put(symbol, rank(symbol));
+      named.put(symbol, namedRank(symbol, query, lowerQuery));
     }
 
     final List<SymbolInformation> located =
         hits.located().stream()
             .sorted(
-                Comparator.comparing(
-                        (SymbolInformation symbol) ->
-                            !names(symbol.getName(), qualifiedName(symbol), query))
-                    .thenComparing(
-                        symbol ->
-                            !names(
-                                symbol.getName().toLowerCase(Locale.ROOT),
-                                qualifiedName(symbol).toLowerCase(Locale.ROOT),
-                                lowerQuery))
-                    .thenComparingInt(symbol -> Math.max(ranks.get(symbol), GENERATED_RANK))
+                Comparator.comparingInt((SymbolInformation symbol) -> named.get(symbol))
+                    .thenComparingInt(symbol -> tier(ranks.get(symbol)))
                     .thenComparing(
                         Comparator.comparingInt(
                                 (SymbolInformation symbol) -> degrees.get(symbol.getName()))
@@ -692,6 +688,28 @@ public final class LatheEngine {
                 .filter(symbol -> ranks.get(symbol) == JDK_INTERNAL_RANK)
                 .map(this::toLatheSymbol))
         .flatMap(Function.identity());
+  }
+
+  // 0 when the symbol is the type the query names in the query's case, 1 when only ignoring case,
+  // 2 when it does not name it.
+  private static int namedRank(
+      final SymbolInformation symbol, final String query, final String lowerQuery) {
+    final String qualified = qualifiedName(symbol);
+    if (names(symbol.getName(), qualified, query)) {
+      return 0;
+    }
+
+    final boolean ignoringCase =
+        names(
+            symbol.getName().toLowerCase(Locale.ROOT),
+            qualified.toLowerCase(Locale.ROOT),
+            lowerQuery);
+    return ignoringCase ? 1 : 2;
+  }
+
+  // A search ranks the reactor's hand-written and generated types as one tier.
+  private static int tier(final int rank) {
+    return rank == GENERATED_RANK ? REACTOR_RANK : rank;
   }
 
   // A search's hits with a file, and those in dependencies without sources, which have none.
@@ -726,7 +744,7 @@ public final class LatheEngine {
   // breaking a tie in how well their names match.
   private int rank(final SymbolInformation symbol) {
     return switch (origin(LatheUri.toPath(symbol.getLocation().getUri()))) {
-      case REACTOR -> 0;
+      case REACTOR -> REACTOR_RANK;
       case GENERATED -> GENERATED_RANK;
       case EXTERNAL -> jdkInternal(symbol.getContainerName()) ? JDK_INTERNAL_RANK : 2;
     };
