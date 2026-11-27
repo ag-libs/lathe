@@ -5107,17 +5107,19 @@ A colon case's statements and a block inside an arrow keep the statement keyword
 
 ### Resolution
 
-The flag that told a simple name's slot apart, `inExpression`, becomes a `KeywordSlot`: a block statement, a value, a switch expression's arrow body, a switch statement's arrow body, or an expression statement; `KeywordProvider` gives each its keywords.
+The flag that told a simple name's slot apart, `inExpression`, becomes a `KeywordSlot`: a block statement, a value, a `yield`'s value, a switch expression's arrow body, a switch statement's arrow body, or an expression statement; `KeywordProvider` gives each its keywords.
+A `yield`'s value and a switch expression's arrow body offer `switch` too, as their value may be a nested switch expression; the other value positions leave it out, as before.
 `SentinelParser` reads the slot from javac's tree:
-- a `yield`'s value and an array initializer's element are values, as `return` and an initializer are;
-- a case whose body is the name itself is a switch expression's arrow body, as only a switch expression has an expression for a body;
+- an array initializer's element is a value, as `return` and an initializer are, and a `yield`'s value is one too;
+- a case of a switch expression whose body is the name itself is that switch expression's arrow body;
 - a name javac wraps as an unfinished expression statement takes that statement's slot: a switch statement's arrow body when the statement is a rule's body, an expression statement when it is a `for` loop's update, a block statement elsewhere, a colon case's statements among them.
 Each rule applies to a simple name only; a member select keeps its member completion.
 The tree shapes hold in the open switch the CQ-0079 relabel injects again, which the tests cover.
 
 Not covered:
 - `assert`'s condition and detail, which offer the statement keywords too, and whose condition offers void methods: deferred.
-- `switch` as a value (`return switch (x) { … }`), which no value position offers.
+- `switch` as a value (`return switch (x) { … }`) everywhere but a `yield` and a switch expression's arrow body.
+- `this` and `super` in a static context (a static field's array initializer, a static method's switch expression), which every value position offers.
 - A `for` loop's initializer, an unbraced `if`, `else` or `while` body, and a labelled statement, which offer the whole block set, declarations javac rejects there among them.
 - An array element's expected type is the array's (`int[]`), so `int[] a = { § }` keeps `null` and `boolean[] b = { § }` offers no `true` or `false`.
 - An annotation default `int[] value() default { § }` now offers `new`, `this` and `super`, which an annotation value cannot hold; it offered the whole block set before.
