@@ -257,6 +257,11 @@ final class SentinelParser {
     final List<String> typeVariables =
         acceptsTypeVariable(cls, sentinelPath) ? typeVariablesInScope(sentinelPath) : List.of();
 
+    // Where the top-level class ends when the sentinel is a switch label's body, -1 otherwise.
+    final Optional<TreePath> labelCase = labelBodyCase(sentinelPath);
+    final int labelTopLevelEnd =
+        labelCase.map(path -> topLevelEnd(path, cu, sourcePositions)).orElse(-1);
+
     final var parsed =
         ParsedSentinel.valid(
             injected,
@@ -280,7 +285,7 @@ final class SentinelParser {
             cls.inExpression(),
             catchParameter,
             constantField,
-            labelTopLevelEnd(sentinelPath, cu, sourcePositions),
+            labelTopLevelEnd,
             typeVariables,
             null,
             version);
@@ -289,15 +294,12 @@ final class SentinelParser {
     return parsed;
   }
 
-  // Where the top-level class ends when the sentinel is the body of a switch label, -1 otherwise:
-  // a `case` or `default` reached through its body, not its labels or guard, before
-  // any lambda, call, parenthesis, conditional, array, block, method or class. A block javac's
-  // recovery made under an erroneous tree does not stop it: with the switch block not closed,
-  // `case S s -> s.SENTINEL` and the next line read as a declaration in such a block (CQ-0079).
-  private static int labelTopLevelEnd(
-      final TreePath sentinelPath,
-      final CompilationUnitTree cu,
-      final SourcePositions sourcePositions) {
+  // The `case` or `default` whose body holds the sentinel, reached through its body, not its labels
+  // or guard, before any lambda, call, parenthesis, conditional, array, block, method or class;
+  // empty otherwise. A block javac's recovery made under an erroneous tree does not stop it: with
+  // the switch block not closed, `case S s -> s.SENTINEL` and the next line read as a declaration
+  // in such a block (CQ-0079).
+  private static Optional<TreePath> labelBodyCase(final TreePath sentinelPath) {
     Tree child = sentinelPath.getLeaf();
     for (TreePath path = sentinelPath.getParentPath(); path != null; path = path.getParentPath()) {
       final Tree node = path.getLeaf();
@@ -305,7 +307,7 @@ final class SentinelParser {
         final boolean body =
             child == caseTree.getBody()
                 || caseTree.getStatements() != null && caseTree.getStatements().contains(child);
-        return body ? topLevelEnd(path, cu, sourcePositions) : -1;
+        return body ? Optional.of(path) : Optional.empty();
       }
 
       final boolean recoveryBlock =
@@ -313,13 +315,13 @@ final class SentinelParser {
               && path.getParentPath() != null
               && path.getParentPath().getLeaf() instanceof ErroneousTree;
       if (!recoveryBlock && stopsSwitchLabelBody(node)) {
-        return -1;
+        return Optional.empty();
       }
 
       child = node;
     }
 
-    return -1;
+    return Optional.empty();
   }
 
   private static int topLevelEnd(
