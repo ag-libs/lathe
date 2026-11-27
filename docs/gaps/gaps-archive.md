@@ -80,6 +80,47 @@ Not covered: a line holding the name qualified twice is one row, at the first; t
 
 ---
 
+## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed — done
+
+**Status: done** (2026-11-16; archived 2026-11-27: the editor says why it does not format, the title's symptom; what is left is below, under Not covered)
+
+**Kind: bug**
+
+**Affects: Neovim's `:LatheFormat` and format-on-save on a Gradle build that applies Spotless without a `lathe-style.json`.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+On JUnit, `:LatheFormat` in any Java buffer shows only Neovim's own "[LSP] Format request failed, no matching language servers."
+The sync knew why and said so, but only in the Gradle output: Spotless formats this build, but Lathe cannot read its settings on Gradle, so the build should declare the formatter Spotless runs in `lathe-style.json`.
+That warning's example also suggests `{"engine": "google"}`, though JUnit's Spotless runs Eclipse.
+
+### Fix direction
+
+Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
+Let the sync's example name the engine Spotless runs when the build says which.
+
+### Resolution
+
+The server says at `initialize` why it does not format (`capabilities.experimental.latheFormatterUnavailable`, the reason MCP's `format_file` gives), and `:LatheFormat` shows it instead of Neovim's "no matching language servers" when no attached server formats the buffer; the reason now names the Gradle case too.
+The editor exploratory round (2026-11-16) hit the same message on a Maven build with no formatter at all.
+Formatting a selection with a whole-file engine (`command`), which advertises no range formatting, now says the formatter formats whole files only.
+
+Not covered:
+
+- The Gradle sync's example still suggests `{"engine": "google"}` whatever Spotless runs.
+  The Gradle facts record only whether Spotless is applied (`ProjectFacts.spotless`), so they would first have to record its engine.
+- The reason is the one at startup: after a sync resolves the formatter, `:LatheFormat` still says to run the sync until Lathe restarts (the server already says to restart).
+  Keeping it current needs a way to tell the editor after `initialize` (a notification, or a command the client asks), which no existing message carries.
+- VS Code reads no `latheFormatterUnavailable`: the extension has no formatting code of its own, so it still shows VS Code's own answer.
+
+### Regression targets
+
+`LatheLanguageServerTest.createCapabilities_noFormatter_saysWhyInExperimental`, `initialize_pinnedFormatterUnresolved_saysToSync`; `formatter_setup_spec.lua` `format(): no formatter shows the server's reason`, `format(): a range with a whole-file formatter says it formats whole files`, `format(): a name filter leaves the other formatter out`.
+
+---
+
 ## EG-131 — Signature help and hover show a generic member's type variables, not the receiver's type arguments — done
 
 **Status: done** (2026-11-27)
@@ -5134,6 +5175,51 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 ---
 
 # Completion (CQ) — resolved
+
+## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values` — done
+
+**Status: done** (2026-11-27; triaged 2026-11-27: JLS 9.7.1 settles it, and jdtls 1.63 offers the constants alone)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: completion of an enum-typed annotation element's value.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+`@OneToMany(…, fetch = FetchType.§)` offers `EAGER`, `LAZY`, `valueOf`, `values` and `class`; likewise `CascadeType.` and `GenerationType.` (`BaseEntity.java:36`).
+jdtls 1.63 offers the constants alone.
+
+### Expected
+
+An annotation element of an enum type takes an enum constant only (JLS 9.7.1): `FetchType.valueOf("EAGER")` does not compile there, so only the constants are offered.
+
+### Resolution
+
+A qualified name in an annotation argument is still member access, but `SentinelParser` now keeps the annotation and the element it is for (`value()` for a sole positional argument), as it does for a bare name's value.
+`MemberAccessCompleter` hands what it would offer after `Type.` to `AnnotationCompletionProvider`, which keeps what JLS 9.7.1 allows in that element's value, read from the element's type (an array element's component):
+- an enum element: that enum's constants;
+- a `Class` element: `class`;
+- any other element: fields, a constant expression's names;
+- every element: a nested type, as the name may go on (`Outer.Inner.CONST`), and never a method.
+An element whose type is not known keeps all but the methods; outside an annotation, member access offers what it did.
+The fallback through the workspace type index, which an unimported receiver reaches and so does a list the filter empties, filters the same way.
+So beside the enum case, `@Value(Constants.§)` no longer offers a static method, and `@ExtendWith(MockitoExtension.§)` keeps `class`.
+
+Not covered: after `Type.` in a constant element, every static field is offered, a non-final one or one of another type among them, where only a constant of the element's type compiles.
+
+### Regression targets
+
+- `CompletionAnnotationTest.annotationValue_enumElement_offersOnlyItsConstants` (a named element, an array element, the `value()` shorthand, a prefix)
+- `CompletionAnnotationTest.annotationValue_classElement_offersClassLiteral`
+- `CompletionAnnotationTest.annotationValue_constantElement_offersFieldsNotMethods`
+- `CompletionAnnotationTest.annotationValue_unimportedEnumReceiver_offersOnlyItsConstants` (through the type index, with and without a prefix only methods match)
+- `CompletionAnnotationTest.memberAccess_outsideAnnotation_offersStaticMethodsAndClass`
+
+---
 
 ## CQ-0084 — Keyword completion offers statement keywords where only a value or an expression statement can stand — done
 
@@ -15613,6 +15699,42 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-17 — `:LatheInit` with no kind offers a Gradle setup where the Maven build already registers Lathe — done
+
+**Status: done** (2026-11-27; triaged 2026-11-27: accepting the default would replace a working Maven setup; a build that registers Lathe wins)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheInit` without a kind on a folder holding both builds; the Neovim client.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+On Petclinic, `.mvn/extensions.xml` registers Lathe and `.lathe/` is the Maven build's, yet `find_build` takes the Gradle root (the same folder, not registered) and offers to set it up; the prompt names the Maven build (NV-14), but accepting it replaces the Maven-synced setup with a Gradle one.
+[NV-14](gaps-archive.md#nv-14--on-a-project-with-both-a-maven-and-a-gradle-build-latheinit-picks-gradle-without-saying-maven-is-there--done) kept Gradle first for a project with neither build set up.
+
+### Expected
+
+At one root with both builds, a build that already registers Lathe is the default, and the prompt names the other; with neither registered, NV-14's order holds.
+
+### Resolution
+
+At a folder holding both builds, `find_build` takes the one that registers Lathe, and marks the other as `also`, so the prompt names it (`:LatheInit gradle`).
+With neither registered, it takes the build an earlier personal setup used, read from the sync script that setup wrote (Maven's `maven.ext.class.path` or the Gradle init script), as setting up the other would replace that setup too; otherwise Gradle, as NV-14 left it.
+A root typed into the prompt (`build_at`) follows the same rule.
+On Petclinic, whose `.mvn/extensions.xml` registers Lathe, `:LatheInit` now says the project's build has set Lathe up and `:LatheSync` refreshes it, and `:LatheInit!` offers to build the Maven project again, naming the Gradle build; `:LatheInit gradle` still sets up Gradle.
+
+Not covered: both builds registering Lathe, where Gradle is taken even if the existing `.lathe/` came from the Maven build.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "both builds, Maven registers Lathe: Maven", "and the prompt names the Gradle build", "both builds, Gradle registers Lathe: Gradle", "and the prompt names the Maven build", "both builds register Lathe: Gradle", "both builds, a personal Maven setup: Maven", "both builds, a personal Gradle setup: Gradle", "a typed root with both builds takes the one that registers Lathe", "a typed root with both builds, neither registered: Gradle"; NV-14's "both builds at one root: Gradle" and its prompt checks, kept.
+
+---
+
 ## NV-16 — `:LatheNew` names a single-module project's module as blank — done
 
 **Status: done** (2026-11-26)
@@ -16239,6 +16361,40 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP file tools on a Java file under a Kotlin or Groovy source directory of a module the build compiled.**
+
+Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
+
+### Observed behaviour
+
+`get_diagnostics` on `test-suite-kotlin/src/test/kotlin/io/micronaut/docs/factories/nullable/EngineSpec.java` answers that the file "is outside the modules the last build compiled (a profile may leave its module out)".
+The module was compiled; its `compileTestJava` had no sources, as javac does not compile the `kotlin` directory, so the file is in no source root.
+The editor's message, "not under any Lathe module source root", is accurate; an agent reading the MCP one looks for a profile that is not there.
+
+### Expected
+
+Where the file's module was compiled, the reason names the source roots javac compiles, or says the file is in none of them, without the profile.
+
+### Resolution
+
+The reason for a file outside the modules the last build compiled now gives both causes Lathe cannot tell apart: "(a profile may leave its module out, or its module has no Java the build compiles)".
+A first fix matched the file's path against `src/<source set>/kotlin` and `groovy`; it was dropped, as Lathe takes its directories from the build and a module may point javac at such a folder.
+Naming the module and its unread languages takes the build front-ends recording them, which the follow-up layout work covers.
+
+### Regression targets
+
+- `LatheEngineNotesTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
+
+---
 
 ## MC-56 — No map of JAX-RS routes and their wiring — non-goal
 

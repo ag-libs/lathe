@@ -573,48 +573,6 @@ None yet.
 
 ---
 
-## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed
-
-**Status: deferred** (2026-11-16)
-
-**Kind: bug**
-
-**Value: medium — Size: S**
-
-**Affects: Neovim's `:LatheFormat` and format-on-save on a Gradle build that applies Spotless without a `lathe-style.json`.**
-
-Found by the pre-release JUnit editor round (2026-11-15).
-
-### Observed behaviour
-
-On JUnit, `:LatheFormat` in any Java buffer shows only Neovim's own "[LSP] Format request failed, no matching language servers."
-The sync knew why and said so, but only in the Gradle output: Spotless formats this build, but Lathe cannot read its settings on Gradle, so the build should declare the formatter Spotless runs in `lathe-style.json`.
-That warning's example also suggests `{"engine": "google"}`, though JUnit's Spotless runs Eclipse.
-
-### Fix direction
-
-Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
-Let the sync's example name the engine Spotless runs when the build says which.
-
-### Progress
-
-Done (2026-11-16): the server says at `initialize` why it does not format (`capabilities.experimental.latheFormatterUnavailable`, the reason MCP's `format_file` gives), and `:LatheFormat` shows it instead of Neovim's "no matching language servers" when no attached server formats the buffer; the reason now names the Gradle case too.
-The editor exploratory round (2026-11-16) hit the same message on a Maven build with no formatter at all.
-Formatting a selection with a whole-file engine (`command`), which advertises no range formatting, now says the formatter formats whole files only.
-Left:
-
-- The Gradle sync's example still suggests `{"engine": "google"}` whatever Spotless runs.
-  The Gradle facts record only whether Spotless is applied (`ProjectFacts.spotless`), so they would first have to record its engine.
-- The reason is the one at startup: after a sync resolves the formatter, `:LatheFormat` still says to run the sync until Lathe restarts (the server already says to restart).
-  Keeping it current needs a way to tell the editor after `initialize` (a notification, or a command the client asks), which no existing message carries.
-- VS Code reads no `latheFormatterUnavailable`: the extension has no formatting code of its own, so it still shows VS Code's own answer.
-
-### Regression targets
-
-`LatheLanguageServerTest.createCapabilities_noFormatter_saysWhyInExperimental`, `initialize_pinnedFormatterUnresolved_saysToSync`; `formatter_setup_spec.lua` `format(): no formatter shows the server's reason`, `format(): a range with a whole-file formatter says it formats whole files`, `format(): a name filter leaves the other formatter out`.
-
----
-
 ## EG-109 — `:LatheNew` cannot create a type in a Gradle source set beyond `main` and `test`
 
 **Status: deferred** (triaged 2026-11-17: a destination beyond `main` and `test` needs a way to name a source set that `SourceScope` does not have)
@@ -1327,31 +1285,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values`
-
-**Status: accepted** (triaged 2026-11-27: JLS 9.7.1 settles it, and jdtls 1.63 offers the constants alone)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: completion of an enum-typed annotation element's value.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-`@OneToMany(…, fetch = FetchType.§)` offers `EAGER`, `LAZY`, `valueOf`, `values` and `class`; likewise `CascadeType.` and `GenerationType.` (`BaseEntity.java:36`).
-jdtls 1.63 offers the constants alone.
-
-### Expected
-
-An annotation element of an enum type takes an enum constant only (JLS 9.7.1): `FetchType.valueOf("EAGER")` does not compile there, so only the constants are offered.
-
-### Regression targets
-
-None yet.
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
@@ -1857,31 +1790,6 @@ python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.ja
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
 
 Resolved entries are in [gaps-archive.md](gaps-archive.md).
-
-## NV-17 — `:LatheInit` with no kind offers a Gradle setup where the Maven build already registers Lathe
-
-**Status: accepted** (triaged 2026-11-27: accepting the default would replace a working Maven setup; a build that registers Lathe wins)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: `:LatheInit` without a kind on a folder holding both builds; the Neovim client.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-On Petclinic, `.mvn/extensions.xml` registers Lathe and `.lathe/` is the Maven build's, yet `find_build` takes the Gradle root (the same folder, not registered) and offers to set it up; the prompt names the Maven build (NV-14), but accepting it replaces the Maven-synced setup with a Gradle one.
-[NV-14](gaps-archive.md#nv-14--on-a-project-with-both-a-maven-and-a-gradle-build-latheinit-picks-gradle-without-saying-maven-is-there--done) kept Gradle first for a project with neither build set up.
-
-### Expected
-
-At one root with both builds, a build that already registers Lathe is the default, and the prompt names the other; with neither registered, NV-14's order holds.
-
-### Regression targets
-
-None yet.
 
 # MCP / Agent Facade Gaps (MC)
 
@@ -2404,34 +2312,6 @@ Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at 
 ### Expected
 
 A `$` in a query is read as a nesting dot; a query that matches no type but looks like a member says that the tool finds types, and how to find a member (`outline` on the type).
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile
-
-**Status: accepted** (triaged 2026-11-27: the answer sends an agent after a profile that is not there)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: MCP file tools on a Java file under a Kotlin or Groovy source directory of a module the build compiled.**
-
-Found by the exploratory round on micronaut-core (2026-11-26, `main` at `568c461`, micronaut-core at `23220c1`, synced on JDK 25).
-
-### Observed behaviour
-
-`get_diagnostics` on `test-suite-kotlin/src/test/kotlin/io/micronaut/docs/factories/nullable/EngineSpec.java` answers that the file "is outside the modules the last build compiled (a profile may leave its module out)".
-The module was compiled; its `compileTestJava` had no sources, as javac does not compile the `kotlin` directory, so the file is in no source root.
-The editor's message, "not under any Lathe module source root", is accurate; an agent reading the MCP one looks for a profile that is not there.
-
-### Expected
-
-Where the file's module was compiled, the reason names the source roots javac compiles, or says the file is in none of them, without the profile.
 
 ### Regression targets
 

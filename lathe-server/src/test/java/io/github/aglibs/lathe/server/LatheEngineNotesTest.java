@@ -195,7 +195,8 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
   }
 
   // A sync cannot add a file outside a synced module's source roots, nor one in a module the
-  // build's profiles or JDK leave out.
+  // build's profiles or JDK leave out, or in one whose Java the build compiles none of (MC-112: a
+  // Kotlin module's test-suite), which Lathe cannot tell apart.
   @Test
   void notes_fileNoModuleCompiles_notCheckedWithItsCause() throws Exception {
     TestCompiler.writeMirroredModule(
@@ -231,7 +232,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
         .containsExactly(
             "%s is in no source root of module module, so a sync does not add it"
                 .formatted(Path.of("module/src/it/java/com/example/Probe.java")),
-            "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
+            "%s is outside the modules the last build compiled (a profile may leave its module out, or its module has no Java the build compiles), so Lathe cannot check it"
                 .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")),
             "%s is in no synced module — run `%s`"
                 .formatted(tmp.relativize(builtNotSynced), LatheLayout.SYNC_SCRIPT_COMMAND));

@@ -185,13 +185,17 @@ final class MemberAccessCompleter {
         !memberReference
             && isStaticAccess
             && parsed.sentinelContext() != SentinelContext.STATIC_IMPORT;
-    final List<CompletionCandidate> candidates =
+    final List<CompletionCandidate> accessible =
         Stream.concat(
                 Stream.concat(members.stream(), nestedTypes),
                 classLiteral
                     ? TypeReferenceCompleter.classLiteralCandidates(injected.prefix()).stream()
                     : Stream.of())
             .toList();
+    final List<CompletionCandidate> candidates =
+        parsed.annotationTypeText() != null
+            ? AnnotationCompletionProvider.qualifiedValueCandidates(accessible, parsed, snapshot)
+            : accessible;
     final List<CompletionItem> items =
         CompletionCandidateRanker.rank(candidates, semanticContext).stream()
             .map(CompletionItemPresenter::present)
@@ -345,13 +349,18 @@ final class MemberAccessCompleter {
       final var members =
           generator.proposeMemberAccessCandidates(
               typeEl.asType(), injected.prefix(), !isMethodChain, scope);
-      final List<CompletionCandidate> candidates =
+      final List<CompletionCandidate> accessible =
           isMethodChain
               ? members
               : Stream.concat(
                       members.stream(),
                       generator.proposeNestedTypes(typeEl, injected.prefix(), scope).stream())
                   .toList();
+      // An unimported receiver, or one whose annotation value the filter emptied, ends here too.
+      final List<CompletionCandidate> candidates =
+          parsed.annotationTypeText() != null
+              ? AnnotationCompletionProvider.qualifiedValueCandidates(accessible, parsed, snapshot)
+              : accessible;
 
       final List<CompletionItem> items =
           CompletionCandidateRanker.rank(candidates, SemanticCompletionContext.blank(snapshot))
