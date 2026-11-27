@@ -15584,6 +15584,42 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-17 — `:LatheInit` with no kind offers a Gradle setup where the Maven build already registers Lathe — done
+
+**Status: done** (2026-11-27; triaged 2026-11-27: accepting the default would replace a working Maven setup; a build that registers Lathe wins)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: `:LatheInit` without a kind on a folder holding both builds; the Neovim client.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+On Petclinic, `.mvn/extensions.xml` registers Lathe and `.lathe/` is the Maven build's, yet `find_build` takes the Gradle root (the same folder, not registered) and offers to set it up; the prompt names the Maven build (NV-14), but accepting it replaces the Maven-synced setup with a Gradle one.
+[NV-14](gaps-archive.md#nv-14--on-a-project-with-both-a-maven-and-a-gradle-build-latheinit-picks-gradle-without-saying-maven-is-there--done) kept Gradle first for a project with neither build set up.
+
+### Expected
+
+At one root with both builds, a build that already registers Lathe is the default, and the prompt names the other; with neither registered, NV-14's order holds.
+
+### Resolution
+
+At a folder holding both builds, `find_build` takes the one that registers Lathe, and marks the other as `also`, so the prompt names it (`:LatheInit gradle`).
+With neither registered, it takes the build an earlier personal setup used, read from the sync script that setup wrote (Maven's `maven.ext.class.path` or the Gradle init script), as setting up the other would replace that setup too; otherwise Gradle, as NV-14 left it.
+A root typed into the prompt (`build_at`) follows the same rule.
+On Petclinic, whose `.mvn/extensions.xml` registers Lathe, `:LatheInit` now says the project's build has set Lathe up and `:LatheSync` refreshes it, and `:LatheInit!` offers to build the Maven project again, naming the Gradle build; `:LatheInit gradle` still sets up Gradle.
+
+Not covered: both builds registering Lathe, where Gradle is taken even if the existing `.lathe/` came from the Maven build.
+
+### Regression targets
+
+- `lathe-neovim/test/latheinit_spec.lua`: "both builds, Maven registers Lathe: Maven", "and the prompt names the Gradle build", "both builds, Gradle registers Lathe: Gradle", "and the prompt names the Maven build", "both builds register Lathe: Gradle", "both builds, a personal Maven setup: Maven", "both builds, a personal Gradle setup: Gradle", "a typed root with both builds takes the one that registers Lathe", "a typed root with both builds, neither registered: Gradle"; NV-14's "both builds at one root: Gradle" and its prompt checks, kept.
+
+---
+
 ## NV-16 — `:LatheNew` names a single-module project's module as blank — done
 
 **Status: done** (2026-11-26)
