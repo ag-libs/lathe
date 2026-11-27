@@ -80,6 +80,47 @@ Not covered: a line holding the name qualified twice is one row, at the first; t
 
 ---
 
+## EG-107 — On a Gradle build that declares no formatter, `:LatheFormat` says only that formatting failed — done
+
+**Status: done** (2026-11-16; archived 2026-11-27: the editor says why it does not format, the title's symptom; what is left is below, under Not covered)
+
+**Kind: bug**
+
+**Affects: Neovim's `:LatheFormat` and format-on-save on a Gradle build that applies Spotless without a `lathe-style.json`.**
+
+Found by the pre-release JUnit editor round (2026-11-15).
+
+### Observed behaviour
+
+On JUnit, `:LatheFormat` in any Java buffer shows only Neovim's own "[LSP] Format request failed, no matching language servers."
+The sync knew why and said so, but only in the Gradle output: Spotless formats this build, but Lathe cannot read its settings on Gradle, so the build should declare the formatter Spotless runs in `lathe-style.json`.
+That warning's example also suggests `{"engine": "google"}`, though JUnit's Spotless runs Eclipse.
+
+### Fix direction
+
+Tell the user in the editor why there is no formatter and how to declare one, when they ask to format.
+Let the sync's example name the engine Spotless runs when the build says which.
+
+### Resolution
+
+The server says at `initialize` why it does not format (`capabilities.experimental.latheFormatterUnavailable`, the reason MCP's `format_file` gives), and `:LatheFormat` shows it instead of Neovim's "no matching language servers" when no attached server formats the buffer; the reason now names the Gradle case too.
+The editor exploratory round (2026-11-16) hit the same message on a Maven build with no formatter at all.
+Formatting a selection with a whole-file engine (`command`), which advertises no range formatting, now says the formatter formats whole files only.
+
+Not covered:
+
+- The Gradle sync's example still suggests `{"engine": "google"}` whatever Spotless runs.
+  The Gradle facts record only whether Spotless is applied (`ProjectFacts.spotless`), so they would first have to record its engine.
+- The reason is the one at startup: after a sync resolves the formatter, `:LatheFormat` still says to run the sync until Lathe restarts (the server already says to restart).
+  Keeping it current needs a way to tell the editor after `initialize` (a notification, or a command the client asks), which no existing message carries.
+- VS Code reads no `latheFormatterUnavailable`: the extension has no formatting code of its own, so it still shows VS Code's own answer.
+
+### Regression targets
+
+`LatheLanguageServerTest.createCapabilities_noFormatter_saysWhyInExperimental`, `initialize_pinnedFormatterUnresolved_saysToSync`; `formatter_setup_spec.lua` `format(): no formatter shows the server's reason`, `format(): a range with a whole-file formatter says it formats whole files`, `format(): a name filter leaves the other formatter out`.
+
+---
+
 ## EG-131 — Signature help and hover show a generic member's type variables, not the receiver's type arguments — done
 
 **Status: done** (2026-11-27)
