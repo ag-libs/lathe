@@ -1327,31 +1327,6 @@ Interfaces only after `&`; the first bound keeps any reference type.
 
 ---
 
-## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values`
-
-**Status: accepted** (triaged 2026-11-27: JLS 9.7.1 settles it, and jdtls 1.63 offers the constants alone)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: completion of an enum-typed annotation element's value.**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-`@OneToMany(…, fetch = FetchType.§)` offers `EAGER`, `LAZY`, `valueOf`, `values` and `class`; likewise `CascadeType.` and `GenerationType.` (`BaseEntity.java:36`).
-jdtls 1.63 offers the constants alone.
-
-### Expected
-
-An annotation element of an enum type takes an enum constant only (JLS 9.7.1): `FetchType.valueOf("EAGER")` does not compile there, so only the constants are offered.
-
-### Regression targets
-
-None yet.
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync

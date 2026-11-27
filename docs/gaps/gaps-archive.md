@@ -5135,6 +5135,51 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values` — done
+
+**Status: done** (2026-11-27; triaged 2026-11-27: JLS 9.7.1 settles it, and jdtls 1.63 offers the constants alone)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: completion of an enum-typed annotation element's value.**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+`@OneToMany(…, fetch = FetchType.§)` offers `EAGER`, `LAZY`, `valueOf`, `values` and `class`; likewise `CascadeType.` and `GenerationType.` (`BaseEntity.java:36`).
+jdtls 1.63 offers the constants alone.
+
+### Expected
+
+An annotation element of an enum type takes an enum constant only (JLS 9.7.1): `FetchType.valueOf("EAGER")` does not compile there, so only the constants are offered.
+
+### Resolution
+
+A qualified name in an annotation argument is still member access, but `SentinelParser` now keeps the annotation and the element it is for (`value()` for a sole positional argument), as it does for a bare name's value.
+`MemberAccessCompleter` hands what it would offer after `Type.` to `AnnotationCompletionProvider`, which keeps what JLS 9.7.1 allows in that element's value, read from the element's type (an array element's component):
+- an enum element: that enum's constants;
+- a `Class` element: `class`;
+- any other element: fields, a constant expression's names;
+- every element: a nested type, as the name may go on (`Outer.Inner.CONST`), and never a method.
+An element whose type is not known keeps all but the methods; outside an annotation, member access offers what it did.
+The fallback through the workspace type index, which an unimported receiver reaches and so does a list the filter empties, filters the same way.
+So beside the enum case, `@Value(Constants.§)` no longer offers a static method, and `@ExtendWith(MockitoExtension.§)` keeps `class`.
+
+Not covered: after `Type.` in a constant element, every static field is offered, a non-final one or one of another type among them, where only a constant of the element's type compiles.
+
+### Regression targets
+
+- `CompletionAnnotationTest.annotationValue_enumElement_offersOnlyItsConstants` (a named element, an array element, the `value()` shorthand, a prefix)
+- `CompletionAnnotationTest.annotationValue_classElement_offersClassLiteral`
+- `CompletionAnnotationTest.annotationValue_constantElement_offersFieldsNotMethods`
+- `CompletionAnnotationTest.annotationValue_unimportedEnumReceiver_offersOnlyItsConstants` (through the type index, with and without a prefix only methods match)
+- `CompletionAnnotationTest.memberAccess_outsideAnnotation_offersStaticMethodsAndClass`
+
+---
+
 ## CQ-0084 — Keyword completion offers statement keywords where only a value or an expression statement can stand — done
 
 **Status: done** (2026-11-27)
