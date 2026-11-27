@@ -11,7 +11,9 @@ import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
+import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.Types;
 
 /**
@@ -98,16 +100,36 @@ public final class MethodStubRenderer {
   // so a stub and a signature read alike.
   public static String typeParameter(
       final TypeParameterElement parameter, final Function<TypeMirror, String> display) {
-    final List<String> bounds = bounds(parameter).map(display).toList();
-    return bounds.isEmpty()
-        ? parameter.getSimpleName().toString()
-        : "%s extends %s".formatted(parameter.getSimpleName(), String.join(" & ", bounds));
+    return declared(parameter.getSimpleName().toString(), parameter.getBounds(), display);
+  }
+
+  // A type variable as seen from a use, its bounds substituted: `S extends Owner` where the source
+  // says `S extends T`. Written as typeParameter writes a declaration.
+  public static String typeVariable(
+      final TypeVariable variable, final Function<TypeMirror, String> display) {
+    final TypeMirror upper = variable.getUpperBound();
+    final List<? extends TypeMirror> bounds =
+        upper instanceof final IntersectionType intersection
+            ? intersection.getBounds()
+            : List.of(upper);
+    return declared(variable.asElement().getSimpleName().toString(), bounds, display);
+  }
+
+  private static String declared(
+      final String name,
+      final List<? extends TypeMirror> bounds,
+      final Function<TypeMirror, String> display) {
+    final List<String> written = written(bounds).map(display).toList();
+    return written.isEmpty() ? name : "%s extends %s".formatted(name, String.join(" & ", written));
+  }
+
+  private static Stream<? extends TypeMirror> bounds(final TypeParameterElement parameter) {
+    return written(parameter.getBounds());
   }
 
   // Only a lone Object is implied: `T extends Object & Comparable<? super T>` (Collections.max)
   // writes it to fix T's erasure, and without it the declaration is another one.
-  private static Stream<? extends TypeMirror> bounds(final TypeParameterElement parameter) {
-    final List<? extends TypeMirror> bounds = parameter.getBounds();
+  private static Stream<? extends TypeMirror> written(final List<? extends TypeMirror> bounds) {
     return bounds.size() == 1 && isObject(bounds.get(0)) ? Stream.empty() : bounds.stream();
   }
 

@@ -1026,6 +1026,20 @@ class HoverTest extends SampleFixture {
     }
   }
 
+  // EG-131: hover shows a member as declared, as IntelliJ does; signature help reads the call's
+  // receiver.
+  @Test
+  void hover_genericMethodDeclaration_showsItDeclared() {
+    final String src =
+        """
+        class Test {
+          interface Repository<T> { <S extends T> S save(S entity); }
+        }
+        """;
+
+    assertThat(hoverText(src, "S save", "save")).contains("<S extends T> S save(S entity)");
+  }
+
   private Optional<String> hoverAt(final int line, final int character) {
     final var path = pathAt(line, character);
     final var element = CursorElements.elementAt(compiled.trees(), path);

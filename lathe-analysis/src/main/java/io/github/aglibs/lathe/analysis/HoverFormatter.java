@@ -15,7 +15,11 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
+import javax.lang.model.type.IntersectionType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -25,6 +29,16 @@ final class HoverFormatter {
   private static final int MAX_CLAUSE_NAMES = 5;
 
   private static final Set<String> NOT_FIELDS = Set.of("this", "super", "class");
+  // What declares a type parameter; a captured wildcard's type variable has none of these.
+  private static final Set<ElementKind> GENERIC_KINDS =
+      Set.of(
+          ElementKind.CLASS,
+          ElementKind.INTERFACE,
+          ElementKind.ENUM,
+          ElementKind.RECORD,
+          ElementKind.ANNOTATION_TYPE,
+          ElementKind.METHOD,
+          ElementKind.CONSTRUCTOR);
 
   private HoverFormatter() {}
 
@@ -41,16 +55,26 @@ final class HoverFormatter {
 
     final String sig;
     if (element instanceof final ExecutableElement exe) {
+      // As declared, as IntelliJ's quick documentation shows a member; signature help reads it as
+      // seen from the call's receiver (EG-131).
+      final var declared = (ExecutableType) exe.asType();
       final var params = exe.getParameters();
       final int last = params.size() - 1;
       final boolean varargs = exe.isVarArgs();
       final String paramStr =
           IntStream.range(0, params.size())
               .mapToObj(
-                  i -> formatParam(params.get(i), fmt, sourceParamNames, i, varargs && i == last))
+                  i ->
+                      formatParam(
+                          declared.getParameterTypes().get(i),
+                          params.get(i),
+                          fmt,
+                          sourceParamNames,
+                          i,
+                          varargs && i == last))
               .collect(Collectors.joining(", "));
-      final String typePrefix = typeParameterPrefix(exe, fmt);
-      final String thrown = throwsSuffix(exe, fmt);
+      final String typePrefix = typeParameterPrefix(declared, fmt);
+      final String thrown = throwsSuffix(declared, fmt);
       if (exe.getKind() == ElementKind.CONSTRUCTOR) {
         // A constructor's element name is <init> and its return type is void; render it as the
         // enclosing type's name with no return type, matching how the source declares it, under
@@ -69,7 +93,7 @@ final class HoverFormatter {
                 .formatted(
                     modifiers(exe),
                     typePrefix,
-                    display(exe.getReturnType(), fmt),
+                    display(declared.getReturnType(), fmt),
                     exe.getSimpleName(),
                     paramStr,
                     thrown);
@@ -288,16 +312,73 @@ final class HoverFormatter {
         .formatted(label, method.getEnclosingElement().getSimpleName(), method.getSimpleName());
   }
 
+  // A method's type as seen from the type a use reaches it through (EG-131), as javac's memberType
+  // reads it: a call on an OwnerRepository, a JpaRepository<Owner, Integer>, takes and returns
+  // Owner where the declaration says T; a type variable's bound stands for it; a raw type erases
+  // it, as javac compiles the call. The declared type where there is no receiver, the method is not
+  // a member of it, or a type argument is a wildcard, whose capture no source can write.
+  static ExecutableType asSeenFrom(
+      final Types types, final TypeMirror receiver, final ExecutableElement method) {
+    final var declared = (ExecutableType) method.asType();
+    final DeclaredType site = site(types, receiver, method);
+    if (site == null || site.getTypeArguments().stream().anyMatch(HoverFormatter::wildcard)) {
+      return declared;
+    }
+
+    return types.asMemberOf(site, method) instanceof final ExecutableType seen ? seen : declared;
+  }
+
+  // The declared type the method is a member of: the receiver, or for a type variable the bound
+  // (one of an intersection's) that has it. Null when none does.
+  private static DeclaredType site(
+      final Types types, final TypeMirror receiver, final ExecutableElement method) {
+    final List<? extends TypeMirror> candidates =
+        receiver instanceof final TypeVariable variable
+            ? bounds(variable.getUpperBound())
+            : receiver == null ? List.of() : List.of(receiver);
+    final TypeMirror owner = types.erasure(method.getEnclosingElement().asType());
+    for (final TypeMirror candidate : candidates) {
+      if (candidate instanceof final DeclaredType type
+          && candidate.getKind() == TypeKind.DECLARED
+          && types.isSubtype(types.erasure(type), owner)) {
+        return type;
+      }
+    }
+
+    return null;
+  }
+
+  private static List<? extends TypeMirror> bounds(final TypeMirror upper) {
+    return upper instanceof final IntersectionType intersection
+        ? intersection.getBounds()
+        : List.of(upper);
+  }
+
+  // A wildcard type argument, or the capture javac makes of one where an expression's type has it.
+  private static boolean wildcard(final TypeMirror argument) {
+    return argument.getKind() == TypeKind.WILDCARD
+        || argument instanceof final TypeVariable variable
+            && !(variable.asElement() instanceof final TypeParameterElement parameter
+                && parameter.getGenericElement() != null
+                && GENERIC_KINDS.contains(parameter.getGenericElement().getKind()));
+  }
+
   // A method's type parameters and a space, e.g. "<R, X extends Exception> ", or "" when it has
-  // none; shared with signature help, so its label reads as the hover does.
-  static String typeParameterPrefix(final ExecutableElement exe, final TypeDisplayFormatter fmt) {
-    final String typeParams = formatTypeParameters(exe.getTypeParameters(), fmt);
-    return typeParams.isEmpty() ? "" : "%s ".formatted(typeParams);
+  // none; shared with signature help, so its label reads as the hover does. The bounds are seen's,
+  // so `<S extends T>` reads `<S extends Owner>` on a JpaRepository<Owner, Integer>.
+  static String typeParameterPrefix(final ExecutableType seen, final TypeDisplayFormatter fmt) {
+    if (seen.getTypeVariables().isEmpty()) {
+      return "";
+    }
+
+    return seen.getTypeVariables().stream()
+        .map(variable -> MethodStubRenderer.typeVariable(variable, bound -> display(bound, fmt)))
+        .collect(Collectors.joining(", ", "<", "> "));
   }
 
   // A space and a method's throws clause, e.g. " throws X", or "" when it throws nothing.
-  static String throwsSuffix(final ExecutableElement exe, final TypeDisplayFormatter fmt) {
-    return clause("throws", exe.getThrownTypes().stream().map(t -> display(t, fmt)).toList())
+  static String throwsSuffix(final ExecutableType seen, final TypeDisplayFormatter fmt) {
+    return clause("throws", seen.getThrownTypes().stream().map(t -> display(t, fmt)).toList())
         .map(" %s"::formatted)
         .orElse("");
   }
@@ -308,7 +389,18 @@ final class HoverFormatter {
       final List<String> sourceNames,
       final int index,
       final boolean vararg) {
-    final String rawType = display(param.asType(), fmt);
+    return formatParam(param.asType(), param, fmt, sourceNames, index, vararg);
+  }
+
+  // A parameter of the given type, named as the source names it.
+  static String formatParam(
+      final TypeMirror type,
+      final VariableElement param,
+      final TypeDisplayFormatter fmt,
+      final List<String> sourceNames,
+      final int index,
+      final boolean vararg) {
+    final String rawType = display(type, fmt);
     // A varargs parameter's declared type is an array; render it as T... rather than T[].
     final String typeName =
         vararg && rawType.endsWith("[]")

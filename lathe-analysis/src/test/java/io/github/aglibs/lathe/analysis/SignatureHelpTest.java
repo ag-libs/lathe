@@ -947,6 +947,135 @@ class SignatureHelpTest {
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
+  // --- EG-131: a member as seen from the type the call reaches it through ---
+
+  private static final String REPOSITORY =
+      """
+      class Test {
+        static class Owner {}
+        interface Repository<T, ID> {
+          <S extends T> S save(S entity);
+          java.util.List<T> findAll(String sort) throws Exception;
+        }
+        interface OwnerRepository extends Repository<Owner, Integer> {}
+      """;
+
+  @Test
+  void signatureHelp_inheritedGenericMethod_readsTheReceiversTypeArguments() {
+    final var source =
+        REPOSITORY
+            + """
+              void caller(OwnerRepository owners) { owners.save(§null); }
+            }
+            """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("<S extends Owner> S save(S entity)");
+  }
+
+  @Test
+  void signatureHelp_inheritedReturnAndThrows_readTheReceiversTypeArguments() {
+    final var source =
+        REPOSITORY
+            + """
+              void caller(OwnerRepository owners) throws Exception { owners.findAll(§null); }
+            }
+            """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("List<Owner> findAll(String sort) throws Exception");
+  }
+
+  @Test
+  void signatureHelp_parameterizedJdkReceiver_readsItsTypeArgument() {
+    final var source =
+        """
+        class Test {
+          void caller(java.util.List<String> names) { names.add(§null); }
+        }
+        """;
+
+    // A JDK class file without sources here carries no parameter names: the types are the point.
+    assertThat(signatureHelpAt(source).getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .contains("boolean add(String)", "void add(int, String)");
+  }
+
+  @Test
+  void signatureHelp_unqualifiedInheritedCall_readsTheEnclosingClassesTypeArguments() {
+    final var source =
+        """
+        class Test {
+          static class Base<T> { void put(T value) {} }
+          static class Names extends Base<String> {
+            void caller() { put(§null); }
+          }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void put(String value)");
+  }
+
+  // A raw receiver erases the member, as javac compiles the call, and a raw supertype the same.
+  @Test
+  void signatureHelp_rawReceiver_showsTheErasedSignature() {
+    final var source =
+        """
+        class Test {
+          static class Box<T> { void put(T value) {} }
+          static class RawBox extends Box {}
+          @SuppressWarnings({"rawtypes", "unchecked"})
+          void caller(Box box, RawBox rawBox) { box.put(null); rawBox.put(§null); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void put(Object value)");
+  }
+
+  @Test
+  void signatureHelp_typeVariableReceiverWithParameterizedBound_readsTheBoundsTypeArguments() {
+    final var source =
+        REPOSITORY
+            + """
+              <R extends OwnerRepository> void caller(R owners) { owners.save(§null); }
+            }
+            """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("<S extends Owner> S save(S entity)");
+  }
+
+  // A wildcard, or the capture javac makes of it, has no type the label could name.
+  @Test
+  void signatureHelp_wildcardReceiver_showsTheDeclaredSignature() {
+    final var source =
+        """
+        class Test {
+          static class Box<T> { void put(T value) {} }
+          void caller(Box<? extends Number> box) { box.put(§null); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void put(T value)");
+  }
+
+  @Test
+  void signatureHelp_capturedReceiver_namesNoCapture() {
+    final var source =
+        """
+        class Test {
+          static class Box<T> { Box<T> self() { return this; } void put(T value) {} }
+          void caller(Box<? extends Number> box) { box.self().put(§null); }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source).getSignatures().get(0).getLabel())
+        .isEqualTo("void put(T value)");
+  }
+
   // --- helpers ---
 
   // Each label cut to the prefix it is expected to start with, so labels compare without the
