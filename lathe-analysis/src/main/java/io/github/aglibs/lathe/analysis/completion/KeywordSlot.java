@@ -6,6 +6,8 @@ enum KeywordSlot {
   BLOCK_STATEMENT,
   // An expression's value: the value keywords.
   VALUE,
+  // A `yield`'s value: a value, a nested switch expression among them.
+  YIELD_VALUE,
   // A switch expression's arrow body: a value, or a `throw` (JLS 15.28.1).
   SWITCH_RULE_VALUE,
   // A switch statement's arrow body: an expression statement, or a `throw` (JLS 14.11.1); a block

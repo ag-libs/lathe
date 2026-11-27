@@ -738,15 +738,23 @@ final class SentinelParser {
             || parent instanceof final ThrowTree throwTree && throwTree.getExpression() == sentinel
             || parent instanceof final VariableTree variable
                 && variable.getInitializer() == sentinel
-            || parent instanceof final YieldTree yieldTree && yieldTree.getValue() == sentinel
             || parent instanceof final NewArrayTree newArray
                 && newArray.getInitializers() != null
                 && newArray.getInitializers().contains(sentinel))) {
       return Classification.expression();
     }
 
+    if (simpleName
+        && parent instanceof final YieldTree yieldTree
+        && yieldTree.getValue() == sentinel) {
+      return Classification.simpleName(KeywordSlot.YIELD_VALUE);
+    }
+
     // A switch expression's arrow body is the case's own body, the switch's value (CQ-0084).
-    if (simpleName && parent instanceof final CaseTree caseTree && caseTree.getBody() == sentinel) {
+    if (simpleName
+        && parent instanceof final CaseTree caseTree
+        && caseTree.getBody() == sentinel
+        && parentPath.getParentPath().getLeaf() instanceof SwitchExpressionTree) {
       return Classification.simpleName(KeywordSlot.SWITCH_RULE_VALUE);
     }
 

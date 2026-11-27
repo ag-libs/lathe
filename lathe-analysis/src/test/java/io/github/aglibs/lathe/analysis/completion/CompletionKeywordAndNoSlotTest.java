@@ -328,7 +328,7 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
   void keywords_switchExpressionArrowBody_valueKeywordsAndThrow(
       final String label, final String source) {
     final List<String> items = labels(fixture.complete(source));
-    assertThat(items).as(label).contains("new", "this", "super", "throw");
+    assertThat(items).as(label).contains("new", "this", "super", "throw", "switch");
     assertThat(items)
         .as(label)
         .doesNotContain(
@@ -411,13 +411,14 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
         }""";
     assertThat(labels(fixture.complete(source.formatted("re")))).doesNotContain("return");
     assertThat(labels(fixture.complete(source.formatted("th")))).contains("this", "throw");
+    assertThat(labels(fixture.complete(source.formatted("sw")))).contains("switch");
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("yieldValues")
   void keywords_yieldValue_valueKeywordsOnly(final String label, final String source) {
     final List<String> items = labels(fixture.complete(source));
-    assertThat(items).as(label).contains("new", "this", "super");
+    assertThat(items).as(label).contains("new", "this", "super", "switch");
     assertThat(items)
         .as(label)
         .doesNotContain("return", "if", "for", "var", "assert", "yield", "throw", "break");
@@ -459,7 +460,7 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
     assertThat(items).as(label).contains("new", "this", "super");
     assertThat(items)
         .as(label)
-        .doesNotContain("return", "if", "for", "var", "assert", "throw", "int");
+        .doesNotContain("return", "if", "for", "var", "assert", "throw", "switch", "int");
   }
 
   static Stream<Arguments> arrayInitializerElements() {
@@ -480,8 +481,8 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
     assertThat(items)
         .as(label)
         .doesNotContain(
-            "return", "if", "for", "while", "var", "assert", "break", "null", "true", "false",
-            "int");
+            "return", "if", "for", "while", "var", "assert", "break", "switch", "null", "true",
+            "false", "int");
   }
 
   static Stream<Arguments> switchStatementArrowBodies() {
@@ -517,7 +518,7 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
     assertThat(items)
         .as(label)
         .doesNotContain(
-            "break", "continue", "return", "if", "throw", "var", "assert", "null", "int");
+            "break", "continue", "switch", "return", "if", "throw", "var", "assert", "null", "int");
   }
 
   static Stream<Arguments> forUpdates() {
