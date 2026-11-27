@@ -3,8 +3,12 @@ package io.github.aglibs.lathe.analysis.completion;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
 
@@ -314,6 +318,213 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
                 }"""));
     assertThat(items).contains("yield");
     assertThat(items).doesNotContain("break", "continue");
+  }
+
+  // CQ-0084: where only a value or an expression statement stands, the keywords a block statement
+  // takes are not offered. The value keywords an expected type rules out (`true` for an `int`) are
+  // not asserted: the ranker drops those on its own.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("switchExpressionArrowBodies")
+  void keywords_switchExpressionArrowBody_valueKeywordsAndThrow(
+      final String label, final String source) {
+    final List<String> items = labels(fixture.complete(source));
+    assertThat(items).as(label).contains("new", "this", "super", "throw");
+    assertThat(items)
+        .as(label)
+        .doesNotContain(
+            "return",
+            "if",
+            "for",
+            "while",
+            "do",
+            "try",
+            "synchronized",
+            "var",
+            "final",
+            "assert",
+            "int",
+            "yield",
+            "break");
+  }
+
+  static Stream<Arguments> switchExpressionArrowBodies() {
+    return Stream.of(
+        Arguments.of(
+            "closed",
+            """
+            class Test {
+                Object m(int x) {
+                    Object r = switch (x) {
+                        case 1 -> §
+                        default -> 0;
+                    };
+                    return r;
+                }
+            }"""),
+        Arguments.of(
+            "open",
+            """
+            class Test {
+                int next;
+                Object m(int x) {
+                    Object r = switch (x) {
+                        case 1 -> §
+                    next = 1;
+                }
+            }"""),
+        Arguments.of(
+            "defaultArrow",
+            """
+            class Test {
+                Object m(int x) {
+                    return switch (x) {
+                        case 1 -> 1;
+                        default -> §
+                    };
+                }
+            }"""),
+        Arguments.of(
+            "textAfterTheCursor",
+            """
+            class Test {
+                Object m(int x) {
+                    return switch (x) {
+                        case 1 -> §;
+                        default -> 0;
+                    };
+                }
+            }"""));
+  }
+
+  // javac rejects a `return` out of a switch expression.
+  @Test
+  void keywords_switchExpressionArrowBodyWithPrefix_noReturn() {
+    final String source =
+        """
+        class Test {
+            Object m(int x) {
+                return switch (x) {
+                    case 1 -> %s§
+                    default -> 0;
+                };
+            }
+        }""";
+    assertThat(labels(fixture.complete(source.formatted("re")))).doesNotContain("return");
+    assertThat(labels(fixture.complete(source.formatted("th")))).contains("this", "throw");
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("yieldValues")
+  void keywords_yieldValue_valueKeywordsOnly(final String label, final String source) {
+    final List<String> items = labels(fixture.complete(source));
+    assertThat(items).as(label).contains("new", "this", "super");
+    assertThat(items)
+        .as(label)
+        .doesNotContain("return", "if", "for", "var", "assert", "yield", "throw", "break");
+  }
+
+  static Stream<Arguments> yieldValues() {
+    return Stream.of(
+        Arguments.of(
+            "closed",
+            """
+            class Test {
+                Object m(int x) {
+                    return switch (x) {
+                        case 1:
+                            yield §;
+                        default:
+                            yield 0;
+                    };
+                }
+            }"""),
+        Arguments.of(
+            "open",
+            """
+            class Test {
+                int next;
+                Object m(int x) {
+                    Object r = switch (x) {
+                        case 1:
+                            yield §
+                    next = 1;
+                }
+            }"""));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("arrayInitializerElements")
+  void keywords_arrayInitializerElement_valueKeywordsOnly(final String label, final String source) {
+    final List<String> items = labels(fixture.complete(source));
+    assertThat(items).as(label).contains("new", "this", "super");
+    assertThat(items)
+        .as(label)
+        .doesNotContain("return", "if", "for", "var", "assert", "throw", "int");
+  }
+
+  static Stream<Arguments> arrayInitializerElements() {
+    return Stream.of(
+        Arguments.of("local", "class Test { void m() { Object[] a = { § }; } }"),
+        Arguments.of("secondElement", "class Test { void m() { Object[] a = { this, § }; } }"),
+        Arguments.of("newArray", "class Test { void m() { Object[] a = new Object[] { § }; } }"),
+        Arguments.of("field", "class Test { Object[] f = { § }; }"));
+  }
+
+  // javac accepts only an expression statement, a block or a `throw` as a switch rule's body.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("switchStatementArrowBodies")
+  void keywords_switchStatementArrowBody_expressionStatementStartersAndThrow(
+      final String label, final String source) {
+    final List<String> items = labels(fixture.complete(source));
+    assertThat(items).as(label).contains("new", "this", "super", "throw");
+    assertThat(items)
+        .as(label)
+        .doesNotContain(
+            "return", "if", "for", "while", "var", "assert", "break", "null", "true", "false",
+            "int");
+  }
+
+  static Stream<Arguments> switchStatementArrowBodies() {
+    return Stream.of(
+        Arguments.of(
+            "closed",
+            """
+            class Test {
+                void m(int x) {
+                    switch (x) {
+                        case 1 -> §
+                    }
+                }
+            }"""),
+        Arguments.of(
+            "open",
+            """
+            class Test {
+                int next;
+                void m(int x) {
+                    switch (x) {
+                        case 1 -> §
+                    next = 1;
+                }
+            }"""));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("forUpdates")
+  void keywords_forUpdate_expressionStatementStartersOnly(final String label, final String source) {
+    final List<String> items = labels(fixture.complete(source));
+    assertThat(items).as(label).contains("new", "this", "super");
+    assertThat(items)
+        .as(label)
+        .doesNotContain(
+            "break", "continue", "return", "if", "throw", "var", "assert", "null", "int");
+  }
+
+  static Stream<Arguments> forUpdates() {
+    return Stream.of(
+        Arguments.of("firstUpdate", "class Test { void m() { for (int i = 0; i < 3; §) { } } }"),
+        Arguments.of(
+            "secondUpdate", "class Test { void m() { for (int i = 0; i < 3; i++, §) { } } }"));
   }
 
   @Test

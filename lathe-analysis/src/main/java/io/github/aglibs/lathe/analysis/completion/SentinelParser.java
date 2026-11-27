@@ -673,6 +673,10 @@ final class SentinelParser {
     }
 
     static Classification expression() {
+      return simpleName(KeywordSlot.VALUE);
+    }
+
+    static Classification simpleName(final KeywordSlot keywordSlot) {
       return new Classification(
           SentinelContext.SIMPLE_NAME,
           -1,
@@ -683,7 +687,7 @@ final class SentinelParser {
           null,
           null,
           TypeReferenceRole.ORDINARY,
-          KeywordSlot.VALUE);
+          keywordSlot);
     }
   }
 
@@ -733,8 +737,23 @@ final class SentinelParser {
         && (parent instanceof final ReturnTree returnTree && returnTree.getExpression() == sentinel
             || parent instanceof final ThrowTree throwTree && throwTree.getExpression() == sentinel
             || parent instanceof final VariableTree variable
-                && variable.getInitializer() == sentinel)) {
+                && variable.getInitializer() == sentinel
+            || parent instanceof final YieldTree yieldTree && yieldTree.getValue() == sentinel
+            || parent instanceof final NewArrayTree newArray
+                && newArray.getInitializers() != null
+                && newArray.getInitializers().contains(sentinel))) {
       return Classification.expression();
+    }
+
+    // A switch expression's arrow body is the case's own body, the switch's value (CQ-0084).
+    if (simpleName && parent instanceof final CaseTree caseTree && caseTree.getBody() == sentinel) {
+      return Classification.simpleName(KeywordSlot.SWITCH_RULE_VALUE);
+    }
+
+    final Classification expressionStatement =
+        simpleName ? expressionStatementClassification(parentPath) : null;
+    if (expressionStatement != null) {
+      return expressionStatement;
     }
 
     // --- expression-tree parents: sentinel is a sub-expression ---
@@ -1102,6 +1121,34 @@ final class SentinelParser {
     }
 
     return TypeReferenceRole.ORDINARY;
+  }
+
+  // A name alone is no statement: javac wraps it in an erroneous tree inside an expression
+  // statement. Where that statement is a switch statement's arrow body or a `for` loop's update,
+  // only some statements stand there (CQ-0084); null elsewhere, a block's or a colon case's
+  // statement among them.
+  private static Classification expressionStatementClassification(final TreePath parentPath) {
+    if (!(parentPath.getLeaf() instanceof ErroneousTree)) {
+      return null;
+    }
+
+    final TreePath statementPath = parentPath.getParentPath();
+    if (statementPath == null
+        || statementPath.getParentPath() == null
+        || !(statementPath.getLeaf() instanceof final ExpressionStatementTree statement)) {
+      return null;
+    }
+
+    final Tree owner = statementPath.getParentPath().getLeaf();
+    if (owner instanceof final CaseTree caseTree && caseTree.getBody() == statement) {
+      return Classification.simpleName(KeywordSlot.SWITCH_RULE_STATEMENT);
+    }
+
+    if (owner instanceof final ForLoopTree forLoop && forLoop.getUpdate().contains(statement)) {
+      return Classification.simpleName(KeywordSlot.EXPRESSION_STATEMENT);
+    }
+
+    return null;
   }
 
   private static Classification classifyDefault(final Tree sentinel) {

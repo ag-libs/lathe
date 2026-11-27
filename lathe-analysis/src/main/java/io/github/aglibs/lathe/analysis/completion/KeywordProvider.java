@@ -17,6 +17,17 @@ final class KeywordProvider {
   private static final List<String> VALUE_EXPRESSIONS =
       List.of("new", "null", "true", "false", "this", "super");
 
+  // A switch expression's arrow body: a value, or a throw
+  private static final List<String> SWITCH_RULE_VALUES =
+      List.of("new", "null", "true", "false", "this", "super", "throw");
+
+  // Keywords that start an expression statement
+  private static final List<String> EXPRESSION_STATEMENT_STARTERS = List.of("new", "this", "super");
+
+  // A switch statement's arrow body: an expression statement, or a throw
+  private static final List<String> SWITCH_RULE_STATEMENTS =
+      List.of("new", "this", "super", "throw");
+
   // Annotation element values: new/this/super are not legal in annotation contexts
   private static final List<String> ANNOTATION_VALUE_KEYWORDS = List.of("null", "true", "false");
 
@@ -117,6 +128,9 @@ final class KeywordProvider {
     return switch (parsed.keywordSlot()) {
       case BLOCK_STATEMENT -> selectByScope(parsed);
       case VALUE -> VALUE_EXPRESSIONS;
+      case SWITCH_RULE_VALUE -> SWITCH_RULE_VALUES;
+      case SWITCH_RULE_STATEMENT -> SWITCH_RULE_STATEMENTS;
+      case EXPRESSION_STATEMENT -> EXPRESSION_STATEMENT_STARTERS;
     };
   }
 
