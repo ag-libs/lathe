@@ -408,6 +408,57 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
     assertThat(items).contains("instanceof");
   }
 
+  // An operand starts after an operator, so `instanceof`, which follows one, is not offered there;
+  // after a complete operand it is, a comment or a line break between them included.
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "boolean b = value ins§;",
+        "boolean b = value /* note */ ins§;",
+        "boolean b = value\n            ins§;",
+        "System.out.println(value ins§);",
+        "check(value ins§, 1);"
+      })
+  void simpleName_afterAnOperand_offersInstanceof(final String statement) {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void check(boolean ok, int n) {}
+                    void m(String value) {
+                        %s
+                    }
+                }"""
+                    .formatted(statement)));
+
+    assertThat(items).as(statement).contains("instanceof");
+  }
+
+  // An operand starts after an operator, so `instanceof`, which follows one, is not offered there.
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "Object o = ins§;",
+        "String t = value + ins§;",
+        "boolean b = value == null || ins§;",
+        "String s = switch (value) { case \"a\" -> ins§; default -> \"\"; };"
+      })
+  void simpleName_afterAnOperator_omitsInstanceof(final String statement) {
+    final List<String> items =
+        labels(
+            fixture.complete(
+                """
+                class Test {
+                    void m(String value) {
+                        %s
+                    }
+                }"""
+                    .formatted(statement)));
+
+    assertThat(items).as(statement).doesNotContain("instanceof");
+  }
+
   @Test
   void simpleName_afterPrimitiveExpression_omitsInstanceof() {
     final List<String> items =

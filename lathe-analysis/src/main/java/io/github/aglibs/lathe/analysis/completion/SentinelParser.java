@@ -266,6 +266,11 @@ final class SentinelParser {
     final boolean labelBodyStatement =
         labelCase.filter(path -> labelBodyStatement(path, sentinelPath)).isPresent();
 
+    // javac sets a name written after a complete expression (`value ins`) apart in an erroneous
+    // tree; after an operator (`o = ins`, `a + ins`) the name is that operator's operand.
+    final boolean afterOperand =
+        parentPath != null && parentPath.getLeaf() instanceof ErroneousTree;
+
     final var parsed =
         ParsedSentinel.valid(
             injected,
@@ -286,6 +291,7 @@ final class SentinelParser {
             enclosedBySwitchStatement,
             enclosedBySwitchExpression,
             inEqualityComparison,
+            afterOperand,
             cls.keywordSlot(),
             catchParameter,
             constantField,
