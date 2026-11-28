@@ -218,7 +218,37 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
         .doesNotContain("if", "return", "new", "var", "class", "interface");
   }
 
-  // A type argument, a wildcard's bound and a type parameter's bound take any reference type,
+  // CQ-0071: a type parameter's bound after the first is an interface, never a class or a type
+  // variable (JLS 4.4); the first bound, and a type argument within the bound, take any type.
+  @Test
+  void typeParameter_additionalBound_offersInterfacesOnly() {
+    assertThat(labels(fixture.complete("class Box<T extends Number & Comp§> {}")))
+        .contains("Comparable");
+    assertThat(labels(fixture.complete("class Box<T extends Number & Ch§> {}")))
+        .contains("CharSequence")
+        .doesNotContain("Character");
+    assertThat(labels(fixture.complete("class Box<T extends Number & Str§> {}")))
+        .doesNotContain("String", "StringBuilder");
+    assertThat(labels(fixture.complete("class Test { <T extends Number & Runn§> void m() {} }")))
+        .contains("Runnable");
+    assertThat(
+            labels(
+                fixture.complete(
+                    "interface Marker {} class Mark {} class Box<T extends Number & Mar§> {}")))
+        .contains("Marker")
+        .doesNotContain("Mark");
+    assertThat(labels(fixture.complete("class Box<T, U extends Number & §> {}")))
+        .doesNotContain("T", "final", "class");
+    assertThat(labels(fixture.complete("interface E {} class Box<E, T extends Number & E§> {}")))
+        .as("an interface the type variable E hides")
+        .doesNotContain("E");
+    assertThat(labels(fixture.complete("class Box<T extends Str§ & Runnable> {}")))
+        .contains("String");
+    assertThat(labels(fixture.complete("class Box<T extends Number & Comparable<Str§>> {}")))
+        .contains("String");
+  }
+
+  // A type argument, a wildcard's bound and a type parameter's first bound take any reference type,
   // whatever the clause around them filters (interfaces after implements, classes after extends):
   // the type being declared (Comparable<Self>) and the file's other types included.
   @Test

@@ -1206,27 +1206,6 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 ---
 
-## CQ-0071 — A type parameter's second bound offers classes
-
-**Status: deferred** (triaged 2026-11-24: low; a second bound is rare, and javac flags a class picked there at once)
-
-**Kind: bug**
-
-**Affects: completion after `&` in a type parameter's bounds, in the editor.**
-
-Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
-
-### Observed behaviour
-
-`class Box<T extends Number & Str§> {}` offers `String`, `StringBuilder` and other classes; Java allows only an interface after the first bound, so picking one does not compile.
-Every bound has the type-argument role of CQ-0066, which allows any reference type.
-
-### Expected
-
-Interfaces only after `&`; the first bound keeps any reference type.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
