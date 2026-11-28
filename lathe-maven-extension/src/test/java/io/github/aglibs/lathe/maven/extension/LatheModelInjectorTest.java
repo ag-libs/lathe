@@ -431,6 +431,29 @@ class LatheModelInjectorTest {
     assertThat(project.getProperties()).isEmpty();
   }
 
+  // The Groovy Eclipse compiler set for the testCompile execution alone counts too.
+  @Test
+  void injectCaptureClass_groovyEclipseCompilerForTestCompile_leavesTheSelection(
+      @TempDir final Path dir) throws IOException {
+    final MavenProject project = project();
+    final Plugin compiler = plugin("org.apache.maven.plugins", "maven-compiler-plugin");
+    final var execution = new PluginExecution();
+    execution.setId("default-testCompile");
+    final var configuration = new Xpp3Dom("configuration");
+    final var compilerId = new Xpp3Dom("compilerId");
+    compilerId.setValue(" groovy-eclipse-compiler ");
+    configuration.addChild(compilerId);
+    execution.setConfiguration(configuration);
+    compiler.addExecution(execution);
+    project.getBuild().addPlugin(compiler);
+    write(dir.resolve("src/test/java/com/example/SpecHelper.java"));
+    project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties()).isEmpty();
+  }
+
   // A kotlin folder no plugin compiles says nothing: the folder name is no fact of the build.
   @Test
   void injectCaptureClass_kotlinFolderWithoutAKotlinBuild_selectsTheJavaTests(

@@ -12295,7 +12295,7 @@ Whether a module may keep tests in another language comes from its build, not a 
 
 ### Resolution
 
-The selection is left alone when the module's build has a compiler for another language: `kotlin-maven-plugin`, `gmavenplus-plugin`, `scala-maven-plugin`, or `maven-compiler-plugin` with the Groovy Eclipse compiler; the check of the test roots the model holds now stays.
+The selection is left alone when the module's build has a compiler for another language: `kotlin-maven-plugin`, `gmavenplus-plugin`, `scala-maven-plugin`, or `maven-compiler-plugin` with the Groovy Eclipse compiler, set for the plugin or one of its executions; the check of the test roots the model holds now stays.
 A module that applies one but tests in Java only runs all its tests during capture: slower, never a capture that starts no JVM.
 
 Not covered: another language's compiler not in that list; WS-53's "Future" lists reading the plugins' own source folders.
@@ -12304,6 +12304,7 @@ Not covered: another language's compiler not in that list; WS-53's "Future" list
 
 - `LatheModelInjectorTest.injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection` (now from the Kotlin plugin)
 - `LatheModelInjectorTest.injectCaptureClass_groovyEclipseCompiler_leavesTheSelection`
+- `LatheModelInjectorTest.injectCaptureClass_groovyEclipseCompilerForTestCompile_leavesTheSelection`
 - `LatheModelInjectorTest.injectCaptureClass_kotlinFolderWithoutAKotlinBuild_selectsTheJavaTests`
 
 ---
@@ -12383,9 +12384,9 @@ A module the build left out has no recorded build directory, as the build never 
 - `LatheEngineRenameTest.rename_outsideList_skipsRecordedBuildDirsAndSearchesUnrecordedOnes`
 - `WorkspaceManifestWriterTest.write_buildDirs_recordedAsGiven`
 - `LatheSyncTaskFunctionalTest.sync_movedBuildDirectory_recordedAsTheLayoutSetsIt` (Gradle TestKit)
-- `MultiModuleTest.sync_workspaceJson_recordsEachModulesBuildDirectory` (Maven invoker, `shapes` moved to `out/`)
 - `LatheSyncTaskFunctionalTest.sync_buildSrc_recordsItsOutput` (Gradle TestKit)
 - `OpenJdkSyncTest.sync_builtModuleAndTool_writesPinnedScriptAndBatchMarkersAndReleasesLock`, `OpenJdkSyncTest.sync_buildOutsideTheBuildFolder_recordsOnlyThatConfiguration`
+- `MultiModuleTest.sync_workspaceJson_recordsEachModulesBuildDirectory` (Maven invoker, `shapes` moved to `out/`)
 
 ---
 

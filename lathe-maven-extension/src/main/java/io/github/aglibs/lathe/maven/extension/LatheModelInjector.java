@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -288,13 +289,23 @@ final class LatheModelInjector {
                     || usesGroovyEclipseCompiler(plugin));
   }
 
+  // Set for the plugin or for one execution, often testCompile alone.
   private static boolean usesGroovyEclipseCompiler(final Plugin plugin) {
-    if (!(plugin.getConfiguration() instanceof final Xpp3Dom configuration)) {
+    return Stream.concat(
+            Stream.of(plugin.getConfiguration()),
+            plugin.getExecutions().stream().map(PluginExecution::getConfiguration))
+        .anyMatch(LatheModelInjector::namesGroovyEclipseCompiler);
+  }
+
+  private static boolean namesGroovyEclipseCompiler(final Object configuration) {
+    if (!(configuration instanceof final Xpp3Dom dom)) {
       return false;
     }
 
-    final Xpp3Dom compilerId = configuration.getChild(COMPILER_ID_ELEMENT);
-    return compilerId != null && GROOVY_ECLIPSE_COMPILER.equals(compilerId.getValue());
+    final Xpp3Dom compilerId = dom.getChild(COMPILER_ID_ELEMENT);
+    return compilerId != null
+        && compilerId.getValue() != null
+        && GROOVY_ECLIPSE_COMPILER.equals(compilerId.getValue().trim());
   }
 
   // Kotlin, Groovy or Scala test sources in a test root the model holds now.
