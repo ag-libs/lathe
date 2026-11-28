@@ -605,11 +605,24 @@ final class McpText {
     return result(text, notes);
   }
 
+  // A miss says what the search covers: types only, and with scope reactor, not the JDK's or the
+  // dependencies' (MC-105).
   static CallToolResult searchResult(
-      final String query, final List<LatheSymbol> symbols, final LatheNotes notes) {
+      final String query,
+      final SymbolScope scope,
+      final List<LatheSymbol> symbols,
+      final LatheNotes notes) {
     final String text =
         symbols.isEmpty()
-            ? "No symbols matching '%s'.".formatted(query)
+            ? """
+                No symbols matching '%s'. search_symbols finds types only%s; for a method or \
+                field, run outline on its type."""
+                .formatted(
+                    query,
+                    scope == SymbolScope.REACTOR
+                        ? ", and with scope reactor only the project's own (scope all also finds"
+                            + " the JDK's and dependencies')"
+                        : "")
             : "%d symbol(s):%n%s"
                 .formatted(
                     symbols.size(),

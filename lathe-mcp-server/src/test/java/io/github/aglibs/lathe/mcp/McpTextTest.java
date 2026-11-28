@@ -862,14 +862,21 @@ class McpTextTest {
                 "Shop", "class", "com.example", location("app/Shop.java", 3, "class Shop {")),
             new LatheSymbol("sell", "method", "", location("app/Shop.java", 8, "int sell() {")));
 
-    assertThat(text(McpText.searchResult("S", symbols, McpText.NO_NOTES)))
+    assertThat(text(McpText.searchResult("S", SymbolScope.ALL, symbols, McpText.NO_NOTES)))
         .isEqualTo(
             lines(
                 "2 symbol(s):",
                 "Shop (class) — com.example  app/Shop.java:3:1",
                 "sell (method)  app/Shop.java:8:1"));
-    assertThat(text(McpText.searchResult("Cart", List.of(), McpText.NO_NOTES)))
-        .isEqualTo("No symbols matching 'Cart'.");
+    assertThat(text(McpText.searchResult("Cart", SymbolScope.ALL, List.of(), McpText.NO_NOTES)))
+        .isEqualTo(
+            "No symbols matching 'Cart'. search_symbols finds types only; for a method or field,"
+                + " run outline on its type.");
+    assertThat(
+            text(
+                McpText.searchResult("Duration", SymbolScope.REACTOR, List.of(), McpText.NO_NOTES)))
+        .as("a reactor-only miss may be a JDK or dependency type")
+        .contains("scope all also finds the JDK's and dependencies'");
   }
 
   // A type from a dependency without sources names its dependency where a file would be.
@@ -878,7 +885,7 @@ class McpTextTest {
     final var symbols =
         List.of(new LatheSymbol("DataSource", "Class", "com.db", null, "com.db:driver:1.0"));
 
-    assertThat(text(McpText.searchResult("Data", symbols, McpText.NO_NOTES)))
+    assertThat(text(McpText.searchResult("Data", SymbolScope.ALL, symbols, McpText.NO_NOTES)))
         .isEqualTo(
             lines("1 symbol(s):", "DataSource (Class) — com.db  com.db:driver:1.0, no sources"));
   }

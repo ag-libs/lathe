@@ -2288,28 +2288,3 @@ Incoming calls keep their order (origin, URI, position); outgoing calls keep sou
 
 None yet.
 Both directions with two sites and `maxResults: 1`: which site and snippet survive, a total of two, and the truncation flag.
-
----
-
-## MC-105 — `search_symbols` finds nothing for a binary name (`Outer$Inner`) or a member name, without saying why
-
-**Status: deferred** (triaged 2026-11-24: low; the dotted form works, and a hint that the tool finds types only is the cheap half)
-
-**Kind: bug**
-
-**Affects: MCP `search_symbols`.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N9).
-
-### Observed behaviour
-
-`search_symbols` for `DropwizardResourceConfig$EndpointLogLine`, as a stack trace or a class file names it, answers "No symbols matching"; `DropwizardResourceConfig.EndpointLogLine` finds the nested class.
-`toNanoseconds`, a method of `Duration`, also answers "No symbols matching", with no word that the tool searches types only.
-
-### Expected
-
-A `$` in a query is read as a nesting dot; a query that matches no type but looks like a member says that the tool finds types, and how to find a member (`outline` on the type).
-
-### Regression targets
-
-None yet.

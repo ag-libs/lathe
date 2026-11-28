@@ -36,6 +36,7 @@ import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 // The read-only tools: diagnostics, definition, references, call hierarchy, implementations,
@@ -937,6 +938,49 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
                 .value()
                 .implementations())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("FrGreeter.java"));
+  }
+
+  // MC-105: a stack trace or a class file names a nested type by its binary name.
+  @Test
+  void searchSymbols_binaryOrDottedNestedName_findsTheNestedType() throws Exception {
+    final Path outer =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Outer.java", "package com.example; class Outer { class Inner {} }");
+    compileIntoMirror(outer);
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.searchSymbols("Outer$Inner", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .containsExactly("Inner");
+    assertThat(engine.searchSymbols("Outer.Inner", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .containsExactly("Inner");
+    assertThat(engine.searchSymbols("Outer$Missing", SymbolScope.REACTOR, 50).value()).isEmpty();
+    assertThat(engine.searchSymbols("*$Inner", SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .containsExactly("Inner");
+  }
+
+  // An anonymous class or a lambda in a stack frame has no name to find: the type it is in is.
+  @ParameterizedTest
+  @CsvSource({
+    "Outer$1, Outer",
+    "Outer$Inner$2, Inner",
+    "Outer$$Lambda$14/0x000001, Outer",
+    "Outer$Inner$$Lambda, Inner"
+  })
+  void searchSymbols_anonymousOrLambdaBinaryName_findsTheEnclosingType(
+      final String query, final String enclosing) throws Exception {
+    final Path outer =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Outer.java", "package com.example; class Outer { class Inner {} }");
+    compileIntoMirror(outer);
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.searchSymbols(query, SymbolScope.REACTOR, 50).value())
+        .extracting(LatheSymbol::name)
+        .first()
+        .isEqualTo(enclosing);
   }
 
   @Test
