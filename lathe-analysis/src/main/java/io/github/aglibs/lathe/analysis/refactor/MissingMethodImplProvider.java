@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.Tree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
@@ -14,6 +16,7 @@ import io.github.aglibs.lathe.analysis.internal.SourceTypeNames;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -74,11 +77,36 @@ public final class MissingMethodImplProvider {
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 
-    final var insertPos = Positions.offsetToPosition(cu, endOffset - 1);
+    // The stubs take the indentation of the class's members (CA-23); with the closing brace alone
+    // on its line they go in before that line, which keeps its own indentation, else they replace
+    // the blanks before the brace and move it to a line of its own.
+    final Optional<String> read = CodeActionSupport.source(cu);
+    if (read.isEmpty()) {
+      return List.of();
+    }
+
+    final String source = read.get();
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final var classTree = (ClassTree) classPath.getLeaf();
+    final String classIndent =
+        CodeActionSupport.lineIndent(source, (int) positions.getStartPosition(cu, classTree));
+    final String step = memberStep(source, cu, positions, classTree, classIndent);
+    final String stubs =
+        buildStubs(unimplemented, formatter, types, classType, classIndent + step, step);
+    final int brace = (int) endOffset - 1;
+    final int lineStart = source.lastIndexOf('\n', brace - 1) + 1;
+    int contentEnd = brace;
+    while (contentEnd > lineStart && Character.isWhitespace(source.charAt(contentEnd - 1))) {
+      contentEnd--;
+    }
+
+    final boolean braceAlone = contentEnd == lineStart;
     final TextEdit stubEdit =
         new TextEdit(
-            new Range(insertPos, insertPos),
-            buildStubs(unimplemented, formatter, types, classType));
+            new Range(
+                Positions.offsetToPosition(cu, contentEnd),
+                Positions.offsetToPosition(cu, braceAlone ? contentEnd : brace)),
+            braceAlone ? stubs : "\n%s%s".formatted(stubs, classIndent));
 
     final List<TextEdit> importEdits =
         names.importEditsFor(
@@ -160,29 +188,48 @@ public final class MissingMethodImplProvider {
     return "%s(%s)".formatted(exe.getSimpleName(), params);
   }
 
+  // One indent level inside the class, as its first member is written; two spaces for a class
+  // with no member on a line of its own.
+  private static String memberStep(
+      final String source,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final ClassTree classTree,
+      final String classIndent) {
+    for (final Tree member : classTree.getMembers()) {
+      // javac's implicit constructor sits at the class's own position and ends nowhere.
+      final long start = positions.getStartPosition(cu, member);
+      if (start >= 0 && positions.getEndPosition(cu, member) >= 0) {
+        return CodeActionSupport.indentStep(
+            CodeActionSupport.lineIndent(source, (int) start), classIndent);
+      }
+    }
+
+    return CodeActionSupport.indentStep("", "");
+  }
+
+  // Each stub after a blank line, one line each for its annotation, signature, body and brace.
   private static String buildStubs(
       final List<List<ExecutableElement>> methods,
       final TypeDisplayFormatter formatter,
       final Types types,
-      final DeclaredType classType) {
-    return methods.stream()
-            .map(m -> buildStub(m, formatter, types, classType))
-            .collect(Collectors.joining())
-        + "\n";
-  }
+      final DeclaredType classType,
+      final String indent,
+      final String step) {
+    final var stubs = new StringBuilder();
+    for (final List<ExecutableElement> method : methods) {
+      stubs.append(
+          """
 
-  private static String buildStub(
-      final List<ExecutableElement> method,
-      final TypeDisplayFormatter formatter,
-      final Types types,
-      final DeclaredType classType) {
-    return """
+          %1$s@Override
+          %1$spublic %2$s {
+          %1$s%3$sthrow new UnsupportedOperationException();
+          %1$s}
+          """
+              .formatted(
+                  indent, MethodStubRenderer.signature(method, classType, types, formatter), step));
+    }
 
-
-            @Override
-            public %s {
-                throw new UnsupportedOperationException();
-            }"""
-        .formatted(MethodStubRenderer.signature(method, classType, types, formatter));
+    return stubs.toString();
   }
 }

@@ -1169,32 +1169,6 @@ Where exactly one local assigned in the selection is read after it, extract a me
 
 None yet.
 
-## CA-23 — "Implement abstract methods" inserts the stub at column 0
-
-**Status: accepted** (triaged 2026-11-27: every use of the quick fix in a class not indented with four spaces shows it; indent the stub as the class's members)
-
-**Kind: bug**
-
-**Value: low — Size: S**
-
-**Affects: the implement-missing-methods quick fix, in a class indented with tabs (or not with four spaces).**
-
-Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
-
-### Observed behaviour
-
-With `PetValidator.supports` deleted, the quick fix adds `@Override` and `public boolean supports(Class<?> clazz) {` at column 0, with a body indented by four spaces, in a class whose body is indented with tabs.
-The result compiles; the project's formatter (spring-javaformat) fixes it on the next format.
-jdtls indents its stub with the class body.
-
-### Expected
-
-The stub takes the indentation of the class body's members, as [EG-130](#eg-130--a-lathenew-test-skeleton-fails-a-build-that-checks-formatting-until-it-is-formatted)'s fix direction proposes for a generated skeleton: formatted with the project's formatter where one is configured.
-
-### Regression targets
-
-None yet.
-
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the

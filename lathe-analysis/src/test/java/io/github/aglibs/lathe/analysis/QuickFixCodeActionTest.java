@@ -1242,6 +1242,99 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         .contains("throw new UnsupportedOperationException()");
   }
 
+  // CA-23: the stub takes the class's member indentation, tabs too, and its body one level more.
+  @Test
+  void codeAction_missingMethodImpl_tabIndentedClass_indentsTheStubWithTabs() {
+    final var source =
+        """
+        package com.example;
+        class Test implements Runnable {
+        \tint count;
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            class Test implements Runnable {
+            \tint count;
+
+            \t@Override
+            \tpublic void run() {
+            \t\tthrow new UnsupportedOperationException();
+            \t}
+            }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_missingMethodImpl_nestedClass_keepsItsClosingBraceIndented() {
+    final var source =
+        """
+        package com.example;
+        class Outer {
+            static class Test implements Runnable {
+                int count;
+            }
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            class Outer {
+                static class Test implements Runnable {
+                    int count;
+
+                    @Override
+                    public void run() {
+                        throw new UnsupportedOperationException();
+                    }
+                }
+            }
+            """);
+  }
+
+  @Test
+  void codeAction_missingMethodImpl_emptyClassOnOneLine_indentsTwoSpaces() {
+    final var source =
+        """
+        package com.example;
+        class Test implements Runnable { }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            class Test implements Runnable {
+
+              @Override
+              public void run() {
+                throw new UnsupportedOperationException();
+              }
+            }
+            """);
+  }
+
   @Test
   void codeAction_missingMethodImpl_multipleAbstractMethods_generatesAllStubs() {
     final var source =
