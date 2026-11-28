@@ -287,6 +287,31 @@ public final class CodeActionSupport {
         .collect(Collectors.joining("\n"));
   }
 
+  // One indent level inside the class, as the first body member on a deeper line than the class's
+  // own is written. A member on the class's line shows no step, and one before the body's `{` is
+  // javac's: the implicit constructor, a record component's field. Two spaces when none shows one.
+  static String memberStep(
+      final String source,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final ClassTree cls) {
+    final int brace = classBodyBrace(cls, cu, positions, source);
+    final String classIndent = lineIndent(source, (int) positions.getStartPosition(cu, cls));
+    for (final Tree member : cls.getMembers()) {
+      final long start = positions.getStartPosition(cu, member);
+      if (brace < 0 || start <= brace) {
+        continue;
+      }
+
+      final String memberIndent = lineIndent(source, (int) start);
+      if (memberIndent.startsWith(classIndent) && memberIndent.length() > classIndent.length()) {
+        return memberIndent.substring(classIndent.length());
+      }
+    }
+
+    return indentStep("", "");
+  }
+
   // One indent level: how much deeper `inner` is than `outer`, else two spaces.
   static String indentStep(final String inner, final String outer) {
     return inner.startsWith(outer) && inner.length() > outer.length()
