@@ -688,30 +688,6 @@ A `method` token on the name of a method reference, as for a call; `status.md` s
 
 None yet.
 
-## EG-125 — An unused local is reported twice once the module's compiler plugins have run
-
-**Status: deferred** (triaged 2026-11-24: low; noise only, both reports are right)
-
-**Kind: bug**
-
-**Affects: diagnostics in the editor and MCP `get_diagnostics`, in a module that runs Error Prone.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N14).
-
-### Observed behaviour
-
-A new file in `dropwizard-util` with two unused locals (`List<String> l = null;`, `Path p = null;`) answers `get_diagnostics` with four entries: Lathe's hint `Unused local variable 'l'` and Error Prone's warning `[UnusedVariable] The local variable 'l' is never read.` for each, on the same variable.
-
-### Expected
-
-One report per unused local: Lathe's own hint left out where the build's compiler plugin already reports it, or the two merged.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-130 — A `:LatheNew` test skeleton fails a build that checks formatting until it is formatted
 
 **Status: deferred** (triaged 2026-11-26: low; the first save formats the file where format-on-save is on, and the real fix, formatting the skeleton, is a feature)
@@ -1185,6 +1161,39 @@ Module-annotation argument completion has no regression test yet; the paired pro
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
+
+## WS-56 — A Spotless Java formatter only a non-Java module runs disables formatting without a word
+
+**Status: deferred** (filed 2026-11-28: low; the answer is right today, only the refusal goes unexplained, and the fix refactors sync code every Maven build runs: after the release)
+
+**Kind: bug**
+
+**Affects: the Maven sync's workspace style (`.lathe/` style file), and so formatting in the editor and MCP `format`.**
+
+Found while reviewing `MavenStyle` (2026-11-28).
+
+### Observed behaviour
+
+`MavenStyle.formatterSource` answers `Optional.empty()` both when no project runs the formatter and when the modules disagree, and `write` tells the two apart by scanning every project again (`runsSpotlessJava`).
+The two scans count different projects: `formatterSource` only the Java modules (`ReactorProjects.compilesJava`) and the root, `runsSpotlessJava` every project.
+So a build where only a non-Java module (a `pom`-packaged parent other than the root, a docs module) configures a Spotless Java formatter, and the root runs spring-javaformat, gets no style: Spotless is refused and spring-javaformat does not take over, which is right, but the sync says only, at debug, that there is no Spotless Java formatter.
+
+### Expected
+
+Formatter selection answers one of three outcomes: the project whose configuration is the style, none in the build (the only case that falls back to spring-javaformat), or refused, with the reason logged as a warning.
+The rules stay: a pinned declared formatter first, the root when it runs the formatter, else every Java module alike.
+
+### Fix direction
+
+`formatterSource` returns a `FormatterSource` (a record of an outcome, `SELECTED`, `ABSENT` or `REFUSED`, and the selected project), and `write` switches on it, so `runsSpotlessJava` goes.
+No Java module running the formatter is `ABSENT` only when no project at all runs it; a non-Java module that does makes it `REFUSED`, with a warning that names the reason.
+Tests: `write_refusedSpotlessAndSpringJavaFormat_writesNoStyle`, `write_springJavaFormatWithDeclaredNone_writesNoneWithEditorconfigIndent` and the root-selection cases keep passing; the non-Java-module case gets its own `styleSource` and `write` tests.
+
+### Regression targets
+
+None yet.
+
+---
 
 ## WS-27 — On Gradle, included builds are not covered
 
@@ -2190,3 +2199,33 @@ Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-wo
 None yet.
 
 ---
+
+## MC-114 — A test run's launch notes reach its MCP answer through the editor transcript's `note: ` prefix
+
+**Status: deferred** (2026-11-28: no answer is wrong today; six classes on the run and debug paths, not worth changing just before the release; becomes a bug once a second kind of launch note appears)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `run_test` notes, and the editor's run transcript.**
+
+Found by the [2026-11-13 code review](code-review-2026-11-13.md#cr-62--launch-notes-travel-as-a-text-prefix) (CR-62); still so at `cb614f5`.
+
+### Observed behaviour
+
+`Launcher.unappliedOptionNote` writes `TranscriptLine.NOTE_PREFIX` (`note: `) into the warning's text, and `Launcher.launch` sends it as a `COMMAND` transcript line; `LatheTestRun.launchNotes` then finds `COMMAND` lines with that prefix and strips it to rebuild the MCP answer's notes, so the editor's display format feeds the MCP result.
+`LaunchOutcome.notes` holds only the completeness gate's notes, and `withNotes`, at both its call sites in `RunCoordinator` (the run's outcome and the debug session's end), replaces the list instead of adding to it.
+No answer is wrong yet: `withNotes` replaces an empty list, and only `COMMAND` lines are read, so a program printing `note: ` on stdout gets no note.
+A second source of launch notes, or launch notes carried in the outcome, would be lost or doubled.
+
+### Fix direction
+
+Carry the raw warnings in `LaunchOutcome.notes` (`LaunchSession.onExit`, through `LaunchOutcome.completed`), and add the prefix only where the editor transcript is written (a `TranscriptLine.note(text)` factory); `LatheTestRun` takes `outcome.notes()` and drops the prefix parsing.
+`withNotes` keeps both lists, each note once, in today's MCP order: the gate's notes first, then the launch's.
+Option values stay out of the warnings.
+
+### Regression targets
+
+None yet.
+In `LauncherTest` and `LatheEngineRunTest`: the editor transcript still shows `note: …` before the program's output; the final MCP result has the gate's notes, then the launch's, each once; and program stdout that starts with `note: ` does not become a note.

@@ -7,6 +7,46 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-125 — An unused local is reported twice once the module's compiler plugins have run — done
+
+**Status: done** (2026-11-28; triaged 2026-11-24: low; noise only, both reports are right)
+
+**Kind: bug**
+
+**Affects: diagnostics in the editor and MCP `get_diagnostics`, in a module that runs Error Prone.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N14).
+
+### Observed behaviour
+
+A new file in `dropwizard-util` with two unused locals (`List<String> l = null;`, `Path p = null;`) answers `get_diagnostics` with four entries: Lathe's hint `Unused local variable 'l'` and Error Prone's warning `[UnusedVariable] The local variable 'l' is never read.` for each, on the same variable.
+
+### Expected
+
+One report per unused local: Lathe's own hint left out where the build's compiler plugin already reports it, or the two merged.
+
+### Resolution
+
+Rechecked on `main` at `b069de4` with Error Prone 2.50.0: it reports `[UnusedVariable]` (locals, a lambda's locals, private fields) and `[UnusedMethod]` (private methods) at the declaration's name, zero wide, which Lathe maps to one character at the name; Lathe's hint spans the name, so the two never had the same range and message, and the merge of a write's findings kept both.
+Where a write's Error Prone finding of one of those checks (its javac code `compiler.err.error.prone`, `compiler.warn.error.prone` or, for a check run as a suggestion, `compiler.note.error.prone`, the message led by its `[CheckName]`) starts where the analysis's unused hint does, the merge (`WritePass.withWriteOnly`) leaves the hint out and gives the finding the hint's `Unnecessary` tag, so the editor still fades the declaration; an error under `-Werror` replaces the hint but is not faded, as it fails the build.
+The editor's publish keeps the merged list whenever it differs from the analysis's, no longer only when it is longer, as replacing a hint leaves the count the same.
+This holds wherever a write's findings join the analysis's: the editor's diagnostics, `get_diagnostics` and `verify_change`.
+With the check off or suppressed (`@SuppressWarnings("UnusedVariable")`) Error Prone reports nothing there, and the hint stays; so does a hint next to another check's finding at the same name (`[FieldCanBeFinal]`).
+
+Not covered: another plugin's unused findings, whose position and name Lathe does not know; and an edited buffer, which shows the hint alone, as a write's findings join only the content written.
+
+### Regression targets
+
+- `WritePassDiagnosticsTest.withWriteOnly_errorProneUnusedVariableAtTheHint_keepsTheFindingOnceFaded`
+- `WritePassDiagnosticsTest.withWriteOnly_errorProneUnusedMethodAtTheHint_keepsTheFindingOnce`
+- `WritePassDiagnosticsTest.withWriteOnly_otherErrorProneCheckAtTheHint_keepsBoth`
+- `WritePassDiagnosticsTest.withWriteOnly_noErrorProneFindingAtTheHint_keepsTheHint`
+- `WritePassDiagnosticsTest.withWriteOnly_errorProneSuggestionAtTheHint_keepsTheFindingOnce`
+- `WritePassDiagnosticsTest.withWriteOnly_errorProneUnusedAsAnError_replacesTheHintUnfaded`
+- `WritePassDiagnosticsTest.withWriteOnly_mergedTwice_keepsTheFindingTheFirstMergeFaded`
+
+---
+
 ## EG-124 — A position on a package segment of an import resolves to the imported type — done
 
 **Status: done** (2026-11-28; triaged 2026-11-24: low; the answer is wrong but harmless, and the type's own name still answers right)

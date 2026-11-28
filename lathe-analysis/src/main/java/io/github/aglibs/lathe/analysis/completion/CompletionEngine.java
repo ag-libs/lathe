@@ -300,7 +300,7 @@ public final class CompletionEngine {
     final var semanticContext = semanticContext(site, req, parsed);
     final boolean recoveredMixedStatement =
         shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
-    final var instanceofCandidates = instanceofKeywordCandidates(injected, semanticContext);
+    final var instanceofCandidates = instanceofKeywordCandidates(parsed, injected, semanticContext);
     if (semanticContext != null
         && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
         && !hasUppercasePrefix(injected)
@@ -485,8 +485,10 @@ public final class CompletionEngine {
   }
 
   private static List<CompletionCandidate> instanceofKeywordCandidates(
-      final SentinelInjectionResult injected, final SemanticCompletionContext semanticContext) {
-    if (!INSTANCEOF_KEYWORD.startsWith(injected.prefix())) {
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final SemanticCompletionContext semanticContext) {
+    if (!INSTANCEOF_KEYWORD.startsWith(injected.prefix()) || !parsed.afterOperand()) {
       return List.of();
     }
 

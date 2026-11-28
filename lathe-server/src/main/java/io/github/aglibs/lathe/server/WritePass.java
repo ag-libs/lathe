@@ -45,6 +45,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.DiagnosticTag;
+import org.eclipse.lsp4j.Position;
 
 // Keeps .lathe/ current with the sources on disk: each pass scans the source trees for files whose
 // content differs from what was last compiled into the mirror, compiles them there tree by tree in
@@ -59,6 +61,12 @@ final class WritePass {
   private static final String WRITE_LOCK_KEY = "write-lock";
   // javac's code for the error -Werror adds when a compile has warnings.
   private static final String WERROR_CODE = "compiler.err.warnings.and.werror";
+  // Error Prone's javac codes, its findings' messages led by the check's name in brackets, and the
+  // checks that report an unused declaration, as the analysis's unused hint does (EG-125).
+  private static final Set<String> ERROR_PRONE_CODES =
+      Set.of("compiler.err.error.prone", "compiler.warn.error.prone", "compiler.note.error.prone");
+  private static final Set<String> ERROR_PRONE_UNUSED_CHECKS =
+      Set.of("[UnusedVariable]", "[UnusedMethod]");
   // Long enough for another server's pass after a save; a query waits no longer than this for it.
   static final long OTHER_SERVER_GRACE_MS = 2_000;
   // How often a pass that a query waits on tries the write lock again, as LatheLock's own wait.
@@ -670,15 +678,73 @@ final class WritePass {
   }
 
   // The analysis compile's diagnostics plus those only the build's compile found: the processors
-  // and plugins it runs report what the analysis cannot.
+  // and plugins it runs report what the analysis cannot. A declaration Error Prone reports unused,
+  // at its name as the analysis's unused hint is, is reported once: by Error Prone's finding,
+  // which takes the hint's tag so an editor still fades the declaration, unless it is an error
+  // that fails the build (EG-125). With the check off or suppressed there is no finding, and the
+  // hint stays.
   static List<Diagnostic> withWriteOnly(
       final List<Diagnostic> analyzed, final List<Diagnostic> written) {
+    final Set<Position> unusedByPlugin =
+        written.stream()
+            .filter(WritePass::reportsUnused)
+            .map(diagnostic -> diagnostic.getRange().getStart())
+            .collect(Collectors.toUnmodifiableSet());
+    final List<Diagnostic> own =
+        analyzed.stream()
+            .filter(
+                diagnostic ->
+                    !isUnusedHint(diagnostic)
+                        || !unusedByPlugin.contains(diagnostic.getRange().getStart()))
+            .toList();
     final Set<String> seen =
-        analyzed.stream().map(WritePass::diagnosticKey).collect(Collectors.toUnmodifiableSet());
+        own.stream().map(WritePass::diagnosticKey).collect(Collectors.toUnmodifiableSet());
     return Stream.concat(
-            analyzed.stream(),
-            written.stream().filter(diagnostic -> !seen.contains(diagnosticKey(diagnostic))))
+            own.stream(),
+            written.stream()
+                .filter(diagnostic -> !seen.contains(diagnosticKey(diagnostic)))
+                .map(
+                    diagnostic ->
+                        reportsUnused(diagnostic)
+                                && diagnostic.getSeverity() != DiagnosticSeverity.Error
+                            ? unnecessary(diagnostic)
+                            : diagnostic))
         .toList();
+  }
+
+  // The analysis's unused hint: tagged unnecessary, as a merge also tags Error Prone's own finding,
+  // which a second merge (a failed write's causes, then its kept findings) must not drop as a hint.
+  private static boolean isUnusedHint(final Diagnostic diagnostic) {
+    return diagnostic.getTags() != null
+        && diagnostic.getTags().contains(DiagnosticTag.Unnecessary)
+        && !reportsUnused(diagnostic);
+  }
+
+  private static boolean reportsUnused(final Diagnostic diagnostic) {
+    return diagnostic.getCode() != null
+        && diagnostic.getCode().isLeft()
+        && ERROR_PRONE_CODES.contains(diagnostic.getCode().getLeft())
+        && diagnostic.getMessage().isLeft()
+        && ERROR_PRONE_UNUSED_CHECKS.stream()
+            .anyMatch(diagnostic.getMessage().getLeft()::startsWith);
+  }
+
+  // A copy, with every field and its tags kept: the write's diagnostics serve later publishes.
+  private static Diagnostic unnecessary(final Diagnostic diagnostic) {
+    final var copy = new Diagnostic();
+    copy.setRange(diagnostic.getRange());
+    copy.setSeverity(diagnostic.getSeverity());
+    copy.setCode(diagnostic.getCode());
+    copy.setCodeDescription(diagnostic.getCodeDescription());
+    copy.setSource(diagnostic.getSource());
+    copy.setMessage(diagnostic.getMessage());
+    copy.setRelatedInformation(diagnostic.getRelatedInformation());
+    copy.setData(diagnostic.getData());
+    final List<DiagnosticTag> tags =
+        diagnostic.getTags() == null ? List.of() : diagnostic.getTags();
+    copy.setTags(
+        Stream.concat(tags.stream(), Stream.of(DiagnosticTag.Unnecessary)).distinct().toList());
+    return copy;
   }
 
   private static String diagnosticKey(final Diagnostic diagnostic) {

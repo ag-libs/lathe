@@ -706,7 +706,8 @@ final class WorkspaceSession {
         unsaved.contains(snapshot.uri())
             ? WritePass.withWriteOnly(result.diagnostics(), writeOnly(snapshot))
             : withBuildFindings(snapshot, result.diagnostics());
-    return merged.size() == result.diagnostics().size()
+    // By content, not size: the merge may replace a hint with the write's own finding (EG-125).
+    return merged.equals(result.diagnostics())
         ? result
         : new CompileResponse(result.uri(), result.generation(), merged);
   }
