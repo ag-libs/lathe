@@ -7,6 +7,39 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-124 — A position on a package segment of an import resolves to the imported type — done
+
+**Status: done** (2026-11-28; triaged 2026-11-24: low; the answer is wrong but harmless, and the type's own name still answers right)
+
+**Kind: bug**
+
+**Affects: hover and definition in the editor; MCP `describe_symbol` and `get_definition`.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B8).
+
+### Observed behaviour
+
+In `dropwizard-util`'s `Duration.java:7`, `import java.util.Locale;`, hover and definition on `java` (column 8), `util` (13) and `Locale` (18) all answer `public final class Locale …`; definition on `java` opens `Locale.java:574`.
+On the `package` line the same kind of position answers the package (`describe_symbol` at 1:12 gives `io.dropwizard`).
+
+### Expected
+
+The package for `java` and `util` (`java`, `java.util`), as on the `package` line, or nothing; the type only on its own name.
+
+### Resolution
+
+`CursorElements.elementAt` skipped a package and walked up to the name around it, the imported or qualified type.
+A name that resolves to a package now stops there with no element, in an import and in code (`java.util.List<String> names`) alike: hover describes the package as on the `package` line, definition answers nothing, and references and rename find no symbol, where they took the type before.
+Type hierarchy there answers nothing too, not the class around the position.
+
+### Regression targets
+
+- `HoverTest.hover_packageSegmentOfQualifiedName_describesThePackageNotTheType`
+- `DefinitionLocatorTest.definition_packageSegmentOfQualifiedName_none_typeNameItsDeclaration`
+- `TypeHierarchyTest.prepareTypeHierarchy_packageSegmentInAClass_returnsEmpty`
+
+---
+
 ## CA-23 — "Implement abstract methods" inserts the stub at column 0 — done
 
 **Status: done** (2026-11-28)
