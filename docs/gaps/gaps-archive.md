@@ -5216,6 +5216,40 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0071 — A type parameter's second bound offers classes — done
+
+**Status: done** (2026-11-28; triaged 2026-11-24: low; a second bound is rare, and javac flags a class picked there at once)
+
+**Kind: bug**
+
+**Affects: completion after `&` in a type parameter's bounds, in the editor.**
+
+Found while fixing CQ-0066 (2026-11-23), and rechecked on `main` at `1abfa570` through the completion test fixture (`CompletionFixture`).
+
+### Observed behaviour
+
+`class Box<T extends Number & Str§> {}` offers `String`, `StringBuilder` and other classes; Java allows only an interface after the first bound, so picking one does not compile.
+Every bound has the type-argument role of CQ-0066, which allows any reference type.
+
+### Expected
+
+Interfaces only after `&`; the first bound keeps any reference type.
+
+### Resolution
+
+A type parameter's bound after the first has its own type-reference role, `ADDITIONAL_BOUND`, which offers interfaces only, as after `implements`, and no type variable, keyword or modifier (JLS 4.4).
+The first bound, and a type argument within an additional bound (`& Comparable<Str§>`), keep the type-argument role and offer any reference type.
+
+A type variable in scope offers nothing there but still hides an interface of its name, as elsewhere.
+
+Not covered: an intersection cast (`(Runnable & Seri§) x`), whose additional types follow the same rule through another parse path; a qualified bound (`& java.lang.Str§`), whose nested and package types are not filtered by role, as after `implements`.
+
+### Regression targets
+
+- `CompletionTypeReferenceTest.typeParameter_additionalBound_offersInterfacesOnly`
+
+---
+
 ## CQ-0083 — An annotation's enum element value offers `class`, `valueOf` and `values` — done
 
 **Status: done** (2026-11-27; triaged 2026-11-27: JLS 9.7.1 settles it, and jdtls 1.63 offers the constants alone)
