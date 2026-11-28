@@ -7,6 +7,64 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-034 — Renaming a member a processor derives another from leaves the derived member's callers broken — done
+
+**Status: done** (2026-11-28; triaged 2026-11-17: the break was reported, the fix needed the generator link)
+
+**Kind: bug**
+
+**Value: medium — Size: M**
+
+**Affects: MCP and the editor.**
+
+Split from FR-020 (2026-11-17), whose build-task half is done.
+Found by the pre-release test rounds (2026-10-29/30) on Helidon.
+
+### Observed behaviour
+
+`rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
+The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
+The annotation processor regenerates the builder from the renamed blueprint, so its member gets the new name, and the hand-written callers of the old one break.
+A JPA metamodel attribute (`Foo_.name`) used by hand-written queries behaves the same.
+
+Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_change` called clean, was split out as MC-98 (done).
+Seen again on Helidon (2026-11-19, `8c099a5`): renaming `ListenerConfigBlueprint.port()` edits 3 places in 2 files, lists 5 places "Left to the generator", and breaks 34 hand-written calls of the generated `Builder.port(int)`, which `verify_change` reports.
+Before the rename, `analyze_change` on the option reports `references: 5 production, 0 test` and `relevant tests: none`: the derived setter's callers are not part of the blast radius it previews.
+
+### Fix direction
+
+Processor output stays unedited, and renames only it refers to (Dagger factories, MapStruct implementations) go ahead.
+Refuse when a generated file that refers to the symbol also declares a member of the old name that hand-written code uses (`Builder.allowAll(boolean)`, `Foo_.name`), naming that member and one caller.
+Find those members with javac trees through the existing file queries, and run the check only when processor output refers to the target.
+Generated types named after a renamed type (`Foo_Factory`) are out of scope.
+
+### Resolution
+
+Reproduced on `main` at `0f9e8bd` (2026-11-28): renaming `ListenerConfigBlueprint.port()` to `listenPort` answered "3 edit(s) across 2 file(s)" with 5 places left to the generator, and `verify_change` then reported 34 `cannot find symbol: method port(int)` errors, 26 of them calls through `WebServerConfig.Builder`, which inherits the generated setter.
+
+A rename is now refused when it would break a hand-written use of a member the processor derives from the target.
+After the reference search, `RenameService` takes the generated files among the matches, names their types from their paths under the generated-sources mirror (`SourceTypeScanner.deriveEntry`), and asks the cursor's module for their derived members (`ReferenceFeatures.derivedMembers`): in a generated type that extends the target's own type (the prototype Helidon's and Immutables' processors implement it with) or a type it nests (its builder), the members of the target's name that are not private and are neither the target nor in its override family.
+A generated type that only calls the target (a mapper implementation) renders nothing of it, so its members do not count.
+Each derived member's references are searched until one lies outside generated source and is not among the rename's own edits, and the refusal names the member and the first such use by path and line:
+"`port` cannot be renamed: the annotation processor generates the method `BuilderBase.port(int)` from it and would regenerate it under the new name, breaking its hand-written uses (first: <path>:<line>); keep the name, or rename it by hand and update those uses once the build has regenerated it".
+On Helidon the refusal takes 2.6 s, about 1.2 s of it the derived member's search; nothing is edited, and `verify_change` stays clean.
+A member only generated code uses does not refuse, and a rename with no generated match costs nothing more.
+
+Not covered:
+- a processor whose output does not extend the target's type: a JPA metamodel (`Foo_.name`, whose class refers to the entity, not the field) and a record's generated builder (`PointBuilder.x(int)`);
+- generated source in a module downstream of the target's, whose types the target's module cannot see;
+- a member derived under another name (a `withPort` setter for `port`), and generated types named after a renamed type (`Foo_Factory`);
+- `analyze_change`'s count of references, which still leaves out the derived member's callers.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_optionAProcessorDerivesAMemberFromCalledByHand_refusesNamingTheMemberAndTheCall`
+- `LatheEngineRenameTest.rename_optionWhoseDerivedMemberOnlyGeneratedCodeCalls_renamesAndListsTheGeneratedSource`
+- `LatheEngineRenameTest.rename_optionAGeneratedTypeOverridesAndHandWrittenCodeCalls_renamesTheCall`
+- `LatheEngineRenameTest.rename_methodAGeneratedCallerAlsoDeclaresByName_renamesAndRefusesNothing`
+
+---
+
 ## EG-125 — An unused local is reported twice once the module's compiler plugins have run — done
 
 **Status: done** (2026-11-28; triaged 2026-11-24: low; noise only, both reports are right)

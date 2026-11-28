@@ -748,43 +748,6 @@ None yet.
 
 ---
 
-## FR-034 — Renaming a member a processor derives another from leaves the derived member's callers broken
-
-**Status: deferred** (triaged 2026-11-17: the break is reported: the rename lists the generated uses it left and `verify_change` lists the errors; the fix needs the generator link)
-
-**Kind: bug**
-
-**Value: medium — Size: M**
-
-**Affects: MCP and the editor.**
-
-Split from FR-020 (2026-11-17), whose build-task half is done.
-Found by the pre-release test rounds (2026-10-29/30) on Helidon.
-
-### Observed behaviour
-
-`rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
-The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
-The annotation processor regenerates the builder from the renamed blueprint, so its member gets the new name, and the hand-written callers of the old one break.
-A JPA metamodel attribute (`Foo_.name`) used by hand-written queries behaves the same.
-
-Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_change` called clean, was split out as MC-98 (done).
-Seen again on Helidon (2026-11-19, `8c099a5`): renaming `ListenerConfigBlueprint.port()` edits 3 places in 2 files, lists 5 places "Left to the generator", and breaks 34 hand-written calls of the generated `Builder.port(int)`, which `verify_change` reports.
-Before the rename, `analyze_change` on the option reports `references: 5 production, 0 test` and `relevant tests: none`: the derived setter's callers are not part of the blast radius it previews.
-
-### Fix direction
-
-Processor output stays unedited, and renames only it refers to (Dagger factories, MapStruct implementations) go ahead.
-Refuse when a generated file that refers to the symbol also declares a member of the old name that hand-written code uses (`Builder.allowAll(boolean)`, `Foo_.name`), naming that member and one caller.
-Find those members with javac trees through the existing file queries, and run the check only when processor output refers to the target.
-Generated types named after a renamed type (`Foo_Factory`) are out of scope.
-
-### Regression targets
-
-None yet.
-
----
-
 ## FR-029 — References to a widely used method take 12–27 s on a very large codebase
 
 **Status: deferred** (triaged 2026-11-16: what is left, parallel batches per module and cached answers, needs its own design)
