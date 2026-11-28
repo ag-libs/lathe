@@ -5,6 +5,8 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -13,8 +15,11 @@ import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -56,6 +61,84 @@ public final class ReferenceFeatures {
                 ReferenceTarget.from(
                     accessor, analysis.trees(), analysis.types(), analysis.elements()))
         .toList();
+  }
+
+  // The members a processor generated from the method or field at the cursor: named alike, not
+  // private, declared in a given generated type that extends the target's own type (the prototype a
+  // processor implements the target's type with, as Helidon's and Immutables' are) or in a type it
+  // nests (its builder), and neither the target nor a member of its override family. The processor
+  // regenerates them under the new name when the target is renamed, so their uses break (FR-034).
+  // A generated type that only calls the target is no rendering of it, so its members do not count.
+  public List<DerivedMember> derivedMembers(
+      final SourceFeatureRequest request, final List<String> generatedTypes) {
+    final Optional<Cursor> at = session.cursor(request);
+    if (at.isEmpty()) {
+      return List.of();
+    }
+
+    final Element target = at.get().elementOrJavadocReference();
+    if (target == null
+        || (target.getKind() != ElementKind.METHOD && target.getKind() != ElementKind.FIELD)) {
+      return List.of();
+    }
+
+    if (!(target.getEnclosingElement() instanceof final TypeElement targetType)) {
+      return List.of();
+    }
+
+    final var analysis = at.get().analysis();
+    final Types types = analysis.types();
+    final var derived = new ArrayList<DerivedMember>();
+    final var owners = new ArrayDeque<TypeElement>();
+    for (final String name : generatedTypes) {
+      final TypeElement type = analysis.elements().getTypeElement(name);
+      if (type != null
+          && types.isSubtype(types.erasure(type.asType()), types.erasure(targetType.asType()))) {
+        owners.push(type);
+      }
+    }
+
+    while (!owners.isEmpty()) {
+      final TypeElement owner = owners.pop();
+      for (final Element member : owner.getEnclosedElements()) {
+        if (member.getModifiers().contains(Modifier.PRIVATE)) {
+          continue;
+        }
+
+        if (member instanceof final TypeElement nested) {
+          owners.push(nested);
+        } else if (isDerived(member, target, owner, analysis.elements())) {
+          derived.add(
+              new DerivedMember(
+                  ReferenceTarget.from(
+                      member, analysis.trees(), analysis.types(), analysis.elements()),
+                  RenameBindingCheck.describe(member)));
+        }
+      }
+    }
+
+    return List.copyOf(derived);
+  }
+
+  private static boolean isDerived(
+      final Element member,
+      final Element target,
+      final TypeElement owner,
+      final Elements elements) {
+    if (member.equals(target)
+        || !member.getSimpleName().contentEquals(target.getSimpleName())
+        || (member.getKind() != ElementKind.METHOD && member.getKind() != ElementKind.FIELD)) {
+      return false;
+    }
+
+    if (!(member instanceof final ExecutableElement method)
+        || !(target instanceof final ExecutableElement targetMethod)) {
+      return true;
+    }
+
+    return !elements.overrides(method, targetMethod, owner)
+        && !(targetMethod.getEnclosingElement() instanceof final TypeElement targetOwner
+            && elements.overrides(targetMethod, method, targetOwner));
   }
 
   // The methods the one at the cursor overrides, nearest first, as Type#name(descriptor): the

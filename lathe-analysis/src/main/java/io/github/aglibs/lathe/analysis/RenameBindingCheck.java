@@ -369,7 +369,7 @@ public final class RenameBindingCheck {
     return "%s:%d".formatted(LatheUri.toPath(file.uri()).getFileName(), position.getLine() + 1);
   }
 
-  private static String describe(final Element element) {
+  static String describe(final Element element) {
     final String kind = RenameConflicts.kindName(element.getKind());
     if (element instanceof final ExecutableElement method
         && method.getEnclosingElement() instanceof final TypeElement owner) {

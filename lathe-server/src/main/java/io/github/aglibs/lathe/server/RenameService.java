@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.DerivedMember;
 import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceRole;
@@ -14,11 +15,13 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.JdkSupport;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -203,6 +206,112 @@ final class RenameService {
     }
 
     return Optional.empty();
+  }
+
+  // A member a processor generates from the target (a builder's setter for a blueprint's option)
+  // keeps the old name in generated source until the processor regenerates it under the new one,
+  // and then its hand-written uses break: such a rename is refused, naming the member and its first
+  // hand-written use (FR-034). Checked only when generated source refers to the target; a member
+  // only generated code uses does not stop it, nor a use the rename edits anyway.
+  private CompletableFuture<Void> requireDerivedMembersUnused(
+      final CompilationWorker cursorWorker,
+      final SourceFeatureRequest request,
+      final OpenDocument openFile,
+      final ModuleSourceConfig cursorConfig,
+      final ReferenceTarget target,
+      final List<ReferenceMatch> matches,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    final List<String> generatedTypes =
+        matches.stream()
+            .map(match -> LatheUri.toPath(match.uri()))
+            .distinct()
+            .flatMap(this::generatedTypeName)
+            .distinct()
+            .toList();
+    if (generatedTypes.isEmpty()) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    return cursorWorker
+        .submit(session -> session.references().derivedMembers(request, generatedTypes))
+        .thenCompose(
+            derived -> {
+              CompletableFuture<Optional<String>> found =
+                  CompletableFuture.completedFuture(Optional.empty());
+              for (final DerivedMember member : derived) {
+                found =
+                    found.thenCompose(
+                        reason ->
+                            reason.isPresent()
+                                ? CompletableFuture.completedFuture(reason)
+                                : handWrittenUse(
+                                    member,
+                                    target,
+                                    matches,
+                                    openFile,
+                                    cursorWorker,
+                                    cursorConfig,
+                                    cancelChecker,
+                                    progress));
+              }
+
+              return found;
+            })
+        .thenAccept(RenameService::refuseIfPresent);
+  }
+
+  private CompletableFuture<Optional<String>> handWrittenUse(
+      final DerivedMember member,
+      final ReferenceTarget target,
+      final List<ReferenceMatch> renamed,
+      final OpenDocument openFile,
+      final CompilationWorker cursorWorker,
+      final ModuleSourceConfig cursorConfig,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    return search
+        .searchReferencesForTarget(
+            openFile,
+            cursorWorker,
+            cursorConfig,
+            member.target(),
+            false,
+            cancelChecker,
+            progress,
+            "Checking %s".formatted(member.target().simpleName()))
+        .thenApply(
+            uses ->
+                uses.stream()
+                    .filter(use -> !isGeneratedSource(LatheUri.toPath(use.uri())))
+                    .filter(use -> !renamedAt(renamed, use))
+                    .min(
+                        Comparator.comparing(ReferenceMatch::uri)
+                            .thenComparingInt(use -> use.range().getStart().getLine()))
+                    .map(
+                        use ->
+                            "`%s` cannot be renamed: the annotation processor generates %s from it and would regenerate it under the new name, breaking its hand-written uses (first: %s:%d); keep the name, or rename it by hand and update those uses once the build has regenerated it"
+                                .formatted(
+                                    target.simpleName(),
+                                    member.description(),
+                                    workspacePath(LatheUri.toPath(use.uri())),
+                                    use.range().getStart().getLine() + 1)));
+  }
+
+  private static boolean renamedAt(final List<ReferenceMatch> renamed, final ReferenceMatch use) {
+    return renamed.stream()
+        .anyMatch(match -> match.uri().equals(use.uri()) && match.range().equals(use.range()));
+  }
+
+  // The type a generated source declares, by its path under its tree's generated-sources mirror.
+  private Stream<String> generatedTypeName(final Path file) {
+    return state.registry().allConfigs().stream()
+        .map(ModuleSourceConfig::generatedSourcesDir)
+        .filter(file::startsWith)
+        .findFirst()
+        .flatMap(root -> SourceTypeScanner.deriveEntry(root, file))
+        .map(TypeIndexEntry::binaryName)
+        .stream();
   }
 
   // A source a build task writes (a code generator's output root) is written again by the next
@@ -615,6 +724,18 @@ final class RenameService {
                                     requireNoBuildOutputEdits(searchTarget, matches);
                                     return matches;
                                   })
+                              .thenCompose(
+                                  matches ->
+                                      requireDerivedMembersUnused(
+                                              cursorWorker,
+                                              request,
+                                              openFile,
+                                              cursorConfig,
+                                              searchTarget,
+                                              matches,
+                                              cancelChecker,
+                                              progress)
+                                          .thenApply(checked -> matches))
                               .thenCompose(
                                   matches ->
                                       requireMeaningKept(

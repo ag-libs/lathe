@@ -383,6 +383,139 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         .noneSatisfy(diagnostic -> assertThat(diagnostic.path()).endsWith("CalleeHelper.java"));
   }
 
+  // FR-034: a processor's builder declares a setter of the option's name, which hand-written code
+  // calls; the processor would regenerate it under the new name, breaking that call, so the rename
+  // is refused, naming the setter and the call, and edits nothing.
+  @Test
+  void rename_optionAProcessorDerivesAMemberFromCalledByHand_refusesNamingTheMemberAndTheCall()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    final String setupSource =
+        "package com.example; class Setup { void run() { new CalleeConfig.Builder().greet(\"hi\"); } }";
+    final Path setup = TestCompiler.writeModuleSource(tmp, "com/example/Setup.java", setupSource);
+    final Path generated = writeGeneratedBuilder();
+    compileIntoMirror(fx.callee(), fx.caller(), generated, setup);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome"))
+        .hasMessageContaining(
+            "`greet` cannot be renamed: the annotation processor generates the method `Builder.greet(java.lang.String)` from it")
+        .hasMessageContaining("first: module/src/main/java/com/example/Setup.java:1");
+    assertThat(Files.readString(fx.callee())).isEqualTo(fx.calleeSource());
+    assertThat(Files.readString(setup)).isEqualTo(setupSource);
+  }
+
+  // The same setter that only generated code calls breaks nothing hand-written: the rename goes
+  // ahead and leaves the generated source to the processor, as before.
+  @Test
+  void rename_optionWhoseDerivedMemberOnlyGeneratedCodeCalls_renamesAndListsTheGeneratedSource()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    final Path generated = writeGeneratedBuilder();
+    compileIntoMirror(fx.callee(), fx.caller(), generated);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+
+    assertThat(rename.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
+    assertThat(rename.generated())
+        .singleElement()
+        .satisfies(location -> assertThat(location.uri()).endsWith("CalleeConfig.java"));
+  }
+
+  // A generated class that only calls the method, as a mapper implementation does, renders nothing
+  // of it: its own method of the same name, which hand-written code calls, is not derived, so the
+  // rename goes ahead.
+  @Test
+  void rename_methodAGeneratedCallerAlsoDeclaresByName_renamesAndRefusesNothing() throws Exception {
+    final GreetFixture fx = greetFixture();
+    final String useSource =
+        "package com.example; class Use { void run() { new CalleeMapper().greet(\"hi\"); } }";
+    final Path use = TestCompiler.writeModuleSource(tmp, "com/example/Use.java", useSource);
+    final Path generated =
+        writeGenerated(
+            "CalleeMapper",
+            """
+            package com.example;
+            class CalleeMapper {
+              void map(Callee c) { c.greet(); }
+              void greet(String greeting) {}
+            }
+            """);
+    compileIntoMirror(fx.callee(), fx.caller(), generated, use);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+
+    assertThat(rename.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"))
+        .noneSatisfy(uri -> assertThat(uri).endsWith("Use.java"));
+    assertThat(Files.readString(use)).isEqualTo(useSource);
+  }
+
+  // A generated override of the option (Helidon's generated implementation) is in the rename's own
+  // family, not derived from it: a hand-written call of it is renamed with the rest, and the
+  // processor regenerates the override under the new name, so nothing is refused.
+  @Test
+  void rename_optionAGeneratedTypeOverridesAndHandWrittenCodeCalls_renamesTheCall()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    final String useSource =
+        "package com.example; class Use { void run() { new CalleeImpl().greet(); } }";
+    final Path use = TestCompiler.writeModuleSource(tmp, "com/example/Use.java", useSource);
+    final Path generated =
+        writeGenerated(
+            "CalleeImpl",
+            "package com.example; class CalleeImpl extends Callee { @Override void greet() {} }");
+    compileIntoMirror(fx.callee(), fx.caller(), generated, use);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+
+    assertThat(rename.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Use.java"));
+    assertThat(rename.generated())
+        .singleElement()
+        .satisfies(location -> assertThat(location.uri()).endsWith("CalleeImpl.java"));
+  }
+
+  // A generated prototype with its builder, as Helidon's are: it extends the option's type, its
+  // builder reads the option (a use of the target, left to the processor) and declares a setter of
+  // the option's name, its derived member.
+  private Path writeGeneratedBuilder() throws Exception {
+    return writeGenerated(
+        "CalleeConfig",
+        """
+        package com.example;
+        class CalleeConfig extends Callee {
+          static class Builder {
+            Builder from(Callee prototype) { prototype.greet(); return this; }
+            Builder greet(String greeting) { return this; }
+          }
+        }
+        """);
+  }
+
+  // A processor's output in the module's generated-sources mirror. Written last:
+  // writeModuleSource resets the module's params, dropping the generated root.
+  private Path writeGenerated(final String type, final String source) throws Exception {
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    return TestCompiler.writeAt(
+        tmp.resolve(".lathe/module")
+            .resolve(LatheLayout.generatedSourcesDir("classes"))
+            .resolve("com/example/%s.java".formatted(type)),
+        source,
+        1_000L);
+  }
+
   // A code-generation task's output root under the build directory, compiled as any source: the
   // next build writes it again, so an edit there would be lost and the rename is refused whole.
   @Test
