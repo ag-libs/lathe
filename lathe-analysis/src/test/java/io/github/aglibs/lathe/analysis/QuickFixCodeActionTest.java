@@ -1274,6 +1274,75 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertCompilesClean(rewritten);
   }
 
+  // A member on the class's own line shows no step: the stub takes it from the next member.
+  @Test
+  void codeAction_missingMethodImpl_inlineFirstField_takesTheTabsOfALaterField() {
+    final var source =
+        """
+        package com.example;
+        class Test implements Runnable { int first;
+        \tint size;
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            class Test implements Runnable { int first;
+            \tint size;
+
+            \t@Override
+            \tpublic void run() {
+            \t\tthrow new UnsupportedOperationException();
+            \t}
+            }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
+  // A record's components become fields at their place in the header, before the body: a header
+  // split over lines shows its continuation indent there, not the members' step.
+  @Test
+  void codeAction_missingMethodImpl_recordWithMultiLineHeader_takesTheStepOfABodyMember() {
+    final var source =
+        """
+        package com.example;
+        record Test(
+            int first,
+            int second) implements Runnable {
+          static int count;
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+    final String rewritten =
+        applyEdits(source, editsOf(diagnosticActions(source, diags).get(0).getRight()));
+
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            record Test(
+                int first,
+                int second) implements Runnable {
+              static int count;
+
+              @Override
+              public void run() {
+                throw new UnsupportedOperationException();
+              }
+            }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
   @Test
   void codeAction_missingMethodImpl_nestedClass_keepsItsClosingBraceIndented() {
     final var source =
@@ -1495,6 +1564,61 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(rightTitles(actions)).contains("Add constructor parameter 'id'");
     final String rewritten = applyEdits(source, addCtorEdits(actions));
     assertThat(rewritten).contains("Widget(final String id)").contains("this.id = id;");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_finalBlankField_tabIndentedNoConstructor_generatesOneWithTabs() {
+    final var source =
+        """
+        package com.example;
+        class Widget {
+        \tprivate final String id;
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 2, 22);
+
+    final String rewritten = applyEdits(source, addCtorEdits(actions));
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            class Widget {
+            \tprivate final String id;
+
+            \tWidget(final String id) {
+            \t\tthis.id = id;
+            \t}
+            }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_finalBlankField_tabIndentedEmptyConstructor_bindsWithTabs() {
+    final var source =
+        """
+        package com.example;
+        class Box {
+        \tprivate final int size;
+        \tBox() {
+        \t}
+        }
+        """;
+    final var actions = replaceVarActionsAt(source, 2, 19);
+
+    final String rewritten = applyEdits(source, addCtorEdits(actions));
+    assertThat(rewritten)
+        .isEqualTo(
+            """
+            package com.example;
+            class Box {
+            \tprivate final int size;
+            \tBox(final int size) {
+            \t\tthis.size = size;
+            \t}
+            }
+            """);
     assertCompilesClean(rewritten);
   }
 

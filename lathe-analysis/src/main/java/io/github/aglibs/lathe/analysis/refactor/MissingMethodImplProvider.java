@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
@@ -90,7 +89,7 @@ public final class MissingMethodImplProvider {
     final var classTree = (ClassTree) classPath.getLeaf();
     final String classIndent =
         CodeActionSupport.lineIndent(source, (int) positions.getStartPosition(cu, classTree));
-    final String step = memberStep(source, cu, positions, classTree, classIndent);
+    final String step = CodeActionSupport.memberStep(source, cu, positions, classTree);
     final String stubs =
         buildStubs(unimplemented, formatter, types, classType, classIndent + step, step);
     final int brace = (int) endOffset - 1;
@@ -186,26 +185,6 @@ public final class MissingMethodImplProvider {
             .map(type -> types.erasure(type).toString())
             .collect(Collectors.joining(","));
     return "%s(%s)".formatted(exe.getSimpleName(), params);
-  }
-
-  // One indent level inside the class, as its first member is written; two spaces for a class
-  // with no member on a line of its own.
-  private static String memberStep(
-      final String source,
-      final CompilationUnitTree cu,
-      final SourcePositions positions,
-      final ClassTree classTree,
-      final String classIndent) {
-    for (final Tree member : classTree.getMembers()) {
-      // javac's implicit constructor sits at the class's own position and ends nowhere.
-      final long start = positions.getStartPosition(cu, member);
-      if (start >= 0 && positions.getEndPosition(cu, member) >= 0) {
-        return CodeActionSupport.indentStep(
-            CodeActionSupport.lineIndent(source, (int) start), classIndent);
-      }
-    }
-
-    return CodeActionSupport.indentStep("", "");
   }
 
   // Each stub after a blank line, one line each for its annotation, signature, body and brace.

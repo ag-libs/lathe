@@ -138,6 +138,7 @@ public final class AddConstructorParameterProvider {
       return List.of();
     }
 
+    final String step = CodeActionSupport.memberStep(source, cu, positions, cls);
     final List<MethodTree> constructors = explicitConstructors(cls, cu, positions, brace);
 
     if (constructors.isEmpty()) {
@@ -146,7 +147,7 @@ public final class AddConstructorParameterProvider {
       }
 
       final TextEdit generated =
-          generateConstructor(cls, cu, positions, source, brace, typeText, name);
+          generateConstructor(cls, cu, positions, source, brace, step, typeText, name);
       return generated == null ? List.of() : List.of(generated);
     }
 
@@ -166,7 +167,7 @@ public final class AddConstructorParameterProvider {
 
     final List<List<TextEdit>> perConstructor =
         toEdit.stream()
-            .map(ctor -> constructorEdits(ctor, cu, positions, source, typeText, name))
+            .map(ctor -> constructorEdits(ctor, cu, positions, source, step, typeText, name))
             .toList();
     if (perConstructor.stream().anyMatch(Objects::isNull)) {
       return List.of();
@@ -182,6 +183,7 @@ public final class AddConstructorParameterProvider {
       final CompilationUnitTree cu,
       final SourcePositions positions,
       final String source,
+      final String step,
       final String typeText,
       final String name) {
     final TextEdit param = parameterEdit(ctor, cu, positions, source, typeText, name);
@@ -189,7 +191,7 @@ public final class AddConstructorParameterProvider {
     final TextEdit bind =
         delegate != null
             ? forwardArgumentEdit(delegate, cu, positions, name)
-            : bindingEdit(ctor, cu, positions, source, name);
+            : bindingEdit(ctor, cu, positions, source, step, name);
     return param == null || bind == null ? null : List.of(param, bind);
   }
 
@@ -315,6 +317,7 @@ public final class AddConstructorParameterProvider {
       final CompilationUnitTree cu,
       final SourcePositions positions,
       final String source,
+      final String step,
       final String name) {
     final BlockTree body = ctor.getBody();
     if (body == null) {
@@ -332,7 +335,7 @@ public final class AddConstructorParameterProvider {
     }
 
     // Empty user body (only javac's synthetic super()): replace the inter-brace whitespace with the
-    // single indented binding, so the result is `{\n  this.x = x;\n}` rather than a blank line.
+    // binding one class step in, so the result is `{\n  this.x = x;\n}` rather than a blank line.
     final long methodStart = positions.getStartPosition(cu, ctor);
     final long brace = positions.getStartPosition(cu, body);
     final long bodyEnd = positions.getEndPosition(cu, body);
@@ -343,7 +346,8 @@ public final class AddConstructorParameterProvider {
     final String indent = CodeActionSupport.lineIndent(source, (int) methodStart);
     final var open = Positions.offsetToPosition(cu, brace + 1);
     final var close = Positions.offsetToPosition(cu, bodyEnd - 1);
-    return new TextEdit(new Range(open, close), "\n%s  %s\n%s".formatted(indent, bind, indent));
+    return new TextEdit(
+        new Range(open, close), "\n%s%s%s\n%s".formatted(indent, step, bind, indent));
   }
 
   // The last statement carrying a real source position, skipping javac's synthetic super()/this()
@@ -401,19 +405,19 @@ public final class AddConstructorParameterProvider {
       final SourcePositions positions,
       final String source,
       final int brace,
+      final String step,
       final String typeText,
       final String name) {
     final long classStart = positions.getStartPosition(cu, cls);
     final var className = cls.getSimpleName().toString();
     final VariableTree lastField = CodeActionSupport.lastField(cls, cu, positions, brace);
     if (lastField == null) {
-      final String classIndent = CodeActionSupport.lineIndent(source, (int) classStart);
+      final String member = CodeActionSupport.lineIndent(source, (int) classStart) + step;
       final var pos = Positions.offsetToPosition(cu, brace + 1);
       return new TextEdit(
           new Range(pos, pos),
-          "\n%s  %s(final %s %s) {\n%s    this.%s = %s;\n%s  }\n"
-              .formatted(
-                  classIndent, className, typeText, name, classIndent, name, name, classIndent));
+          "\n%s%s(final %s %s) {\n%s%sthis.%s = %s;\n%s}\n"
+              .formatted(member, className, typeText, name, member, step, name, name, member));
     }
 
     final long fieldEnd = positions.getEndPosition(cu, lastField);
@@ -426,7 +430,7 @@ public final class AddConstructorParameterProvider {
     final var pos = Positions.offsetToPosition(cu, fieldEnd);
     return new TextEdit(
         new Range(pos, pos),
-        "\n\n%s%s(final %s %s) {\n%s  this.%s = %s;\n%s}"
-            .formatted(indent, className, typeText, name, indent, name, name, indent));
+        "\n\n%s%s(final %s %s) {\n%s%sthis.%s = %s;\n%s}"
+            .formatted(indent, className, typeText, name, indent, step, name, name, indent));
   }
 }
