@@ -409,6 +409,11 @@ ignore stale versions.
 Publishing diagnostics under the canonical URI is by design (every client URI goes through `LatheUri.canonical`); that item stays unless a client is seen to lose diagnostics by it.
 `LatheWorkspaceService.rethrowInvalidParams` already maps `IllegalArgumentException` to `InvalidParams` for some commands.
 
+Rechecked 2026-11-28 (`main` at `0f9e8bd`, spring-petclinic, through `dev/lsp.py`):
+- A position past a line's end, past the file's end, or with a huge line or column no longer errs: hover, completion, definition, references, signature help, declaration, implementation, both hierarchies, document highlight and prepare-rename all answer empty, and the server logs nothing above INFO.
+- A `didChange` with an older version cannot come from a client that follows the protocol: the server syncs whole documents (`TextDocumentSyncKind.Full`), each change carrying the full text, and applies changes in the order they arrive, so only a client that sends versions out of order would be wrong-footed.
+- Not rechecked: missing or null params, range formatting with its start after its end, and the URI escapes.
+
 ### Regression targets
 
 None yet.
@@ -1315,6 +1320,8 @@ What can still cause it after #422: a `--system` JDK javac cannot read whose rel
 Deferred: it is rare now, and failing the request is the safe answer, which a rename needs (one that skipped a file would leave its uses unrenamed).
 Answering queries from the other modules would need the skipped files carried up with the hits (`SearchHits`) so a rename can still refuse, and the answer can say it is partial.
 The same note would cover a javac crash in Attr, which throws nothing and can leave a batch's hits missing without a trace.
+
+Rechecked 2026-11-28 (`main` at `0f9e8bd`): the 100 MCP server logs since 2026-11-24 (the release batteries and agent sessions on Helidon, Dropwizard, EqualsVerifier and spring-petclinic) hold no javac crash (`JavaSourceCompiler.analyzeSafely` logs one at SEVERE) and no SEVERE line at all, so the deferral stands.
 
 ### Regression targets
 
