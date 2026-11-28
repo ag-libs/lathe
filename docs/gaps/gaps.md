@@ -256,7 +256,7 @@ For reactor types, all-capitals queries are humps patterns too (`ASF` finds `Abs
 
 ### Root cause
 
-Not a bug: `WorkspaceTypeIndex.searchCamelCase` filters to `reactorBinaryNames` on purpose.
+Not a bug: `WorkspaceTypeIndex.searchCamelCase` matches humps against the reactor's own types only, on purpose (rechecked 2026-11-28, after EG-119, EG-127 and EG-129 changed the matcher, nested types and ranking).
 EG-005 added humps as a layer on top of the prefix search for reactor types only, so it would not
 touch the prefix contract that completion and the import quick fix rely on.
 JDK and dependency types match by name prefix only.
@@ -1868,6 +1868,7 @@ A failing test or a log gives an agent a stack trace; each frame names a class a
 LSP4J-MCP has `resolve_stack_trace`. Lathe's editor already resolves stack frames through the type
 index, including package-private dependency types.
 The editor-neutral `lathe.stack.resolve` command shipped in `e4896954`; exposing a stack-trace tool through MCP remains open.
+Since MC-105 (2026-11-28), `search_symbols` takes a frame's binary name (`Outer$Inner`, `Outer$1`, a lambda's), so an agent can find a frame's type one call at a time; the tool would do it for the whole trace.
 
 ### Fix direction
 
@@ -1938,6 +1939,7 @@ connects a generated member to the declaration it was generated from.
 
 Verified against the code (2026-11-16): the refusal (`RenameService`) is still the generic "rename the source it is generated from instead", and the generator link does not exist.
 MC-70's resolution also mentions "MC-39" for ranking generated types after hand-written ones in `search_symbols`; that is the ordering half, not this entry's open half.
+Since MC-113 (2026-11-27), `search_symbols` ranks hand-written and generated reactor types together by how well they match, keeping that order only as the tie-break.
 
 ### Regression targets
 
@@ -2282,7 +2284,7 @@ A method with 500 callers and the default cap reads files 500 times to return 50
 ### Fix direction
 
 Count every site after the scope filter, order the raw locations, cap them, and build snippets only for the sites kept, as `capLocations` already does for implementations.
-Incoming calls keep their order (origin, URI, position); outgoing calls keep source order and point at the call in the caller.
+Incoming calls keep the order MC-100 gave them (origin, main sources before tests, the declaring module first within each, then module, file and position); outgoing calls keep source order and point at the call in the caller.
 
 ### Regression targets
 
