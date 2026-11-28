@@ -15669,6 +15669,107 @@ back carrying `moduleRel == ""` instead of throwing.
 
 # Debug (DB) — resolved
 
+## DB-7 — A breakpoint in a file that is not open, or was closed, never fires, and nothing says so — done
+
+**Status: done** (2026-11-28; deferred 2026-10-31: no shipped client was thought to hit it)
+
+**Kind: bug**
+
+**Value: low — Size: S–M**
+
+**Affects: no shipped client today; VS Code once it debugs, and any editor after a memory-pressure release.**
+
+Signal: user feedback — with breakpoints across several source files, a debug run stopped at seemingly "random" places instead of the breakpoints.
+Re-evaluated with a spike (2026-10-31): the misses are deterministic, not random.
+Which breakpoints fire depends on which of their files the server has an analysis of when the debug session starts,
+and every breakpoint is reported unverified, so the editor cannot show which ones are dead.
+No stop at a line without a breakpoint was seen.
+
+Downgraded (2026-10-31): Neovim never sends a breakpoint for a file it has not loaded.
+nvim-dap keeps breakpoints as signs, and `:bd` deletes a buffer's signs, so closing a buffer removes its breakpoints;
+a hidden buffer stays loaded and attached, so its breakpoints arm.
+What remains is a client that keeps breakpoints independent of open files, as VS Code does (its client does not debug yet),
+and an open file whose analysis a memory-pressure release dropped (read from the code, not probed).
+
+### Observed behaviour
+
+Debugging `com.example.app.Main` on the `multi-module` invoker workspace (fresh bytecode),
+breakpoints at `Main:21` and in `StringUtils.upper` (module `core`), varying only what the editor did with `StringUtils.java` first:
+
+| `StringUtils.java` | `Main:21` | `StringUtils` |
+|---|---|---|
+| opened, diagnostics received | stops | stops |
+| opened, debug started without waiting for diagnostics | stops | stops |
+| never opened | stops | runs past |
+| opened, then closed | stops | runs past |
+
+- Opening and debugging at once is not a race: the open-time compile and the arming query run in order on the module's worker.
+- Closing a file drops its analysis, so a breakpoint left in a closed file is dead.
+  Neovim cannot hit this: `:bd` removes the buffer's breakpoints along with its signs.
+- Every `setBreakpoints` answer has `verified: false`, armed or not.
+  `LatheSourceLookUpProvider.supportsRealtimeBreakpointVerification` returns `false`,
+  so java-debug only verifies a breakpoint once its class loads, and a dead one is indistinguishable until the run ends.
+  The server logs `[breakpoint] … not armed`, which the user does not see.
+
+The other half of the original report, a stop in another module's class showing no source, is fixed:
+the debug provider context now receives `workspace.allSourceRoots()` plus the manifest's dependency and per-module JDK source dirs.
+
+### Root cause
+
+`LatheSourceLookUpProvider.breakpointLocation` → `FileFeatures.enclosingBinaryName` (through the module worker's `session.files()`) takes the class name only from the module session's cache of attributed open documents.
+That cache holds a file only between its open-time compile and its `didClose`, and loses everything when the module's session is released
+(a second memory-pressure round releases sessions of modules with open files too; read from the code, not probed).
+With no class name, java-debug installs nothing for the breakpoint (`SetBreakpointsRequestHandler` skips a location whose `className()` is `null`).
+
+### Fix direction
+
+Spiked and confirmed (uncommitted): when the cache has no analysis of the file, parse it from disk (parse only, no attribution, through the session's `SourceParser`)
+and return the binary name of the top-level type whose span holds the line.
+The top-level name is enough: java-debug also arms the line in the type's nested classes,
+already-loaded ones through `classesByName(name)` with nested types, later ones through a `name$*` class-prepare filter.
+With the spike, breakpoints in a never-opened and in a closed file stop on the top-level class, a static nested class, an anonymous class and a lambda body.
+
+For the real change:
+
+- Decide whether to keep the cached path at all. The disk file is what the build compiled;
+  an edited, unsaved buffer's analysis can name a type the running bytecode does not have yet.
+  Parsing always is simpler and has no cache dependency.
+- Parse once per file per `setBreakpoints`, not once per breakpoint line.
+- Report armed breakpoints as verified (`supportsRealtimeBreakpointVerification` → `true` once every armed location has a class name),
+  so the editor marks a breakpoint that cannot be armed (no executable code, file outside every module) differently from one waiting for its class.
+
+### Probe commands
+
+`dev/debug_probe.py --bp` opens every breakpoint file before debugging, so it only covers the attributed case.
+The spike's driver varies the file's state (`open`, `nowait`, `none`, `closed`):
+
+```bash
+# /tmp/lt/db7_probe.py (spike driver, outside the repo); LATHE_LAUNCHER points at a server built from the checkout
+python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.java>:21
+```
+
+### Resolution
+
+Reproduced on `main` at `0f9e8bd` (2026-11-28) in a shipped client's situation: on Dropwizard, with `NonEmptyStringParamTest.java` open and then 120 other files opened (the analysis cache keeps 100), a breakpoint at line 13 was answered `verified=false`, as an armed one is, and the debuggee ran past it; the server logged `not armed`, which no client shows.
+With only the test file open, the same breakpoint stopped.
+So a Neovim session with many buffers loaded hits it, not only a client that keeps breakpoints in closed files; a memory-pressure release, which drops every analysis, does too.
+
+`FileFeatures.enclosingBinaryNames` maps each breakpoint line of a file to its class in one request: from the cached analysis when there is one (the innermost class, as before), else by parsing the file from disk through the session's `SourceParser`, never compiling it or writing the module's temporary sources, to the top-level type whose span holds the line; a line the cached analysis has no class for, as when it was compiled from other text, is looked up on disk too.
+java-debug arms that type's nested, anonymous and lambda classes too (`Outer$*`), as the 2026-10-31 spike confirmed and its 0.53.1 sources show (a class-prepare filter for `Outer$*`, and `nestedTypes()` for classes already loaded, which lists the debuggee's loaded classes once per such breakpoint).
+`LatheSourceLookUpProvider` asks once per file for all its lines, and a lookup that fails leaves that file's breakpoints unarmed instead of failing the request; its warning now names the remaining causes.
+After the fix, the same 120-file run stops at line 13.
+
+Not covered: every breakpoint is still answered `verified=false`, so the editor cannot tell one that cannot arm (a line outside every type, an unreadable file) from one waiting for its class; and an open file with unsaved edits maps a line through its buffer while its analysis is cached and through the disk file otherwise, the disk file being what the debuggee runs.
+
+### Regression targets
+
+- `SourceAnalysisSessionTest.enclosingBinaryNames_fileOnDiskNotAttributed_topLevelTypeOfEachLine`
+- `LatheSourceLookUpProviderTest.getBreakpointLocations_fileNeverOpened_armsOnItsTopLevelType`
+- `SourceAnalysisSessionTest.enclosingBinaryNames_lineTheCachedAnalysisLacks_resolvesFromDisk`
+- `SourceAnalysisSessionTest.enclosingBinaryName_attributedNesting_resolvesTopNestedAndAnonymous` (the cached path, unchanged)
+
+---
+
 ## DB-8 — A debugged test's JVM outlives the server — done
 
 **Status: done.**
