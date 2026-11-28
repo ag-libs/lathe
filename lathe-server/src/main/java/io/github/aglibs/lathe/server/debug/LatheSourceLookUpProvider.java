@@ -14,7 +14,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -22,9 +23,11 @@ import java.util.logging.Logger;
  * binary name (so JDI can arm a breakpoint) and a class name back to its source file. Each source
  * URI is routed through the workspace to its owning module's {@link CompilationWorker} — main,
  * test, or an upstream reactor module — reusing the attributed analysis of the open file so nested
- * and anonymous classes resolve to the exact binary name javac assigns. A file belongs to exactly
- * one source tree, so the routing is unambiguous. Class-to-source lookup still spans the launched
- * module's source roots (cross-module reverse lookup is Phase 2); expression support is deferred.
+ * and anonymous classes resolve to the exact binary name javac assigns, or, when the file has none
+ * cached, parsing it from disk for its top-level type, whose nested classes java-debug arms too
+ * (DB-7). A file belongs to exactly one source tree, so the routing is unambiguous. Class-to-source
+ * lookup still spans the launched module's source roots (cross-module reverse lookup is Phase 2);
+ * expression support is deferred.
  */
 public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
 
@@ -45,8 +48,10 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
   public JavaBreakpointLocation[] getBreakpointLocations(
       final String sourceUri, final Types.SourceBreakpoint[] breakpoints) {
     final String uri = toUri(sourceUri);
+    final Map<Integer, String> classNames =
+        classNamesAt(uri, Arrays.stream(breakpoints).map(breakpoint -> breakpoint.line).toList());
     return Arrays.stream(breakpoints)
-        .map(breakpoint -> breakpointLocation(uri, breakpoint))
+        .map(breakpoint -> breakpointLocation(uri, breakpoint, classNames.get(breakpoint.line)))
         .toArray(JavaBreakpointLocation[]::new);
   }
 
@@ -77,8 +82,10 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
   public String[] getFullyQualifiedName(
       final String sourceFilePath, final int[] lines, final int[] columns) {
     final String uri = toUri(sourceFilePath);
+    final Map<Integer, String> classNames =
+        classNamesAt(uri, Arrays.stream(lines).boxed().toList());
     return Arrays.stream(lines)
-        .mapToObj(line -> classNameAt(uri, line).orElse(""))
+        .mapToObj(line -> classNames.getOrDefault(line, ""))
         .toArray(String[]::new);
   }
 
@@ -88,31 +95,43 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
     return sourceUri(fullyQualifiedName);
   }
 
-  private JavaBreakpointLocation breakpointLocation(
-      final String uri, final Types.SourceBreakpoint breakpoint) {
+  // className: null when the line has none, and the breakpoint cannot be armed.
+  private static JavaBreakpointLocation breakpointLocation(
+      final String uri, final Types.SourceBreakpoint breakpoint, final String className) {
     final var location = new JavaBreakpointLocation(breakpoint.line, breakpoint.column);
-    final Optional<String> className = classNameAt(uri, breakpoint.line);
-    if (className.isEmpty()) {
-      // No class name means the breakpoint cannot be armed and will silently never suspend. The
-      // usual cause is that the file is not open, so its source is not attributed.
+    if (className == null) {
       LOG.warning(
           () ->
-              "[breakpoint] %s:%d not armed -- no enclosing class (file not open/attributed, or no executable code on the line)"
+              "[breakpoint] %s:%d not armed -- no class around the line, no module owns the file, or it could not be read or parsed"
                   .formatted(uri, breakpoint.line));
       return location;
     }
 
-    location.setClassName(className.get());
+    location.setClassName(className);
     return location;
   }
 
-  private Optional<String> classNameAt(final String uri, final int line) {
+  // Every line of one file in one request to its module's worker, which reads the file once. A
+  // lookup that fails leaves the file's breakpoints unarmed, not the request failed.
+  private Map<Integer, String> classNamesAt(final String uri, final List<Integer> lines) {
     return frames
         .onWorker(
             LatheUri.toPath(uri),
-            worker -> worker.submit(session -> session.files().enclosingBinaryName(uri, line)))
-        .join()
-        .flatMap(name -> name);
+            worker -> worker.submit(session -> session.files().enclosingBinaryNames(uri, lines)))
+        .handle(
+            (names, error) -> {
+              if (error != null) {
+                LOG.log(Level.WARNING, error, () -> "[breakpoint] %s lookup failed".formatted(uri));
+                return Map.<Integer, String>of();
+              }
+
+              if (names.isEmpty()) {
+                LOG.fine(() -> "[breakpoint] %s in no module".formatted(uri));
+              }
+
+              return names.orElse(Map.of());
+            })
+        .join();
   }
 
   private String sourceUri(final String fullyQualifiedName) {

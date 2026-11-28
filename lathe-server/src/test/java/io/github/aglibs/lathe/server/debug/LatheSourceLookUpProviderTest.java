@@ -2,6 +2,9 @@ package io.github.aglibs.lathe.server.debug;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.microsoft.java.debug.core.JavaBreakpointLocation;
+import com.microsoft.java.debug.core.protocol.Types;
+import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
@@ -42,5 +45,44 @@ final class LatheSourceLookUpProviderTest {
             new FrameSources(
                 CompletableFuture::runAsync, registry::moduleWorkerFor, List.of(appRoot)));
     assertThat(launchedModuleOnly.getSourceFileURI("com.example.core.StringUtils", null)).isNull();
+  }
+
+  // DB-7: a breakpoint in a file the editor never opened arms on the file's top-level type (whose
+  // nested classes java-debug arms too); one on a line outside every type stays unarmed.
+  @Test
+  void getBreakpointLocations_fileNeverOpened_armsOnItsTopLevelType() throws Exception {
+    final Path root = Files.createDirectories(tmp.resolve("module/src/main/java"));
+    final Path file = root.resolve("com/example/Outer.java");
+    Files.createDirectories(file.getParent());
+    Files.writeString(
+        file,
+        """
+        package com.example;
+
+        class Outer {
+          static class Inner {
+            void run() {}
+          }
+        }
+        """);
+    TestCompiler.writeModuleParams(tmp, "module", root, null);
+    try (var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run)) {
+      final var provider =
+          new LatheSourceLookUpProvider(
+              new FrameSources(
+                  CompletableFuture::runAsync, registry::moduleWorkerFor, List.of(root)));
+
+      final JavaBreakpointLocation[] locations =
+          provider.getBreakpointLocations(
+              file.toUri().toString(),
+              new Types.SourceBreakpoint[] {
+                new Types.SourceBreakpoint(5, 0), new Types.SourceBreakpoint(2, 0)
+              });
+
+      assertThat(locations)
+          .extracting(JavaBreakpointLocation::className)
+          .containsExactly("com.example.Outer", null);
+    }
   }
 }
