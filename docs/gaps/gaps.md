@@ -750,7 +750,7 @@ None yet.
 
 ## FR-034 — Renaming a member a processor derives another from leaves the derived member's callers broken
 
-**Status: deferred** (triaged 2026-11-17: the break is reported: the rename lists the generated uses it left and `verify_change` lists the errors; the fix needs the generator link)
+**Status: deferred** (triaged 2026-11-17: the break is reported: the rename lists the generated uses it left and `verify_change` lists the errors; the fix needs the generator link; re-triaged 2026-11-28: Lathe behaves as IntelliJ and jdtls do, and a fix by naming rules was rejected)
 
 **Kind: bug**
 
@@ -772,12 +772,18 @@ Renaming Dropwizard's JMH `parseDuration`, whose generated callers `verify_chang
 Seen again on Helidon (2026-11-19, `8c099a5`): renaming `ListenerConfigBlueprint.port()` edits 3 places in 2 files, lists 5 places "Left to the generator", and breaks 34 hand-written calls of the generated `Builder.port(int)`, which `verify_change` reports.
 Before the rename, `analyze_change` on the option reports `references: 5 production, 0 test` and `relevant tests: none`: the derived setter's callers are not part of the blast radius it previews.
 
+Reproduced on `main` at `0f9e8bd` (2026-11-28): renaming `ListenerConfigBlueprint.port()` to `listenPort` answers "3 edit(s) across 2 file(s)" with 5 places left to the generator, and `verify_change` then reports 34 `cannot find symbol: method port(int)` errors, 26 of them calls through `WebServerConfig.Builder`, which inherits the generated setter.
+A record whose builder a processor generates (record-companion's `@Builder` in the `multi-module` fixture: `UserBuilder.name(String)` for `User.name`) behaves the same.
+
+IntelliJ and jdtls are expected to do the same (from how both work; not probed): neither models what a processor will generate (Lombok aside, which IntelliJ's plugin models), so both rename the member and its resolved uses and leave a generated setter's callers to break on the next build.
+
 ### Fix direction
 
-Processor output stays unedited, and renames only it refers to (Dagger factories, MapStruct implementations) go ahead.
-Refuse when a generated file that refers to the symbol also declares a member of the old name that hand-written code uses (`Builder.allowAll(boolean)`, `Foo_.name`), naming that member and one caller.
-Find those members with javac trees through the existing file queries, and run the check only when processor output refers to the target.
-Generated types named after a renamed type (`Foo_Factory`) are out of scope.
+Ask the generator, not naming rules: builder generators name derived members differently (`port(int)`, `withPort`, `setPort`, `addPort`, `clearPort`), and a rule per convention would edit or refuse the wrong calls.
+After the rename, Lathe already reruns the module's processors (the write pass regenerated Helidon's `ListenerConfig` in `.lathe/` within the probe); comparing the generated types before and after names exactly the members the processor renamed, by type and parameters, and their hand-written uses can then be renamed with the member.
+
+Tried and dropped (2026-11-28, #557, closed): refusing the rename when a generated subtype of the target's type declared a member of its name that hand-written code used.
+It was stricter than both IDEs, covered only the prototype pattern (Helidon's, Immutables'), and refused renames a user can finish by hand.
 
 ### Regression targets
 
