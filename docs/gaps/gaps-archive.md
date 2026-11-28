@@ -16287,6 +16287,42 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-105 — `search_symbols` finds nothing for a binary name (`Outer$Inner`) or a member name, without saying why — done
+
+**Status: done** (2026-11-28; triaged 2026-11-24: low; the dotted form works, and a hint that the tool finds types only is the cheap half)
+
+**Kind: bug**
+
+**Affects: MCP `search_symbols`.**
+
+Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N9).
+
+### Observed behaviour
+
+`search_symbols` for `DropwizardResourceConfig$EndpointLogLine`, as a stack trace or a class file names it, answers "No symbols matching"; `DropwizardResourceConfig.EndpointLogLine` finds the nested class.
+`toNanoseconds`, a method of `Duration`, also answers "No symbols matching", with no word that the tool searches types only.
+
+### Expected
+
+A `$` in a query is read as a nesting dot; a query that matches no type but looks like a member says that the tool finds types, and how to find a member (`outline` on the type).
+
+### Resolution
+
+`LatheEngine.searchSymbols` reads a `$` in the query as a nesting dot, as the type index reads class names, so `DropwizardResourceConfig$EndpointLogLine` finds the nested class as `DropwizardResourceConfig.EndpointLogLine` does; the `query` description says so.
+A stack frame's anonymous class (`Outer$1`, `Outer$Inner$2`) or lambda (`Outer$$Lambda$14/0x…`) has no name to find, so the query drops it and finds the type it is in; a leading or trailing `$` (`*$Inner`) is dropped too.
+An empty answer adds that the tool finds types only and that a method or field is found by `outline` on its type, and with `scope: reactor`, that `scope: all` also finds the JDK's and the dependencies' types.
+It says so on every empty answer: the sentence holds for any query, and telling a member name from a type's by its case would misfire on a qualified query (`util.Duration`).
+
+Not covered: a local class (`Outer$1Local`), whose binary name keeps its counter; a type whose own name holds a `$`, which the index already reads as nested; finding members, MC-26's.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.searchSymbols_binaryOrDottedNestedName_findsTheNestedType`
+- `LatheEngineNavigationTest.searchSymbols_anonymousOrLambdaBinaryName_findsTheEnclosingType`
+- `McpTextTest.searchResult_symbolsAndNoMatch_oneLineEachWithItsContainer_orTheQuery`
+
+---
+
 ## MC-112 — `get_diagnostics` blames a profile for a Java file in a source directory javac does not compile — done
 
 **Status: done** (2026-11-27)
