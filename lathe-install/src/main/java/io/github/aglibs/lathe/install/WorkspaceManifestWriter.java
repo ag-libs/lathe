@@ -35,7 +35,9 @@ public final class WorkspaceManifestWriter {
       final List<ResourceRootData> resourceRoots,
       final List<OutputData> outputs,
       final Path buildTool,
-      final Map<String, List<String>> runnerClasspaths) {
+      final Map<String, List<String>> runnerClasspaths,
+      final List<String> buildDirs,
+      final Map<String, List<String>> otherLanguages) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
@@ -48,7 +50,9 @@ public final class WorkspaceManifestWriter {
             resourceRoots,
             outputs,
             buildTool.toString(),
-            runnerClasspaths);
+            runnerClasspaths,
+            buildDirs,
+            otherLanguages);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     try {
       if (jdkSource.home() != null) {

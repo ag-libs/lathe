@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
@@ -250,7 +251,10 @@ class ExternalCompilerTest {
             List.of(),
             List.of(),
             List.of(),
-            null),
+            null,
+            Map.of(),
+            List.of(),
+            Map.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -278,7 +282,10 @@ class ExternalCompilerTest {
             List.of(),
             List.of(),
             List.of(),
-            null),
+            null,
+            Map.of(),
+            List.of(),
+            Map.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -299,7 +306,10 @@ class ExternalCompilerTest {
             List.of(),
             List.of(),
             List.of(),
-            null),
+            null,
+            Map.of(),
+            List.of(),
+            Map.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 

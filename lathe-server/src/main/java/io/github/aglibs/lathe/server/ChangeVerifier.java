@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.schema.OtherLanguage;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
@@ -19,7 +20,6 @@ import io.github.aglibs.lathe.server.module.JdkSupport;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
-import io.github.aglibs.lathe.server.workspace.UnreadLanguage;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -145,6 +145,11 @@ final class ChangeVerifier {
   // Every synced module's source roots: a Java file below none is one the last build left out.
   List<Path> sourceRoots() {
     return state.registry().allSourceRoots();
+  }
+
+  // The build's output directories, which hold no source a search reads (WS-52).
+  List<Path> buildDirs() {
+    return state.manifest().buildDirs();
   }
 
   // The changed files whose content is not what the last build compiled: a change put back is no
@@ -528,7 +533,7 @@ final class ChangeVerifier {
         notChecked,
         writePass.reactorBuildInProgress(),
         Stream.concat(
-                Arrays.stream(UnreadLanguage.values())
+                Arrays.stream(OtherLanguage.values())
                     .map(this::unreadSources)
                     .flatMap(Optional::stream),
                 unsupportedJdkSources())
@@ -558,7 +563,7 @@ final class ChangeVerifier {
                     entry.getValue().stream().distinct().sorted().toList()));
   }
 
-  private Optional<UnreadSources> unreadSources(final UnreadLanguage language) {
+  private Optional<UnreadSources> unreadSources(final OtherLanguage language) {
     final List<String> modules =
         state.manifest().unreadModuleDirs(language).stream()
             .map(dir -> LatheLayout.displayedModule(FileUtil.slashed(state.root().relativize(dir))))

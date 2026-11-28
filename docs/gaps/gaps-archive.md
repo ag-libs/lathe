@@ -12312,6 +12312,124 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-54 — A capture-only run takes a `java` root's sibling folders for other-language tests — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: the Maven extension's capture-only test selection.**
+
+Found by the 2026-11-27 audit of layout assumptions.
+
+### Observed behaviour
+
+A capture-only run narrows Surefire to a few Java test classes, unless the module's tests are partly in another language, whose Java may be only helpers.
+It looked for those tests in the test roots and, for a root named `java`, in its `src/<set>/` siblings (`src/test/kotlin`), as build-helper adds that root only later in the build: Kotlin tests in any other folder were missed, and the narrowed run of helper classes then started no JVM, so the module's tests could not be replayed.
+
+### Expected
+
+Whether a module may keep tests in another language comes from its build, not a folder name.
+
+### Resolution
+
+The selection is left alone when the module's build has a compiler for another language: `kotlin-maven-plugin`, `gmavenplus-plugin`, `scala-maven-plugin`, or `maven-compiler-plugin` with the Groovy Eclipse compiler, set for the plugin or one of its executions; the check of the test roots the model holds now stays.
+A module that applies one but tests in Java only runs all its tests during capture: slower, never a capture that starts no JVM.
+
+Not covered: another language's compiler not in that list; reading the plugins' own source folders, so a module that applies one but tests in Java alone is narrowed again, is deferred as [WS-55](gaps.md#ws-55--which-folders-a-third-party-language-plugin-compiles-is-not-read-from-its-configuration).
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection` (now from the Kotlin plugin)
+- `LatheModelInjectorTest.injectCaptureClass_groovyEclipseCompiler_leavesTheSelection`
+- `LatheModelInjectorTest.injectCaptureClass_groovyEclipseCompilerForTestCompile_leavesTheSelection`
+- `LatheModelInjectorTest.injectCaptureClass_kotlinFolderWithoutAKotlinBuild_selectsTheJavaTests`
+
+---
+
+## WS-53 — Which modules hold Kotlin or Groovy is guessed from `src/<source set>/kotlin` and `groovy` — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: the answers that name the modules Lathe does not read (Kotlin, Groovy): `find_references`, `workspace_summary` and the other notes; every build front-end's `workspace.json`.**
+
+Found by the 2026-11-27 audit of layout assumptions, after MC-112's first fix matched `src/<source set>/kotlin`.
+
+### Observed behaviour
+
+The server named a module as holding Kotlin or Groovy when it had a `src/<source set>/kotlin` or `groovy` folder, and looked only in modules with a javac output.
+A module whose Kotlin lives elsewhere (`kotlin.srcDir("src/kt")`, a Maven root moved by build-helper) was missed, a Kotlin-only module with no Java was never named, and an unused `kotlin` folder counted.
+
+### Expected
+
+Which languages a module's sources hold comes from the build: each front-end records it, and the server keeps no folder names.
+
+### Resolution
+
+`workspace.json` gains `otherLanguages`, per module the keys of the languages besides Java its sources hold (`OtherLanguage` in `lathe-core`: `kotlin`, `groovy`, `scala`).
+Maven reads the files in each module's compile and test compile source roots as its model holds them after the build; Gradle reads each source set's `kotlin`, `groovy` and `scala` directory sets, which those plugins add to it, under the configuration cache.
+The server's `UnreadLanguage`, its `src` constant and the folder walk are gone; the notes name the same languages from the manifest, Kotlin-only modules included.
+
+Not covered: a Maven module whose Kotlin or Groovy plugin compiles from folders of its own (`kotlin-maven-plugin`'s `<sourceDirs>`, GMavenPlus's `<sources>`) without adding them to the model's source roots is not named; today's folder rule found the default `src/<set>/kotlin` there.
+
+### Future: source directories the build can tell
+
+Reading `kotlin-maven-plugin`'s `<sourceDirs>` and GMavenPlus's `<sources>` from the model's plugin configuration, as the sync already reads Spotless's, would name those modules again without a folder rule: deferred as [WS-55](gaps.md#ws-55--which-folders-a-third-party-language-plugin-compiles-is-not-read-from-its-configuration).
+The same applies wherever Lathe still assumes a directory the build can report: any future need for a module's source folders by language, which Gradle's directory sets and Maven's model give directly.
+
+### Regression targets
+
+- `WorkspaceManifestTest.unreadModuleDirs_modulesWithKotlinOrGroovySources_listedByLanguage_javaModuleNot` (fed from the manifest)
+- `LatheEngineNotesTest.notes_moduleWithKotlinAndGroovySources_namesItUnderEach` (fed from the manifest)
+- `ReactorProjectsTest.otherLanguages_filesInTheModelsSourceRoots_namedByLanguage`
+- `LatheSyncTaskFunctionalTest.sync_groovySourcesInAMovedFolder_recordedAsTheSourceSetsReportThem` (Gradle TestKit)
+
+---
+
+## WS-52 — A rename's outside-sources list takes build output to be in `target/` or `build/` — done
+
+**Status: done** (2026-11-27)
+
+**Kind: bug**
+
+**Value: low — Size: M**
+
+**Affects: MCP `rename_symbol`'s "Not checked" list; every build front-end's `workspace.json`.**
+
+Found by the 2026-11-27 audit of layout assumptions, after MC-112's first fix matched `src/<source set>/kotlin`.
+
+### Observed behaviour
+
+After a rename, `rename_symbol` lists the Java files outside every synced source root that name the old name, skipping hidden directories and any directory named `target` or `build`.
+A module whose build directory is moved (`<directory>out</directory>`, `layout.buildDirectory = file('out')`) has its build output listed as if it were source, and a source folder named `build` is never searched: Lathe guessed the layout instead of taking it from the build.
+
+### Expected
+
+Build output is what the build says it is: each front-end records every module's build directory, and the search skips those and hidden directories only.
+
+### Resolution
+
+`workspace.json` gains `buildDirs`, each module's build directory relative to the workspace: Maven's `project.getBuild().getDirectory()`, Gradle's `layout.buildDirectory` (read with the project's other facts, under the configuration cache) and the `build/` of `buildSrc/` and each included build, whose projects the plugin does not see, and OpenJDK's `build/`, which holds every configuration make builds, or the configuration the sync used when it lies elsewhere in the workspace.
+`OutsideSources` skips the synced source roots, those directories and hidden ones, and no longer knows `target` or `build`.
+A module the build left out has no recorded build directory, as the build never modelled it, so its build output is searched too: stale generated code there may be listed, never edited.
+
+### Regression targets
+
+- `LatheEngineRenameTest.rename_outsideList_skipsRecordedBuildDirsAndSearchesUnrecordedOnes`
+- `WorkspaceManifestWriterTest.write_buildDirs_recordedAsGiven`
+- `LatheSyncTaskFunctionalTest.sync_movedBuildDirectory_recordedAsTheLayoutSetsIt` (Gradle TestKit)
+- `LatheSyncTaskFunctionalTest.sync_buildSrc_recordsItsOutput` (Gradle TestKit)
+- `OpenJdkSyncTest.sync_builtModuleAndTool_writesPinnedScriptAndBatchMarkersAndReleasesLock`, `OpenJdkSyncTest.sync_buildOutsideTheBuildFolder_recordsOnlyThatConfiguration`
+- `MultiModuleTest.sync_workspaceJson_recordsEachModulesBuildDirectory` (Maven invoker, `shapes` moved to `out/`)
+
+---
+
 ## WS-51 — After a personal setup, the project's own build fails a check that scans the whole project — done
 
 **Status: done** (2026-11-25: `:LatheInit` warns; the mirror moving out of the project stays the [External Content Directory](../potential/lathe-external-content-dir.md) design)

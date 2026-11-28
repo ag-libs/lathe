@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -42,7 +41,16 @@ final class LatheModelInjector {
   // bases sort first by name: AbstractFooTests) still leave one that starts the test JVM.
   private static final int CAPTURE_CLASSES = 5;
   private static final String ABSTRACT_PREFIX = "Abstract";
-  private static final String JAVA_ROOT_NAME = "java";
+  // The plugins that compile another JVM language, by groupId:artifactId: a module whose build has
+  // one may keep tests in it, wherever it compiles them from (WS-54).
+  private static final Set<String> OTHER_LANGUAGE_COMPILERS =
+      Set.of(
+          "org.jetbrains.kotlin:kotlin-maven-plugin",
+          "org.codehaus.gmavenplus:gmavenplus-plugin",
+          "net.alchim31.maven:scala-maven-plugin");
+  // maven-compiler-plugin compiling Groovy and Java together through this compiler.
+  private static final String GROOVY_ECLIPSE_COMPILER = "groovy-eclipse-compiler";
+  private static final String COMPILER_ID_ELEMENT = "compilerId";
   private static final List<String> OTHER_TEST_LANGUAGE_EXTENSIONS =
       List.of(".kt", ".groovy", ".scala");
   private static final String INIT_GOAL = "init";
@@ -228,7 +236,7 @@ final class LatheModelInjector {
     }
 
     final List<Path> roots = project.getTestCompileSourceRoots().stream().map(Path::of).toList();
-    if (hasOtherLanguageSources(roots)) {
+    if (compilesOtherLanguage(project) || hasOtherLanguageSources(roots)) {
       return;
     }
 
@@ -269,24 +277,45 @@ final class LatheModelInjector {
     return name.startsWith(ABSTRACT_PREFIX) ? 1 : 0;
   }
 
-  // Kotlin, Groovy or Scala test sources beside the Java ones: in a test root, or, for a root laid
-  // out as src/<set>/java, in its source set (src/test/kotlin, which a build helper adds as a root
-  // only later in the build). No other parent: one may be the whole module, build output included.
+  // A build that compiles another language may keep tests in it, in folders it adds as roots only
+  // later in the build or never: which folders is the plugin's, so its presence decides, not a
+  // folder name. A module that applies one but tests in Java only runs all its tests: slower, never
+  // a capture that starts no JVM.
+  private static boolean compilesOtherLanguage(final MavenProject project) {
+    return project.getBuildPlugins().stream()
+        .anyMatch(
+            plugin ->
+                OTHER_LANGUAGE_COMPILERS.contains(plugin.getKey())
+                    || usesGroovyEclipseCompiler(plugin));
+  }
+
+  // Set for the plugin or for one execution, often testCompile alone.
+  private static boolean usesGroovyEclipseCompiler(final Plugin plugin) {
+    return Stream.concat(
+            Stream.of(plugin.getConfiguration()),
+            plugin.getExecutions().stream().map(PluginExecution::getConfiguration))
+        .anyMatch(LatheModelInjector::namesGroovyEclipseCompiler);
+  }
+
+  private static boolean namesGroovyEclipseCompiler(final Object configuration) {
+    if (!(configuration instanceof final Xpp3Dom dom)) {
+      return false;
+    }
+
+    final Xpp3Dom compilerId = dom.getChild(COMPILER_ID_ELEMENT);
+    return compilerId != null
+        && compilerId.getValue() != null
+        && GROOVY_ECLIPSE_COMPILER.equals(compilerId.getValue().trim());
+  }
+
+  // Kotlin, Groovy or Scala test sources in a test root the model holds now.
   private static boolean hasOtherLanguageSources(final List<Path> roots) {
     return roots.stream()
-        .flatMap(root -> Stream.of(root, javaRootSourceSet(root)))
-        .filter(Objects::nonNull)
-        .distinct()
         .anyMatch(
             dir ->
                 !IOUtil.unchecked(
                         () -> FileUtil.walkFiles(dir, LatheModelInjector::isOtherLanguageSource))
                     .isEmpty());
-  }
-
-  private static Path javaRootSourceSet(final Path root) {
-    final Path name = root.getFileName();
-    return name != null && JAVA_ROOT_NAME.equals(name.toString()) ? root.getParent() : null;
   }
 
   private static boolean isOtherLanguageSource(final Path path) {

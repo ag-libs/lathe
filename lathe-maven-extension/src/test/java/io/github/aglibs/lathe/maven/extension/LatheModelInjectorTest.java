@@ -27,6 +27,13 @@ class LatheModelInjectorTest {
   private static final String OUTPUT_DIR = "/ws/app/target/classes";
   private static final String TEST_OUTPUT_DIR = "/ws/app/target/test-classes";
 
+  private static Plugin plugin(final String groupId, final String artifactId) {
+    final var plugin = new Plugin();
+    plugin.setGroupId(groupId);
+    plugin.setArtifactId(artifactId);
+    return plugin;
+  }
+
   private static MavenProject project() {
     final var build = new Build();
     build.setOutputDirectory(OUTPUT_DIR);
@@ -387,11 +394,13 @@ class LatheModelInjectorTest {
   }
 
   // A module whose tests are partly Kotlin keeps running them all: its Java sources may be only
-  // helpers, and src/test/kotlin is not yet a test root when the extension looks.
+  // helpers, and src/test/kotlin is not yet a test root when the extension looks. Its build's
+  // Kotlin compiler says so, wherever the Kotlin lies (WS-54).
   @Test
   void injectCaptureClass_kotlinBesideTheJavaRoot_leavesTheSelection(@TempDir final Path dir)
       throws IOException {
     final MavenProject project = project();
+    project.getBuild().addPlugin(plugin("org.jetbrains.kotlin", "kotlin-maven-plugin"));
     write(dir.resolve("src/test/java/com/example/TypeConversionHelper.java"));
     write(dir.resolve("src/test/kotlin/com/example/ExtensionsTest.kt"));
     project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
@@ -399,6 +408,64 @@ class LatheModelInjectorTest {
     new LatheModelInjector(VERSION).injectCaptureClass(project);
 
     assertThat(project.getProperties()).isEmpty();
+  }
+
+  // Groovy compiled with Java through maven-compiler-plugin's Groovy Eclipse compiler is another
+  // language's build too.
+  @Test
+  void injectCaptureClass_groovyEclipseCompiler_leavesTheSelection(@TempDir final Path dir)
+      throws IOException {
+    final MavenProject project = project();
+    final Plugin compiler = plugin("org.apache.maven.plugins", "maven-compiler-plugin");
+    final var configuration = new Xpp3Dom("configuration");
+    final var compilerId = new Xpp3Dom("compilerId");
+    compilerId.setValue("groovy-eclipse-compiler");
+    configuration.addChild(compilerId);
+    compiler.setConfiguration(configuration);
+    project.getBuild().addPlugin(compiler);
+    write(dir.resolve("src/test/java/com/example/SpecHelper.java"));
+    project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties()).isEmpty();
+  }
+
+  // The Groovy Eclipse compiler set for the testCompile execution alone counts too.
+  @Test
+  void injectCaptureClass_groovyEclipseCompilerForTestCompile_leavesTheSelection(
+      @TempDir final Path dir) throws IOException {
+    final MavenProject project = project();
+    final Plugin compiler = plugin("org.apache.maven.plugins", "maven-compiler-plugin");
+    final var execution = new PluginExecution();
+    execution.setId("default-testCompile");
+    final var configuration = new Xpp3Dom("configuration");
+    final var compilerId = new Xpp3Dom("compilerId");
+    compilerId.setValue(" groovy-eclipse-compiler ");
+    configuration.addChild(compilerId);
+    execution.setConfiguration(configuration);
+    compiler.addExecution(execution);
+    project.getBuild().addPlugin(compiler);
+    write(dir.resolve("src/test/java/com/example/SpecHelper.java"));
+    project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties()).isEmpty();
+  }
+
+  // A kotlin folder no plugin compiles says nothing: the folder name is no fact of the build.
+  @Test
+  void injectCaptureClass_kotlinFolderWithoutAKotlinBuild_selectsTheJavaTests(
+      @TempDir final Path dir) throws IOException {
+    final MavenProject project = project();
+    write(dir.resolve("src/test/java/com/example/AppTest.java"));
+    write(dir.resolve("src/test/kotlin/com/example/Leftover.kt"));
+    project.addTestCompileSourceRoot(dir.resolve("src/test/java").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties()).containsEntry("test", "AppTest");
   }
 
   // A module that names its own includes (a @Suite) keeps its classes in the selection, after the

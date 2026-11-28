@@ -893,7 +893,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             List.of(),
             List.of(),
             List.of(),
-            null),
+            null,
+            Map.of(),
+            List.of(),
+            Map.of()),
         tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
     engine = new LatheEngine(tmp);
 

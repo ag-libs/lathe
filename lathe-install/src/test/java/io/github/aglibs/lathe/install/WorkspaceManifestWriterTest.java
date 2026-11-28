@@ -64,6 +64,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         List.of(output),
         TOOL,
+        Map.of(),
+        List.of(),
         Map.of());
 
     final var manifest =
@@ -113,6 +115,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         List.of(),
         TOOL,
+        Map.of(),
+        List.of(),
         Map.of());
 
     final var manifest =
@@ -142,6 +146,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         List.of(),
         TOOL,
+        Map.of(),
+        List.of(),
         Map.of());
 
     final var data =
@@ -167,6 +173,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         List.of(),
         TOOL,
+        Map.of(),
+        List.of(),
         Map.of());
 
     final var manifest =
@@ -185,6 +193,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         List.of(),
         TOOL,
+        Map.of(),
+        List.of(),
         Map.of());
 
     // Same content: the rewrite is skipped but the mtime is bumped; the content stays
@@ -220,6 +230,8 @@ class WorkspaceManifestWriterTest {
         List.of(),
         List.of(),
         TOOL,
+        Map.of(),
+        List.of(),
         Map.of());
 
     final var manifest =
@@ -229,5 +241,45 @@ class WorkspaceManifestWriterTest {
     assertThat(data.dependencySources().get(0).gav()).isEqualTo("com.example:a:1");
     assertThat(data.dependencySources().get(1).gav()).isEqualTo("com.example:b:2");
     assertThat(data.dependencySources().get(1).jar()).isEqualTo(Path.of("/repo/b.jar").toString());
+  }
+
+  // WS-52: the build directories the front-end read from the build, as given; none when it gives
+  // none.
+  @Test
+  void write_buildDirs_recordedAsGiven() throws Exception {
+    final var jdk = JdkSource.missing("Vendor", "21", "vendor-21", Path.of("/jdk"));
+    final Path manifest =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(),
+        jdk,
+        null,
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        TOOL,
+        Map.of(),
+        List.of("app/target", "lib/out"),
+        Map.of());
+    assertThat(Json.read(manifest, WorkspaceManifestData.class).buildDirs())
+        .containsExactly("app/target", "lib/out");
+
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(),
+        jdk,
+        null,
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        TOOL,
+        Map.of(),
+        List.of(),
+        Map.of());
+    assertThat(Json.read(manifest, WorkspaceManifestData.class).buildDirs()).isEmpty();
   }
 }

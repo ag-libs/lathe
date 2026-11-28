@@ -84,7 +84,7 @@ public final class OpenJdkSync {
             .map(cmdline -> FileUtil.slashed(workspaceRoot.relativize(batchFile(cmdline, ""))))
             .toList();
     final SyncScript syncScript = syncScript(buildDir, serverVersion, systemProperties);
-    writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
+    writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool(), buildDir);
     WorkspaceManifestWriter.writeJavaHome(latheDir(workspaceRoot), explodedJdk);
     syncScript.write(workspaceRoot);
     // Only a module whose output is gone loses its capture: one mid-rebuild has no .cmdline yet.
@@ -298,8 +298,20 @@ public final class OpenJdkSync {
       final Path workspaceRoot,
       final String serverVersion,
       final List<String> buildFiles,
-      final Path buildTool)
+      final Path buildTool,
+      final Path buildDir)
       throws IOException {
+    // The configuration's output, when it lies in the workspace (WS-52): all of build/ when it is
+    // one of make's configurations there, as the others are output too. One passed from elsewhere
+    // (-Dlathe.buildDir) is outside any search of it.
+    final Path root = workspaceRoot.toAbsolutePath().normalize();
+    final Path absoluteBuildDir = buildDir.toAbsolutePath().normalize();
+    final Path buildRoot = BuildDiscovery.buildRoot(root);
+    final Path recorded = absoluteBuildDir.startsWith(buildRoot) ? buildRoot : absoluteBuildDir;
+    final List<String> buildDirs =
+        recorded.startsWith(root)
+            ? List.of(FileUtil.slashed(root.relativize(recorded)))
+            : List.of();
     final var manifest =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
@@ -312,7 +324,10 @@ public final class OpenJdkSync {
             buildFiles.stream().map(rel -> new BuildFileData(rel, null)).toList(),
             List.of(),
             List.of(),
-            buildTool.toString());
+            buildTool.toString(),
+            Map.of(),
+            buildDirs,
+            Map.of());
     WorkspaceManifestWriter.writeManifest(latheDir(workspaceRoot), manifest);
   }
 

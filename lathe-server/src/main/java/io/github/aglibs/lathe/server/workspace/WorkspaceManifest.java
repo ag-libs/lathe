@@ -2,20 +2,20 @@ package io.github.aglibs.lathe.server.workspace;
 
 import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.core.ExceptionUtil;
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.OtherLanguage;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +30,6 @@ import java.util.stream.Stream;
 public final class WorkspaceManifest {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManifest.class.getName());
-  private static final String SOURCES_DIR = "src";
 
   private final LibrarySources libraries;
   private final List<Path> typeIndexShardPaths;
@@ -54,9 +53,11 @@ public final class WorkspaceManifest {
   private final boolean missing;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
-  // The built modules with sources of each language Lathe does not read, mixed ones too: an answer
-  // about a symbol's uses cannot vouch for theirs, and the summary names them.
-  private final Map<UnreadLanguage, List<Path>> unreadModuleDirs;
+  private final List<Path> buildDirs;
+  // The modules the build reports sources of each language Lathe does not read in, mixed ones and
+  // ones with no Java too: an answer about a symbol's uses cannot vouch for theirs, and the summary
+  // names them.
+  private final Map<OtherLanguage, List<Path>> unreadModuleDirs;
   // Why go-to-definition into the JDK finds no source, when the build found no JDK sources; null
   // when they are there.
   private final String jdkSourcesNote;
@@ -75,6 +76,8 @@ public final class WorkspaceManifest {
       final boolean missing,
       final Path buildTool,
       final List<Path> builtModuleDirs,
+      final List<Path> buildDirs,
+      final Map<OtherLanguage, List<Path>> unreadModuleDirs,
       final String jdkSourcesNote) {
     this.libraries = libraries;
     this.typeIndexShardPaths = typeIndexShardPaths;
@@ -89,15 +92,8 @@ public final class WorkspaceManifest {
     this.missing = missing;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
-    this.unreadModuleDirs =
-        Arrays.stream(UnreadLanguage.values())
-            .collect(
-                Collectors.toUnmodifiableMap(
-                    language -> language,
-                    language ->
-                        builtModuleDirs.stream()
-                            .filter(dir -> hasSources(dir, language))
-                            .toList()));
+    this.buildDirs = buildDirs;
+    this.unreadModuleDirs = Map.copyOf(unreadModuleDirs);
     this.jdkSourcesNote = jdkSourcesNote;
   }
 
@@ -120,6 +116,8 @@ public final class WorkspaceManifest {
         missing,
         null,
         List.of(),
+        List.of(),
+        Map.of(),
         null);
   }
 
@@ -214,6 +212,8 @@ public final class WorkspaceManifest {
               .map(output -> workspaceRoot.resolve(output.module()).normalize())
               .distinct()
               .toList(),
+          data.buildDirs().stream().map(dir -> workspaceRoot.resolve(dir).normalize()).toList(),
+          unreadModuleDirs(workspaceRoot, data.otherLanguages()),
           jdk != null ? jdk.missingSourcesNote().orElse(null) : null);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
@@ -243,14 +243,35 @@ public final class WorkspaceManifest {
         .max(Comparator.comparingInt(Path::getNameCount));
   }
 
-  public List<Path> unreadModuleDirs(final UnreadLanguage language) {
-    return unreadModuleDirs.get(language);
+  // Each module's build directory, as its front-end recorded it: build output, not sources.
+  public List<Path> buildDirs() {
+    return buildDirs;
   }
 
-  private static boolean hasSources(final Path moduleDir, final UnreadLanguage language) {
-    return IOUtil.unchecked(() -> ServerFiles.childDirectories(moduleDir.resolve(SOURCES_DIR)))
-        .stream()
-        .anyMatch(sourceSet -> Files.isDirectory(sourceSet.resolve(language.sourceDir())));
+  // The modules whose sources hold the language, as the build reported them: Lathe reads none of
+  // it.
+  public List<Path> unreadModuleDirs(final OtherLanguage language) {
+    return unreadModuleDirs.getOrDefault(language, List.of());
+  }
+
+  private static Map<OtherLanguage, List<Path>> unreadModuleDirs(
+      final Path workspaceRoot, final Map<String, List<String>> otherLanguages) {
+    final var byLanguage = new EnumMap<OtherLanguage, List<Path>>(OtherLanguage.class);
+    for (final Map.Entry<String, List<String>> module : otherLanguages.entrySet()) {
+      for (final String key : module.getValue()) {
+        OtherLanguage.ofKey(key)
+            .ifPresent(
+                language ->
+                    byLanguage
+                        .computeIfAbsent(language, unused -> new ArrayList<>())
+                        .add(workspaceRoot.resolve(module.getKey()).normalize()));
+      }
+    }
+
+    return byLanguage.entrySet().stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, entry -> List.copyOf(entry.getValue())));
   }
 
   public Optional<String> jdkSourcesNote() {

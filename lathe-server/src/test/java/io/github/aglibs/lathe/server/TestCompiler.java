@@ -414,7 +414,10 @@ public final class TestCompiler {
                 List.of(),
                 List.of(),
                 List.of(),
-                null);
+                null,
+                Map.of(),
+                List.of(),
+                Map.of());
     Files.createDirectories(manifestFile.getParent());
     Json.write(
         new WorkspaceManifestData(
@@ -427,7 +430,34 @@ public final class TestCompiler {
             buildFiles.apply(existing),
             existing.resourceRoots(),
             outputs.apply(existing),
-            existing.buildTool()),
+            existing.buildTool(),
+            existing.runnerClasspaths(),
+            existing.buildDirs(),
+            existing.otherLanguages()),
+        manifestFile);
+  }
+
+  // The languages besides Java the build reported each module's sources hold, by module and key.
+  public static void recordOtherLanguages(
+      final Path workspaceRoot, final Map<String, List<String>> otherLanguages) throws IOException {
+    final Path manifestFile =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    final WorkspaceManifestData existing = Json.read(manifestFile, WorkspaceManifestData.class);
+    Json.write(
+        new WorkspaceManifestData(
+            existing.schemaVersion(),
+            existing.workspaceRoot(),
+            existing.serverVersion(),
+            existing.runnerClasspath(),
+            existing.jdk(),
+            existing.dependencySources(),
+            existing.buildFiles(),
+            existing.resourceRoots(),
+            existing.outputs(),
+            existing.buildTool(),
+            existing.runnerClasspaths(),
+            existing.buildDirs(),
+            otherLanguages),
         manifestFile);
   }
 

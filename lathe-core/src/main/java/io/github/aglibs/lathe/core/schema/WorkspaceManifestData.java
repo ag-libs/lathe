@@ -20,7 +20,13 @@ public record WorkspaceManifestData(
     // A runner for each JUnit platform version the workspace's tests use, by that version: a
     // module replays on the one its own test classpath's platform names, and on runnerClasspath
     // when none does.
-    Map<String, List<String>> runnerClasspaths) {
+    Map<String, List<String>> runnerClasspaths,
+    // Each module's build directory (target/, build/, or where the build moved it), workspace-
+    // relative: build output, never a source a search must read (WS-52).
+    List<String> buildDirs,
+    // Per module (workspace-relative, "" for the root), the keys of the languages besides Java its
+    // sources hold (OtherLanguage), as the build reports its source sets (WS-53).
+    Map<String, List<String>> otherLanguages) {
 
   public WorkspaceManifestData {
     ValidCheck.check()
@@ -33,33 +39,8 @@ public record WorkspaceManifestData(
     resourceRoots = Objects.requireNonNullElse(resourceRoots, List.of());
     outputs = Objects.requireNonNullElse(outputs, List.of());
     runnerClasspaths = Map.copyOf(Objects.requireNonNullElse(runnerClasspaths, Map.of()));
-  }
-
-  // A workspace with one runner for every module, as a build front-end that resolves no other
-  // writes it.
-  public WorkspaceManifestData(
-      final String schemaVersion,
-      final String workspaceRoot,
-      final String serverVersion,
-      final List<String> runnerClasspath,
-      final JdkSourceData jdk,
-      final List<DependencyData> dependencySources,
-      final List<BuildFileData> buildFiles,
-      final List<ResourceRootData> resourceRoots,
-      final List<OutputData> outputs,
-      final String buildTool) {
-    this(
-        schemaVersion,
-        workspaceRoot,
-        serverVersion,
-        runnerClasspath,
-        jdk,
-        dependencySources,
-        buildFiles,
-        resourceRoots,
-        outputs,
-        buildTool,
-        Map.of());
+    buildDirs = List.copyOf(Objects.requireNonNullElse(buildDirs, List.of()));
+    otherLanguages = Map.copyOf(Objects.requireNonNullElse(otherLanguages, Map.of()));
   }
 
   public WorkspaceManifestData withBuildFiles(final List<BuildFileData> files) {
@@ -74,6 +55,8 @@ public record WorkspaceManifestData(
         resourceRoots,
         outputs,
         buildTool,
-        runnerClasspaths);
+        runnerClasspaths,
+        buildDirs,
+        otherLanguages);
   }
 }

@@ -72,8 +72,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
                 List.of(),
                 1_000L)
             .get(0);
-    Files.createDirectories(tmp.resolve("module/src/test/kotlin"));
-    Files.createDirectories(tmp.resolve("module/src/test/groovy"));
+    TestCompiler.recordOtherLanguages(tmp, Map.of("module", List.of("kotlin", "groovy")));
     engine = new LatheEngine(tmp);
 
     assertThat(engine.notes(List.of(source)).unreadSources())
@@ -321,7 +320,10 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
             List.of(),
             List.of(),
             List.of(),
-            null),
+            null,
+            Map.of(),
+            List.of(),
+            Map.of()),
         tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
     engine = new LatheEngine(tmp);
 

@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
@@ -188,6 +190,46 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         .contains("@param hostName unrelated method parameter", "other(String hostName)");
   }
 
+  // WS-52: the build directories the front-end recorded hold output, not sources, wherever the
+  // build put them; a directory named target is no build output unless the build says so.
+  @Test
+  void rename_outsideList_skipsRecordedBuildDirsAndSearchesUnrecordedOnes() throws Exception {
+    final GreetFixture fx = greetFixture();
+    final Path movedOutput = tmp.resolve("module/out/generated/Gen.java");
+    final Path leftOutModuleTarget = tmp.resolve("tests/it/target/generated/Gen.java");
+    for (final Path gen : List.of(movedOutput, leftOutModuleTarget)) {
+      Files.createDirectories(gen.getParent());
+      Files.writeString(gen, "class Gen {\n  { new Callee().greet(); }\n}\n");
+    }
+
+    final Path manifest = tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    final WorkspaceManifestData data = Json.read(manifest, WorkspaceManifestData.class);
+    Json.write(
+        new WorkspaceManifestData(
+            data.schemaVersion(),
+            data.workspaceRoot(),
+            data.serverVersion(),
+            data.runnerClasspath(),
+            data.jdk(),
+            data.dependencySources(),
+            data.buildFiles(),
+            data.resourceRoots(),
+            data.outputs(),
+            data.buildTool(),
+            data.runnerClasspaths(),
+            List.of("module/out"),
+            Map.of()),
+        manifest);
+    engine = new LatheEngine(tmp);
+
+    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
+
+    assertThat(rename.outside())
+        .extracting(mention -> mention.uri())
+        .containsExactly(leftOutModuleTarget.toUri().toString());
+    assertThat(Files.readString(movedOutput)).contains("greet()");
+  }
+
   @Test
   void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTextAndFilesOutsideModules()
       throws Exception {
@@ -202,11 +244,9 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
     Files.writeString(
         profileTest, "package com.example;\nclass GreetIT {\n  { new Callee().greet(); }\n}\n");
     Files.writeString(profileTest.resolveSibling("Other.java"), "class Other { int greeting; }\n");
-    for (final String skipped : List.of("tests/it/target/Gen.java", ".cache/Gen.java")) {
-      final Path output = tmp.resolve(skipped);
-      Files.createDirectories(output.getParent());
-      Files.writeString(output, "class Gen { void greet() {} }\n");
-    }
+    final Path hidden = tmp.resolve(".cache/Gen.java");
+    Files.createDirectories(hidden.getParent());
+    Files.writeString(hidden, "class Gen { void greet() {} }\n");
 
     engine = new LatheEngine(tmp);
 
@@ -226,7 +266,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         .satisfies(mention -> assertThat(mention.uri()).endsWith("Labels.java"));
     assertThat(Files.readString(labels)).contains("\"greet\"");
     assertThat(rename.outside())
-        .as("a module the build left out is listed, never edited; output and hidden dirs are not")
+        .as("a module the build left out is listed, never edited; hidden dirs are not")
         .singleElement()
         .satisfies(
             mention -> {

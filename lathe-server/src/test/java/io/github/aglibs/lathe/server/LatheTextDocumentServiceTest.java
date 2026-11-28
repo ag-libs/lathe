@@ -1173,7 +1173,10 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             List.of(),
             List.of(),
             List.of(),
-            null),
+            null,
+            Map.of(),
+            List.of(),
+            Map.of()),
         Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR))
             .resolve(LatheLayout.WORKSPACE_JSON));
   }

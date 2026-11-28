@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OtherLanguage;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.install.CompileCapture;
@@ -12,6 +13,7 @@ import io.github.aglibs.lathe.install.ServerInstaller;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -42,7 +44,9 @@ import org.gradle.api.artifacts.result.ResolvedDependencyResult;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.configuration.BuildFeatures;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.SourceDirectorySet;
 import org.gradle.api.initialization.IncludedBuild;
+import org.gradle.api.plugins.ExtensionAware;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.plugins.jvm.JvmTestSuite;
@@ -129,7 +133,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
                                           module(project),
                                           project
                                               .getPluginManager()
-                                              .hasPlugin(LatheFormatter.SPOTLESS_PLUGIN)))));
+                                              .hasPlugin(LatheFormatter.SPOTLESS_PLUGIN),
+                                          buildDir(project)))));
                   task.getFactsFile()
                       .set(
                           LatheWorkspaceTask.factsFile(
@@ -724,7 +729,46 @@ public class LatheProjectPlugin implements Plugin<Project> {
         List.of(),
         List.of(),
         List.of(),
-        project.getPluginManager().hasPlugin(LatheFormatter.SPOTLESS_PLUGIN));
+        project.getPluginManager().hasPlugin(LatheFormatter.SPOTLESS_PLUGIN),
+        buildDir(project),
+        otherLanguages(Stream.concat(Stream.of(main, test), others.stream()).toList()));
+  }
+
+  // The languages besides Java a source set holds: the Kotlin, Groovy and Scala plugins each add
+  // their directory set to it under the language's name. Only the language's own files count: the
+  // Kotlin plugin's set also holds the Java directories, so Kotlin can see the Java beside it.
+  private static List<String> otherLanguages(final List<SourceSet> sourceSets) {
+    return Arrays.stream(OtherLanguage.values())
+        .filter(
+            language ->
+                sourceSets.stream()
+                    .map(sourceSet -> ((ExtensionAware) sourceSet).getExtensions())
+                    .map(extensions -> extensions.findByName(language.key()))
+                    .anyMatch(set -> holdsFilesOf(set, language)))
+        .map(OtherLanguage::key)
+        .toList();
+  }
+
+  private static boolean holdsFilesOf(final Object set, final OtherLanguage language) {
+    return set instanceof final SourceDirectorySet directories
+        && directories.getFiles().stream()
+            .anyMatch(file -> OtherLanguage.ofFileName(file.getName()).orElse(null) == language);
+  }
+
+  // Read when the facts are, so a build script that moves it is seen; null when it lies outside the
+  // root (another drive, a shared output folder), where no search of the workspace reaches.
+  private static String buildDir(final Project project) {
+    final Path root = project.getRootDir().toPath().toAbsolutePath().normalize();
+    final Path dir =
+        project
+            .getLayout()
+            .getBuildDirectory()
+            .get()
+            .getAsFile()
+            .toPath()
+            .toAbsolutePath()
+            .normalize();
+    return dir.startsWith(root) ? FileUtil.slashed(root.relativize(dir)) : null;
   }
 
   // A source set's classes and resources, and its jar when it has one (test fixtures do): each a

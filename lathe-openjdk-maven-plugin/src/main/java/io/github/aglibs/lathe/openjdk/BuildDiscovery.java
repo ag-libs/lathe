@@ -29,8 +29,13 @@ final class BuildDiscovery {
     return discover(workspaceRoot);
   }
 
+  // Where make keeps every configuration it builds, each in its own folder.
+  static Path buildRoot(final Path workspaceRoot) {
+    return workspaceRoot.resolve(BUILD_DIR);
+  }
+
   private static Path discover(final Path workspaceRoot) throws IOException {
-    final Path buildRoot = workspaceRoot.resolve(BUILD_DIR);
+    final Path buildRoot = buildRoot(workspaceRoot);
     if (!Files.isDirectory(buildRoot)) {
       throw new IOException("no %s/ under %s — %s".formatted(BUILD_DIR, workspaceRoot, HINT));
     }
