@@ -1162,6 +1162,39 @@ Module-annotation argument completion has no regression test yet; the paired pro
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
+## WS-56 — A Spotless Java formatter only a non-Java module runs disables formatting without a word
+
+**Status: deferred** (filed 2026-11-28: low; the answer is right today, only the refusal goes unexplained, and the fix refactors sync code every Maven build runs: after the release)
+
+**Kind: bug**
+
+**Affects: the Maven sync's workspace style (`.lathe/` style file), and so formatting in the editor and MCP `format`.**
+
+Found while reviewing `MavenStyle` (2026-11-28).
+
+### Observed behaviour
+
+`MavenStyle.formatterSource` answers `Optional.empty()` both when no project runs the formatter and when the modules disagree, and `write` tells the two apart by scanning every project again (`runsSpotlessJava`).
+The two scans count different projects: `formatterSource` only the Java modules (`ReactorProjects.compilesJava`) and the root, `runsSpotlessJava` every project.
+So a build where only a non-Java module (a `pom`-packaged parent other than the root, a docs module) configures a Spotless Java formatter, and the root runs spring-javaformat, gets no style: Spotless is refused and spring-javaformat does not take over, which is right, but the sync says only, at debug, that there is no Spotless Java formatter.
+
+### Expected
+
+Formatter selection answers one of three outcomes: the project whose configuration is the style, none in the build (the only case that falls back to spring-javaformat), or refused, with the reason logged as a warning.
+The rules stay: a pinned declared formatter first, the root when it runs the formatter, else every Java module alike.
+
+### Fix direction
+
+`formatterSource` returns a `FormatterSource` (a record of an outcome, `SELECTED`, `ABSENT` or `REFUSED`, and the selected project), and `write` switches on it, so `runsSpotlessJava` goes.
+No Java module running the formatter is `ABSENT` only when no project at all runs it; a non-Java module that does makes it `REFUSED`, with a warning that names the reason.
+Tests: `write_refusedSpotlessAndSpringJavaFormat_writesNoStyle`, `write_springJavaFormatWithDeclaredNone_writesNoneWithEditorconfigIndent` and the root-selection cases keep passing; the non-Java-module case gets its own `styleSource` and `write` tests.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## WS-27 — On Gradle, included builds are not covered
 
 **Status: deferred** (2026-11-15: feature freeze)
