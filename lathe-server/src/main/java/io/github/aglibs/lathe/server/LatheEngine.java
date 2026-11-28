@@ -39,7 +39,6 @@ import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
-import io.github.aglibs.lathe.server.engine.LathePropertyMentions;
 import io.github.aglibs.lathe.server.engine.LatheReference;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
@@ -259,8 +258,7 @@ public final class LatheEngine {
    * the {@code kept} accesses, each enriched with a snippet, capped to {@code maxResults} with the
    * true total for pagination. A declaration is no use, neither the symbol's own nor an override's:
    * an unused symbol has none, as {@link #analyzeChange} counts them, and is still told from a
-   * position that names no symbol. An unused field or accessor carries where its property name is
-   * still text.
+   * position that names no symbol.
    */
   public Noted<LatheReferences> references(
       final Path file,
@@ -268,64 +266,15 @@ public final class LatheEngine {
       final int column,
       final int maxResults,
       final Set<LatheReference.Access> kept) {
-    final Noted<LatheReferences> found =
-        noted(
-                List.of(file),
-                positionWork(
-                    file,
-                    line,
-                    column,
-                    (session, uri, pos, cancel, progress) ->
-                        session.search().referencesFuture(uri, pos, true, cancel, progress)))
-            .map(matches -> keptReferences(matches, kept, maxResults, file, line, column));
-    final LatheReferences refs = found.value();
-    if (!refs.resolved() || refs.total() > 0 || refs.filteredOut() > 0) {
-      return found;
-    }
-
-    return found.map(unused -> unused.withPropertyMentions(propertyMentions(file, line, column)));
-  }
-
-  // A field or accessor no Java code uses may still be bound by its property name, which javac
-  // does not resolve: a template's ${owner.city}, a framework reading accessors, a test's
-  // hasProperty("city"). Where that name is still text, as rename lists an old name (MC-109).
-  // Asked only for an unused symbol, so the scan stays rare.
-  private LathePropertyMentions propertyMentions(
-      final Path file, final int line, final int column) {
-    final Optional<String> property = propertyAt(file, line, column);
-    if (property.isEmpty()) {
-      return LathePropertyMentions.NONE;
-    }
-
-    final List<Location> mentions =
-        textMentions(property.get(), "references").stream()
-            .filter(
-                mention ->
-                    origin(LatheUri.toPath(mention.getUri())) == LatheLocation.Origin.REACTOR)
-            .toList();
-    return new LathePropertyMentions(
-        property.get(),
-        mentions.stream().limit(LISTED_MENTIONS).map(this::toLatheLocation).toList(),
-        mentions.size());
-  }
-
-  // Best effort, as the answer it adds to is complete without it.
-  private Optional<String> propertyAt(final Path file, final int line, final int column) {
-    try {
-      return request(
-              positionWork(
-                  file,
-                  line,
-                  column,
-                  (session, uri, pos, cancel, progress) -> session.search().targetFuture(uri, pos)))
-          .flatMap(BeanProperties::name);
-    } catch (final RuntimeException e) {
-      LOG.log(
-          Level.WARNING,
-          e,
-          () -> "[references] %s:%d property not resolved".formatted(file, line + 1));
-      return Optional.empty();
-    }
+    return noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.search().referencesFuture(uri, pos, true, cancel, progress)))
+        .map(matches -> keptReferences(matches, kept, maxResults, file, line, column));
   }
 
   private LatheReferences keptReferences(
@@ -896,7 +845,7 @@ public final class LatheEngine {
                         found,
                         original,
                         textEdits.getOrDefault(LatheUri.fromPath(file), List.of())))
-            .orElseGet(() -> textMentions(oldName, "rename"))
+            .orElseGet(() -> textMentions(oldName))
             .stream()
             .filter(
                 mention ->
@@ -943,12 +892,11 @@ public final class LatheEngine {
   // Best effort: the rename is on disk by now, and a scan that fails must not report it as failed.
   // The scan reads and parses files on this thread, not the event loop, which serves every other
   // request meanwhile.
-  private List<Location> textMentions(final String name, final String operation) {
+  private List<Location> textMentions(final String name) {
     try {
       return TextMentions.find(query(session -> session.verifier().textMentionSources(name)), name);
     } catch (final RuntimeException e) {
-      LOG.log(
-          Level.WARNING, e, () -> "[%s] text mentions of %s not listed".formatted(operation, name));
+      LOG.log(Level.WARNING, e, () -> "[rename] text mentions of %s not listed".formatted(name));
       return List.of();
     }
   }
@@ -1587,7 +1535,7 @@ public final class LatheEngine {
       }
     }
 
-    final var impact =
+    return new Noted<>(
         new LatheChangeImpact(
             signature,
             facts.family(),
@@ -1599,12 +1547,7 @@ public final class LatheEngine {
             production,
             test,
             List.copyOf(affectedModules),
-            List.copyOf(relevantTests));
-    // No reference at all: a field or accessor may still be bound by its property name.
-    return new Noted<>(
-        production + test == 0 && !signature.isBlank()
-            ? impact.withPropertyMentions(propertyMentions(file, line, column))
-            : impact,
+            List.copyOf(relevantTests)),
         read.notes());
   }
 

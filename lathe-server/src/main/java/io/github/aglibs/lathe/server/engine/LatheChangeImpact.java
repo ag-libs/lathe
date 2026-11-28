@@ -23,8 +23,7 @@ public record LatheChangeImpact(
     int productionRefs,
     int testRefs,
     List<String> affectedModules,
-    List<String> relevantTests,
-    LathePropertyMentions propertyMentions) {
+    List<String> relevantTests) {
 
   public LatheChangeImpact {
     ValidCheck.check()
@@ -34,56 +33,12 @@ public record LatheChangeImpact(
         .notNull(redeclaredBy, "redeclaredBy")
         .assertTrue(overriddenByCount >= overriddenBy.size(), "overriddenByCount")
         .assertTrue(redeclaredByCount >= redeclaredBy.size(), "redeclaredByCount")
-        .notNull(propertyMentions, "propertyMentions")
         .validate();
     overrides = List.copyOf(overrides);
     overriddenBy = List.copyOf(overriddenBy);
     redeclaredBy = List.copyOf(redeclaredBy);
     affectedModules = List.copyOf(affectedModules);
     relevantTests = List.copyOf(relevantTests);
-  }
-
-  public LatheChangeImpact(
-      final String signature,
-      final Family family,
-      final List<String> overrides,
-      final List<LatheLocation> overriddenBy,
-      final int overriddenByCount,
-      final List<LatheLocation> redeclaredBy,
-      final int redeclaredByCount,
-      final int productionRefs,
-      final int testRefs,
-      final List<String> affectedModules,
-      final List<String> relevantTests) {
-    this(
-        signature,
-        family,
-        overrides,
-        overriddenBy,
-        overriddenByCount,
-        redeclaredBy,
-        redeclaredByCount,
-        productionRefs,
-        testRefs,
-        affectedModules,
-        relevantTests,
-        LathePropertyMentions.NONE);
-  }
-
-  public LatheChangeImpact withPropertyMentions(final LathePropertyMentions mentions) {
-    return new LatheChangeImpact(
-        signature,
-        family,
-        overrides,
-        overriddenBy,
-        overriddenByCount,
-        redeclaredBy,
-        redeclaredByCount,
-        productionRefs,
-        testRefs,
-        affectedModules,
-        relevantTests,
-        mentions);
   }
 
   /**
