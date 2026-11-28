@@ -249,7 +249,7 @@ final class LatheMcpTools {
             """
                 {"type":"object","required":["query"],
                  "properties":{
-                   "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
+                   "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); a binary name (Map$Entry) is read as Map.Entry; reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
                    "scope":{"type":"string","enum":["reactor","all"],"description":"all (default) also finds JDK and dependency types, listed after the reactor's; reactor finds only the project's own."},
                    "maxResults":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Max symbols to return (default 50)."}}}\
                 """,
@@ -742,7 +742,7 @@ final class LatheMcpTools {
         () ->
             render(
                 engine.searchSymbols(query, scope, maxResults(request)),
-                (symbols, notes) -> McpText.searchResult(query, symbols, notes)));
+                (symbols, notes) -> McpText.searchResult(query, scope, symbols, notes)));
   }
 
   // Shared body for the file tools: an existing .java file, then the handler, an engine failure

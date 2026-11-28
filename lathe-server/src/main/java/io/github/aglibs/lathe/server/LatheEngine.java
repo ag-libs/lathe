@@ -576,7 +576,7 @@ public final class LatheEngine {
   public Noted<List<LatheSymbol>> searchSymbols(
       final String query, final SymbolScope scope, final int maxResults) {
     // Agents write globs by habit; the search already matches a prefix.
-    final String name = query.replaceAll("^\\*+|\\*+$", "");
+    final String name = nestedName(query.replaceAll("^\\*+|\\*+$", ""));
     if (name.isBlank()) {
       return new Noted<>(List.of(), notes(List.of()));
     }
@@ -594,6 +594,18 @@ public final class LatheEngine {
                                 session.features().workspaceSymbol(name, reactorOnly),
                                 session.features().sourcelessSymbols(name, reactorOnly))))
         .map(hits -> ranked(name, hits).limit(maxResults).toList());
+  }
+
+  // A stack trace or a class file names a nested type by its binary name, Outer$Inner, which the
+  // search knows as Outer.Inner, as the index reads every `$` of a class name; an anonymous class
+  // (Outer$1) or a lambda (Outer$$Lambda$14/0x…) has no name to find, so it is found as the type
+  // it is in (MC-105).
+  private static String nestedName(final String binary) {
+    return binary
+        .replaceFirst("\\$\\$Lambda.*$", "")
+        .replaceAll("\\$\\d+(?=\\$|$)", "")
+        .replace('$', '.')
+        .replaceAll("^\\.+|\\.+$", "");
   }
 
   // The located hits by rank, as IntelliJ ranks them: the type the query names first, in its case
