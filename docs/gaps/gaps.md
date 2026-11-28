@@ -1126,6 +1126,37 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
+## CQ-0085 — Completion computes and carries state nothing reads
+
+**Status: deferred** (filed 2026-11-28: no answer is wrong today; the deletion spans five completion classes and fifteen test calls, not worth changing just before the release)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: no behaviour; the completion pipeline's readability (`lathe-analysis`, package `completion`).**
+
+Found by the [2026-11-14 code review](code-review-2026-11-14.md) (CR-218); still so at `a2f2cf5`.
+
+### Observed behaviour
+
+`CompletionSite.mode` runs a second classification switch (`mode`, `simpleNameMode`) to build a `CompletionMode` that nothing reads.
+`SentinelParser.classifyLambda` walks the lambda's parameters to find the receiver's index, and `ParsedSentinel.lambdaParamIndex` carries it, unread.
+`ParsedSentinel.docVersion` is unread too, yet `CompletionEngine` threads the cached analysis's version through every `SentinelParser.parse` and member-stub parse to fill it.
+
+### Fix direction
+
+Delete `CompletionMode` and `CompletionSite.mode` with its two methods.
+Drop `lambdaParamIndex` from `ParsedSentinel` and `SentinelParser.Classification` (and the `-1` every other classification passes), keeping `classifyLambda`'s `LAMBDA_BODY` context.
+Drop `docVersion` from `ParsedSentinel` and its `valid`/`invalid` factories, and the `version` parameter from the parser and the `CompletionEngine` local that feeds it; the cached version that builds the refreshed `CachedFileAnalysis` stays, as it is live.
+The sentinel-parser, member-access and incomplete-source completion tests keep passing, with no assertion changed.
+
+### Regression targets
+
+None yet; the change removes code and adds no behaviour to test.
+
+---
+
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
