@@ -14,7 +14,7 @@ Several production items revisit CR-208, CR-210, CR-211, CR-212, and CR-218 from
 
 ### Apply the call hierarchy result cap before reading snippets
 
-Tracked as [MC-104](../gaps/gaps.md#mc-104--call_hierarchy-reads-a-snippet-for-every-call-site-then-keeps-only-maxresults-of-them).
+Done as [MC-104](../gaps/gaps-archive.md#mc-104--call_hierarchy-reads-a-snippet-for-every-call-site-then-keeps-only-maxresults-of-them--done) (2026-11-28).
 
 For each incoming or outgoing call site, `LatheEngine` constructs a location with a snippet, which reads the whole source file through `Files.readAllLines`.
 Only after constructing every location does it apply `maxResults`.

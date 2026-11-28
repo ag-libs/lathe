@@ -1157,20 +1157,25 @@ public final class LatheEngine {
                 return new LatheCallHierarchy(incoming, 0, false, List.of());
               }
 
-              final List<LatheCall> all =
-                  incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0), scope);
+              // Every site is counted and ordered, but only the kept ones read their snippets,
+              // each a read of its file (MC-104).
+              final List<CallSite> sites =
+                  incoming ? incomingSites(items.get(0)) : outgoingSites(items.get(0), scope);
               return new LatheCallHierarchy(
                   incoming,
-                  all.size(),
-                  all.size() > maxResults,
-                  all.stream().limit(maxResults).toList());
+                  sites.size(),
+                  sites.size() > maxResults,
+                  sites.stream()
+                      .limit(maxResults)
+                      .map(site -> new LatheCall(site.name(), toLatheLocation(site.location())))
+                      .toList());
             });
   }
 
-  // One LatheCall per call site (a caller may invoke the symbol at several ranges).
+  // One site per call, by the caller's name (a caller may invoke the symbol at several ranges).
   // The callers' list is ordered from the declaration's module, as the declaration is asked about.
-  private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
-    final List<Map.Entry<String, Location>> sites =
+  private List<CallSite> incomingSites(final CallHierarchyItem item) {
+    final List<CallSite> sites =
         request(
                 (session, cancel, progress) ->
                     session.search().incomingCallsFuture(item, cancel, progress))
@@ -1180,17 +1185,22 @@ public final class LatheEngine {
                     call.getFromRanges().stream()
                         .map(
                             range ->
-                                Map.entry(
+                                new CallSite(
                                     call.getFrom().getName(),
                                     new Location(call.getFrom().getUri(), range))))
             .toList();
     return ordered(
-            sites,
-            Map.Entry::getValue,
-            () -> listHome(query(WorkspaceSession::layout), LatheUri.toPath(item.getUri())))
-        .stream()
-        .map(site -> new LatheCall(site.getKey(), toLatheLocation(site.getValue())))
-        .toList();
+        sites,
+        CallSite::location,
+        () -> listHome(query(WorkspaceSession::layout), LatheUri.toPath(item.getUri())));
+  }
+
+  // A call site before its snippet is read: the caller's name for an incoming call, the callee's
+  // for an outgoing one.
+  private record CallSite(String name, Location location) {
+    private CallSite {
+      ValidCheck.check().notNull(name, "name").notNull(location, "location").validate();
+    }
   }
 
   // The order every capped list answers in: the project's own sources, then its generated ones,
@@ -1285,22 +1295,24 @@ public final class LatheEngine {
         layout.placementOf(declaration).map(SourceLayout.Placement::moduleRel).orElse(null));
   }
 
-  // Where the method calls each callee, in source order, so the answer reads as the method does.
-  private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
+  // Where the method calls each callee, by the callee's name, in source order, so the answer reads
+  // as the method does.
+  private List<CallSite> outgoingSites(final CallHierarchyItem item, final SymbolScope scope) {
     return request((session, cancel, progress) -> session.search().outgoingCallsFuture(item))
         .stream()
         .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
-        .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
+        .flatMap(
+            call ->
+                call.getFromRanges().stream()
+                    .map(
+                        range ->
+                            new CallSite(
+                                call.getTo().getName(), new Location(item.getUri(), range))))
         .sorted(
-            Comparator.comparingInt((LatheCall call) -> call.location().line())
-                .thenComparingInt(call -> call.location().column()))
+            Comparator.comparingInt(
+                    (CallSite site) -> site.location().getRange().getStart().getLine())
+                .thenComparingInt(site -> site.location().getRange().getStart().getCharacter()))
         .toList();
-  }
-
-  private Stream<LatheCall> callSites(
-      final String name, final String uri, final List<Range> ranges) {
-    return ranges.stream()
-        .map(range -> new LatheCall(name, toLatheLocation(new Location(uri, range))));
   }
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
