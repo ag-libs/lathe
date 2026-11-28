@@ -2194,3 +2194,35 @@ Incoming calls keep the order MC-100 gave them (origin, main sources before test
 
 None yet.
 Both directions with two sites and `maxResults: 1`: which site and snippet survive, a total of two, and the truncation flag.
+
+---
+
+## MC-114 — A test run's launch notes reach its MCP answer through the editor transcript's `note: ` prefix
+
+**Status: deferred** (2026-11-28: no answer is wrong today; six classes on the run and debug paths, not worth changing just before the release; becomes a bug once a second kind of launch note appears)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `run_test` notes, and the editor's run transcript.**
+
+Found by the [2026-11-13 code review](code-review-2026-11-13.md#cr-62--launch-notes-travel-as-a-text-prefix) (CR-62); still so at `cb614f5`.
+
+### Observed behaviour
+
+`Launcher.unappliedOptionNote` writes `TranscriptLine.NOTE_PREFIX` (`note: `) into the warning's text, and `Launcher.launch` sends it as a `COMMAND` transcript line; `LatheTestRun.launchNotes` then finds `COMMAND` lines with that prefix and strips it to rebuild the MCP answer's notes, so the editor's display format feeds the MCP result.
+`LaunchOutcome.notes` holds only the completeness gate's notes, and `withNotes`, at both its call sites in `RunCoordinator` (the run's outcome and the debug session's end), replaces the list instead of adding to it.
+No answer is wrong yet: `withNotes` replaces an empty list, and only `COMMAND` lines are read, so a program printing `note: ` on stdout gets no note.
+A second source of launch notes, or launch notes carried in the outcome, would be lost or doubled.
+
+### Fix direction
+
+Carry the raw warnings in `LaunchOutcome.notes` (`LaunchSession.onExit`, through `LaunchOutcome.completed`), and add the prefix only where the editor transcript is written (a `TranscriptLine.note(text)` factory); `LatheTestRun` takes `outcome.notes()` and drops the prefix parsing.
+`withNotes` keeps both lists, each note once, in today's MCP order: the gate's notes first, then the launch's.
+Option values stay out of the warnings.
+
+### Regression targets
+
+None yet.
+In `LauncherTest` and `LatheEngineRunTest`: the editor transcript still shows `note: …` before the program's output; the final MCP result has the gate's notes, then the launch's, each once; and program stdout that starts with `note: ` does not become a note.
