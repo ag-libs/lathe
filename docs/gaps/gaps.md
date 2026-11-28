@@ -688,30 +688,6 @@ A `method` token on the name of a method reference, as for a call; `status.md` s
 
 None yet.
 
-## EG-125 — An unused local is reported twice once the module's compiler plugins have run
-
-**Status: deferred** (triaged 2026-11-24: low; noise only, both reports are right)
-
-**Kind: bug**
-
-**Affects: diagnostics in the editor and MCP `get_diagnostics`, in a module that runs Error Prone.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, N14).
-
-### Observed behaviour
-
-A new file in `dropwizard-util` with two unused locals (`List<String> l = null;`, `Path p = null;`) answers `get_diagnostics` with four entries: Lathe's hint `Unused local variable 'l'` and Error Prone's warning `[UnusedVariable] The local variable 'l' is never read.` for each, on the same variable.
-
-### Expected
-
-One report per unused local: Lathe's own hint left out where the build's compiler plugin already reports it, or the two merged.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-130 — A `:LatheNew` test skeleton fails a build that checks formatting until it is formatted
 
 **Status: deferred** (triaged 2026-11-26: low; the first save formats the file where format-on-save is on, and the real fix, formatting the skeleton, is a feature)
