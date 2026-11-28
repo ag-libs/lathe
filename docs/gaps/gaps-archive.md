@@ -7,6 +7,43 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-23 — "Implement abstract methods" inserts the stub at column 0 — done
+
+**Status: done** (2026-11-28)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: the implement-missing-methods quick fix, in a class indented with tabs (or not with four spaces).**
+
+Found by the exploratory round on Spring Petclinic (2026-11-26, `main` at `6dc6245`, Petclinic at `500158f`; report `dev/reports/qa-2026-11-26-petclinic-exploratory.md`).
+
+### Observed behaviour
+
+With `PetValidator.supports` deleted, the quick fix adds `@Override` and `public boolean supports(Class<?> clazz) {` at column 0, with a body indented by four spaces, in a class whose body is indented with tabs.
+The result compiles; the project's formatter (spring-javaformat) fixes it on the next format.
+jdtls indents its stub with the class body.
+
+### Expected
+
+The stub takes the indentation of the class body's members, as [EG-130](gaps.md#eg-130--a-lathenew-test-skeleton-fails-a-build-that-checks-formatting-until-it-is-formatted)'s fix direction proposes for a generated skeleton: formatted with the project's formatter where one is configured.
+
+### Resolution
+
+Each stub takes the indentation of the class's first member written on a line of its own, and its body one more step of the same kind, tabs too; a class with none steps two spaces in, as the other code actions do.
+With the closing brace alone on its line the stubs go in before that line, so a nested class keeps its brace where it was; with the brace after other code (`class Test implements Runnable { }`) they replace the blanks before it and put it on a line of its own.
+
+Not covered: the project's formatter is not run on the stubs, so a style that differs from the class's own indentation in more than the step (a blank line rule, a brace style) is fixed only on the next format; [EG-130](gaps.md#eg-130--a-lathenew-test-skeleton-fails-a-build-that-checks-formatting-until-it-is-formatted) holds that direction.
+
+### Regression targets
+
+- `QuickFixCodeActionTest.codeAction_missingMethodImpl_tabIndentedClass_indentsTheStubWithTabs`
+- `QuickFixCodeActionTest.codeAction_missingMethodImpl_nestedClass_keepsItsClosingBraceIndented`
+- `QuickFixCodeActionTest.codeAction_missingMethodImpl_emptyClassOnOneLine_indentsTwoSpaces`
+
+---
+
 ## FR-036 — Renaming a getter leaves its property name in templates and message files unreported — non-goal
 
 **Status: non-goal** (2026-11-27: that a template, a serializer or a query binds an accessor by its property name is the framework's rule, which javac does not see)
