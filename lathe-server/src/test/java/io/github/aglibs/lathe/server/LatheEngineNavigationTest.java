@@ -657,6 +657,73 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             });
   }
 
+  // MC-104: a capped answer still counts every site and keeps the first in its order, with its
+  // snippet, in both directions.
+  @Test
+  void callHierarchy_twoSitesCappedToOne_keepsTheFirstAndCountsBoth() throws Exception {
+    final String calleeSource =
+        "package com.example; class Callee { void greet() {} void wave() {} }";
+    final Path callee =
+        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeSource);
+    final String callerSource =
+        """
+        package com.example;
+        class Caller {
+          void run(Callee c) {
+            c.greet();
+            c.wave();
+          }
+          void again(Callee c) { c.greet(); }
+        }
+        """;
+    final Path caller =
+        TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
+    compileIntoMirror(callee, caller);
+    engine = new LatheEngine(tmp);
+    final var greet = positionOf(calleeSource, "greet");
+    final var run = positionOf(callerSource, "run");
+
+    final LatheCallHierarchy incoming =
+        engine
+            .callHierarchy(
+                callee,
+                greet.getLine(),
+                greet.getCharacter(),
+                CallDirection.INCOMING,
+                SymbolScope.ALL,
+                1)
+            .value();
+    final LatheCallHierarchy outgoing =
+        engine
+            .callHierarchy(
+                caller,
+                run.getLine(),
+                run.getCharacter(),
+                CallDirection.OUTGOING,
+                SymbolScope.ALL,
+                1)
+            .value();
+
+    assertThat(incoming.total()).isEqualTo(2);
+    assertThat(incoming.truncated()).isTrue();
+    assertThat(incoming.calls())
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.name()).isEqualTo("run");
+              assertThat(call.location().snippet()).contains("c.greet();");
+            });
+    assertThat(outgoing.total()).isEqualTo(2);
+    assertThat(outgoing.truncated()).isTrue();
+    assertThat(outgoing.calls())
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.name()).contains("greet");
+              assertThat(call.location().snippet()).contains("c.greet();");
+            });
+  }
+
   // Types declared in a file named after none of them: found in that file by symbol search,
   // definition from another file and implementations, as the file's own type is.
   @Test

@@ -16590,6 +16590,41 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-104 — `call_hierarchy` reads a snippet for every call site, then keeps only `maxResults` of them — done
+
+**Status: done** (2026-11-28; deferred 2026-11-23: the answer was right, only the work was wasted)
+
+**Kind: bug**
+
+**Value: low — Size: S**
+
+**Affects: MCP `call_hierarchy`, both directions.**
+
+Found by the [redundancy audit](../potential/lathe-redundancy-audit.md#apply-the-call-hierarchy-result-cap-before-reading-snippets) (2026-11-21, at `6e29dc6f`); still so at `ff83cbf1`.
+No timings were taken.
+
+### Observed behaviour
+
+`LatheEngine.callHierarchy` turns every call site into a `LatheLocation`, and each one's snippet reads its whole source file, before it applies `maxResults`.
+A method with 500 callers and the default cap reads files 500 times to return 50 snippets; with `maxResults: 10`, to return ten.
+
+### Fix direction
+
+Count every site after the scope filter, order the raw locations, cap them, and build snippets only for the sites kept, as `capLocations` already does for implementations.
+Incoming calls keep the order MC-100 gave them (origin, main sources before tests, the declaring module first within each, then module, file and position); outgoing calls keep source order and point at the call in the caller.
+
+### Resolution
+
+Rechecked on `main` at `b069de4` (2026-11-28): unchanged.
+`LatheEngine.callHierarchy` now takes each direction's sites as a name and a location, counts and orders them as before (incoming in MC-100's order, outgoing in source order), caps them, and builds the `LatheLocation`, with its snippet, only for the sites it keeps: a method with 500 callers and the default cap reads 50 snippets, not 500.
+The answer is unchanged: the same sites, total and truncation flag, which the regression test holds; it does not observe how many snippets are read.
+
+### Regression targets
+
+- `LatheEngineNavigationTest.callHierarchy_twoSitesCappedToOne_keepsTheFirstAndCountsBoth`
+
+---
+
 ## MC-105 — `search_symbols` finds nothing for a binary name (`Outer$Inner`) or a member name, without saying why — done
 
 **Status: done** (2026-11-28; triaged 2026-11-24: low; the dotted form works, and a hint that the tool finds types only is the cheap half)
