@@ -12374,7 +12374,7 @@ Build output is what the build says it is: each front-end records every module's
 
 ### Resolution
 
-`workspace.json` gains `buildDirs`, each module's build directory relative to the workspace: Maven's `project.getBuild().getDirectory()`, Gradle's `layout.buildDirectory` (read with the project's other facts, under the configuration cache), and the OpenJDK build configuration the sync used when it lies in the workspace.
+`workspace.json` gains `buildDirs`, each module's build directory relative to the workspace: Maven's `project.getBuild().getDirectory()`, Gradle's `layout.buildDirectory` (read with the project's other facts, under the configuration cache) and the `build/` of `buildSrc/` and each included build, whose projects the plugin does not see, and OpenJDK's `build/`, which holds every configuration make builds, or the configuration the sync used when it lies elsewhere in the workspace.
 `OutsideSources` skips the synced source roots, those directories and hidden ones, and no longer knows `target` or `build`.
 A module the build left out has no recorded build directory, as the build never modelled it, so its build output is searched too: stale generated code there may be listed, never edited.
 
@@ -12384,6 +12384,8 @@ A module the build left out has no recorded build directory, as the build never 
 - `WorkspaceManifestWriterTest.write_buildDirs_recordedAsGiven`
 - `LatheSyncTaskFunctionalTest.sync_movedBuildDirectory_recordedAsTheLayoutSetsIt` (Gradle TestKit)
 - `MultiModuleTest.sync_workspaceJson_recordsEachModulesBuildDirectory` (Maven invoker, `shapes` moved to `out/`)
+- `LatheSyncTaskFunctionalTest.sync_buildSrc_recordsItsOutput` (Gradle TestKit)
+- `OpenJdkSyncTest.sync_builtModuleAndTool_writesPinnedScriptAndBatchMarkersAndReleasesLock`, `OpenJdkSyncTest.sync_buildOutsideTheBuildFolder_recordsOnlyThatConfiguration`
 
 ---
 

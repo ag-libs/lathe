@@ -359,7 +359,18 @@ class LatheSyncTaskFunctionalTest {
 
     assertThat(workspace().buildDirs())
         .contains("lib/out", "app/build")
-        .doesNotContain("lib/build");
+        .doesNotContain("lib/build", "buildSrc/build");
+  }
+
+  // WS-52: buildSrc's output is recorded too, as no project the plugin sees covers it.
+  @Test
+  void sync_buildSrc_recordsItsOutput() throws Exception {
+    final var fixture =
+        multiProject().file("buildSrc/src/main/java/Helper.java", "class Helper {}\n");
+
+    fixture.runner("latheSync").build();
+
+    assertThat(workspace().buildDirs()).contains("buildSrc/build", "app/build");
   }
 
   // A library that disables its jar task and publishes a shaded jar at the jar's path, as JUnit's

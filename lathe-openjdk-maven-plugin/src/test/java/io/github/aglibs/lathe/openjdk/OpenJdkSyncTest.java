@@ -35,6 +35,10 @@ class OpenJdkSyncTest {
   void builtJdk() throws IOException {
     build = root.resolve("build/linux-x86_64-server-release");
     latheDir = root.resolve(LatheLayout.LATHE_DIR);
+    writeBuild(build);
+  }
+
+  private void writeBuild(final Path build) throws IOException {
     // One built module: its cmdline (no module-source-path, so no source roots) and make's marker.
     final Path module = build.resolve("jdk/modules/java.base");
     write(
@@ -70,6 +74,9 @@ class OpenJdkSyncTest {
     final var manifest =
         Json.read(latheDir.resolve(LatheLayout.WORKSPACE_JSON), WorkspaceManifestData.class);
     assertThat(manifest.buildTool()).isEqualTo("/opt/maven/bin/mvn");
+    assertThat(manifest.buildDirs())
+        .as("all of build/: the other configurations there are output too")
+        .containsExactly("build");
     assertThat(manifest.buildFiles())
         .as("markers make only touches, so they are watched by touch, not content")
         .containsExactly(
@@ -104,6 +111,20 @@ class OpenJdkSyncTest {
             params ->
                 assertThat(Json.read(params, ModuleConfigData.class).buildDir())
                     .isEqualTo(build.toAbsolutePath().toString()));
+  }
+
+  // A configuration passed from another folder of the workspace (-Dlathe.buildDir) is recorded
+  // alone: nothing says the rest of that folder is output.
+  @Test
+  void sync_buildOutsideTheBuildFolder_recordsOnlyThatConfiguration() throws IOException {
+    final Path elsewhere = root.resolve("out/release");
+    writeBuild(elsewhere);
+
+    OpenJdkSync.sync(elsewhere, root, "1.2.3", bootMaven(), message -> {});
+
+    final var manifest =
+        Json.read(latheDir.resolve(LatheLayout.WORKSPACE_JSON), WorkspaceManifestData.class);
+    assertThat(manifest.buildDirs()).containsExactly("out/release");
   }
 
   // A module mid-rebuild has its output but no .cmdline yet, so it keeps its capture; a module or

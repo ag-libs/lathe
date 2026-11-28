@@ -54,8 +54,9 @@ public final class WorkspaceManifest {
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
   private final List<Path> buildDirs;
-  // The built modules with sources of each language Lathe does not read, mixed ones too: an answer
-  // about a symbol's uses cannot vouch for theirs, and the summary names them.
+  // The modules the build reports sources of each language Lathe does not read in, mixed ones and
+  // ones with no Java too: an answer about a symbol's uses cannot vouch for theirs, and the summary
+  // names them.
   private final Map<OtherLanguage, List<Path>> unreadModuleDirs;
   // Why go-to-definition into the JDK finds no source, when the build found no JDK sources; null
   // when they are there.

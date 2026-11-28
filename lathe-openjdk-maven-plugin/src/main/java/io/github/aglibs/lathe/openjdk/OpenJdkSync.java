@@ -301,13 +301,16 @@ public final class OpenJdkSync {
       final Path buildTool,
       final Path buildDir)
       throws IOException {
-    // The configuration's output, when it lies in the workspace (WS-52); one passed from
-    // elsewhere (-Dlathe.buildDir) is outside any search of it.
+    // The configuration's output, when it lies in the workspace (WS-52): all of build/ when it is
+    // one of make's configurations there, as the others are output too. One passed from elsewhere
+    // (-Dlathe.buildDir) is outside any search of it.
     final Path root = workspaceRoot.toAbsolutePath().normalize();
     final Path absoluteBuildDir = buildDir.toAbsolutePath().normalize();
+    final Path buildRoot = BuildDiscovery.buildRoot(root);
+    final Path recorded = absoluteBuildDir.startsWith(buildRoot) ? buildRoot : absoluteBuildDir;
     final List<String> buildDirs =
-        absoluteBuildDir.startsWith(root)
-            ? List.of(FileUtil.slashed(root.relativize(absoluteBuildDir)))
+        recorded.startsWith(root)
+            ? List.of(FileUtil.slashed(root.relativize(recorded)))
             : List.of();
     final var manifest =
         new WorkspaceManifestData(

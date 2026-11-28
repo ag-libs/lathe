@@ -431,8 +431,8 @@ public final class TestCompiler {
             existing.resourceRoots(),
             outputs.apply(existing),
             existing.buildTool(),
-            Map.of(),
-            List.of(),
+            existing.runnerClasspaths(),
+            existing.buildDirs(),
             existing.otherLanguages()),
         manifestFile);
   }

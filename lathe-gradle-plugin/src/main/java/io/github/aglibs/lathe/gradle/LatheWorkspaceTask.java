@@ -70,8 +70,11 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
       List.of(".gradle", ".gradle.kts", ".java", ".kt", ".groovy", ".toml", ".properties");
   // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
   private static final String FACTS_FILE = "lathe-facts.json";
+  // A build-logic build's output: the plugin sees none of its projects, so Gradle's default.
+  private static final String BUILD_LOGIC_OUTPUT_DIR = "build";
   // Output and state directories inside a build-logic build, never part of it.
-  private static final List<String> BUILD_LOGIC_SKIPPED_DIRS = List.of("build", ".gradle");
+  private static final List<String> BUILD_LOGIC_SKIPPED_DIRS =
+      List.of(BUILD_LOGIC_OUTPUT_DIR, ".gradle");
 
   private static final String SOURCES_CLASSIFIER = "sources";
 
@@ -192,7 +195,7 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             buildFiles(root),
             resourceRoots,
             outputs,
-            facts.stream().map(ProjectFacts::buildDir).filter(Objects::nonNull).distinct().toList(),
+            buildDirs(root, facts),
             facts.stream()
                 .filter(fact -> !fact.otherLanguages().isEmpty())
                 .collect(
@@ -474,6 +477,20 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
         .map(file -> FileUtil.slashed(root.relativize(file)))
         .distinct()
         .sorted()
+        .toList();
+  }
+
+  // Each project's build directory, and the output of buildSrc/ and each included build, whose
+  // generated sources a search of the workspace must not take for code (WS-52).
+  private List<String> buildDirs(final Path root, final List<ProjectFacts> facts) {
+    final Path absoluteRoot = root.toAbsolutePath().normalize();
+    final Stream<String> logic =
+        getBuildLogicDirs().get().stream()
+            .map(dir -> Path.of(dir, BUILD_LOGIC_OUTPUT_DIR).toAbsolutePath().normalize())
+            .filter(dir -> dir.startsWith(absoluteRoot))
+            .map(dir -> FileUtil.slashed(absoluteRoot.relativize(dir)));
+    return Stream.concat(facts.stream().map(ProjectFacts::buildDir).filter(Objects::nonNull), logic)
+        .distinct()
         .toList();
   }
 
