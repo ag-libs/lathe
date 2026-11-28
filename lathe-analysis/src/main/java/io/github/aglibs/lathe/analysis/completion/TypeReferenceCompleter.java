@@ -92,12 +92,13 @@ final class TypeReferenceCompleter {
         typeVariableCandidates(parsed, injected.prefix()).stream()
             .map(CompletionItemPresenter::present)
             .toList();
+    final var visibleTypes = withoutHiddenTypes(validTypes, parsed);
     final var typeRefOutcome =
         typeVariables.isEmpty()
-            ? validTypes
+            ? visibleTypes
             : mergeOutcomes(
                 typeVariables,
-                withoutHiddenTypes(validTypes, parsed).items(),
+                visibleTypes.items(),
                 validTypes.freshAnalysis(),
                 validTypes.incomplete());
     if (parsed.typeReferenceRole() == TypeReferenceRole.ARRAY_TYPE_ARGUMENT) {
@@ -144,8 +145,13 @@ final class TypeReferenceCompleter {
     return new CompletionOutcome(visible, outcome.freshAnalysis(), outcome.incomplete());
   }
 
+  // An additional bound is an interface (JLS 4.4): the type variables in scope only hide types.
   static List<CompletionCandidate> typeVariableCandidates(
       final ParsedSentinel parsed, final String prefix) {
+    if (parsed.typeReferenceRole() == TypeReferenceRole.ADDITIONAL_BOUND) {
+      return List.of();
+    }
+
     return parsed.typeVariables().stream()
         .filter(name -> name.startsWith(prefix))
         .map(CandidateFactory::typeParameterCandidate)
@@ -719,7 +725,8 @@ final class TypeReferenceCompleter {
       case CONSTRUCTOR ->
           kind == TypeKind.CLASS || kind == TypeKind.RECORD || kind == TypeKind.INTERFACE;
       case CLASS_EXTENDS, THROWS -> kind == TypeKind.CLASS;
-      case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS -> kind == TypeKind.INTERFACE;
+      case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS, ADDITIONAL_BOUND ->
+          kind == TypeKind.INTERFACE;
       case ANNOTATION -> kind == TypeKind.ANNOTATION;
     };
   }
@@ -749,7 +756,7 @@ final class TypeReferenceCompleter {
       case ORDINARY, TYPE_ARGUMENT, ARRAY_TYPE_ARGUMENT -> true;
       case CONSTRUCTOR -> constructibleType(typeEl, analysis, scope);
       case CLASS_EXTENDS -> extendableClass(typeEl);
-      case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS ->
+      case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS, ADDITIONAL_BOUND ->
           typeEl.getKind() == ElementKind.INTERFACE;
       case THROWS -> throwableType(typeEl, analysis);
       case ANNOTATION -> typeEl.getKind() == ElementKind.ANNOTATION_TYPE;

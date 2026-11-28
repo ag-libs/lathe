@@ -387,7 +387,9 @@ final class SentinelParser {
       return switch (cls.typeReferenceRole()) {
         case ORDINARY ->
             !(catchParameterType(sentinel) || patternType(sentinel) || permittedSubclass(sentinel));
-        case TYPE_ARGUMENT, ARRAY_TYPE_ARGUMENT -> true;
+        // An additional bound takes no type variable, but one in scope still hides a type of its
+        // name: the completer offers none and leaves the hidden types out.
+        case TYPE_ARGUMENT, ARRAY_TYPE_ARGUMENT, ADDITIONAL_BOUND -> true;
         case CONSTRUCTOR,
             CLASS_EXTENDS,
             CLASS_IMPLEMENTS,
@@ -1073,10 +1075,11 @@ final class SentinelParser {
       }
 
       // A type argument (of a type, or written on a call, a `new` or a method reference:
-      // `Collections.<T>emptyList()`), a wildcard's bound within it, and a type parameter's bound
-      // take any reference type: the role of what they parameterize (a supertype in a header, a
-      // declared or thrown exception) does not reach them, so Comparable<Self> completes. An
-      // array's element type on the way there may also be primitive (List<int[]>).
+      // `Collections.<T>emptyList()`), a wildcard's bound within it, and a type parameter's first
+      // bound take any reference type: the role of what they parameterize (a supertype in a
+      // header, a declared or thrown exception) does not reach them, so Comparable<Self> completes.
+      // An array's element type on the way there may also be primitive (List<int[]>). A bound
+      // after the first is an interface (CQ-0071).
       if (parent instanceof final ParameterizedTypeTree parameterized
               && parameterized.getTypeArguments().stream().anyMatch(t -> t == currentChild)
           || parent instanceof final MethodInvocationTree call
@@ -1088,6 +1091,11 @@ final class SentinelParser {
               && reference.getTypeArguments().stream().anyMatch(t -> t == currentChild)
           || parent instanceof final TypeParameterTree typeParameter
               && typeParameter.getBounds().stream().anyMatch(t -> t == currentChild)) {
+        if (parent instanceof final TypeParameterTree typeParameter
+            && typeParameter.getBounds().indexOf(currentChild) > 0) {
+          return TypeReferenceRole.ADDITIONAL_BOUND;
+        }
+
         return arrayElement
             ? TypeReferenceRole.ARRAY_TYPE_ARGUMENT
             : TypeReferenceRole.TYPE_ARGUMENT;

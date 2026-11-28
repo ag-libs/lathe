@@ -242,6 +242,7 @@ public final class CompletionEngine {
                 || parsed.sentinelContext() == SentinelContext.VARIABLE_DECLARATION)
             && parsed.typeReferenceRole() != TypeReferenceRole.TYPE_ARGUMENT
             && parsed.typeReferenceRole() != TypeReferenceRole.ARRAY_TYPE_ARGUMENT
+            && parsed.typeReferenceRole() != TypeReferenceRole.ADDITIONAL_BOUND
             && !isRealNameSlot(parsed);
     if (!memberStartSlot || parsed.enclosingClass() == null || parsed.enclosingMethod() != null) {
       return outcome;

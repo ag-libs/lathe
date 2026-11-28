@@ -14,5 +14,8 @@ enum TypeReferenceRole {
   TYPE_ARGUMENT,
   // An array's element type within a type argument (List<int[]>): a type argument that also takes
   // a primitive.
-  ARRAY_TYPE_ARGUMENT
+  ARRAY_TYPE_ARGUMENT,
+  // A type parameter's bound after the first (<T extends Number & Comparable<T>>): an interface,
+  // never a class, a type variable or an array (JLS 4.4).
+  ADDITIONAL_BOUND
 }
