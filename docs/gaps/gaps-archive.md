@@ -12298,7 +12298,7 @@ Whether a module may keep tests in another language comes from its build, not a 
 The selection is left alone when the module's build has a compiler for another language: `kotlin-maven-plugin`, `gmavenplus-plugin`, `scala-maven-plugin`, or `maven-compiler-plugin` with the Groovy Eclipse compiler, set for the plugin or one of its executions; the check of the test roots the model holds now stays.
 A module that applies one but tests in Java only runs all its tests during capture: slower, never a capture that starts no JVM.
 
-Not covered: another language's compiler not in that list; WS-53's "Future" lists reading the plugins' own source folders.
+Not covered: another language's compiler not in that list; reading the plugins' own source folders, so a module that applies one but tests in Java alone is narrowed again, is deferred as [WS-55](gaps.md#ws-55--which-folders-a-third-party-language-plugin-compiles-is-not-read-from-its-configuration).
 
 ### Regression targets
 
@@ -12340,7 +12340,7 @@ Not covered: a Maven module whose Kotlin or Groovy plugin compiles from folders 
 
 ### Future: source directories the build can tell
 
-Reading `kotlin-maven-plugin`'s `<sourceDirs>` and GMavenPlus's `<sources>` from the model's plugin configuration, as the sync already reads Spotless's, would name those modules again without a folder rule.
+Reading `kotlin-maven-plugin`'s `<sourceDirs>` and GMavenPlus's `<sources>` from the model's plugin configuration, as the sync already reads Spotless's, would name those modules again without a folder rule: deferred as [WS-55](gaps.md#ws-55--which-folders-a-third-party-language-plugin-compiles-is-not-read-from-its-configuration).
 The same applies wherever Lathe still assumes a directory the build can report: any future need for a module's source folders by language, which Gradle's directory sets and Maven's model give directly.
 
 ### Regression targets

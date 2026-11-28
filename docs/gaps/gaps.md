@@ -1411,6 +1411,35 @@ None yet.
 
 ---
 
+## WS-55 — Which folders a third-party language plugin compiles is not read from its configuration
+
+**Status: deferred** (2026-11-28: a feature, deferred under the feature freeze)
+
+**Kind: feature**
+
+**Value: low — Size: M**
+
+**Affects: Maven modules whose Kotlin, Groovy or Scala plugin compiles from folders it names itself rather than from the model's source roots.**
+
+Left by [WS-53](gaps-archive.md#ws-53--which-modules-hold-kotlin-or-groovy-is-guessed-from-srcsource-setkotlin-and-groovy--done) and [WS-54](gaps-archive.md#ws-54--a-capture-only-run-takes-a-java-roots-sibling-folders-for-other-language-tests--done), which took the build's layout from what Maven's model reports, and found again by #541's review (2026-11-28).
+
+### Observed behaviour
+
+`kotlin-maven-plugin` takes its folders from its own `<sourceDirs>`, GMavenPlus from `<sources>` and `<testSources>`, and `scala-maven-plugin` from `<sourceDir>`; none of them need be a compile source root of Maven's model.
+The Maven sync reads other languages only from the model's source roots, so a module whose Kotlin lies only in `<sourceDirs>` (the usual setup) is not named in the notes on modules Lathe does not read, and an answer about a symbol's uses gives no warning that its Kotlin was not searched.
+The extension's capture check (WS-54) knows only that such a plugin is there, not where its tests are, so a module that applies one but tests in Java alone runs all its tests during capture.
+
+### Fix direction
+
+Read each plugin's source folders from its configuration in the model, plugin and execution level, as the sync already reads Spotless's, and record them per module as the build's own layout; Gradle's directory sets already give this.
+Then the notes name every module the plugin compiles, and capture narrows a module whose other-language folders hold no sources.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
