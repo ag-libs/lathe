@@ -189,10 +189,12 @@ final class ReceiverResolver {
 
         final long start = positions.getStartPosition(snapshot.tree(), tree);
         final long end = positions.getEndPosition(snapshot.tree(), tree);
+        // An operand ends before the token; a tree ending at the token itself is one javac's
+        // recovery closed there, as the call of `foo(value ins` with no `)` yet, not the operand.
         if (tree instanceof ExpressionTree
             && start >= 0
             && end >= start
-            && end <= tokenStart
+            && end < tokenStart
             && sharesCompletionContainer(new TreePath(getCurrentPath(), tree), tokenStart, snapshot)
             && isBetterExpression(end, end - start, resultEnd.get(), resultSpan.get())) {
           result.set(new TreePath(getCurrentPath(), tree));

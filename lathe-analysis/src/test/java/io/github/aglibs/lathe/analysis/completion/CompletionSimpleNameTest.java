@@ -415,7 +415,9 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
       strings = {
         "boolean b = value ins§;",
         "boolean b = value /* note */ ins§;",
-        "boolean b = value\n            ins§;"
+        "boolean b = value\n            ins§;",
+        "System.out.println(value ins§);",
+        "check(value ins§, 1);"
       })
   void simpleName_afterAnOperand_offersInstanceof(final String statement) {
     final List<String> items =
@@ -423,6 +425,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
             fixture.complete(
                 """
                 class Test {
+                    void check(boolean ok, int n) {}
                     void m(String value) {
                         %s
                     }
