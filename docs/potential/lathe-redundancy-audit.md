@@ -9,6 +9,7 @@ No timings were collected.
 Start with call hierarchy for its effect on an agent request and the external-compiler fixture for its small, test-only scope.
 The remaining items can be reviewed independently.
 Several production items revisit CR-208, CR-210, CR-211, CR-212, and CR-218 from the [November 14 review](../gaps/code-review-2026-11-14.md).
+A readability review on November 28, 2026, at `a2f2cf5`, added the personal-setup, incoming-call and manifest-writer items; its other findings are [CQ-0085](../gaps/gaps.md), [MC-114](../gaps/gaps.md), [WS-56](../gaps/gaps.md) and PR #552.
 
 ## Production code
 
@@ -66,6 +67,15 @@ The exact-argument tests pin the ordering for both paths. [Module parser](../../
 - Remove the package-private `RunItem.withName` method.
   A repository search found its declaration and the earlier review entry, with no caller in production or tests. [RunItem](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/run/RunItem.java#L67)
 
+### Recognize a personal Neovim setup in one place
+
+`personal_kind` and `replays_activation` in `latheinit.lua` look for the same two markers in a sync script: Maven's `maven.ext.class.path` and the Gradle init script.
+The first picks a build in a folder with both; the second decides whether a build that now registers Lathe must render a new script.
+A marker added to one and not the other would make the two disagree about the same script.
+Use one local function that takes the script's text and returns `"maven"`, `"gradle"` or `nil`; each caller already reads the script.
+Keep the version-specific activation path and file-existence checks in `set_up_already`.
+Check the mixed-build and personal-to-registered cases in `latheinit_spec.lua`. [Personal kind](../../lathe-neovim/runtime/lua/lathe/latheinit.lua#L218) · [Replays activation](../../lathe-neovim/runtime/lua/lathe/latheinit.lua#L740)
+
 ## Tests
 
 ### Build the external dependencies in one test fixture
@@ -101,6 +111,19 @@ Run, save, and DAP specs construct the same wire object using different ID conve
 For a test class, the save helper uses the class ID, the run helper would append `#main`, and the DAP helper takes an explicit ID.
 Put a constructor in the existing `spec_helper.lua` and pass explicit IDs when selectors or parent links are the subject of the test.
 Keep run selection, save payload, and debug configuration assertions at their own entry points. [Run](../../lathe-neovim/test/run_spec.lua#L24) · [Save](../../lathe-neovim/test/run_save_spec.lua#L15) · [DAP](../../lathe-neovim/test/dap_spec.lua#L39)
+
+### Name the incoming-call invocation once
+
+Nine cases in `CallHierarchyIncomingLocatorTest` repeat the same nine-line call that asks the session for the incoming calls of a prepared hierarchy item.
+A private helper, `incomingCalls(session, content, item)`, would leave each test its fixture source, target selection and assertions about callers and ranges.
+Cases that use another compilation or a deliberately different analysis keep their explicit setup. [Incoming calls](../../lathe-analysis/src/test/java/io/github/aglibs/lathe/analysis/CallHierarchyIncomingLocatorTest.java#L25)
+
+## Considered, not worth changing
+
+`WorkspaceSync.write` unpacks its `Inputs` record into the twelve positional arguments of `WorkspaceManifestWriter.write`, several of them `List<String>`, so two swapped arguments would compile.
+There is one production caller.
+Passing `Inputs` instead would make the writer depend on its caller's record, which carries a sync script and caches the writer does not need, and the writer's tests, which pass no server version, would have to build all of it.
+Keep the positional call. [Caller](../../lathe-install/src/main/java/io/github/aglibs/lathe/install/WorkspaceSync.java#L81) · [Writer](../../lathe-install/src/main/java/io/github/aglibs/lathe/install/WorkspaceManifestWriter.java#L28)
 
 ## An intentional copy
 
