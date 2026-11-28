@@ -42,6 +42,45 @@ class CompletionModuleInfoTest {
     return items.stream().map(CompletionItem::getLabel).toList();
   }
 
+  // --- the module's annotations (CQ-0041) ---
+
+  @Test
+  void complete_moduleAnnotationArgument_offersTheAnnotationsElements() {
+    final List<String> result =
+        labels(fixture.completeModuleInfo("@Deprecated(s§) module example.app {}\n"));
+    assertThat(result).contains("since").doesNotContain("requires", "exports");
+  }
+
+  @Test
+  void complete_moduleAnnotationArgumentOnItsOwnLine_offersTheAnnotationsElements() {
+    final List<String> result =
+        labels(
+            fixture.completeModuleInfo(
+                """
+                @Deprecated(for§)
+                module example.app {
+                    requires java.sql;
+                }
+                """));
+    assertThat(result).contains("forRemoval").doesNotContain("requires", "exports");
+  }
+
+  @Test
+  void complete_moduleAnnotationValue_offersTheElementsValues() {
+    final List<String> result =
+        labels(fixture.completeModuleInfo("@Deprecated(forRemoval = §) module example.app {}\n"));
+    assertThat(result).contains("true", "false").doesNotContain("requires", "exports");
+  }
+
+  @Test
+  void complete_moduleAnnotationQualifiedValue_offersTheTypesMembers() {
+    final List<String> result =
+        labels(
+            fixture.completeModuleInfo(
+                "@Deprecated(forRemoval = Boolean.T§) module example.app {}\n"));
+    assertThat(result).contains("TRUE").doesNotContain("requires", "exports");
+  }
+
   // --- exports ---
 
   @Test
