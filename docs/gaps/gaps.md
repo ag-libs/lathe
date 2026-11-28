@@ -1150,37 +1150,6 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
-## CQ-0041 — Module directives complete, but annotation arguments on a module descriptor do not
-
-**Status: deferred** (2026-11-15: feature freeze)
-
-**Kind: feature**
-
-### Delivered
-
-`CompletionModuleInfoTest.complete_requiresDirective_offersModuleNames` and
-`CompletionModuleInfoTest.complete_exportsDirective_offersPackageSegments` cover the delivered module-directive completions.
-
-### Remaining — module annotation arguments
-
-Reopened by the 2026-11-08 closure audit: the archived entry listed a proposed module-annotation regression as though it existed, but it was never added.
-A probe through the current `SourceAnalysisSession.complete` reproduces the remainder:
-
-```java
-@Deprecated(s§) module example.app {}
-```
-
-At `§`, the result is `[requires, exports, opens, uses, provides]`, not the annotation element `since`.
-The control `@Deprecated(s§) class Test {}` returns `[since]` through the same API and compiler.
-The module-descriptor completion branch is being chosen inside the annotation argument.
-
-### Regression targets
-
-The directive tests above cover the delivered behavior.
-Module-annotation argument completion has no regression test yet; the paired probe above reproduces it.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync

@@ -5286,6 +5286,47 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0041 — Module directives complete, but annotation arguments on a module descriptor do not — done
+
+**Status: done** (2026-11-28; deferred 2026-11-15 under the feature freeze)
+
+**Kind: feature**
+
+### Delivered
+
+`CompletionModuleInfoTest.complete_requiresDirective_offersModuleNames` and
+`CompletionModuleInfoTest.complete_exportsDirective_offersPackageSegments` cover the delivered module-directive completions.
+
+### Remaining — module annotation arguments
+
+Reopened by the 2026-11-08 closure audit: the archived entry listed a proposed module-annotation regression as though it existed, but it was never added.
+A probe through the current `SourceAnalysisSession.complete` reproduces the remainder:
+
+```java
+@Deprecated(s§) module example.app {}
+```
+
+At `§`, the result is `[requires, exports, opens, uses, provides]`, not the annotation element `since`.
+The control `@Deprecated(s§) class Test {}` returns `[since]` through the same API and compiler.
+The module-descriptor completion branch is being chosen inside the annotation argument.
+
+### Resolution
+
+Rechecked on `main` at `b069de4` (2026-11-28): unchanged.
+`SentinelParser` took any position in a module descriptor outside a class for a module directive, though it had already classified it as an annotation argument.
+A position inside the module's annotation is no longer taken for a directive and keeps the context it classified as: `@Deprecated(s|) module example.app {}` completes `since`, `forRemoval = |` completes `true` and `false`, and `forRemoval = Boolean.T|` completes `TRUE`, as on a class.
+
+Not covered: the annotation's own name typed on the module (`@Depr|` before `module`) completes nothing, before and after this fix; a class's (`@Depr| class Test {}`) completes `Deprecated`.
+
+### Regression targets
+
+- `CompletionModuleInfoTest.complete_moduleAnnotationArgument_offersTheAnnotationsElements`
+- `CompletionModuleInfoTest.complete_moduleAnnotationArgumentOnItsOwnLine_offersTheAnnotationsElements`
+- `CompletionModuleInfoTest.complete_moduleAnnotationValue_offersTheElementsValues`
+- `CompletionModuleInfoTest.complete_moduleAnnotationQualifiedValue_offersTheTypesMembers`
+
+---
+
 ## CQ-0071 — A type parameter's second bound offers classes — done
 
 **Status: done** (2026-11-28; triaged 2026-11-24: low; a second bound is rare, and javac flags a class picked there at once)
