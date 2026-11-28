@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.sun.source.util.JavacTask;
 import io.github.aglibs.lathe.analysis.testing.JavacCrashFixtures;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -30,6 +31,7 @@ import javax.tools.StandardJavaFileManager;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SourceAnalysisSessionTest {
 
@@ -309,6 +311,61 @@ class SourceAnalysisSessionTest {
       assertThat(session.files().enclosingBinaryName(uri, 5)).contains("Outer$1");
       assertThat(session.files().enclosingBinaryName(uri, 11)).contains("Outer");
       assertThat(session.files().enclosingBinaryName(uri, 16)).contains("Outer$Inner");
+    }
+  }
+
+  // DB-7: a breakpoint's file with no cached analysis (never opened, or dropped from the cache) is
+  // parsed from disk, never compiled or cached: each line maps to the top-level type around it,
+  // whose nested classes java-debug arms too; a line outside every type maps to nothing.
+  @Test
+  void enclosingBinaryNames_fileOnDiskNotAttributed_topLevelTypeOfEachLine(@TempDir final Path dir)
+      throws IOException {
+    final Path file = dir.resolve("Outer.java");
+    Files.writeString(
+        file,
+        """
+        package com.example;
+
+        class Outer {
+          class Inner {
+            void run() {}
+          }
+        }
+
+        class Second {}
+        """);
+    final String uri = LatheUri.fromPath(file);
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      assertThat(session.files().enclosingBinaryNames(uri, List.of(2, 5, 9, 40)))
+          .containsExactlyInAnyOrderEntriesOf(
+              Map.of(5, "com.example.Outer", 9, "com.example.Second"));
+      assertThat(session.cachedAnalysis(uri)).as("parsed, not cached").isEmpty();
+    }
+  }
+
+  // A line the cached analysis has no class for, as it was compiled from a shorter buffer, is
+  // looked up on disk, where the file has the type; a line the cache resolves keeps its name.
+  @Test
+  void enclosingBinaryNames_lineTheCachedAnalysisLacks_resolvesFromDisk(@TempDir final Path dir)
+      throws IOException {
+    final Path file = dir.resolve("Outer.java");
+    Files.writeString(
+        file,
+        """
+        class Outer {
+          void a() {}
+        }
+
+        class Later {
+          void b() {}
+        }
+        """);
+    final String uri = LatheUri.fromPath(file);
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(uri, "class Outer {\n  void a() {}\n}\n", 1, CompileMode.OPEN);
+
+      assertThat(session.files().enclosingBinaryNames(uri, List.of(2, 6)))
+          .containsExactlyInAnyOrderEntriesOf(Map.of(2, "Outer", 6, "Later"));
     }
   }
 

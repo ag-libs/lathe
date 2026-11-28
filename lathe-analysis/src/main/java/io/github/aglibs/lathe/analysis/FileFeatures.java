@@ -3,7 +3,10 @@ package io.github.aglibs.lathe.analysis;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.Scope;
+import com.sun.source.tree.Tree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.analysis.refactor.AddConstructorParameterProvider;
 import io.github.aglibs.lathe.analysis.refactor.AddThrowsProvider;
 import io.github.aglibs.lathe.analysis.refactor.ConvertToVarProvider;
@@ -19,8 +22,12 @@ import io.github.aglibs.lathe.analysis.refactor.ReplaceVarProvider;
 import io.github.aglibs.lathe.analysis.refactor.TryCatchWrapProvider;
 import io.github.aglibs.lathe.analysis.refactor.TryWithResourcesProvider;
 import io.github.aglibs.lathe.core.LatheCommands;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -91,17 +99,43 @@ public final class FileFeatures {
 
   /**
    * The binary name (e.g. {@code com.example.Outer$Inner}) of the class enclosing a 1-based line,
-   * from the already-attributed analysis of an open file — the mapping the debug adapter's
-   * source-lookup provider needs to arm a JDI breakpoint. Empty when the file is not
-   * open/attributed or the line is outside any class.
+   * as {@link #enclosingBinaryNames} gives it. Empty when it has none.
    */
   public Optional<String> enclosingBinaryName(final String uri, final int oneBasedLine) {
+    return Optional.ofNullable(enclosingBinaryNames(uri, List.of(oneBasedLine)).get(oneBasedLine));
+  }
+
+  /**
+   * The class enclosing each 1-based line, by line, as the debug adapter's source lookup needs it
+   * to arm a JDI breakpoint; a line outside any class is left out. From the open file's analysis
+   * when it is cached (the innermost class, {@code Outer$Inner}). Otherwise from the file on disk,
+   * parsed once and never compiled, the top-level type whose span holds the line: java-debug arms
+   * the line in that type's nested, anonymous and lambda classes too ({@code Outer$*}). The cache
+   * keeps the most recent files only and a memory-pressure release empties it, so an open file can
+   * have no analysis, and a breakpoint can sit in a file never opened (DB-7). A line the cached
+   * analysis has no class for (it was compiled from other text) is looked up on disk too.
+   */
+  public Map<Integer, String> enclosingBinaryNames(
+      final String uri, final List<Integer> oneBasedLines) {
     final Optional<AttributedFileAnalysis> cached = session.cachedAnalysis(uri);
-    if (cached.isEmpty() || cached.get().tree() == null) {
-      return Optional.empty();
+    final var names = new HashMap<Integer, String>();
+    if (cached.isPresent() && cached.get().tree() != null) {
+      for (final Integer line : oneBasedLines) {
+        attributedBinaryName(cached.get(), line).ifPresent(name -> names.put(line, name));
+      }
     }
 
-    final AttributedFileAnalysis analysis = cached.get();
+    final List<Integer> unresolved =
+        oneBasedLines.stream().filter(line -> !names.containsKey(line)).distinct().toList();
+    if (!unresolved.isEmpty()) {
+      names.putAll(topLevelNamesOnDisk(uri, unresolved));
+    }
+
+    return Map.copyOf(names);
+  }
+
+  private static Optional<String> attributedBinaryName(
+      final AttributedFileAnalysis analysis, final int oneBasedLine) {
     final CompilationUnitTree cu = analysis.tree();
     final long offset = Positions.toOffset(cu, oneBasedLine - 1, 0);
     if (offset == javax.tools.Diagnostic.NOPOS) {
@@ -120,6 +154,55 @@ public final class FileFeatures {
     }
 
     return Optional.empty();
+  }
+
+  // A file that cannot be read or parsed arms none of its breakpoints, without failing the others
+  // of the request: the parser's failures surface as unchecked exceptions.
+  private Map<Integer, String> topLevelNamesOnDisk(final String uri, final List<Integer> lines) {
+    final Path file = LatheUri.toPath(uri);
+    if (!Files.isRegularFile(file)) {
+      return Map.of();
+    }
+
+    final var t = Stopwatch.start();
+    try {
+      final Map<Integer, String> names =
+          parser.parseFile(file, (trees, cu) -> topLevelNames(trees, cu, lines)).orElse(Map.of());
+      LOG.fine(
+          () ->
+              "[breakpoint] %s parsed lines=%d named=%d %dms"
+                  .formatted(uri, lines.size(), names.size(), t.elapsedMs()));
+      return names;
+    } catch (final RuntimeException e) {
+      LOG.log(
+          Level.FINE, e, () -> "[breakpoint] %s parse failed %dms".formatted(uri, t.elapsedMs()));
+      return Map.of();
+    }
+  }
+
+  private static Map<Integer, String> topLevelNames(
+      final Trees trees, final CompilationUnitTree cu, final List<Integer> lines) {
+    final SourcePositions positions = trees.getSourcePositions();
+    final String pkg = cu.getPackageName() == null ? "" : cu.getPackageName().toString();
+    final var names = new HashMap<Integer, String>();
+    for (final Integer line : lines) {
+      final long offset = Positions.toOffset(cu, line - 1, 0);
+      if (offset == javax.tools.Diagnostic.NOPOS) {
+        continue;
+      }
+
+      for (final Tree type : cu.getTypeDecls()) {
+        if (type instanceof final ClassTree declared
+            && positions.getStartPosition(cu, declared) <= offset
+            && offset <= positions.getEndPosition(cu, declared)) {
+          final String simple = declared.getSimpleName().toString();
+          names.put(line, pkg.isEmpty() ? simple : "%s.%s".formatted(pkg, simple));
+          break;
+        }
+      }
+    }
+
+    return Map.copyOf(names);
   }
 
   /**
