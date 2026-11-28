@@ -4,6 +4,7 @@ import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -92,6 +93,13 @@ public final class CursorElements {
       if (element != null && element.getKind() != ElementKind.PACKAGE) {
         return element;
       }
+
+      // A package segment of a qualified name (`util` in `java.util.Locale`) names the package,
+      // never the type the name goes on to: no element, as on the package line (EG-124).
+      if (element != null && isName(p.getLeaf())) {
+        return null;
+      }
+
       if (p.getLeaf() instanceof final MethodInvocationTree inv) {
         final var sel = trees.getElement(new TreePath(p, inv.getMethodSelect()));
         if (sel != null) {
@@ -104,6 +112,10 @@ public final class CursorElements {
       p = p.getParentPath();
     }
     return null;
+  }
+
+  private static boolean isName(final Tree tree) {
+    return tree instanceof IdentifierTree || tree instanceof MemberSelectTree;
   }
 
   /**

@@ -352,6 +352,7 @@ class TypeHierarchyTest {
     "\"hi\" +, hi, Shop",
     "other.toString(), toString, Shop",
     "import java.util.List;, import, ''",
+    "import java.util.List;, util, ''",
   })
   void prepareTypeHierarchy_cursorOffATypeName_preparesTheClassThePositionIsAbout(
       final String snippet, final String token, final String expected) throws IOException {
@@ -371,6 +372,18 @@ class TypeHierarchyTest {
       assertThat(session.hierarchy().prepareTypeHierarchy(request, index))
           .extracting(TypeHierarchyItem::getName)
           .containsExactlyElementsOf(expected.isEmpty() ? List.of() : List.of(expected));
+    }
+  }
+
+  // EG-124: a package segment is about the package, not the class around it.
+  @Test
+  void prepareTypeHierarchy_packageSegmentInAClass_returnsEmpty() {
+    final String content = "class Holder { java.util.List<String> names; }\n";
+    final var request = request(content, SampleFixture.posOf(content, "java.util", "util"));
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      assertThat(session.hierarchy().prepareTypeHierarchy(request, WorkspaceTypeIndex.empty()))
+          .isEmpty();
     }
   }
 
