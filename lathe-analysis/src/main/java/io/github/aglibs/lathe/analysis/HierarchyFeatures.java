@@ -47,6 +47,13 @@ public final class HierarchyFeatures {
 
     final Cursor cur = at.get();
     final var trees = cur.analysis().trees();
+    // A package segment of a qualified name is about the package, which has no hierarchy, not the
+    // class around it (EG-124).
+    final Element atCursor = trees.getElement(cur.path());
+    if (atCursor != null && atCursor.getKind() == ElementKind.PACKAGE) {
+      return List.of();
+    }
+
     // Off a type name, as jdtls answers: on a member's own name its declaring class, else the class
     // around the position. Anonymous and local classes are not in the index, so the class around
     // one stands for it, and Object stands for no member's class: its hierarchy is the whole index.
@@ -54,7 +61,7 @@ public final class HierarchyFeatures {
         Stream.ofNullable(CursorElements.elementAt(trees, cur.path()))
             .filter(TypeElement.class::isInstance);
     final Stream<Element> declaring =
-        Stream.ofNullable(trees.getElement(cur.path()))
+        Stream.ofNullable(atCursor)
             .filter(member -> !(member instanceof TypeElement))
             .map(Element::getEnclosingElement)
             .filter(

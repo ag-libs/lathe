@@ -256,9 +256,9 @@ public final class TokenScanner extends WrittenSourceScanner {
       return null;
     }
 
-    // The exact element of this selector — not CursorElements.elementAt, which climbs a package
-    // qualifier up to the enclosing type and would mislabel `java.util` in `java.util.List` as a
-    // type. A package selector resolves to a PACKAGE here and emits no token.
+    // The exact element of this selector, not CursorElements.elementAt, which walks up from a
+    // tree that names none. A package selector (`java.util` in `java.util.List`) resolves to a
+    // PACKAGE here and emits no token.
     final var element = trees.getElement(getCurrentPath());
     if (element != null) {
       emitReference(element, positions.getEndPosition(cu, node) - name.length(), name);

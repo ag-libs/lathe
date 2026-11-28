@@ -66,6 +66,35 @@ class DefinitionLocatorTest extends SampleFixture {
     }
   }
 
+  // EG-124: a package segment of a qualified name is no definition of the type it goes on to.
+  @Test
+  void definition_packageSegmentOfQualifiedName_none_typeNameItsDeclaration() {
+    final String source =
+        """
+        package p;
+        class Test {
+          p.Test self;
+        }
+        """;
+    try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+      assertThat(session.navigation().definition(at(source, posOf(source, "p.Test", "p"))))
+          .isEmpty();
+      assertThat(session.navigation().definition(at(source, posOf(source, "p.Test", "Test"))))
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.getRange().getStart())
+                      .isEqualTo(posOf(source, "class Test", "Test")));
+    }
+  }
+
+  private static SourceFeatureRequest at(final String source, final Position position) {
+    return new SourceFeatureRequest(
+        TempSourceCompiler.TEST_URI, source, 1, position, List.of(), LibrarySources.none());
+  }
+
   private static final String MISMATCHED_CALL_SOURCE =
       """
       class Test {

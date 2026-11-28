@@ -688,31 +688,6 @@ A `method` token on the name of a method reference, as for a call; `status.md` s
 
 None yet.
 
-## EG-124 — A position on a package segment of an import resolves to the imported type
-
-**Status: deferred** (triaged 2026-11-24: low; the answer is wrong but harmless, and the type's own name still answers right)
-
-**Kind: bug**
-
-**Affects: hover and definition in the editor; MCP `describe_symbol` and `get_definition`.**
-
-Found by the 2026-11-24 MCP exploratory pass on Dropwizard (`0.1.0-SNAPSHOT` at `7a4ab21`, Dropwizard at `08e290b764`; report `dev/reports/qa-2026-11-24-dropwizard.md`, B8).
-
-### Observed behaviour
-
-In `dropwizard-util`'s `Duration.java:7`, `import java.util.Locale;`, hover and definition on `java` (column 8), `util` (13) and `Locale` (18) all answer `public final class Locale …`; definition on `java` opens `Locale.java:574`.
-On the `package` line the same kind of position answers the package (`describe_symbol` at 1:12 gives `io.dropwizard`).
-
-### Expected
-
-The package for `java` and `util` (`java`, `java.util`), as on the `package` line, or nothing; the type only on its own name.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-125 — An unused local is reported twice once the module's compiler plugins have run
 
 **Status: deferred** (triaged 2026-11-24: low; noise only, both reports are right)

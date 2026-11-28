@@ -40,6 +40,27 @@ class HoverTest extends SampleFixture {
     }
   }
 
+  // EG-124: a package segment of a qualified name describes the package, never the type the name
+  // goes on to; the type's own name still describes the type.
+  @Test
+  void hover_packageSegmentOfQualifiedName_describesThePackageNotTheType() {
+    final var src =
+        """
+        import java.util.Locale;
+        class Test {
+          java.util.List<String> names;
+        }
+        """;
+
+    assertThat(hoverText(src, "import", "Locale")).contains("class Locale");
+    assertThat(hoverText(src, "import", "util")).contains("java.util").doesNotContain("Locale");
+    assertThat(hoverText(src, "import", "java")).contains("java").doesNotContain("Locale");
+    assertThat(hoverText(src, "java.util.List", "List")).contains("interface List");
+    assertThat(hoverText(src, "java.util.List", "util"))
+        .contains("java.util")
+        .doesNotContain("List", "Test");
+  }
+
   @Test
   void hover_type_showsClassJavadoc() {
     // "DocHelper" in "var instance = new DocHelper()"
