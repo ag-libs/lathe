@@ -226,7 +226,9 @@ final class SentinelParser {
       }
     }
 
-    if (enclosingClass == null && cu.getModule() != null) {
+    // Inside the module's annotation the position keeps its own context, whatever it classified
+    // as (an argument, a value, a qualified name), rather than taken for a directive (CQ-0041).
+    if (enclosingClass == null && cu.getModule() != null && !inAnnotation(sentinelPath)) {
       final var keyword = findDirectiveKeyword(cu.getModule());
       final var parsed =
           ParsedSentinel.valid(
@@ -1198,6 +1200,16 @@ final class SentinelParser {
         sentinel instanceof MemberSelectTree
             ? SentinelContext.MEMBER_ACCESS
             : SentinelContext.SIMPLE_NAME);
+  }
+
+  private static boolean inAnnotation(final TreePath path) {
+    for (final Tree node : path) {
+      if (node instanceof AnnotationTree) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   static ModuleDirectiveKind findDirectiveKeyword(final ModuleTree moduleTree) {
